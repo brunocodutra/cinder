@@ -40,8 +40,9 @@ bestmove d2d4
 Cinder is an open source project and you're very welcome to contribute to this project by
 opening [issues] and/or [pull requests][pulls], see [CONTRIBUTING] for general guidelines.
 
-Building Cinder from source currently requires the nightly Rust compiler and [cargo-make].
-To compile binaries optimized for your CPU architecture, simply run `cargo make cinder`.
+Building Cinder from source currently requires a recent nightly Rust compiler,
+[cargo-make], and [cargo-pgo]. To compile binaries optimized for your CPU architecture,
+simply run `cargo make cinder`.
 
 ## License
 
@@ -50,7 +51,8 @@ Cinder is distributed under the terms of the GPL-3.0 license, see [LICENSE] for 
 [issues]:           https://github.com/brunocodutra/cinder/issues
 [pulls]:            https://github.com/brunocodutra/cinder/pulls
 
-[cargo-make]:       https://github.com/sagiegurari/cargo-make
+[cargo-make]:       https://crates.io/crates/cargo-make
+[cargo-pgo]:        https://crates.io/crates/cargo-pgo
 
 [LICENSE]:          https://github.com/brunocodutra/cinder/blob/master/LICENSE
 [CONTRIBUTING]:     https://github.com/brunocodutra/cinder/blob/master/CONTRIBUTING.md

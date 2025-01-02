@@ -5,4 +5,4 @@ rustflags = ["-Ctarget-cpu=native"]
 profile-rustflags = true
 
 [profile.release]
-rustflags = ["-Zlocation-detail=none", "-Zfmt-debug=none"]
+rustflags = ["-Ctarget-cpu=native", "-Zlocation-detail=none", "-Zfmt-debug=none"]

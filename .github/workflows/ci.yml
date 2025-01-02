@@ -96,5 +96,5 @@ jobs:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
     - uses: actions/checkout@v4
-    - run: cargo install --force cargo-make
+    - run: cargo install --force cargo-make cargo-pgo
     - run: cargo make cinder

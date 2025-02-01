@@ -25,10 +25,10 @@ static ZOBRIST: SyncUnsafeCell<ZobristNumbers> = unsafe { MaybeUninit::zeroed().
 unsafe fn init() {
     let zobrist = ZOBRIST.get().as_mut_unchecked();
     let mut rng = Pcg64::seed_from_u64(0x980E8CE238E3B114);
-    zobrist.pieces = rng.gen();
-    zobrist.castles = rng.gen();
-    zobrist.en_passant = rng.gen();
-    zobrist.turn = rng.gen();
+    zobrist.pieces = rng.random();
+    zobrist.castles = rng.random();
+    zobrist.en_passant = rng.random();
+    zobrist.turn = rng.random();
 }
 
 impl ZobristNumbers {

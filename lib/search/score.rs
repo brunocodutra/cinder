@@ -18,8 +18,8 @@ pub type Score = Saturating<ScoreRepr>;
 
 impl Score {
     const _CONDITION: () = const {
-        assert!(Value::MAX + Ply::MAX as i16 <= Self::MAX);
-        assert!(Value::MIN + Ply::MIN as i16 >= Self::MIN);
+        assert!(Value::MAX + (Ply::MAX as i16) < Self::MAX);
+        assert!(Value::MIN + (Ply::MIN as i16) > Self::MIN);
     };
 
     /// Returns number of plies to mate, if one is in the horizon.

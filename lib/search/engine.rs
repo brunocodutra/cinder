@@ -21,8 +21,8 @@ pub struct Search<'a> {
 
 impl<'a> Search<'a> {
     fn new(engine: &'a Engine, ctrl: Control<'a>) -> Self {
-        let killers = [Killers::default(); Ply::MAX as usize + 1];
-        let continuation = [None; Ply::MAX as usize + 1];
+        let killers = [Default::default(); Ply::MAX as usize + 1];
+        let continuation = [Default::default(); Ply::MAX as usize + 1];
 
         Search {
             engine,
@@ -139,8 +139,8 @@ impl<'a> Search<'a> {
     /// An implementation of [late move reductions].
     ///
     /// [late move reductions]: https://www.chessprogramming.org/Late_Move_Reductions
-    fn lmr(&self, draft: Depth, idx: usize) -> i16 {
-        draft.get().max(1).ilog2() as i16 * idx.max(1).ilog2() as i16 / 3
+    fn lmr(&self, draft: Depth, idx: usize) -> Depth {
+        (draft.get().max(1).ilog2() as i16 * idx.max(1).ilog2() as i16 / 3).saturate()
     }
 
     /// The [alpha-beta] search.
@@ -190,12 +190,12 @@ impl<'a> Search<'a> {
         &mut self,
         pos: &Evaluator,
         bounds: Range<Score>,
-        depth: Depth,
+        mut depth: Depth,
         ply: Ply,
     ) -> Result<Pv<N>, Interrupted> {
         self.ctrl.interrupted()?;
+
         let is_root = ply == 0;
-        (bounds.start < bounds.end).assume();
         let (alpha, beta) = match pos.outcome() {
             None => self.mdp(ply, &bounds),
             Some(Outcome::DrawByThreefoldRepetition) if is_root => self.mdp(ply, &bounds),
@@ -213,18 +213,11 @@ impl<'a> Search<'a> {
             Some(t) => t.transpose(ply),
         };
 
-        #[cfg(not(test))]
-        let mut depth = match transposition {
-            #[cfg(not(test))]
-            // The check extension heuristic is not exact.
-            Some(_) if !is_root && pos.is_check() => depth + 1,
-
-            #[cfg(not(test))]
-            // The internal iterative reduction heuristic is not exact.
-            None if !is_root && !pos.is_check() => depth - 2,
-
-            _ => depth,
-        };
+        if !is_root && transposition.is_some() && pos.is_check() {
+            depth = depth + 1;
+        } else if !is_root && transposition.is_none() && !pos.is_check() {
+            depth = depth - 2;
+        }
 
         let draft = depth - ply;
         let quiesce = draft <= 0;
@@ -241,26 +234,21 @@ impl<'a> Search<'a> {
 
             if let Some(d) = self.razor(alpha - upper, draft) {
                 if !is_pv && t.draft() >= d {
-                    #[cfg(not(test))]
-                    // The razoring heuristic is not exact.
                     return Ok(transposed.truncate());
                 }
             }
 
             if let Some(d) = self.rfp(lower - beta, draft) {
                 if !is_pv && t.draft() >= d {
-                    #[cfg(not(test))]
-                    // The reverse futility pruning heuristic is not exact.
                     return Ok(transposed.truncate());
                 }
             }
         }
 
-        let alpha = match quiesce {
-            #[cfg(not(test))]
-            // The stand pat heuristic is not exact.
-            true => transposed.score().max(alpha),
-            _ => alpha,
+        let alpha = if quiesce {
+            transposed.score().max(alpha)
+        } else {
+            alpha
         };
 
         if alpha >= beta || ply >= Ply::MAX {
@@ -268,8 +256,6 @@ impl<'a> Search<'a> {
         } else if let Some(d) = self.nmp(transposed.score() - beta, draft) {
             if !is_pv && !pos.is_check() && pos.pieces(pos.turn()).len() > 1 {
                 if d <= 0 {
-                    #[cfg(not(test))]
-                    // The null move pruning heuristic is not exact.
                     return Ok(transposed.truncate());
                 } else {
                     let mut next = pos.clone();
@@ -277,8 +263,6 @@ impl<'a> Search<'a> {
                     self.tt.prefetch(next.zobrist());
                     self.continuation[ply.cast::<usize>()] = None;
                     if -self.nw::<0>(&next, -beta + 1, d + ply, ply + 1)? >= beta {
-                        #[cfg(not(test))]
-                        // The null move pruning heuristic is not exact.
                         return Ok(transposed.truncate());
                     }
                 }
@@ -313,6 +297,7 @@ impl<'a> Search<'a> {
         if let Some(t) = transposition {
             if let Some(d) = self.mcp(t.score().lower(ply) - beta, draft) {
                 if !is_root && t.draft() >= d {
+                    depth = depth + 1;
                     for (m, _) in moves.iter().rev().skip(1) {
                         let mut next = pos.clone();
                         next.play(*m);
@@ -320,16 +305,8 @@ impl<'a> Search<'a> {
                         self.continuation[ply.cast::<usize>()] =
                             Some(self.engine.continuation.reply(pos, *m));
                         if -self.nw::<0>(&next, -beta + 1, d + ply, ply + 1)? >= beta {
-                            #[cfg(not(test))]
-                            // The multi-cut pruning heuristic is not exact.
                             return Ok(transposed.truncate());
                         }
-                    }
-
-                    #[cfg(not(test))]
-                    {
-                        // The singular extension heuristic is not exact.
-                        depth = depth + 1;
                     }
                 }
             }
@@ -365,19 +342,11 @@ impl<'a> Search<'a> {
             if gain < 0 && draft < 4 && !pos.is_check() && !next.is_check() {
                 let deficit = alpha + next.evaluate();
                 if self.fp(deficit, draft).is_some_and(|d| d <= 0) {
-                    #[cfg(not(test))]
-                    // The futility pruning heuristic is not exact.
                     break;
                 }
             }
 
-            let lmr = match self.lmr(draft, idx) {
-                #[cfg(not(test))]
-                // The late move reduction heuristic is not exact.
-                r @ 1.. => r - (is_pv as i16),
-                _ => 0,
-            };
-
+            let lmr = self.lmr(draft, idx) - (is_pv as i8);
             self.continuation[ply.cast::<usize>()] = Some(self.engine.continuation.reply(pos, m));
             let partial = match -self.nw(&next, -alpha, depth - lmr, ply + 1)? {
                 partial if partial <= alpha || (partial >= beta && lmr <= 0) => partial,
@@ -439,13 +408,8 @@ impl<'a> Search<'a> {
 
                     score if (upper..Score::upper()).contains(&score) => {
                         upper = score + delta;
+                        draft = draft - 1;
                         pv = partial;
-
-                        #[cfg(not(test))]
-                        {
-                            // Reductions are not exact.
-                            draft = draft - 1;
-                        }
                     }
 
                     _ => {
@@ -535,39 +499,6 @@ mod tests {
     use proptest::{prop_assume, sample::Selector};
     use test_strategy::proptest;
 
-    fn alphabeta(pos: &Evaluator, bounds: Range<Score>, depth: Depth, ply: Ply) -> Score {
-        let (mut alpha, beta) = (bounds.start, bounds.end);
-        debug_assert!(alpha < beta);
-
-        let score = match pos.outcome() {
-            Some(o) if o.is_draw() => return Score::new(0),
-            Some(_) => return Score::mated(ply),
-            None => pos.evaluate().saturate(),
-        };
-
-        let moves: ArrayVec<_, 255> = pos
-            .moves()
-            .filter(|m| ply < depth || !m.is_quiet())
-            .flatten()
-            .collect();
-
-        if ply >= Ply::MAX || moves.is_empty() {
-            return score;
-        }
-
-        for m in moves {
-            let mut next = pos.clone();
-            next.play(m);
-            let score = -alphabeta(&next, -beta..-alpha, depth, ply + 1);
-            alpha = score.max(alpha);
-            if alpha >= beta {
-                break;
-            }
-        }
-
-        alpha
-    }
-
     #[proptest]
     fn hash_is_an_upper_limit_for_table_size(o: Options) {
         let e = Engine::with_options(&o);
@@ -627,22 +558,6 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
         let mut search = Search::new(&e, Control::Unlimited);
         assert_eq!(search.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
-    }
-
-    #[proptest]
-    fn nw_finds_score_bound(
-        #[by_ref] e: Engine,
-        pos: Evaluator,
-        #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
-        d: Depth,
-        #[filter(#p > 0)] p: Ply,
-    ) {
-        let mut search = Search::new(&e, Control::Unlimited);
-
-        assert_eq!(
-            search.nw::<1>(&pos, b, d, p)? < b,
-            alphabeta(&pos, b - 1..b, d, p) < b
-        );
     }
 
     #[proptest]
@@ -735,31 +650,6 @@ mod tests {
         assert_eq!(
             search.ab::<1>(&pos, b, d, p),
             Ok(Pv::empty(Score::mated(p)))
-        );
-    }
-
-    #[proptest]
-    fn search_finds_the_minimax_score(e: Engine, pos: Evaluator, #[filter(#d > 1)] d: Depth) {
-        let time = Duration::MAX..Duration::MAX;
-        let nodes = Counter::new(u64::MAX);
-        let timer = Timer::new(time.end);
-        let trigger = Trigger::armed();
-        let ctrl = Control::Limited(&nodes, &timer, &trigger);
-        let mut search = Search::new(&e, ctrl);
-
-        assert_eq!(
-            e.search(&pos, &Limits::Depth(d), &Trigger::armed()).score(),
-            search.aw::<0>(&pos, d, time).score()
-        );
-    }
-
-    #[proptest]
-    fn search_is_stable(e: Engine, pos: Evaluator, d: Depth) {
-        let limits = Limits::Depth(d);
-
-        assert_eq!(
-            e.search(&pos, &limits, &Trigger::armed()).score(),
-            e.search(&pos, &limits, &Trigger::armed()).score()
         );
     }
 

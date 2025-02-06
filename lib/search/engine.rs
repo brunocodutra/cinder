@@ -15,18 +15,21 @@ pub struct Search<'a> {
     #[deref]
     engine: &'a Engine,
     ctrl: Control<'a>,
+    value: [Value; Ply::MAX as usize + 1],
     killers: [Killers; Ply::MAX as usize + 1],
     continuation: [Option<&'a Reply>; Ply::MAX as usize + 1],
 }
 
 impl<'a> Search<'a> {
     fn new(engine: &'a Engine, ctrl: Control<'a>) -> Self {
+        let value = [Default::default(); Ply::MAX as usize + 1];
         let killers = [Default::default(); Ply::MAX as usize + 1];
         let continuation = [Default::default(); Ply::MAX as usize + 1];
 
         Search {
             engine,
             ctrl,
+            value,
             killers,
             continuation,
         }
@@ -69,6 +72,16 @@ impl<'a> Search<'a> {
         let score = ScoreBound::new(bounds, score, ply);
         let tpos = Transposition::new(score, draft, best);
         self.tt.set(pos.zobrist(), tpos);
+    }
+
+    /// An implementation of the [improving heuristic].
+    ///
+    /// [improving heuristic]: https://www.chessprogramming.org/Improving
+    fn improving(&mut self, ply: Ply) -> i8 {
+        let idx = ply.cast::<usize>();
+
+        (idx >= 2 && self.value[idx] > self.value[idx - 2]) as i8
+            + (idx >= 4 && self.value[idx] > self.value[idx - 4]) as i8
     }
 
     /// An implementation of [mate distance pruning].
@@ -140,7 +153,7 @@ impl<'a> Search<'a> {
     ///
     /// [late move reductions]: https://www.chessprogramming.org/Late_Move_Reductions
     fn lmr(&self, draft: Depth, idx: usize) -> Depth {
-        (draft.get().max(1).ilog2() as i16 * idx.max(1).ilog2() as i16 / 3).saturate()
+        (draft.get().max(1).ilog2() as i16 * idx.max(1).ilog2() as i16 / 2).saturate()
     }
 
     /// The [alpha-beta] search.
@@ -207,9 +220,10 @@ impl<'a> Search<'a> {
             return Ok(Pv::empty(alpha));
         }
 
+        self.value[ply.cast::<usize>()] = pos.evaluate();
         let transposition = self.tt.get(pos.zobrist());
         let transposed = match transposition {
-            None => Pv::empty(pos.evaluate().saturate()),
+            None => Pv::empty(self.value[ply.cast::<usize>()].saturate()),
             Some(t) => t.transpose(ply),
         };
 
@@ -329,6 +343,7 @@ impl<'a> Search<'a> {
             return Ok(head >> tail);
         }
 
+        let improving = self.improving(ply);
         for (idx, &(m, gain)) in moves.iter().rev().enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -346,7 +361,7 @@ impl<'a> Search<'a> {
                 }
             }
 
-            let lmr = self.lmr(draft, idx) - (is_pv as i8);
+            let lmr = self.lmr(draft, idx) - (is_pv as i8) - improving;
             self.continuation[ply.cast::<usize>()] = Some(self.engine.continuation.reply(pos, m));
             let partial = match -self.nw(&next, -alpha, depth - lmr, ply + 1)? {
                 partial if partial <= alpha || (partial >= beta && lmr <= 0) => partial,

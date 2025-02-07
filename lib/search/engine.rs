@@ -77,11 +77,11 @@ impl<'a> Search<'a> {
     /// An implementation of the [improving heuristic].
     ///
     /// [improving heuristic]: https://www.chessprogramming.org/Improving
-    fn improving(&mut self, ply: Ply) -> i8 {
+    fn improving(&mut self, ply: Ply) -> i32 {
         let idx = ply.cast::<usize>();
 
-        (idx >= 2 && self.value[idx] > self.value[idx - 2]) as i8
-            + (idx >= 4 && self.value[idx] > self.value[idx - 4]) as i8
+        (idx >= 2 && self.value[idx] > self.value[idx - 2]) as i32
+            + (idx >= 4 && self.value[idx] > self.value[idx - 4]) as i32
     }
 
     /// An implementation of [mate distance pruning].
@@ -136,17 +136,6 @@ impl<'a> Search<'a> {
             ..0 => None,
             s @ 0..360 => Some(draft - (s + 60) / 140),
             360.. => Some(draft - 3),
-        }
-    }
-
-    /// An implementation of [futility pruning].
-    ///
-    /// [futility pruning]: https://www.chessprogramming.org/Futility_Pruning
-    fn fp(&self, deficit: Score, draft: Depth) -> Option<Depth> {
-        match deficit.get() {
-            ..0 => None,
-            d @ 0..90 => Some(draft - (d + 30) / 40),
-            90.. => Some(draft - 3),
         }
     }
 
@@ -296,18 +285,18 @@ impl<'a> Search<'a> {
                     return (m, Value::new(128));
                 }
 
-                let gain = if m.is_quiet() {
+                let rating = if m.is_quiet() {
                     Value::new(0)
                 } else {
                     pos.gain(m)
                 };
 
                 let counter = self.continuation.get(ply.cast::<usize>().wrapping_sub(1));
-                (m, gain + self.history.get(pos, m) + counter.get(pos, m))
+                (m, rating + self.history.get(pos, m) + counter.get(pos, m))
             })
             .collect();
 
-        moves.sort_unstable_by_key(|(_, gain)| *gain);
+        moves.sort_unstable_by_key(|(_, rating)| *rating);
 
         if let Some(t) = transposition {
             if let Some(d) = self.mcp(t.score().lower(ply) - beta, draft) {
@@ -345,23 +334,20 @@ impl<'a> Search<'a> {
         }
 
         let improving = self.improving(ply);
-        for (idx, &(m, gain)) in moves.iter().rev().enumerate() {
+        for (idx, &(m, _)) in moves.iter().rev().enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
             };
 
+            if idx as i32 > 1 + draft.cast::<i32>().pow(2) * (1 + improving) / 2 {
+                break;
+            }
+
             let mut next = pos.clone();
             next.play(m);
 
             self.tt.prefetch(next.zobrist());
-            if gain < 0 && draft < 4 && !pos.is_check() && !next.is_check() {
-                let deficit = alpha + next.evaluate();
-                if self.fp(deficit, draft).is_some_and(|d| d <= 0) {
-                    break;
-                }
-            }
-
             let lmr = self.lmr(draft, idx) - (is_pv as i8) - improving;
             self.continuation[ply.cast::<usize>()] = Some(self.engine.continuation.reply(pos, m));
             let partial = match -self.nw(&next, -alpha, depth - lmr, ply + 1)? {

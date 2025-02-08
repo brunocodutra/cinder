@@ -1,6 +1,6 @@
 use crate::chess::*;
 use crate::util::{Assume, Integer};
-use derive_more::{Debug, Display, Error};
+use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::io::Write as _;
 use std::str::{self, FromStr};

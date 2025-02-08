@@ -1,6 +1,6 @@
 use crate::chess::{Bitboard, Color, Magic, Perspective, Role, Square};
 use crate::util::Integer;
-use derive_more::{Display, Error};
+use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{cell::SyncUnsafeCell, mem::MaybeUninit, str::FromStr};
 

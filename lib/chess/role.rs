@@ -1,5 +1,5 @@
 use crate::util::Integer;
-use derive_more::{Display, Error};
+use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::str::FromStr;
 

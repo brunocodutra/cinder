@@ -1,5 +1,5 @@
 use crate::util::{Integer, Primitive, Unsigned};
-use derive_more::{Debug, *};
+use derive_more::with_trait::{Debug, *};
 use std::mem::transmute_copy;
 use std::ops::{Bound, Not, RangeBounds};
 

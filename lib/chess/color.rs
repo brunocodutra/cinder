@@ -1,5 +1,5 @@
 use crate::{chess::Perspective, util::Integer};
-use derive_more::Display;
+use derive_more::with_trait::Display;
 use std::ops::Not;
 
 /// The color of a chess [`Piece`][`crate::Piece`].

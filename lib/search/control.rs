@@ -1,5 +1,5 @@
 use crate::util::{Counter, Timer, Trigger};
-use derive_more::{Display, Error};
+use derive_more::with_trait::{Display, Error};
 
 /// Indicates the search was interrupted .
 #[derive(Debug, Display, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Error)]

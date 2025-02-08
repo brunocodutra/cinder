@@ -2,7 +2,7 @@ use crate::chess::{Color, Move, ParsePositionError, Perspective, Piece, Position
 use crate::nnue::{Accumulator, Feature, Material, Nnue, Positional, Value};
 use crate::util::{Assume, Integer};
 use arrayvec::ArrayVec;
-use derive_more::{Debug, Deref, Display};
+use derive_more::with_trait::{Debug, Deref, Display};
 use std::str::FromStr;
 
 #[cfg(test)]

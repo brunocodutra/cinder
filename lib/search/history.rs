@@ -1,6 +1,6 @@
 use crate::chess::{Butterfly, Move, Position};
 use crate::search::{Graviton, Gravity};
-use derive_more::Debug;
+use derive_more::with_trait::Debug;
 
 /// [Historical statistics] about a [`Move`].
 ///

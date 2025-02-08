@@ -1,7 +1,7 @@
 use crate::chess::*;
 use crate::util::{Assume, Integer};
 use arrayvec::{ArrayVec, CapacityError};
-use derive_more::{Debug, Display, Error, From};
+use derive_more::with_trait::{Debug, Display, Error, From};
 use std::fmt::{self, Formatter};
 use std::hash::{Hash, Hasher};
 use std::{num::NonZeroU32, ops::Index, str::FromStr};

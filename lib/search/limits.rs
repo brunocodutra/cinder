@@ -1,5 +1,5 @@
 use crate::{search::Depth, util::Integer};
-use derive_more::From;
+use derive_more::with_trait::From;
 use std::time::Duration;
 
 /// Configuration for search limits.

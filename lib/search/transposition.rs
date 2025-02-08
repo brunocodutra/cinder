@@ -1,7 +1,7 @@
 use crate::chess::{Move, Zobrist};
 use crate::search::{Depth, HashSize, Line, Ply, Pv, Score};
 use crate::util::{Assume, Binary, Bits, Integer};
-use derive_more::Debug;
+use derive_more::with_trait::Debug;
 use std::ops::{Index, Range, RangeInclusive};
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::{hint::unreachable_unchecked, mem::size_of};

@@ -1,6 +1,6 @@
 use crate::search::{Depth, Line, Score};
 use crate::{chess::Move, util::Integer};
-use derive_more::{Constructor, Deref};
+use derive_more::with_trait::{Constructor, Deref};
 use std::cmp::Ordering;
 use std::ops::{Neg, Shr};
 

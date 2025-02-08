@@ -1,6 +1,6 @@
 use crate::chess::{Move, Position};
 use crate::util::Assume;
-use derive_more::Debug;
+use derive_more::with_trait::Debug;
 use std::sync::atomic::{AtomicI8, Ordering::Relaxed};
 
 #[cfg(test)]

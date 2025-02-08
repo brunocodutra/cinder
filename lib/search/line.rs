@@ -1,5 +1,5 @@
 use crate::chess::Move;
-use derive_more::Debug;
+use derive_more::with_trait::Debug;
 use std::fmt::{self, Display, Formatter, Write};
 
 #[cfg(test)]

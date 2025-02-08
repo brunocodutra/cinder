@@ -1,6 +1,6 @@
 use crate::nnue::Feature;
 use crate::util::{AlignTo64, Assume, Integer};
-use derive_more::derive::{Deref, DerefMut};
+use derive_more::with_trait::{Deref, DerefMut};
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 use crate::util::{Integer, Signed};
-use derive_more::{Debug, Display, Error};
+use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter};
 use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::{cmp::Ordering, mem::size_of, num::Saturating as S, str::FromStr};

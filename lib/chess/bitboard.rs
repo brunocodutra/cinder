@@ -1,6 +1,6 @@
 use crate::chess::{File, Perspective, Rank, Square};
 use crate::util::{Assume, Integer};
-use derive_more::{Debug, *};
+use derive_more::with_trait::{Debug, *};
 use std::fmt::{self, Formatter, Write};
 use std::{cell::SyncUnsafeCell, mem::MaybeUninit};
 

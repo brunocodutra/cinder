@@ -1,7 +1,7 @@
 use crate::chess::{Color, Perspective};
 use crate::nnue::{Accumulator, Feature, Nnue};
 use crate::util::AlignTo64;
-use derive_more::Debug;
+use derive_more::with_trait::Debug;
 
 /// An accumulator for the feature transformer.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]

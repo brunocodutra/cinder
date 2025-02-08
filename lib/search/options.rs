@@ -1,5 +1,5 @@
 use crate::util::Integer;
-use derive_more::{Debug, Display, Error, Shl, Shr};
+use derive_more::with_trait::{Debug, Display, Error, Shl, Shr};
 use std::{cmp::Ordering, str::FromStr};
 
 /// The hash size in bytes.

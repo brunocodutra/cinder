@@ -1,5 +1,5 @@
 use crate::chess::Color;
-use derive_more::Display;
+use derive_more::with_trait::Display;
 
 /// One of the possible outcomes of a chess game.
 #[derive(Debug, Display, Copy, Clone, Eq, PartialEq, Hash)]

@@ -1,7 +1,7 @@
 use crate::chess::{Move, Position, Role};
 use crate::search::{Graviton, Gravity};
 use crate::util::Assume;
-use derive_more::Debug;
+use derive_more::with_trait::Debug;
 use std::mem::MaybeUninit;
 
 #[derive(Debug)]

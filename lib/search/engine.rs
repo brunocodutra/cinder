@@ -3,7 +3,7 @@ use crate::nnue::{Evaluator, Value};
 use crate::search::*;
 use crate::util::{Assume, Counter, Integer, Timer, Trigger};
 use arrayvec::ArrayVec;
-use derive_more::Deref;
+use derive_more::with_trait::Deref;
 use std::{mem::swap, ops::Range, thread, time::Duration};
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 use crate::chess::{Bitboard, File, Mirror, ParseFileError, ParseRankError, Perspective, Rank};
 use crate::util::{Assume, Binary, Bits, Integer};
-use derive_more::{Display, Error, From};
+use derive_more::with_trait::{Display, Error, From};
 use std::fmt::{self, Formatter};
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 use std::str::FromStr;

@@ -403,14 +403,14 @@ impl<'a> Search<'a> {
 
                 match partial.score() {
                     score if (-lower..Score::upper()).contains(&-score) => {
+                        draft = depth;
                         upper = lower / 2 + upper / 2;
                         lower = score - delta;
-                        draft = depth;
                     }
 
                     score if (upper..Score::upper()).contains(&score) => {
+                        draft = Depth::new(1).max(draft - 1);
                         upper = score + delta;
-                        draft = draft - 1;
                         pv = partial;
                     }
 
@@ -563,6 +563,20 @@ mod tests {
     }
 
     #[proptest]
+    fn fw_returns_static_evaluation_if_max_ply(
+        e: Engine,
+        #[filter(#pos.outcome().is_none())] pos: Evaluator,
+        d: Depth,
+    ) {
+        let mut search = Search::new(&e, Control::Unlimited);
+
+        assert_eq!(
+            search.fw::<1>(&pos, d, Ply::upper()),
+            Ok(Pv::empty(pos.evaluate().saturate()))
+        );
+    }
+
+    #[proptest]
     fn ab_aborts_if_maximum_number_of_nodes_visited(
         e: Engine,
         pos: Evaluator,
@@ -609,21 +623,6 @@ mod tests {
         let ctrl = Control::Limited(&nodes, &timer, &trigger);
         let mut search = Search::new(&e, ctrl);
         assert_eq!(search.ab::<1>(&pos, b, d, p), Err(Interrupted));
-    }
-
-    #[proptest]
-    fn ab_returns_static_evaluation_if_max_ply(
-        e: Engine,
-        #[filter(#pos.outcome().is_none())] pos: Evaluator,
-        #[filter(!#b.is_empty())] b: Range<Score>,
-        d: Depth,
-    ) {
-        let mut search = Search::new(&e, Control::Unlimited);
-
-        assert_eq!(
-            search.ab::<1>(&pos, b, d, Ply::upper()),
-            Ok(Pv::empty(pos.evaluate().saturate()))
-        );
     }
 
     #[proptest]

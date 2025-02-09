@@ -1,7 +1,7 @@
 use crate::util::{Integer, Signed};
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter};
-use std::ops::{Add, Div, Mul, Neg, Sub};
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::{cmp::Ordering, mem::size_of, num::Saturating as S, str::FromStr};
 
 /// A saturating bounded integer.
@@ -11,17 +11,17 @@ use std::{cmp::Ordering, mem::size_of, num::Saturating as S, str::FromStr};
 #[debug("Saturating({self})")]
 #[debug(bounds(T: Integer<Repr: Signed>, T::Repr: Display))]
 #[repr(transparent)]
-pub struct Saturating<T>(T);
+pub struct Bounded<T>(T);
 
-unsafe impl<T: Integer<Repr: Signed>> Integer for Saturating<T> {
+unsafe impl<T: Integer<Repr: Signed>> Integer for Bounded<T> {
     type Repr = T::Repr;
     const MIN: Self::Repr = T::MIN;
     const MAX: Self::Repr = T::MAX;
 }
 
-impl<T: Integer<Repr: Signed>> Eq for Saturating<T> where Self: PartialEq<Self> {}
+impl<T: Integer<Repr: Signed>> Eq for Bounded<T> where Self: PartialEq<Self> {}
 
-impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> PartialEq<U> for Saturating<T> {
+impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> PartialEq<U> for Bounded<T> {
     #[inline(always)]
     fn eq(&self, other: &U) -> bool {
         if size_of::<T>() > size_of::<U>() {
@@ -32,14 +32,14 @@ impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> PartialEq<U> for Satura
     }
 }
 
-impl<T: Integer<Repr: Signed>> Ord for Saturating<T> {
+impl<T: Integer<Repr: Signed>> Ord for Bounded<T> {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
         self.get().cmp(&other.get())
     }
 }
 
-impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> PartialOrd<U> for Saturating<T> {
+impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> PartialOrd<U> for Bounded<T> {
     #[inline(always)]
     fn partial_cmp(&self, other: &U) -> Option<Ordering> {
         if size_of::<T>() > size_of::<U>() {
@@ -50,7 +50,7 @@ impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> PartialOrd<U> for Satur
     }
 }
 
-impl<T: Integer<Repr: Signed>> Neg for Saturating<T>
+impl<T: Integer<Repr: Signed>> Neg for Bounded<T>
 where
     S<T::Repr>: Neg<Output = S<T::Repr>>,
 {
@@ -62,7 +62,7 @@ where
     }
 }
 
-impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> Add<U> for Saturating<T>
+impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> Add<U> for Bounded<T>
 where
     S<T::Repr>: Add<Output = S<T::Repr>>,
     S<U::Repr>: Add<Output = S<U::Repr>>,
@@ -79,7 +79,17 @@ where
     }
 }
 
-impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> Sub<U> for Saturating<T>
+impl<T: Integer<Repr: Signed>, U> AddAssign<U> for Bounded<T>
+where
+    Self: Add<U, Output = Self>,
+{
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: U) {
+        *self = *self + rhs
+    }
+}
+
+impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> Sub<U> for Bounded<T>
 where
     S<T::Repr>: Sub<Output = S<T::Repr>>,
     S<U::Repr>: Sub<Output = S<U::Repr>>,
@@ -96,7 +106,17 @@ where
     }
 }
 
-impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> Mul<U> for Saturating<T>
+impl<T: Integer<Repr: Signed>, U> SubAssign<U> for Bounded<T>
+where
+    Self: Sub<U, Output = Self>,
+{
+    #[inline(always)]
+    fn sub_assign(&mut self, rhs: U) {
+        *self = *self - rhs
+    }
+}
+
+impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> Mul<U> for Bounded<T>
 where
     S<T::Repr>: Mul<Output = S<T::Repr>>,
     S<U::Repr>: Mul<Output = S<U::Repr>>,
@@ -113,7 +133,17 @@ where
     }
 }
 
-impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> Div<U> for Saturating<T>
+impl<T: Integer<Repr: Signed>, U> MulAssign<U> for Bounded<T>
+where
+    Self: Mul<U, Output = Self>,
+{
+    #[inline(always)]
+    fn mul_assign(&mut self, rhs: U) {
+        *self = *self * rhs
+    }
+}
+
+impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> Div<U> for Bounded<T>
 where
     S<T::Repr>: Div<Output = S<T::Repr>>,
     S<U::Repr>: Div<Output = S<U::Repr>>,
@@ -130,7 +160,17 @@ where
     }
 }
 
-impl<T: Integer<Repr: Signed>> Display for Saturating<T>
+impl<T: Integer<Repr: Signed>, U> DivAssign<U> for Bounded<T>
+where
+    Self: Div<U, Output = Self>,
+{
+    #[inline(always)]
+    fn div_assign(&mut self, rhs: U) {
+        *self = *self / rhs
+    }
+}
+
+impl<T: Integer<Repr: Signed>> Display for Bounded<T>
 where
     T::Repr: Display,
 {
@@ -144,7 +184,7 @@ where
 #[display("failed to parse saturating integer")]
 pub struct ParseSaturatingIntegerError;
 
-impl<T: Integer<Repr: Signed>> FromStr for Saturating<T>
+impl<T: Integer<Repr: Signed>> FromStr for Bounded<T>
 where
     T::Repr: FromStr,
 {
@@ -177,76 +217,108 @@ mod tests {
     }
 
     #[proptest]
-    fn comparison_coerces(a: Saturating<Asymmetric>, b: i8) {
+    fn comparison_coerces(a: Bounded<Asymmetric>, b: i8) {
         assert_eq!(a == b, a.get() == b.into());
         assert_eq!(a <= b, a.get() <= b.into());
     }
 
     #[proptest]
-    fn negation_saturates(s: Saturating<Asymmetric>) {
+    fn negation_saturates(s: Bounded<Asymmetric>) {
         assert_eq!(-s, s.get().saturating_neg().saturate::<Asymmetric>());
     }
 
     #[proptest]
-    fn addition_saturates(a: Saturating<Asymmetric>, b: Saturating<i8>) {
+    fn addition_saturates(a: Bounded<Asymmetric>, b: Bounded<i8>) {
         let r: Asymmetric = i16::saturating_add(a.cast(), b.cast()).saturate();
         assert_eq!(a + b, r);
 
         let r: i8 = i16::saturating_add(b.cast(), a.cast()).saturate();
         assert_eq!(b + a, r);
+
+        let mut c = a;
+        c += b;
+        assert_eq!(c, a + b);
+
+        let mut c = b;
+        c += a;
+        assert_eq!(c, b + a);
     }
 
     #[proptest]
-    fn subtraction_saturates(a: Saturating<Asymmetric>, b: Saturating<i8>) {
+    fn subtraction_saturates(a: Bounded<Asymmetric>, b: Bounded<i8>) {
         let r: Asymmetric = i16::saturating_sub(a.cast(), b.cast()).saturate();
         assert_eq!(a - b, r);
 
         let r: i8 = i16::saturating_sub(b.cast(), a.cast()).saturate();
         assert_eq!(b - a, r);
+
+        let mut c = a;
+        c -= b;
+        assert_eq!(c, a - b);
+
+        let mut c = b;
+        c -= a;
+        assert_eq!(c, b - a);
     }
 
     #[proptest]
-    fn multiplication_saturates(a: Saturating<Asymmetric>, b: Saturating<i8>) {
+    fn multiplication_saturates(a: Bounded<Asymmetric>, b: Bounded<i8>) {
         let r: Asymmetric = i16::saturating_mul(a.cast(), b.cast()).saturate();
         assert_eq!(a * b, r);
 
         let r: i8 = i16::saturating_mul(b.cast(), a.cast()).saturate();
         assert_eq!(b * a, r);
+
+        let mut c = a;
+        c *= b;
+        assert_eq!(c, a * b);
+
+        let mut c = b;
+        c *= a;
+        assert_eq!(c, b * a);
     }
 
     #[proptest]
     fn division_saturates(
-        #[filter(#a != 0)] a: Saturating<Asymmetric>,
-        #[filter(#b != 0)] b: Saturating<i8>,
+        #[filter(#a != 0)] a: Bounded<Asymmetric>,
+        #[filter(#b != 0)] b: Bounded<i8>,
     ) {
         let r: Asymmetric = i16::saturating_div(a.cast(), b.cast()).saturate();
         assert_eq!(a / b, r);
 
         let r: i8 = i16::saturating_div(b.cast(), a.cast()).saturate();
         assert_eq!(b / a, r);
+
+        let mut c = a;
+        c /= b;
+        assert_eq!(c, a / b);
+
+        let mut c = b;
+        c /= a;
+        assert_eq!(c, b / a);
     }
 
     #[proptest]
-    fn parsing_printed_saturating_integer_is_an_identity(a: Saturating<Asymmetric>) {
+    fn parsing_printed_saturating_integer_is_an_identity(a: Bounded<Asymmetric>) {
         assert_eq!(a.to_string().parse(), Ok(a));
     }
 
     #[proptest]
     fn parsing_saturating_integer_fails_for_numbers_too_small(
-        #[strategy(..Saturating::<Asymmetric>::MIN)] n: i16,
+        #[strategy(..Bounded::<Asymmetric>::MIN)] n: i16,
     ) {
         assert_eq!(
-            n.to_string().parse::<Saturating<Asymmetric>>(),
+            n.to_string().parse::<Bounded<Asymmetric>>(),
             Err(ParseSaturatingIntegerError)
         );
     }
 
     #[proptest]
     fn parsing_saturating_integer_fails_for_numbers_too_large(
-        #[strategy(Saturating::<Asymmetric>::MAX + 1..)] n: i16,
+        #[strategy(Bounded::<Asymmetric>::MAX + 1..)] n: i16,
     ) {
         assert_eq!(
-            n.to_string().parse::<Saturating<Asymmetric>>(),
+            n.to_string().parse::<Bounded<Asymmetric>>(),
             Err(ParseSaturatingIntegerError)
         );
     }
@@ -256,7 +328,7 @@ mod tests {
         #[filter(#s.parse::<i16>().is_err())] s: String,
     ) {
         assert_eq!(
-            s.to_string().parse::<Saturating<Asymmetric>>(),
+            s.to_string().parse::<Bounded<Asymmetric>>(),
             Err(ParseSaturatingIntegerError)
         );
     }

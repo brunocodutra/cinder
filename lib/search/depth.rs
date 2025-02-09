@@ -1,4 +1,4 @@
-use crate::util::{Assume, Binary, Bits, Integer, Saturating};
+use crate::util::{Assume, Binary, Bits, Bounded, Integer};
 
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
@@ -18,7 +18,7 @@ unsafe impl Integer for DepthRepr {
 }
 
 /// The search depth.
-pub type Depth = Saturating<DepthRepr>;
+pub type Depth = Bounded<DepthRepr>;
 
 impl Binary for Depth {
     type Bits = Bits<u8, 6>;

@@ -1,4 +1,4 @@
-use crate::util::{Integer, Saturating};
+use crate::util::{Bounded, Integer};
 
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
@@ -12,4 +12,4 @@ unsafe impl Integer for PlyRepr {
 }
 
 /// The number of half-moves played.
-pub type Ply = Saturating<PlyRepr>;
+pub type Ply = Bounded<PlyRepr>;

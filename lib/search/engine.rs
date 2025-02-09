@@ -4,7 +4,7 @@ use crate::search::*;
 use crate::util::{Assume, Counter, Integer, Timer, Trigger};
 use arrayvec::ArrayVec;
 use derive_more::with_trait::Deref;
-use std::{mem::swap, ops::Range, thread, time::Duration};
+use std::{mem::swap, num::Saturating, ops::Range, thread, time::Duration};
 
 #[cfg(test)]
 use proptest::strategy::LazyJust;
@@ -218,9 +218,9 @@ impl<'a> Search<'a> {
         };
 
         if !is_root && transposition.is_some() && pos.is_check() {
-            depth = depth + 1;
+            depth += 1;
         } else if !is_root && transposition.is_none() && !pos.is_check() {
-            depth = depth - 2;
+            depth -= 2;
         }
 
         let draft = depth - ply;
@@ -301,7 +301,7 @@ impl<'a> Search<'a> {
         if let Some(t) = transposition {
             if let Some(d) = self.mcp(t.score().lower(ply) - beta, draft) {
                 if !is_root && t.draft() >= d {
-                    depth = depth + 1;
+                    depth += 1;
                     for (m, _) in moves.iter().rev().skip(1) {
                         let mut next = pos.clone();
                         next.play(*m);
@@ -382,9 +382,10 @@ impl<'a> Search<'a> {
 
         let mut depth = Depth::new(1);
         'id: while depth < limit {
-            depth = depth + 1;
+            depth += 1;
+
             let mut draft = depth;
-            let mut delta = 5i16;
+            let mut delta = Saturating(5i16);
 
             let (mut lower, mut upper) = match depth.get() {
                 ..=4 => (Score::lower(), Score::upper()),
@@ -392,7 +393,6 @@ impl<'a> Search<'a> {
             };
 
             'aw: loop {
-                delta = delta.saturating_mul(2);
                 if self.ctrl.timer().remaining() < Some(time.end - time.start) {
                     break 'id;
                 }
@@ -401,6 +401,7 @@ impl<'a> Search<'a> {
                     break 'id;
                 };
 
+                delta *= 2;
                 match partial.score() {
                     score if (-lower..Score::upper()).contains(&-score) => {
                         draft = depth;

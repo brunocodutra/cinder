@@ -1,5 +1,5 @@
 use crate::chess::Perspective;
-use crate::util::{Integer, Saturating};
+use crate::util::{Bounded, Integer};
 
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
@@ -13,7 +13,7 @@ unsafe impl Integer for ValueRepr {
 }
 
 /// A position's static evaluation.
-pub type Value = Saturating<ValueRepr>;
+pub type Value = Bounded<ValueRepr>;
 
 impl Perspective for Value {
     #[inline(always)]

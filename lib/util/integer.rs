@@ -1,6 +1,5 @@
 use crate::util::Assume;
-use std::num::{NonZeroU128, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize};
-use std::{hint::unreachable_unchecked, mem::transmute_copy, ops::*};
+use std::{hint::unreachable_unchecked, mem::transmute_copy, num::*, ops::*};
 
 /// Trait for types that can be represented by a contiguous range of primitive integers.
 ///
@@ -123,12 +122,18 @@ pub trait Signed: Primitive {}
 /// Marker trait for unsigned primitive integers.
 pub trait Unsigned: Primitive {}
 
+unsafe impl<I: Primitive> Integer for Saturating<I> {
+    type Repr = I;
+    const MIN: Self::Repr = I::MIN;
+    const MAX: Self::Repr = I::MAX;
+}
+
 macro_rules! impl_integer_for_non_zero {
     ($nz: ty, $repr: ty) => {
         unsafe impl Integer for $nz {
             type Repr = $repr;
-            const MIN: Self::Repr = <$nz>::MIN.get();
-            const MAX: Self::Repr = <$nz>::MAX.get();
+            const MIN: Self::Repr = Self::MIN.get();
+            const MAX: Self::Repr = Self::MAX.get();
         }
     };
 }

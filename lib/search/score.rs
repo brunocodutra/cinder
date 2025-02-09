@@ -1,5 +1,5 @@
 use crate::nnue::Value;
-use crate::util::{Binary, Bits, Integer, Saturating};
+use crate::util::{Binary, Bits, Bounded, Integer};
 use crate::{chess::Perspective, search::Ply, util::Assume};
 
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -14,7 +14,7 @@ unsafe impl Integer for ScoreRepr {
 }
 
 /// The minimax score.
-pub type Score = Saturating<ScoreRepr>;
+pub type Score = Bounded<ScoreRepr>;
 
 impl Score {
     const _CONDITION: () = const {

@@ -14,19 +14,25 @@ impl Default for Reply {
     }
 }
 
+impl Reply {
+    #[inline(always)]
+    fn graviton(&self, pos: &Position, m: Move) -> &Graviton {
+        let piece = pos[m.whence()].assume().role() as usize;
+        &self.0[piece][m.whither() as usize]
+    }
+}
+
 impl Gravity for Reply {
     type Bonus = <Graviton as Gravity>::Bonus;
 
     #[inline(always)]
     fn get(&self, pos: &Position, m: Move) -> Self::Bonus {
-        let piece = pos[m.whence()].assume().role() as usize;
-        self.0[piece][m.whither() as usize].get(pos, m)
+        self.graviton(pos, m).get(pos, m)
     }
 
     #[inline(always)]
     fn update(&self, pos: &Position, m: Move, bonus: Self::Bonus) {
-        let piece = pos[m.whence()].assume().role() as usize;
-        self.0[piece][m.whither() as usize].update(pos, m, bonus);
+        self.graviton(pos, m).update(pos, m, bonus);
     }
 }
 

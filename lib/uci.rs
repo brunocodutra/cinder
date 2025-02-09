@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use std::{fmt::Debug, io::Write, mem::transmute, str, thread};
 
 #[cfg(test)]
-use proptest::prelude::*;
+use proptest::{prelude::*, strategy::LazyJust};
 
 /// Runs the provided closure on a thread where blocking is acceptable.
 ///
@@ -50,8 +50,9 @@ impl PartialEq<str> for UciMove {
 pub struct Uci<I, O> {
     #[cfg_attr(test, strategy(Just(args.clone())))]
     input: I,
-    #[cfg_attr(test, strategy(Just(O::default())))]
+    #[cfg_attr(test, strategy(LazyJust::new(O::default)))]
     output: O,
+    #[cfg_attr(test, strategy(LazyJust::new(move || Engine::with_options(&#options))))]
     engine: Engine,
     options: Options,
     position: Evaluator,

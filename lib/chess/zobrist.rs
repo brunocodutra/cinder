@@ -1,5 +1,5 @@
 use crate::chess::*;
-use crate::util::{Assume, Bits, Integer};
+use crate::util::{Bits, Integer};
 use rand::prelude::*;
 use rand_pcg::Pcg64;
 use std::{cell::SyncUnsafeCell, mem::MaybeUninit};
@@ -41,7 +41,7 @@ impl ZobristNumbers {
     #[inline(always)]
     pub fn castling(castles: Castles) -> Zobrist {
         let castling = unsafe { &ZOBRIST.get().as_ref_unchecked().castles };
-        Zobrist::new(*castling.get(castles.index() as usize).assume())
+        Zobrist::new(castling[castles.index() as usize])
     }
 
     #[inline(always)]

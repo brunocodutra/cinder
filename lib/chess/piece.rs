@@ -1,8 +1,8 @@
-use crate::chess::{Bitboard, Color, Magic, Perspective, Role, Square};
+use crate::chess::{Bitboard, Color, Magic, Perspective, Rank, Role, Square};
 use crate::util::Integer;
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
-use std::{cell::SyncUnsafeCell, mem::MaybeUninit, str::FromStr};
+use std::{cell::SyncUnsafeCell, mem::MaybeUninit, ops::Shl, str::FromStr};
 
 /// A chess [piece][`Role`] of a certain [`Color`].
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -25,7 +25,74 @@ pub enum Piece {
 
 impl Piece {
     #[inline(always)]
-    fn bitboard(idx: usize) -> Bitboard {
+    fn forks(wc: Square, color: Color) -> Bitboard {
+        static FORKS: SyncUnsafeCell<[[Bitboard; 64]; 2]> =
+            unsafe { MaybeUninit::zeroed().assume_init() };
+
+        #[cold]
+        #[ctor::ctor]
+        #[inline(never)]
+        unsafe fn init() {
+            let forks = FORKS.get().as_mut_unchecked();
+
+            for color in Color::iter() {
+                for wc in Square::iter() {
+                    let steps = [(-1, 1), (1, 1)];
+                    let moves = Bitboard::fill(wc.perspective(color), &steps, Bitboard::full());
+                    forks[color as usize][wc as usize] = moves.perspective(color).without(wc);
+                }
+            }
+        }
+
+        unsafe { FORKS.get().as_ref_unchecked()[color as usize][wc as usize] }
+    }
+
+    #[inline(always)]
+    fn jumps(wc: Square) -> Bitboard {
+        static JUMPS: SyncUnsafeCell<[Bitboard; 64]> =
+            unsafe { MaybeUninit::zeroed().assume_init() };
+
+        #[cold]
+        #[ctor::ctor]
+        #[inline(never)]
+        unsafe fn init() {
+            let jumps = JUMPS.get().as_mut_unchecked();
+
+            for wc in Square::iter() {
+                #[rustfmt::skip]
+                let steps = [(-2, 1), (-1, 2), (1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1)];
+                let moves = Bitboard::fill(wc, &steps, Bitboard::full()).without(wc);
+                jumps[wc as usize] = moves;
+            }
+        }
+
+        unsafe { JUMPS.get().as_ref_unchecked()[wc as usize] }
+    }
+
+    #[inline(always)]
+    fn steps(wc: Square) -> Bitboard {
+        static SLIDES: SyncUnsafeCell<[Bitboard; 64]> =
+            unsafe { MaybeUninit::zeroed().assume_init() };
+
+        #[cold]
+        #[ctor::ctor]
+        #[inline(never)]
+        unsafe fn init() {
+            let slides = SLIDES.get().as_mut_unchecked();
+
+            for wc in Square::iter() {
+                #[rustfmt::skip]
+                let steps = [(-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1)];
+                let moves = Bitboard::fill(wc, &steps, Bitboard::full()).without(wc);
+                slides[wc as usize] = moves;
+            }
+        }
+
+        unsafe { SLIDES.get().as_ref_unchecked()[wc as usize] }
+    }
+
+    #[inline(always)]
+    fn slides(idx: usize) -> Bitboard {
         static BITBOARDS: SyncUnsafeCell<[Bitboard; 88772]> =
             unsafe { MaybeUninit::zeroed().assume_init() };
 
@@ -35,57 +102,26 @@ impl Piece {
         unsafe fn init() {
             let bitboard = BITBOARDS.get().as_mut_unchecked();
 
-            for whence in Square::iter() {
-                let (pushes, attacks) = Magic::pawn(whence);
-                for bb in pushes.mask().subsets() {
-                    let blks = bb | !pushes.mask();
-                    let moves = Bitboard::fill(whence, &[(0, 1)], blks).without(whence) & !blks;
-                    let idx = (bb.wrapping_mul(pushes.factor()) >> 62) as usize + pushes.offset();
-                    debug_assert!(bitboard[idx] == moves || bitboard[idx] == Bitboard::empty());
-                    bitboard[idx] = moves;
-                }
-
-                let steps = [(-1, 1), (1, 1)];
-                let idx = attacks.offset();
-                let moves = Bitboard::fill(whence, &steps, Bitboard::full()).without(whence);
-                debug_assert!(bitboard[idx] == moves || bitboard[idx] == Bitboard::empty());
-                bitboard[idx] = moves;
-
-                let magic = Magic::knight(whence);
-                #[rustfmt::skip]
-                let steps = [(-2, 1), (-1, 2), (1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1)];
-                let moves = Bitboard::fill(whence, &steps, Bitboard::full()).without(whence);
-                let idx = magic.offset();
-                debug_assert!(bitboard[idx] == moves || bitboard[idx] == Bitboard::empty());
-                bitboard[idx] = moves;
-
-                let magic = Magic::bishop(whence);
+            for wc in Square::iter() {
+                let magic = Magic::bishop(wc);
                 for bb in magic.mask().subsets() {
-                    let blks = bb | !magic.mask();
+                    let blockers = bb | !magic.mask();
                     let steps = [(-1, 1), (1, 1), (1, -1), (-1, -1)];
-                    let moves = Bitboard::fill(whence, &steps, blks).without(whence);
+                    let moves = Bitboard::fill(wc, &steps, blockers).without(wc);
                     let idx = (bb.wrapping_mul(magic.factor()) >> 55) as usize + magic.offset();
                     debug_assert!(bitboard[idx] == moves || bitboard[idx] == Bitboard::empty());
                     bitboard[idx] = moves;
                 }
 
-                let magic = Magic::rook(whence);
+                let magic = Magic::rook(wc);
                 for bb in magic.mask().subsets() {
-                    let blks = bb | !magic.mask();
+                    let blockers = bb | !magic.mask();
                     let steps = [(-1, 0), (0, 1), (1, 0), (0, -1)];
-                    let moves = Bitboard::fill(whence, &steps, blks).without(whence);
+                    let moves = Bitboard::fill(wc, &steps, blockers).without(wc);
                     let idx = (bb.wrapping_mul(magic.factor()) >> 52) as usize + magic.offset();
                     debug_assert!(bitboard[idx] == moves || bitboard[idx] == Bitboard::empty());
                     bitboard[idx] = moves;
                 }
-
-                let magic = Magic::king(whence);
-                #[rustfmt::skip]
-                let steps = [(-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1)];
-                let moves = Bitboard::fill(whence, &steps, Bitboard::full()).without(whence);
-                let idx = magic.offset();
-                debug_assert!(bitboard[idx] == moves || bitboard[idx] == Bitboard::empty());
-                bitboard[idx] = moves;
             }
         }
 
@@ -110,65 +146,52 @@ impl Piece {
         Color::new(self.get() & 0b1)
     }
 
-    /// This piece's possible target squares from a given square.
-    #[inline(always)]
-    pub fn targets(&self, whence: Square) -> Bitboard {
-        self.attacks(whence, Bitboard::empty())
-    }
-
     /// This piece's possible attacks from a given square.
     #[inline(always)]
-    pub fn attacks(&self, whence: Square, blockers: Bitboard) -> Bitboard {
+    pub fn attacks(&self, wc: Square, occupied: Bitboard) -> Bitboard {
         match self.role() {
-            Role::Pawn => {
-                let color = self.color();
-                let (_, magic) = Magic::pawn(whence.perspective(color));
-                Self::bitboard(magic.offset()).perspective(color)
-            }
-
-            Role::Knight => Self::bitboard(Magic::knight(whence).offset()),
+            Role::Pawn => Self::forks(wc, self.color()),
+            Role::Knight => Self::jumps(wc),
+            Role::King => Self::steps(wc),
 
             Role::Bishop => {
-                let magic = Magic::bishop(whence);
-                let blks = blockers & magic.mask();
-                let idx = (blks.wrapping_mul(magic.factor()) >> 55) as usize + magic.offset();
-                Self::bitboard(idx)
+                let magic = Magic::bishop(wc);
+                let blockers = occupied & magic.mask();
+                let idx = (blockers.wrapping_mul(magic.factor()) >> 55) as usize + magic.offset();
+                Self::slides(idx)
             }
 
             Role::Rook => {
-                let magic = Magic::rook(whence);
-                let blks = blockers & magic.mask();
-                let idx = (blks.wrapping_mul(magic.factor()) >> 52) as usize + magic.offset();
-                Self::bitboard(idx)
+                let magic = Magic::rook(wc);
+                let blockers = occupied & magic.mask();
+                let idx = (blockers.wrapping_mul(magic.factor()) >> 52) as usize + magic.offset();
+                Self::slides(idx)
             }
 
             Role::Queen => {
-                let magic = Magic::bishop(whence);
-                let blks = blockers & magic.mask();
-                let bishop = (blks.wrapping_mul(magic.factor()) >> 55) as usize + magic.offset();
-                let magic = Magic::rook(whence);
-                let blks = blockers & magic.mask();
-                let rook = (blks.wrapping_mul(magic.factor()) >> 52) as usize + magic.offset();
-                Self::bitboard(bishop) | Self::bitboard(rook)
+                let magic = Magic::bishop(wc);
+                let blockers = occupied & magic.mask();
+                let idb = (blockers.wrapping_mul(magic.factor()) >> 55) as usize + magic.offset();
+                let magic = Magic::rook(wc);
+                let blockers = occupied & magic.mask();
+                let idr = (blockers.wrapping_mul(magic.factor()) >> 52) as usize + magic.offset();
+                Self::slides(idb) | Self::slides(idr)
             }
-
-            Role::King => Self::bitboard(Magic::king(whence).offset()),
         }
     }
 
     /// This piece's possible moves from a given square.
     #[inline(always)]
-    pub fn moves(&self, whence: Square, ours: Bitboard, theirs: Bitboard) -> Bitboard {
-        let blockers = ours | theirs;
-
+    pub fn moves(&self, wc: Square, ours: Bitboard, theirs: Bitboard) -> Bitboard {
+        let occupied = ours | theirs;
         if self.role() != Role::Pawn {
-            self.attacks(whence, blockers) & !ours
+            self.attacks(wc, occupied) & !ours
         } else {
+            let empty = !occupied;
             let color = self.color();
-            let (magic, _) = Magic::pawn(whence.perspective(color));
-            let blks = blockers.perspective(color) & magic.mask();
-            let idx = (blks.wrapping_mul(magic.factor()) >> 62) as usize + magic.offset();
-            Self::bitboard(idx).perspective(color)
+            let third = Rank::Third.bitboard();
+            let push = wc.bitboard().perspective(color).shl(8).perspective(color) & empty;
+            push | ((push.perspective(color) & third).shl(8).perspective(color) & empty)
         }
     }
 }

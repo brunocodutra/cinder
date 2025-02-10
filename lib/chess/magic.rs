@@ -19,86 +19,9 @@ impl Magic {
         self.2
     }
 
-    pub fn pawn(sq: Square) -> (Self, Self) {
-        const MAGICS: [Magic; 64] = [
-            Magic(Bitboard::new(0x0000000000000000), 0x0000000000000000, 58197),
-            Magic(Bitboard::new(0x0000000000000000), 0x0000000000000000, 58197),
-            Magic(Bitboard::new(0x0000000000000000), 0x0000000000000000, 58197),
-            Magic(Bitboard::new(0x0000000000000000), 0x0000000000000000, 58197),
-            Magic(Bitboard::new(0x0000000000000000), 0x0000000000000000, 58197),
-            Magic(Bitboard::new(0x0000000000000000), 0x0000000000000000, 58197),
-            Magic(Bitboard::new(0x0000000000000000), 0x0000000000000000, 58197),
-            Magic(Bitboard::new(0x0000000000000000), 0x0000000000000000, 58197),
-            Magic(Bitboard::new(0x0000000001010000), 0xE66C88F576A306A1, 58198),
-            Magic(Bitboard::new(0x0000000002020000), 0x14D44631850DBDF2, 58202),
-            Magic(Bitboard::new(0x0000000004040000), 0x807468F1C6ED274E, 58206),
-            Magic(Bitboard::new(0x0000000008080000), 0x71F02F3AEA4CDE42, 58210),
-            Magic(Bitboard::new(0x0000000010100000), 0x4D2AEAFE804FEDFE, 58212),
-            Magic(Bitboard::new(0x0000000020200000), 0xF1386CAB4C394FC7, 58216),
-            Magic(Bitboard::new(0x0000000040400000), 0x4ECE1736523B6D14, 58220),
-            Magic(Bitboard::new(0x0000000080800000), 0x8459495DD0812145, 58224),
-            Magic(Bitboard::new(0x0000000001000000), 0x2C1FE450096829DF, 58225),
-            Magic(Bitboard::new(0x0000000002000000), 0x7AF3F7ECB5B9CF07, 58228),
-            Magic(Bitboard::new(0x0000000004000000), 0xFE6C232101A805CF, 58229),
-            Magic(Bitboard::new(0x0000000008000000), 0xACBDBFB883E97E90, 58230),
-            Magic(Bitboard::new(0x0000000010000000), 0xEC221BA411838C7F, 58232),
-            Magic(Bitboard::new(0x0000000020000000), 0x17878916D2EE43B1, 58234),
-            Magic(Bitboard::new(0x0000000040000000), 0x0DC2610768C92383, 58235),
-            Magic(Bitboard::new(0x0000000080000000), 0xF8498D61D936346A, 58236),
-            Magic(Bitboard::new(0x0000000100000000), 0x829EE323D5BB9DE2, 58240),
-            Magic(Bitboard::new(0x0000000200000000), 0xA22216C94F29FA5A, 58241),
-            Magic(Bitboard::new(0x0000000400000000), 0x852F6441A328026F, 58242),
-            Magic(Bitboard::new(0x0000000800000000), 0x335F5298F1147301, 58245),
-            Magic(Bitboard::new(0x0000001000000000), 0x7027BAEE761ABE01, 58246),
-            Magic(Bitboard::new(0x0000002000000000), 0x1A1F71E374B95935, 58248),
-            Magic(Bitboard::new(0x0000004000000000), 0x195A7D4B0560EB1D, 58249),
-            Magic(Bitboard::new(0x0000008000000000), 0xBD42DBCC18CB0DF9, 58251),
-            Magic(Bitboard::new(0x0000010000000000), 0x11B919AA4095F13C, 58253),
-            Magic(Bitboard::new(0x0000020000000000), 0x70ACD4D7B8CE2779, 58254),
-            Magic(Bitboard::new(0x0000040000000000), 0x6739F848919D4DC6, 58257),
-            Magic(Bitboard::new(0x0000080000000000), 0x55AD78B458BC5261, 58259),
-            Magic(Bitboard::new(0x0000100000000000), 0x8771AE1E3D2635E4, 58260),
-            Magic(Bitboard::new(0x0000200000000000), 0x2D02C3440EEE8D7A, 58263),
-            Magic(Bitboard::new(0x0000400000000000), 0xF20845B2D47D2A14, 58264),
-            Magic(Bitboard::new(0x0000800000000000), 0xA48F055D64E56564, 58267),
-            Magic(Bitboard::new(0x0001000000000000), 0xC7B62D9D3678E3CC, 58268),
-            Magic(Bitboard::new(0x0002000000000000), 0x4DF2D3531A3B5D7E, 58270),
-            Magic(Bitboard::new(0x0004000000000000), 0x24235A47CAC37DF4, 58273),
-            Magic(Bitboard::new(0x0008000000000000), 0x18A8CE9311999E47, 58274),
-            Magic(Bitboard::new(0x0010000000000000), 0xC82BB6ADC7F5CB78, 58275),
-            Magic(Bitboard::new(0x0020000000000000), 0xD211910ABF0092EE, 58278),
-            Magic(Bitboard::new(0x0040000000000000), 0x1BADBB83C6F471F1, 58280),
-            Magic(Bitboard::new(0x0080000000000000), 0x0FC3ED80C67A64F4, 58287),
-            Magic(Bitboard::new(0x0100000000000000), 0x79B2B35D4CBE3CA4, 58293),
-            Magic(Bitboard::new(0x0200000000000000), 0xE0237DD0FF149239, 58294),
-            Magic(Bitboard::new(0x0400000000000000), 0x1B197827A73D9A2E, 58296),
-            Magic(Bitboard::new(0x0800000000000000), 0xE6DFF85EAD18636E, 58297),
-            Magic(Bitboard::new(0x1000000000000000), 0xE25ED9E2CEEF00A5, 58299),
-            Magic(Bitboard::new(0x2000000000000000), 0x12643535EE1C4467, 58301),
-            Magic(Bitboard::new(0x4000000000000000), 0x4BFEB137D0593515, 58302),
-            Magic(Bitboard::new(0x8000000000000000), 0xCE068F9328ABDCAB, 58305),
-            Magic(Bitboard::new(0x0000000000000000), 0x15F0FDA19CFE8158, 58306),
-            Magic(Bitboard::new(0x0000000000000000), 0x0000000000000000, 58197),
-            Magic(Bitboard::new(0x0000000000000000), 0x0000000000000000, 58197),
-            Magic(Bitboard::new(0x0000000000000000), 0x0000000000000000, 58197),
-            Magic(Bitboard::new(0x0000000000000000), 0x0000000000000000, 58197),
-            Magic(Bitboard::new(0x0000000000000000), 0x0000000000000000, 58197),
-            Magic(Bitboard::new(0x0000000000000000), 0x0000000000000000, 58197),
-            Magic(Bitboard::new(0x0000000000000000), 0x0000000000000000, 58197),
-        ];
-
-        (
-            MAGICS[sq as usize],
-            Magic(Bitboard::empty(), 0, 58308 + sq as usize),
-        )
-    }
-
-    pub fn knight(sq: Square) -> Self {
-        Magic(Bitboard::empty(), 0, 58389 + sq as usize)
-    }
-
     /// Bishop fixed shift magics by Volker Annuss,
     /// see http://www.talkchess.com/forum/viewtopic.php?p=727500&t=64790.
+    #[inline(always)]
     pub fn bishop(sq: Square) -> Self {
         const MAGICS: [Magic; 64] = [
             Magic(Bitboard::new(0x0040201008040200), 0x007FBFBFBFBFBFFF, 5378),
@@ -172,6 +95,7 @@ impl Magic {
 
     /// Rook fixed shift magics by Volker Annuss,
     /// see http://www.talkchess.com/forum/viewtopic.php?p=727500&t=64790.
+    #[inline(always)]
     pub fn rook(sq: Square) -> Self {
         const MAGICS: [Magic; 64] = [
             Magic(Bitboard::new(0x000101010101017E), 0x00280077FFEBFFFE, 26304),
@@ -241,9 +165,5 @@ impl Magic {
         ];
 
         MAGICS[sq as usize]
-    }
-
-    pub fn king(sq: Square) -> Self {
-        Magic(Bitboard::empty(), 0, 58485 + sq as usize)
     }
 }

@@ -26,6 +26,10 @@ pub type Butterfly<T> = [[T; 64]; 64];
     BitXor,
     BitXorAssign,
     Not,
+    Shl,
+    ShlAssign,
+    Shr,
+    ShrAssign,
 )]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]

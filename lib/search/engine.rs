@@ -229,7 +229,6 @@ impl<'a> Search<'a> {
         if let Some(t) = transposition {
             let (lower, upper) = t.score().range(ply).into_inner();
 
-            #[allow(clippy::collapsible_if)]
             if lower >= upper || upper <= alpha || lower >= beta {
                 if !is_pv && t.draft() >= draft {
                     return Ok(transposed.truncate());

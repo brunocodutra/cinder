@@ -42,7 +42,7 @@ impl Evasions {
         let turn = pos.turn();
         let ours = pos.material(turn);
         let theirs = pos.material(!turn);
-        let occupied = pos.occupied();
+        let occupied = ours | theirs;
         let king = pos.king(turn);
 
         let checks = pos.checkers().iter().fold(Bitboard::empty(), |bb, sq| {
@@ -54,40 +54,57 @@ impl Evasions {
             _ => king.bitboard(),
         };
 
-        use Role::*;
-        for wc in candidates & pos.board.by_role(Pawn) {
-            let piece = Piece::new(Pawn, turn);
-            let moves = piece.moves(wc, ours, theirs) & checks;
-            if !moves.is_empty() {
-                buffer.try_push(MoveSet::regular(piece, wc, moves))?;
-            }
-
+        for wc in candidates & pos.board.by_role(Role::Pawn) {
+            let piece = Piece::new(Role::Pawn, turn);
             let ep = pos.en_passant().map_or(Bitboard::empty(), Square::bitboard);
-            let mut moves = piece.attacks(wc, occupied) & (pos.checkers() | ep);
+            let mut moves = piece.moves(wc, ours, theirs) & checks;
+            moves |= piece.attacks(wc, occupied) & (pos.checkers() | ep);
 
             for wt in moves & ep {
                 let target = Square::new(wt.file(), wc.rank());
-                let blockers = occupied.without(target).without(wc).with(wt);
+                let blockers = occupied.without(target).without(wc);
                 if pos.is_threatened(king, !turn, blockers) {
                     moves ^= ep;
                 }
             }
 
-            if !moves.is_empty() {
-                buffer.try_push(MoveSet::capture(piece, wc, moves))?;
-            }
+            collect_moves(piece, wc, moves, theirs | ep, buffer)?;
         }
 
-        for role in [Knight, Bishop, Rook, Queen] {
-            let piece = Piece::new(role, turn);
-            for wc in candidates & pos.board.by_role(role) {
+        {
+            let piece = Piece::new(Role::Knight, turn);
+            for wc in candidates & pos.board.by_role(Role::Knight) {
                 let moves = piece.moves(wc, ours, theirs) & (checks | pos.checkers());
                 collect_moves(piece, wc, moves, theirs, buffer)?;
             }
         }
 
         {
-            let piece = Piece::new(King, turn);
+            let piece = Piece::new(Role::Bishop, turn);
+            for wc in candidates & pos.board.by_role(Role::Bishop) {
+                let moves = piece.moves(wc, ours, theirs) & (checks | pos.checkers());
+                collect_moves(piece, wc, moves, theirs, buffer)?;
+            }
+        }
+
+        {
+            let piece = Piece::new(Role::Rook, turn);
+            for wc in candidates & pos.board.by_role(Role::Rook) {
+                let moves = piece.moves(wc, ours, theirs) & (checks | pos.checkers());
+                collect_moves(piece, wc, moves, theirs, buffer)?;
+            }
+        }
+
+        {
+            let piece = Piece::new(Role::Queen, turn);
+            for wc in candidates & pos.board.by_role(Role::Queen) {
+                let moves = piece.moves(wc, ours, theirs) & (checks | pos.checkers());
+                collect_moves(piece, wc, moves, theirs, buffer)?;
+            }
+        }
+
+        {
+            let piece = Piece::new(Role::King, turn);
             let mut moves = piece.moves(king, ours, theirs) & !checks;
             for wt in moves {
                 if pos.is_threatened(wt, !turn, occupied.without(king)) {
@@ -113,25 +130,16 @@ impl Moves {
         let turn = pos.turn();
         let ours = pos.material(turn);
         let theirs = pos.material(!turn);
-        let occupied = pos.occupied();
+        let occupied = ours | theirs;
         let king = pos.king(turn);
 
-        use Role::*;
-        for wc in ours & pos.board.by_role(Pawn) {
-            let piece = Piece::new(Pawn, turn);
-            let mut moves = piece.moves(wc, ours, theirs);
-            if pos.pinned().contains(wc) {
-                moves &= Bitboard::line(wc, king);
-            }
-
-            if !moves.is_empty() {
-                buffer.try_push(MoveSet::regular(piece, wc, moves))?;
-            }
-
+        for wc in ours & pos.board.by_role(Role::Pawn) {
+            let piece = Piece::new(Role::Pawn, turn);
             let ep = pos.en_passant().map_or(Bitboard::empty(), Square::bitboard);
-            let mut moves = piece.attacks(wc, occupied) & (theirs | ep);
+            let mut moves = piece.moves(wc, ours, theirs);
+            moves |= piece.attacks(wc, occupied) & (theirs | ep);
             if pos.pinned().contains(wc) {
-                moves &= Bitboard::line(wc, king);
+                moves &= Bitboard::line(king, wc);
             }
 
             for wt in moves & ep {
@@ -142,17 +150,23 @@ impl Moves {
                 }
             }
 
-            if !moves.is_empty() {
-                buffer.try_push(MoveSet::capture(piece, wc, moves))?;
+            collect_moves(piece, wc, moves, theirs | ep, buffer)?;
+        }
+
+        {
+            let piece = Piece::new(Role::Knight, turn);
+            for wc in ours & pos.board.by_role(Role::Knight) & !pos.pinned() {
+                let moves = piece.moves(wc, ours, theirs);
+                collect_moves(piece, wc, moves, theirs, buffer)?;
             }
         }
 
         {
-            let piece = Piece::new(Knight, turn);
-            for wc in ours & pos.board.by_role(Knight) {
+            let piece = Piece::new(Role::Bishop, turn);
+            for wc in ours & pos.board.by_role(Role::Bishop) {
                 let mut moves = piece.moves(wc, ours, theirs);
                 if pos.pinned().contains(wc) {
-                    moves &= Bitboard::line(wc, king);
+                    moves &= Bitboard::line(king, wc);
                 }
 
                 collect_moves(piece, wc, moves, theirs, buffer)?;
@@ -160,11 +174,11 @@ impl Moves {
         }
 
         {
-            let piece = Piece::new(Bishop, turn);
-            for wc in ours & pos.board.by_role(Bishop) {
+            let piece = Piece::new(Role::Rook, turn);
+            for wc in ours & pos.board.by_role(Role::Rook) {
                 let mut moves = piece.moves(wc, ours, theirs);
                 if pos.pinned().contains(wc) {
-                    moves &= Bitboard::line(wc, king);
+                    moves &= Bitboard::line(king, wc);
                 }
 
                 collect_moves(piece, wc, moves, theirs, buffer)?;
@@ -172,11 +186,11 @@ impl Moves {
         }
 
         {
-            let piece = Piece::new(Rook, turn);
-            for wc in ours & pos.board.by_role(Rook) {
+            let piece = Piece::new(Role::Queen, turn);
+            for wc in ours & pos.board.by_role(Role::Queen) {
                 let mut moves = piece.moves(wc, ours, theirs);
                 if pos.pinned().contains(wc) {
-                    moves &= Bitboard::line(wc, king);
+                    moves &= Bitboard::line(king, wc);
                 }
 
                 collect_moves(piece, wc, moves, theirs, buffer)?;
@@ -184,22 +198,10 @@ impl Moves {
         }
 
         {
-            let piece = Piece::new(Queen, turn);
-            for wc in ours & pos.board.by_role(Queen) {
-                let mut moves = piece.moves(wc, ours, theirs);
-                if pos.pinned().contains(wc) {
-                    moves &= Bitboard::line(wc, king);
-                }
-
-                collect_moves(piece, wc, moves, theirs, buffer)?;
-            }
-        }
-
-        {
-            let piece = Piece::new(King, turn);
+            let piece = Piece::new(Role::King, turn);
             let mut moves = piece.moves(king, ours, theirs);
             for wt in moves {
-                if pos.is_threatened(wt, !turn, occupied.without(king)) {
+                if pos.is_threatened(wt, !turn, occupied) {
                     moves ^= wt.bitboard();
                 }
             }
@@ -208,8 +210,7 @@ impl Moves {
                 let b = Square::new(File::B, c.rank());
                 let path = c.bitboard().with(Square::new(File::D, c.rank()));
                 if occupied & path.with(b) == Bitboard::empty() {
-                    let blockers = occupied.without(king);
-                    if !path.iter().any(|sq| pos.is_threatened(sq, !turn, blockers)) {
+                    if !path.iter().any(|sq| pos.is_threatened(sq, !turn, occupied)) {
                         moves |= c.bitboard();
                     }
                 }
@@ -218,8 +219,7 @@ impl Moves {
             if let Some(g) = pos.castles().short(turn) {
                 let path = g.bitboard().with(Square::new(File::F, g.rank()));
                 if occupied & path == Bitboard::empty() {
-                    let blockers = occupied.without(king);
-                    if !path.iter().any(|sq| pos.is_threatened(sq, !turn, blockers)) {
+                    if !path.iter().any(|sq| pos.is_threatened(sq, !turn, occupied)) {
                         moves |= g.bitboard();
                     }
                 }
@@ -405,14 +405,19 @@ impl Position {
     /// Whether a [`Square`] is threatened by a piece of a [`Color`].
     #[inline(always)]
     pub fn is_threatened(&self, sq: Square, side: Color, occupied: Bitboard) -> bool {
-        for role in Role::iter() {
-            let piece = Piece::new(role, side);
-            for wc in occupied & self.board.by_piece(piece) & piece.flip().targets(sq) {
-                if matches!(role, Role::Pawn | Role::Knight | Role::King)
-                    || Bitboard::segment(sq, wc).intersection(occupied).is_empty()
-                {
-                    return true;
-                }
+        let theirs = self.material(side);
+        for role in [Role::Pawn, Role::Knight, Role::King] {
+            let candidates = occupied & theirs & self.board.by_role(role);
+            if Piece::new(role, !side).attacks(sq, occupied) & candidates != Bitboard::empty() {
+                return true;
+            }
+        }
+
+        let queens = self.board.by_role(Role::Queen);
+        for role in [Role::Bishop, Role::Rook] {
+            let candidates = occupied & theirs & (queens | self.board.by_role(role));
+            if Piece::new(role, !side).attacks(sq, occupied) & candidates != Bitboard::empty() {
+                return true;
             }
         }
 
@@ -592,13 +597,14 @@ impl Position {
 
         self.pinned = Bitboard::empty();
         self.checkers = match promotion.unwrap_or(role) {
-            r @ Pawn | r @ Knight if Piece::new(r, !turn).targets(king).contains(wt) => wt.into(),
+            r @ Pawn | r @ Knight => Piece::new(r, !turn).attacks(king, occupied) & wt.into(),
             _ => Bitboard::empty(),
         };
 
-        for role in [Queen, Rook, Bishop] {
+        let queens = self.board.by_role(Queen);
+        for role in [Bishop, Rook] {
             let slider = Piece::new(role, !turn);
-            for wc in ours & self.board.by_role(role) & slider.targets(king) {
+            for wc in ours & slider.attacks(king, ours) & (queens | self.board.by_role(role)) {
                 let blockers = occupied & Bitboard::segment(king, wc);
                 match blockers.len() {
                     0 => self.checkers |= wc.bitboard(),
@@ -639,9 +645,10 @@ impl Position {
         let occupied = self.occupied();
 
         self.pinned = Bitboard::empty();
-        for role in [Role::Queen, Role::Rook, Role::Bishop] {
+        let queens = self.board.by_role(Role::Queen);
+        for role in [Role::Bishop, Role::Rook] {
             let slider = Piece::new(role, !turn);
-            for wc in ours & self.board.by_role(role) & slider.targets(king) {
+            for wc in ours & slider.attacks(king, ours) & (queens | self.board.by_role(role)) {
                 let blockers = occupied & Bitboard::segment(king, wc);
                 if blockers.len() == 1 {
                     self.pinned |= blockers;
@@ -718,18 +725,19 @@ impl FromStr for Position {
         let king = board.king(board.turn).ok_or(IllegalPosition)?;
         let ours = board.by_color(board.turn);
         let theirs = board.by_color(!board.turn);
-        let occupied = theirs ^ ours;
+        let occupied = ours | theirs;
 
         let mut checkers = Bitboard::empty();
         for role in [Pawn, Knight] {
             let stepper = Piece::new(role, board.turn);
-            checkers |= theirs & board.by_role(role) & stepper.targets(king);
+            checkers |= theirs & board.by_role(role) & stepper.attacks(king, occupied);
         }
 
         let mut pinned = Bitboard::empty();
-        for role in [Queen, Rook, Bishop] {
+        let queens = board.by_role(Queen);
+        for role in [Bishop, Rook] {
             let slider = Piece::new(role, board.turn);
-            for wc in theirs & board.by_role(role) & slider.targets(king) {
+            for wc in theirs & slider.attacks(king, theirs) & (queens | board.by_role(role)) {
                 let blockers = occupied & Bitboard::segment(king, wc);
                 match blockers.len() {
                     0 => checkers |= wc.bitboard(),

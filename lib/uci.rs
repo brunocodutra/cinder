@@ -1,6 +1,6 @@
 use crate::chess::{Color, Move, Perspective};
 use crate::nnue::Evaluator;
-use crate::search::{Engine, HashSize, Limits, Options, ThreadCount};
+use crate::search::{Depth, Engine, HashSize, Limits, Options, ThreadCount};
 use crate::util::{Assume, Integer, Trigger};
 use futures::channel::oneshot::channel as oneshot;
 use futures::{future::FusedFuture, prelude::*, select_biased as select, stream::FusedStream};
@@ -124,6 +124,19 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
         self.output.send(info).await
     }
 
+    async fn perft(&mut self, depth: Depth) -> Result<(), O::Error> {
+        let timer = Instant::now();
+        let nodes = self.position.perft(depth);
+        let millis = timer.elapsed().as_millis();
+
+        let info = format!(
+            "info time {millis} nodes {nodes} nps {}",
+            nodes as u128 * 1000 / millis
+        );
+
+        self.output.send(info).await
+    }
+
     /// Runs the UCI server.
     pub async fn run(&mut self) -> Result<(), O::Error> {
         while let Some(line) = self.input.next().await {
@@ -202,6 +215,11 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                         self.position.play(m);
                     }
                 }
+
+                ["perft", depth] => match depth.parse() {
+                    Ok(d) => self.perft(d).await?,
+                    Err(e) => eprintln!("{e}"),
+                },
 
                 ["eval"] => {
                     let pos = &self.position;

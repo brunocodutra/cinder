@@ -8,7 +8,7 @@ use std::mem::MaybeUninit;
 /// [Historical statistics]: https://www.chessprogramming.org/History_Heuristic
 #[derive(Debug)]
 #[debug("History")]
-pub struct History([[[Butterfly<Graviton>; 2]; 2]; 2]);
+pub struct History([[Butterfly<Graviton>; 2]; 2]);
 
 impl Default for History {
     #[inline(always)]
@@ -21,10 +21,7 @@ impl History {
     #[inline(always)]
     fn graviton(&self, pos: &Position, m: Move) -> &Graviton {
         let (wc, wt) = (m.whence() as usize, m.whither() as usize);
-        let turn = pos.turn() as usize;
-        let is_check = pos.is_check() as usize;
-        let is_capture = m.is_capture() as usize;
-        &self.0[turn][is_check][is_capture][wc][wt]
+        &self.0[pos.turn() as usize][m.is_capture() as usize][wc][wt]
     }
 }
 

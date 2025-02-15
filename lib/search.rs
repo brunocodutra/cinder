@@ -10,6 +10,7 @@ mod line;
 mod options;
 mod ply;
 mod pv;
+mod rating;
 mod score;
 mod transposition;
 
@@ -25,5 +26,6 @@ pub use line::*;
 pub use options::*;
 pub use ply::*;
 pub use pv::*;
+pub use rating::*;
 pub use score::*;
 pub use transposition::*;

@@ -1,5 +1,5 @@
 use crate::chess::{Move, Position, Role};
-use crate::search::{Graviton, Gravity};
+use crate::search::{Graviton, Rating};
 use crate::util::Assume;
 use derive_more::with_trait::Debug;
 use std::mem::MaybeUninit;
@@ -22,17 +22,17 @@ impl Reply {
     }
 }
 
-impl Gravity for Reply {
-    type Bonus = <Graviton as Gravity>::Bonus;
+impl Rating for Reply {
+    type Bonus = i8;
 
     #[inline(always)]
     fn get(&self, pos: &Position, m: Move) -> Self::Bonus {
-        self.graviton(pos, m).get(pos, m)
+        self.graviton(pos, m).get()
     }
 
     #[inline(always)]
     fn update(&self, pos: &Position, m: Move, bonus: Self::Bonus) {
-        self.graviton(pos, m).update(pos, m, bonus);
+        self.graviton(pos, m).update(bonus);
     }
 }
 

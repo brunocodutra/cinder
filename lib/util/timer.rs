@@ -1,10 +1,11 @@
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+#[ctor::ctor]
+pub static EPOCH: Instant = { Instant::now() };
+
 #[inline(always)]
 fn elapsed() -> Duration {
-    #[ctor::ctor]
-    static EPOCH: Instant = Instant::now();
     Instant::now().duration_since(*EPOCH)
 }
 

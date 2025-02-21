@@ -15,7 +15,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 [dependencies]
 arrayvec = { version = "0.7.6", default-features = false, features = ["std"] }
 byteorder = { version = "1.5.0", default-features = false, features = ["std"] }
-ctor = { version = "0.2.9", default-features = false }
+ctor = { version = "0.3.6", default-features = false }
 derive_more = { version = "2.0.1", default-features = false, features = [
     "add",
     "add_assign",

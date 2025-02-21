@@ -86,23 +86,27 @@ impl Default for Castles {
 impl From<Square> for Castles {
     #[inline(always)]
     fn from(sq: Square) -> Self {
-        static CASTLES: SyncUnsafeCell<[Castles; 64]> =
-            unsafe { MaybeUninit::zeroed().assume_init() };
+        mod global {
+            use super::*;
 
-        #[cold]
-        #[ctor::ctor]
-        #[inline(never)]
-        unsafe fn init() {
-            let castles = unsafe { CASTLES.get().as_mut_unchecked() };
-            castles[Square::A1 as usize] = Castles(Bits::new(0b0010));
-            castles[Square::H1 as usize] = Castles(Bits::new(0b0001));
-            castles[Square::E1 as usize] = Castles(Bits::new(0b0011));
-            castles[Square::A8 as usize] = Castles(Bits::new(0b1000));
-            castles[Square::H8 as usize] = Castles(Bits::new(0b0100));
-            castles[Square::E8 as usize] = Castles(Bits::new(0b1100));
+            pub static CASTLES: SyncUnsafeCell<[Castles; 64]> =
+                unsafe { MaybeUninit::zeroed().assume_init() };
+
+            #[cold]
+            #[ctor::ctor]
+            #[inline(never)]
+            unsafe fn init() {
+                let castles = unsafe { CASTLES.get().as_mut_unchecked() };
+                castles[Square::A1 as usize] = Castles(Bits::new(0b0010));
+                castles[Square::H1 as usize] = Castles(Bits::new(0b0001));
+                castles[Square::E1 as usize] = Castles(Bits::new(0b0011));
+                castles[Square::A8 as usize] = Castles(Bits::new(0b1000));
+                castles[Square::H8 as usize] = Castles(Bits::new(0b0100));
+                castles[Square::E8 as usize] = Castles(Bits::new(0b1100));
+            }
         }
 
-        unsafe { CASTLES.get().as_ref_unchecked()[sq as usize] }
+        unsafe { global::CASTLES.get().as_ref_unchecked()[sq as usize] }
     }
 }
 

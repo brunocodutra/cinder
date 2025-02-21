@@ -22,12 +22,14 @@ where
     F: FnOnce() -> R + Send,
     R: Send,
 {
-    let (tx, rx) = oneshot();
-    thread::spawn(transmute::<
-        Box<dyn FnOnce() + Send>,
-        Box<dyn FnOnce() + Send + 'static>,
-    >(Box::new(move || tx.send(f()).assume()) as _));
-    rx.map(Assume::assume)
+    unsafe {
+        let (tx, rx) = oneshot();
+        thread::spawn(transmute::<
+            Box<dyn FnOnce() + Send>,
+            Box<dyn FnOnce() + Send + 'static>,
+        >(Box::new(move || tx.send(f()).assume()) as _));
+        rx.map(Assume::assume)
+    }
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
@@ -144,11 +146,11 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                 ["quit"] => return Ok(()),
                 [] | ["stop"] => continue,
 
-                ["go", "wtime", wtime, "btime", btime, "winc", winc, "binc", binc]
-                | ["go", "wtime", wtime, "winc", winc, "btime", btime, "binc", binc] => {
+                ["go", "wtime", wt, "btime", bt, "winc", wi, "binc", bi]
+                | ["go", "wtime", wt, "winc", wi, "btime", bt, "binc", bi] => {
                     let (t, i) = match self.position.turn() {
-                        Color::White => (wtime, winc),
-                        Color::Black => (btime, binc),
+                        Color::White => (wt, wi),
+                        Color::Black => (bt, bi),
                     };
 
                     match (t.parse(), i.parse()) {

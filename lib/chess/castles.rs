@@ -93,8 +93,7 @@ impl From<Square> for Castles {
         #[ctor::ctor]
         #[inline(never)]
         unsafe fn init() {
-            let castles = CASTLES.get().as_mut_unchecked();
-
+            let castles = unsafe { CASTLES.get().as_mut_unchecked() };
             castles[Square::A1 as usize] = Castles(Bits::new(0b0010));
             castles[Square::H1 as usize] = Castles(Bits::new(0b0001));
             castles[Square::E1 as usize] = Castles(Bits::new(0b0011));

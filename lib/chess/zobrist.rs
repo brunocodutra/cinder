@@ -23,7 +23,7 @@ static ZOBRIST: SyncUnsafeCell<ZobristNumbers> = unsafe { MaybeUninit::zeroed().
 #[ctor::ctor]
 #[inline(never)]
 unsafe fn init() {
-    let zobrist = ZOBRIST.get().as_mut_unchecked();
+    let zobrist = unsafe { ZOBRIST.get().as_mut_unchecked() };
     let mut rng = Pcg64::seed_from_u64(0x980E8CE238E3B114);
     zobrist.pieces = rng.random();
     zobrist.castles = rng.random();

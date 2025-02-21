@@ -2,7 +2,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use ruzstd::decoding::StreamingDecoder;
 use std::cell::SyncUnsafeCell;
 use std::io::{self, Read};
-use std::mem::{transmute, MaybeUninit};
+use std::mem::{MaybeUninit, transmute};
 
 mod accumulator;
 mod evaluator;
@@ -40,7 +40,7 @@ static NNUE: SyncUnsafeCell<Nnue> = unsafe { MaybeUninit::zeroed().assume_init()
 unsafe fn init() {
     let encoded = include_bytes!("nnue/nn.zst").as_slice();
     let decoder = StreamingDecoder::new(encoded).expect("failed to initialize zstd decoder");
-    Nnue::load(NNUE.get().as_mut_unchecked(), decoder).expect("failed to load the NNUE");
+    unsafe { Nnue::load(NNUE.get().as_mut_unchecked(), decoder).expect("failed to load the NNUE") }
 }
 
 impl Nnue {

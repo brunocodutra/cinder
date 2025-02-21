@@ -135,7 +135,7 @@ impl Bitboard {
         #[ctor::ctor]
         #[inline(never)]
         unsafe fn init() {
-            let lines = LINES.get().as_mut_unchecked();
+            let lines = unsafe { LINES.get().as_mut_unchecked() };
 
             for wc in Square::iter() {
                 for wt in Square::iter() {
@@ -178,7 +178,7 @@ impl Bitboard {
         #[ctor::ctor]
         #[inline(never)]
         unsafe fn init() {
-            let segments = SEGMENTS.get().as_mut_unchecked();
+            let segments = unsafe { SEGMENTS.get().as_mut_unchecked() };
 
             for wc in Square::iter() {
                 for wt in Square::iter() {
@@ -413,16 +413,20 @@ mod tests {
 
     #[test]
     fn light_bitboards_contains_light_squares() {
-        assert!(Bitboard::light()
-            .iter()
-            .all(|sq| (sq.file().get() + sq.rank().get()) % 2 != 0));
+        assert!(
+            Bitboard::light()
+                .iter()
+                .all(|sq| (sq.file().get() + sq.rank().get()) % 2 != 0)
+        );
     }
 
     #[test]
     fn dark_bitboards_contains_dark_squares() {
-        assert!(Bitboard::dark()
-            .iter()
-            .all(|sq| (sq.file().get() + sq.rank().get()) % 2 == 0));
+        assert!(
+            Bitboard::dark()
+                .iter()
+                .all(|sq| (sq.file().get() + sq.rank().get()) % 2 == 0)
+        );
     }
 
     #[test]

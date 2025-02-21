@@ -33,7 +33,7 @@ impl Piece {
         #[ctor::ctor]
         #[inline(never)]
         unsafe fn init() {
-            let forks = FORKS.get().as_mut_unchecked();
+            let forks = unsafe { FORKS.get().as_mut_unchecked() };
 
             for color in Color::iter() {
                 for wc in Square::iter() {
@@ -56,7 +56,7 @@ impl Piece {
         #[ctor::ctor]
         #[inline(never)]
         unsafe fn init() {
-            let jumps = JUMPS.get().as_mut_unchecked();
+            let jumps = unsafe { JUMPS.get().as_mut_unchecked() };
 
             for wc in Square::iter() {
                 #[rustfmt::skip]
@@ -78,7 +78,7 @@ impl Piece {
         #[ctor::ctor]
         #[inline(never)]
         unsafe fn init() {
-            let slides = SLIDES.get().as_mut_unchecked();
+            let slides = unsafe { SLIDES.get().as_mut_unchecked() };
 
             for wc in Square::iter() {
                 #[rustfmt::skip]
@@ -100,7 +100,7 @@ impl Piece {
         #[ctor::ctor]
         #[inline(never)]
         unsafe fn init() {
-            let bitboard = BITBOARDS.get().as_mut_unchecked();
+            let bitboard = unsafe { BITBOARDS.get().as_mut_unchecked() };
 
             for wc in Square::iter() {
                 let magic = Magic::bishop(wc);

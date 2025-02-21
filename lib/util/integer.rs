@@ -216,7 +216,7 @@ impl_primitive_for!(usize, Unsigned);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test_strategy::{proptest, Arbitrary};
+    use test_strategy::{Arbitrary, proptest};
 
     #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Arbitrary)]
     #[repr(u16)]

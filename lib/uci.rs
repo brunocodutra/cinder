@@ -190,15 +190,29 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                     Err(e) => eprintln!("{e}"),
                 },
 
-                ["position", "fen", fen @ ..] => match fen.join(" ").parse() {
-                    Err(e) => eprintln!("{e}"),
-                    Ok(pos) => self.position = pos,
-                },
+                ["position", kind @ "startpos", args @ ..]
+                | ["position", kind @ "fen", args @ ..] => {
+                    let (pos, args) = match *kind {
+                        "startpos" => (Evaluator::default(), args),
+                        _ => match args[..args.len().min(6)].join(" ").parse() {
+                            Ok(pos) => (pos, &args[6..]),
+                            Err(e) => {
+                                eprintln!("{e}");
+                                continue;
+                            }
+                        },
+                    };
 
-                ["position", "startpos"] => self.position = Evaluator::default(),
-                ["position", "startpos", "moves", moves @ ..] => {
-                    self.position = Evaluator::default();
+                    let moves = match args {
+                        moves @ [] | ["moves", moves @ ..] => moves,
+                        args => {
+                            let args = args.join(" ");
+                            eprintln!("ignored unsupported command `position {kind} {}`", args);
+                            continue;
+                        }
+                    };
 
+                    self.position = pos;
                     for s in moves.iter() {
                         let whence = match s[..s.ceil_char_boundary(2)].parse() {
                             Ok(whence) => whence,
@@ -334,28 +348,10 @@ mod tests {
     }
 
     #[proptest]
-    fn handles_position_with_fen(
-        #[any(StaticStream::new([format!("position fen {}", #pos)]))] mut uci: MockUci,
-        pos: Evaluator,
+    fn handles_position_with_startpos_and_moves(
+        #[strategy(..=4usize)] n: usize,
+        selector: Selector,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
-        assert_eq!(uci.position.to_string(), pos.to_string());
-        assert!(uci.output.is_empty());
-    }
-
-    #[proptest]
-    fn ignores_invalid_fen(
-        #[any(StaticStream::new([format!("position fen {}", #_s)]))] mut uci: MockUci,
-        #[filter(#_s.parse::<Evaluator>().is_err())] _s: String,
-    ) {
-        let pos = uci.position.clone();
-        assert_eq!(block_on(uci.run()), Ok(()));
-        assert_eq!(uci.position, pos);
-        assert!(uci.output.is_empty());
-    }
-
-    #[proptest]
-    fn handles_position_with_moves(#[strategy(..=4usize)] n: usize, selector: Selector) {
         let mut uci = MockUci::default();
         let mut input = String::new();
         let mut pos = Evaluator::default();
@@ -376,7 +372,53 @@ mod tests {
     }
 
     #[proptest]
-    fn handles_position_with_invalid_move(
+    fn handles_position_with_fen(
+        #[any(StaticStream::new([format!("position fen {}", #pos)]))] mut uci: MockUci,
+        pos: Evaluator,
+    ) {
+        assert_eq!(block_on(uci.run()), Ok(()));
+        assert_eq!(uci.position.to_string(), pos.to_string());
+        assert!(uci.output.is_empty());
+    }
+
+    #[proptest]
+    fn handles_position_with_fen_and_moves(
+        mut pos: Evaluator,
+        #[strategy(..=4usize)] n: usize,
+        selector: Selector,
+    ) {
+        let mut uci = MockUci::default();
+        let mut input = String::new();
+
+        input.push_str(&format!("position fen {pos} moves"));
+
+        for _ in 0..n {
+            prop_assume!(pos.outcome().is_none());
+            let m = selector.select(pos.moves().flatten());
+            input.push(' ');
+            input.push_str(&m.to_string());
+            pos.play(m);
+        }
+
+        uci.input = StaticStream::new([input]);
+        assert_eq!(block_on(uci.run()), Ok(()));
+        assert_eq!(uci.position.to_string(), pos.to_string());
+        assert!(uci.output.is_empty());
+    }
+
+    #[proptest]
+    fn ignores_position_with_invalid_fen(
+        #[any(StaticStream::new([format!("position fen {}", #_s)]))] mut uci: MockUci,
+        #[filter(#_s.parse::<Evaluator>().is_err())] _s: String,
+    ) {
+        let pos = uci.position.clone();
+        assert_eq!(block_on(uci.run()), Ok(()));
+        assert_eq!(uci.position, pos);
+        assert!(uci.output.is_empty());
+    }
+
+    #[proptest]
+    fn ignores_position_with_invalid_move(
         #[strategy("[^[:ascii:]]+")] _s: String,
         #[any(StaticStream::new([format!("position startpos moves {}", #_s)]))] mut uci: MockUci,
     ) {

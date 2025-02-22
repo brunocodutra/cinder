@@ -68,7 +68,7 @@ impl ScoreBound {
         (ply >= 0).assume();
 
         match *self {
-            ScoreBound::Lower(_) => Score::upper().normalize(ply),
+            ScoreBound::Lower(_) => Score::mating(ply),
             _ => self.bound(ply),
         }
     }

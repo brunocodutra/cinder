@@ -1,10 +1,10 @@
-use crate::chess::{Move, Outcome, Position};
+use crate::chess::{Move, Position};
 use crate::nnue::{Evaluator, Value};
 use crate::search::*;
 use crate::util::{Assume, Counter, Integer, Timer, Trigger};
 use arrayvec::ArrayVec;
 use derive_more::with_trait::Deref;
-use std::{mem::swap, num::Saturating, ops::Range, thread, time::Duration};
+use std::{num::Saturating, ops::Range, thread, time::Duration};
 
 #[cfg(test)]
 use proptest::strategy::LazyJust;
@@ -146,33 +146,6 @@ impl<'a> Search<'a> {
         (draft.get().max(1).ilog2() as i16 * idx.max(1).ilog2() as i16 / 2).saturate()
     }
 
-    /// The [alpha-beta] search.
-    ///
-    /// [alpha-beta]: https://www.chessprogramming.org/Alpha-Beta
-    fn ab<const N: usize>(
-        &mut self,
-        pos: &Evaluator,
-        bounds: Range<Score>,
-        depth: Depth,
-        ply: Ply,
-    ) -> Result<Pv<N>, Interrupted> {
-        if ply.cast::<usize>() < N && depth > ply && bounds.start + 1 < bounds.end {
-            self.pvs(pos, bounds, depth, ply)
-        } else {
-            Ok(self.pvs::<0>(pos, bounds, depth, ply)?.truncate())
-        }
-    }
-
-    /// The full-window alpha-beta search.
-    fn fw<const N: usize>(
-        &mut self,
-        pos: &Evaluator,
-        depth: Depth,
-        ply: Ply,
-    ) -> Result<Pv<N>, Interrupted> {
-        self.ab(pos, Score::lower()..Score::upper(), depth, ply)
-    }
-
     /// The [zero-window] alpha-beta search.
     ///
     /// [zero-window]: https://www.chessprogramming.org/Null_Window
@@ -186,10 +159,24 @@ impl<'a> Search<'a> {
         self.ab(pos, beta - 1..beta, depth, ply)
     }
 
-    /// An implementation of the [PVS] variation of the alpha-beta search.
+    /// The [alpha-beta] search.
     ///
-    /// [PVS]: https://www.chessprogramming.org/Principal_Variation_Search
-    fn pvs<const N: usize>(
+    /// [alpha-beta]: https://www.chessprogramming.org/Alpha-Beta
+    fn ab<const N: usize>(
+        &mut self,
+        pos: &Evaluator,
+        bounds: Range<Score>,
+        depth: Depth,
+        ply: Ply,
+    ) -> Result<Pv<N>, Interrupted> {
+        if ply.cast::<usize>() < N && depth > ply && bounds.start + 1 < bounds.end {
+            self.recurse(pos, bounds, depth, ply)
+        } else {
+            Ok(self.recurse::<0>(pos, bounds, depth, ply)?.truncate())
+        }
+    }
+
+    fn recurse<const N: usize>(
         &mut self,
         pos: &Evaluator,
         bounds: Range<Score>,
@@ -197,11 +184,8 @@ impl<'a> Search<'a> {
         ply: Ply,
     ) -> Result<Pv<N>, Interrupted> {
         self.ctrl.interrupted()?;
-
-        let is_root = ply == 0;
         let (alpha, beta) = match pos.outcome() {
             None => self.mdp(ply, &bounds),
-            Some(Outcome::DrawByThreefoldRepetition) if is_root => self.mdp(ply, &bounds),
             Some(o) if o.is_draw() => return Ok(Pv::empty(Score::new(0))),
             Some(_) => return Ok(Pv::empty(Score::mated(ply))),
         };
@@ -217,9 +201,9 @@ impl<'a> Search<'a> {
             Some(t) => t.transpose(ply),
         };
 
-        if !is_root && transposition.is_some() && pos.is_check() {
+        if transposition.is_some() && pos.is_check() {
             depth += 1;
-        } else if !is_root && transposition.is_none() && !pos.is_check() {
+        } else if transposition.is_none() && !pos.is_check() {
             depth -= 2;
         }
 
@@ -290,7 +274,7 @@ impl<'a> Search<'a> {
                     pos.gain(m)
                 };
 
-                let counter = self.continuation.get(ply.cast::<usize>().wrapping_sub(1));
+                let counter = self.continuation[ply.cast::<usize>() - 1];
                 (m, rating + self.history.get(pos, m) + counter.get(pos, m))
             })
             .collect();
@@ -299,7 +283,7 @@ impl<'a> Search<'a> {
 
         if let Some(t) = transposition {
             if let Some(d) = self.mcp(t.score().lower(ply) - beta, draft) {
-                if !is_root && t.draft() >= d {
+                if t.draft() >= d {
                     depth += 1;
                     for (m, _) in moves.iter().rev().skip(1) {
                         let mut next = pos.clone();
@@ -315,9 +299,30 @@ impl<'a> Search<'a> {
             }
         }
 
-        let (mut head, mut tail) = match moves.pop() {
-            None => return Ok(transposed.truncate()),
-            Some((m, _)) => {
+        match self.pvs(pos, &moves, alpha..beta, depth, ply)? {
+            None => Ok(transposed.truncate()),
+            Some(pv) => Ok(pv),
+        }
+    }
+
+    /// An implementation of [PVS].
+    ///
+    /// [PVS]: https://www.chessprogramming.org/Principal_Variation_Search
+    fn pvs<const N: usize>(
+        &mut self,
+        pos: &Evaluator,
+        moves: &[(Move, Value)],
+        bounds: Range<Score>,
+        depth: Depth,
+        ply: Ply,
+    ) -> Result<Option<Pv<N>>, Interrupted> {
+        let (alpha, beta) = (bounds.start, bounds.end);
+        let is_pv = alpha + 1 < beta;
+        let draft = depth - ply;
+
+        let (mut head, mut tail) = match moves.last() {
+            None => return Ok(None),
+            Some(&(m, _)) => {
                 let mut next = pos.clone();
                 next.play(m);
                 self.tt.prefetch(next.zobrist());
@@ -327,13 +332,8 @@ impl<'a> Search<'a> {
             }
         };
 
-        if tail >= beta || moves.is_empty() {
-            self.record(pos, &[], bounds, depth, ply, head, tail.score());
-            return Ok(head >> tail);
-        }
-
         let improving = self.improving(ply);
-        for (idx, &(m, _)) in moves.iter().rev().enumerate() {
+        for (idx, &(m, _)) in moves.iter().rev().skip(1).enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
@@ -359,8 +359,8 @@ impl<'a> Search<'a> {
             }
         }
 
-        self.record(pos, &moves, bounds, depth, ply, head, tail.score());
-        Ok(head >> tail)
+        self.record(pos, moves, bounds, depth, ply, head, tail.score());
+        Ok(Some(head >> tail))
     }
 
     /// An implementation of [aspiration windows] with [iterative deepening].
@@ -373,19 +373,26 @@ impl<'a> Search<'a> {
         limit: Depth,
         time: Range<Duration>,
     ) -> Pv<N> {
-        let mut ctrl = Control::Unlimited;
-        swap(&mut self.ctrl, &mut ctrl);
-        self.fw::<0>(pos, Depth::new(0), Ply::new(0)).assume();
-        let mut pv = self.fw(pos, Depth::new(1), Ply::new(0)).assume();
-        swap(&mut self.ctrl, &mut ctrl);
+        let mut moves: ArrayVec<_, 255> = pos.moves().flatten().map(|m| (m, pos.gain(m))).collect();
+        moves.sort_unstable_by_key(|(_, rating)| *rating);
 
-        let mut depth = Depth::new(1);
+        self.value[0] = pos.evaluate();
+        let mut pv = match &*moves {
+            [] if !pos.is_check() => return Pv::empty(self.value[0].saturate()),
+            [] => return Pv::empty(Score::mated(Ply::new(0))),
+            [(m, _)] => return Pv::new(self.value[0].saturate(), Line::singular(*m)),
+            [.., (m, _)] => match self.tt.get(pos.zobrist()) {
+                None => Pv::new(self.value[0].saturate(), Line::singular(*m)),
+                Some(t) => t.transpose(Ply::new(0)).truncate(),
+            },
+        };
+
+        let mut depth = Depth::new(0);
         'id: while depth < limit {
             depth += 1;
 
             let mut draft = depth;
             let mut delta = Saturating(5i16);
-
             let (mut lower, mut upper) = match depth.get() {
                 ..=4 => (Score::lower(), Score::upper()),
                 _ => (pv.score() - delta, pv.score() + delta),
@@ -396,8 +403,20 @@ impl<'a> Search<'a> {
                     break 'id;
                 }
 
-                let Ok(partial) = self.ab(pos, lower..upper, draft, Ply::new(0)) else {
-                    break 'id;
+                for (m, rating) in moves.iter_mut() {
+                    if Some(*m) == pv.head() {
+                        *rating = Value::upper();
+                    } else if m.is_quiet() {
+                        *rating = Value::new(0) + self.history.get(pos, *m)
+                    } else {
+                        *rating = pos.gain(*m) + self.history.get(pos, *m)
+                    }
+                }
+
+                moves.sort_unstable_by_key(|(_, rating)| *rating);
+                let partial = match self.pvs(pos, &moves, lower..upper, draft, Ply::new(0)) {
+                    Ok(partial) => partial.assume(),
+                    Err(_) => break 'id,
                 };
 
                 delta *= 2;
@@ -423,6 +442,10 @@ impl<'a> Search<'a> {
         }
 
         pv
+    }
+
+    fn go<const N: usize>(mut self, pos: &Evaluator, limit: Depth, time: Range<Duration>) -> Pv<N> {
+        self.aw(pos, limit, time)
     }
 }
 
@@ -479,16 +502,16 @@ impl Engine {
         let nodes = Counter::new(limits.nodes());
         let timer = Timer::new(time.end);
         let ctrl = Control::Limited(&nodes, &timer, stopper);
-        let mut search = Search::new(self, ctrl);
+        let search = Search::new(self, ctrl);
 
         thread::scope(|s| {
             for _ in 1..self.threads.get() {
                 let time = time.clone();
-                let mut search = search.clone();
-                s.spawn(move || search.aw::<0>(pos, limits.depth(), time));
+                let search = search.clone();
+                s.spawn(|| search.go::<1>(pos, limits.depth(), time));
             }
 
-            let pv = search.aw(pos, limits.depth(), time);
+            let pv = search.go(pos, limits.depth(), time);
             stopper.disarm();
             pv
         })
@@ -498,6 +521,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chess::Outcome;
     use proptest::{prop_assume, sample::Selector};
     use test_strategy::proptest;
 
@@ -563,7 +587,7 @@ mod tests {
     }
 
     #[proptest]
-    fn fw_returns_static_evaluation_if_max_ply(
+    fn ab_returns_static_evaluation_if_max_ply(
         e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         d: Depth,
@@ -571,7 +595,7 @@ mod tests {
         let mut search = Search::new(&e, Control::Unlimited);
 
         assert_eq!(
-            search.fw::<1>(&pos, d, Ply::upper()),
+            search.ab::<1>(&pos, Score::lower()..Score::upper(), d, Ply::upper()),
             Ok(Pv::empty(pos.evaluate().saturate()))
         );
     }

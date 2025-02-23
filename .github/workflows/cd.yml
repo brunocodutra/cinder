@@ -1,0 +1,25 @@
+name: CD
+
+on:
+  push:
+    tags: "v*"
+
+jobs:
+  publish:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+    steps:
+    - uses: actions/checkout@v4
+    - run: cargo install --force cargo-make cargo-pgo
+    - run: cargo make --profile production cinder
+    - run: ls "${{ github.workspace }}/target/bin/"
+    - uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: "${{ github.workspace }}/target/bin/*"
+        tag: ${{ github.ref }}
+        overwrite: true
+        file_glob: true

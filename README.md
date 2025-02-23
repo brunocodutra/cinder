@@ -41,8 +41,9 @@ Cinder is an open source project and you're very welcome to contribute to this p
 opening [issues] and/or [pull requests][pulls], see [CONTRIBUTING] for general guidelines.
 
 Building Cinder from source currently requires a recent nightly Rust compiler,
-[cargo-make], and [cargo-pgo]. To compile binaries optimized for your CPU architecture,
-simply run `cargo make cinder`.
+[cargo-make], and [cargo-pgo]. To compile binaries optimized for various CPU architectures,
+simply run `cargo make --profile production cinder`. The binary artifacts will be placed
+under `target/bin/`.
 
 ## License
 

@@ -1,4 +1,4 @@
-use crate::util::{AlignTo64, Assume};
+use crate::util::AlignTo64;
 use std::ops::Shl;
 
 /// The hidden layer.
@@ -17,6 +17,7 @@ impl<const N: usize> Hidden<N> {
     pub unsafe fn avx2(&self, us: &[i16; N], them: &[i16; N]) -> i32 {
         const { assert!(N % 128 == 0) }
 
+        use crate::util::Assume;
         use std::{arch::x86_64::*, mem::transmute};
 
         #[inline(always)]
@@ -79,6 +80,7 @@ impl<const N: usize> Hidden<N> {
     pub unsafe fn sse(&self, us: &[i16; N], them: &[i16; N]) -> i32 {
         const { assert!(N % 64 == 0) }
 
+        use crate::util::Assume;
         use std::{arch::x86_64::*, mem::transmute};
 
         #[inline(always)]

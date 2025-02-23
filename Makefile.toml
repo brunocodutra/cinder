@@ -5,7 +5,7 @@ script = '''
 #!@duckscript
 
 rm "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/${ARCH}/${TARGET}/release/cinder"
-rm "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/bin/cinder-${CARGO_MAKE_RUST_TARGET_OS}-${ARCH}"
+rm "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/bin/cinder-v${CARGO_MAKE_CRATE_VERSION}-${CARGO_MAKE_RUST_TARGET_OS}-${ARCH}"
 '''
 
 [tasks.instrument]
@@ -119,7 +119,7 @@ run_task = [
         "${CARGO_MAKE_WORKING_DIRECTORY}/bin/**/*",
         "${CARGO_MAKE_WORKING_DIRECTORY}/**/*.toml",
     ], output = [
-        "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/bin/cinder-${CARGO_MAKE_RUST_TARGET_OS}-${ARCH}",
+        "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/bin/cinder-v${CARGO_MAKE_CRATE_VERSION}-${CARGO_MAKE_RUST_TARGET_OS}-${ARCH}",
     ] } } },
 ]
 
@@ -131,7 +131,7 @@ script = '''
 #!@duckscript
 
 src = set "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/${ARCH}/${TARGET}/release/cinder"
-dst = set "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/bin/cinder-${CARGO_MAKE_RUST_TARGET_OS}-${ARCH}"
+dst = set "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/bin/cinder-v${CARGO_MAKE_CRATE_VERSION}-${CARGO_MAKE_RUST_TARGET_OS}-${ARCH}"
 
 if not exec --get-exit-code --input "go depth 1" ${src}
   mkdir "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/bin/"

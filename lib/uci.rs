@@ -246,7 +246,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                 }
 
                 ["uci"] => {
-                    let name = "id name Cinder".to_string();
+                    let name = format!("id name Cinder {}", env!("CARGO_PKG_VERSION"));
                     let author = "id author Bruno Dutra".to_string();
 
                     let hash = format!(

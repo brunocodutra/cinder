@@ -204,9 +204,24 @@ condition = { profiles = ["production"], platforms = ["mac"] }
 env = { "TARGET" = "x86_64-apple-darwin", "ARCH" = "x86-64-v4" }
 run_task = "release"
 
-[tasks.cinder-mac-aarch64]
+[tasks.cinder-mac-apple-m1]
 condition = { profiles = ["production"], platforms = ["mac"] }
-env = { "TARGET" = "aarch64-apple-darwin", "ARCH" = "aarch64" }
+env = { "TARGET" = "aarch64-apple-darwin", "ARCH" = "apple-m1" }
+run_task = "release"
+
+[tasks.cinder-mac-apple-m2]
+condition = { profiles = ["production"], platforms = ["mac"] }
+env = { "TARGET" = "aarch64-apple-darwin", "ARCH" = "apple-m2" }
+run_task = "release"
+
+[tasks.cinder-mac-apple-m3]
+condition = { profiles = ["production"], platforms = ["mac"] }
+env = { "TARGET" = "aarch64-apple-darwin", "ARCH" = "apple-m3" }
+run_task = "release"
+
+[tasks.cinder-mac-apple-m4]
+condition = { profiles = ["production"], platforms = ["mac"] }
+env = { "TARGET" = "aarch64-apple-darwin", "ARCH" = "apple-m4" }
 run_task = "release"
 
 [tasks.cinder]
@@ -224,5 +239,8 @@ run_task = { name = [
     "cinder-mac-x86-64-v2",
     "cinder-mac-x86-64-v3",
     "cinder-mac-x86-64-v4",
-    "cinder-mac-aarch64",
+    "cinder-mac-apple-m1",
+    "cinder-mac-apple-m2",
+    "cinder-mac-apple-m3",
+    "cinder-mac-apple-m4",
 ] }

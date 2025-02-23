@@ -3,11 +3,28 @@ use crate::nnue::{Evaluator, Value};
 use crate::search::*;
 use crate::util::{Assume, Counter, Integer, Timer, Trigger};
 use arrayvec::ArrayVec;
-use derive_more::with_trait::Deref;
+use derive_more::with_trait::{Constructor, Deref};
 use std::{num::Saturating, ops::Range, thread, time::Duration};
 
 #[cfg(test)]
 use proptest::strategy::LazyJust;
+
+/// The search result.
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Deref, Constructor)]
+#[cfg_attr(test, derive(test_strategy::Arbitrary))]
+pub struct SearchResult<const N: usize = { Depth::MAX as _ }> {
+    depth: Depth,
+    #[deref]
+    pv: Pv<N>,
+}
+
+impl<const N: usize> SearchResult<N> {
+    /// The depth searched.
+    #[inline(always)]
+    pub fn depth(&self) -> Depth {
+        self.depth
+    }
+}
 
 /// A chess engine.
 #[derive(Debug, Clone, Deref)]
@@ -360,7 +377,7 @@ impl<'a> Search<'a> {
         }
 
         self.record(pos, moves, bounds, depth, ply, head, tail.score());
-        Ok(Some(head >> tail))
+        Ok(Some(tail.transpose(head)))
     }
 
     /// An implementation of [aspiration windows] with [iterative deepening].
@@ -372,23 +389,24 @@ impl<'a> Search<'a> {
         pos: &Evaluator,
         limit: Depth,
         time: Range<Duration>,
-    ) -> Pv<N> {
+    ) -> SearchResult<N> {
         let mut moves: ArrayVec<_, 255> = pos.moves().flatten().map(|m| (m, pos.gain(m))).collect();
         moves.sort_unstable_by_key(|(_, rating)| *rating);
 
         self.value[0] = pos.evaluate();
+        let score = self.value[0].saturate();
+        let mut depth = Depth::new(0);
         let mut pv = match &*moves {
-            [] if !pos.is_check() => return Pv::empty(self.value[0].saturate()),
-            [] => return Pv::empty(Score::mated(Ply::new(0))),
-            [(m, _)] => return Pv::new(self.value[0].saturate(), Line::singular(*m)),
+            [] if !pos.is_check() => return SearchResult::new(depth, Pv::empty(score)),
+            [] => return SearchResult::new(depth, Pv::empty(Score::mated(Ply::new(0)))),
+            [(m, _)] => return SearchResult::new(depth, Pv::new(score, Line::singular(*m))),
             [.., (m, _)] => match self.tt.get(pos.zobrist()) {
-                None => Pv::new(self.value[0].saturate(), Line::singular(*m)),
+                None => Pv::new(score, Line::singular(*m)),
                 Some(t) => t.transpose(Ply::new(0)).truncate(),
             },
         };
 
-        let mut depth = Depth::new(0);
-        'id: while depth < limit {
+        while depth < limit {
             depth += 1;
 
             let mut draft = depth;
@@ -400,7 +418,7 @@ impl<'a> Search<'a> {
 
             'aw: loop {
                 if self.ctrl.timer().remaining() < Some(time.end - time.start) {
-                    break 'id;
+                    return SearchResult::new(depth - 1, pv);
                 }
 
                 for (m, rating) in moves.iter_mut() {
@@ -415,8 +433,8 @@ impl<'a> Search<'a> {
 
                 moves.sort_unstable_by_key(|(_, rating)| *rating);
                 let partial = match self.pvs(pos, &moves, lower..upper, draft, Ply::new(0)) {
+                    Err(_) => return SearchResult::new(depth - 1, pv),
                     Ok(partial) => partial.assume(),
-                    Err(_) => break 'id,
                 };
 
                 delta *= 2;
@@ -441,10 +459,15 @@ impl<'a> Search<'a> {
             }
         }
 
-        pv
+        SearchResult::new(depth, pv)
     }
 
-    fn go<const N: usize>(mut self, pos: &Evaluator, limit: Depth, time: Range<Duration>) -> Pv<N> {
+    fn go<const N: usize>(
+        mut self,
+        pos: &Evaluator,
+        limit: Depth,
+        time: Range<Duration>,
+    ) -> SearchResult<N> {
         self.aw(pos, limit, time)
     }
 }
@@ -497,7 +520,7 @@ impl Engine {
     }
 
     /// Searches for the [principal variation][`Pv`].
-    pub fn search(&self, pos: &Evaluator, limits: &Limits, stopper: &Trigger) -> Pv {
+    pub fn search(&self, pos: &Evaluator, limits: &Limits, stopper: &Trigger) -> SearchResult {
         let time = self.time_to_search(pos, limits);
         let nodes = Counter::new(limits.nodes());
         let timer = Timer::new(time.end);

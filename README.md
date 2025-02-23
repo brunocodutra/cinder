@@ -31,8 +31,8 @@ option name Hash type spin default 16 min 0 max 33554432
 option name Threads type spin default 1 min 1 max 65536
 uciok
 go depth 15
-info score cp +17 pv d2d4 g8f6 c2c4 e7e6 g1f3 d7d5 b1c3 f8b4 c4d5 e6d5 c1g5 b4c3 b2c3 h7h6 g5f6
-bestmove d2d4
+info score cp 20 pv g1f3 g8f6 d2d4 e7e6 c2c4 b7b6 a2a3 c8b7 b1c3 d7d5 c4d5 f6d5 c3d5 d8d5
+bestmove g1f3
 ```
 
 ## Contribution

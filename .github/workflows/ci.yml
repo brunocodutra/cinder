@@ -35,14 +35,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@nightly
     - run: cargo check --all-targets --all-features --workspace
 
   doc:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@nightly
     - run: cargo doc --all-features --workspace --no-deps
 
   test:
@@ -54,7 +52,6 @@ jobs:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@nightly
     - run: cargo test --all-targets --all-features --workspace
 
   sanitize:
@@ -76,7 +73,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@nightly
     - run: cargo install --force cargo-llvm-cov
     - run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
       env:
@@ -97,4 +93,5 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - run: cargo install --force cargo-make cargo-pgo
-    - run: cargo make cinder
+    - run: cargo make --profile production cinder
+    - run: ls "${{ github.workspace }}/target/bin/"

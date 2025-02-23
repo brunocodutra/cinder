@@ -1,20 +1,41 @@
+[tasks.clean]
+clear = true
+private = true
+script = '''
+#!@duckscript
+
+rm "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/${ARCH}/${TARGET}/release/cinder"
+rm "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/bin/cinder-${CARGO_MAKE_RUST_TARGET_OS}-${ARCH}"
+'''
+
 [tasks.instrument]
+clear = true
+private = true
+ignore_errors = true
+dependencies = ["clean"]
 command = "cargo"
 args = [
     "pgo",
     "instrument",
     "build",
     "--",
+    "-Zunstable-options",
+    "--config=profile.release.rustflags = [\"-Ctarget-cpu=${ARCH}\"]",
     "-Zbuild-std=core,alloc,std,panic_abort",
     "-Zbuild-std-features=panic_immediate_abort",
-    "--target=${CARGO_MAKE_CRATE_TARGET_TRIPLE}",
+    "--target=${TARGET}",
+    "--target-dir=${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/${ARCH}/",
 ]
 
 [tasks.profile]
+clear = true
+private = true
+ignore_errors = true
 dependencies = ["instrument"]
-script_runner = "@duckscript"
 script = '''
-cinder = set ${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/${CARGO_MAKE_CRATE_TARGET_TRIPLE}/release/cinder
+#!@duckscript
+
+cinder = set "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/${ARCH}/${TARGET}/release/cinder"
 
 # Positions from https://raw.githubusercontent.com/AndyGrant/Ethereal/refs/heads/master/src/bench.csv
 exec --input "position fen r3k2r/2pb1ppp/2pp1q2/p7/1nP1B3/1P2P3/P2N1PPP/R2QK2R w KQkq a6 0 14\ngo depth 16" ${cinder}
@@ -70,6 +91,9 @@ exec --input "position fen 2r2b2/5p2/5k2/p1r1pP2/P2pB3/1P3P2/K1P3R1/7R w - - 23 
 '''
 
 [tasks.pgo]
+clear = true
+private = true
+ignore_errors = true
 dependencies = ["profile"]
 command = "cargo"
 args = [
@@ -77,19 +101,128 @@ args = [
     "optimize",
     "build",
     "--",
+    "-Zunstable-options",
+    "--config=profile.release.rustflags = [\"-Ctarget-cpu=${ARCH}\"]",
     "-Zbuild-std=core,alloc,std,panic_abort",
     "-Zbuild-std-features=panic_immediate_abort",
-    "--target=${CARGO_MAKE_CRATE_TARGET_TRIPLE}",
+    "--target=${TARGET}",
+    "--target-dir=${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/${ARCH}/",
 ]
 
-[tasks.cinder]
+[tasks.build]
+clear = true
+private = true
+ignore_errors = true
 run_task = [
     { name = "pgo", condition = { files_modified = { input = [
         "${CARGO_MAKE_WORKING_DIRECTORY}/lib/**/*",
         "${CARGO_MAKE_WORKING_DIRECTORY}/bin/**/*",
         "${CARGO_MAKE_WORKING_DIRECTORY}/**/*.toml",
     ], output = [
-        "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/pgo-profiles/*",
-        "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/${CARGO_MAKE_CRATE_TARGET_TRIPLE}/release/cinder",
+        "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/bin/cinder-${CARGO_MAKE_RUST_TARGET_OS}-${ARCH}",
     ] } } },
 ]
+
+[tasks.release]
+private = true
+ignore_errors = true
+dependencies = ["build"]
+script = '''
+#!@duckscript
+
+src = set "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/${ARCH}/${TARGET}/release/cinder"
+dst = set "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/bin/cinder-${CARGO_MAKE_RUST_TARGET_OS}-${ARCH}"
+
+if not exec --get-exit-code --input "go depth 1" ${src}
+  mkdir "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/bin/"
+  cp ${src} ${dst}
+end
+'''
+
+[tasks.cinder-native]
+condition = { profiles = ["development"] }
+env = { "TARGET" = "${CARGO_MAKE_CRATE_TARGET_TRIPLE}", "ARCH" = "native" }
+run_task = "release"
+
+[tasks.cinder-linux-x86-64]
+condition = { profiles = ["production"], platforms = ["linux"] }
+env = { "TARGET" = "x86_64-unknown-linux-gnu", "ARCH" = "x86-64" }
+run_task = "release"
+
+[tasks.cinder-linux-x86-64-v2]
+condition = { profiles = ["production"], platforms = ["linux"] }
+env = { "TARGET" = "x86_64-unknown-linux-gnu", "ARCH" = "x86-64-v2" }
+run_task = "release"
+
+[tasks.cinder-linux-x86-64-v3]
+condition = { profiles = ["production"], platforms = ["linux"] }
+env = { "TARGET" = "x86_64-unknown-linux-gnu", "ARCH" = "x86-64-v3" }
+run_task = "release"
+
+[tasks.cinder-linux-x86-64-v4]
+condition = { profiles = ["production"], platforms = ["linux"] }
+env = { "TARGET" = "x86_64-unknown-linux-gnu", "ARCH" = "x86-64-v4" }
+run_task = "release"
+
+[tasks.cinder-windows-x86-64]
+condition = { profiles = ["production"], platforms = ["windows"] }
+env = { "TARGET" = "x86_64-pc-windows-msvc", "ARCH" = "x86-64" }
+run_task = "release"
+
+[tasks.cinder-windows-x86-64-v2]
+condition = { profiles = ["production"], platforms = ["windows"] }
+env = { "TARGET" = "x86_64-pc-windows-msvc", "ARCH" = "x86-64-v2" }
+run_task = "release"
+
+[tasks.cinder-windows-x86-64-v3]
+condition = { profiles = ["production"], platforms = ["windows"] }
+env = { "TARGET" = "x86_64-pc-windows-msvc", "ARCH" = "x86-64-v3" }
+run_task = "release"
+
+[tasks.cinder-windows-x86-64-v4]
+condition = { profiles = ["production"], platforms = ["windows"] }
+env = { "TARGET" = "x86_64-pc-windows-msvc", "ARCH" = "x86-64-v4" }
+run_task = "release"
+
+[tasks.cinder-mac-x86-64]
+condition = { profiles = ["production"], platforms = ["mac"] }
+env = { "TARGET" = "x86_64-apple-darwin", "ARCH" = "x86-64" }
+run_task = "release"
+
+[tasks.cinder-mac-x86-64-v2]
+condition = { profiles = ["production"], platforms = ["mac"] }
+env = { "TARGET" = "x86_64-apple-darwin", "ARCH" = "x86-64-v2" }
+run_task = "release"
+
+[tasks.cinder-mac-x86-64-v3]
+condition = { profiles = ["production"], platforms = ["mac"] }
+env = { "TARGET" = "x86_64-apple-darwin", "ARCH" = "x86-64-v3" }
+run_task = "release"
+
+[tasks.cinder-mac-x86-64-v4]
+condition = { profiles = ["production"], platforms = ["mac"] }
+env = { "TARGET" = "x86_64-apple-darwin", "ARCH" = "x86-64-v4" }
+run_task = "release"
+
+[tasks.cinder-mac-aarch64]
+condition = { profiles = ["production"], platforms = ["mac"] }
+env = { "TARGET" = "aarch64-apple-darwin", "ARCH" = "aarch64" }
+run_task = "release"
+
+[tasks.cinder]
+run_task = { name = [
+    "cinder-native",
+    "cinder-linux-x86-64",
+    "cinder-linux-x86-64-v2",
+    "cinder-linux-x86-64-v3",
+    "cinder-linux-x86-64-v4",
+    "cinder-windows-x86-64",
+    "cinder-windows-x86-64-v2",
+    "cinder-windows-x86-64-v3",
+    "cinder-windows-x86-64-v4",
+    "cinder-mac-x86-64",
+    "cinder-mac-x86-64-v2",
+    "cinder-mac-x86-64-v3",
+    "cinder-mac-x86-64-v4",
+    "cinder-mac-aarch64",
+] }

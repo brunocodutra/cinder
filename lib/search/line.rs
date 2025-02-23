@@ -58,6 +58,12 @@ impl<const N: usize> Line<N> {
         self.0[0]
     }
 
+    /// An iterator over the [`Move`]s in this [`Line`].
+    #[inline(always)]
+    pub fn iter(&self) -> impl Iterator<Item = Move> {
+        self.0.iter().map_while(|m| *m)
+    }
+
     /// Truncates to a principal variation of a different length.
     #[inline(always)]
     pub fn truncate<const M: usize>(self) -> Line<M> {
@@ -73,16 +79,16 @@ impl<const N: usize> Line<N> {
 
 impl<const N: usize> Display for Line<N> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut moves = self.0.iter().map_while(|m| m.as_ref());
+        let mut moves = self.iter();
         let Some(head) = moves.next() else {
             return Ok(());
         };
 
-        Display::fmt(head, f)?;
+        Display::fmt(&head, f)?;
 
         for m in moves {
             f.write_char(' ')?;
-            Display::fmt(m, f)?;
+            Display::fmt(&m, f)?;
         }
 
         Ok(())

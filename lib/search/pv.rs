@@ -1,15 +1,15 @@
-use crate::search::{Depth, Line, Score};
-use crate::{chess::Move, util::Integer};
+use crate::chess::Move;
+use crate::search::{Line, Score};
 use derive_more::with_trait::{Constructor, Deref};
 use std::cmp::Ordering;
-use std::ops::{Neg, Shr};
+use std::ops::Neg;
 
 /// The [principal variation].
 ///
 /// [principal variation]: https://www.chessprogramming.org/Principal_Variation
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Deref, Constructor)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
-pub struct Pv<const N: usize = { Depth::MAX as _ }> {
+pub struct Pv<const N: usize> {
     score: Score,
     #[deref]
     moves: Line<N>,
@@ -38,6 +38,12 @@ impl<const N: usize> Pv<N> {
     #[inline(always)]
     pub fn truncate<const M: usize>(self) -> Pv<M> {
         Pv::new(self.score, self.moves.truncate())
+    }
+
+    /// Transposes to a principal variation to a move.
+    #[inline(always)]
+    pub fn transpose(self, head: Move) -> Pv<N> {
+        Pv::new(self.score, Line::cons(head, self.moves))
     }
 }
 
@@ -85,15 +91,6 @@ impl<const N: usize> Neg for Pv<N> {
     }
 }
 
-impl<const N: usize> Shr<Pv<N>> for Move {
-    type Output = Pv<N>;
-
-    #[inline(always)]
-    fn shr(self, pv: Pv<N>) -> Self::Output {
-        Pv::new(pv.score, Line::cons(self, pv.moves))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,16 +112,6 @@ mod tests {
     }
 
     #[proptest]
-    fn shift_preserves_score(pv: Pv<3>, m: Move) {
-        assert_eq!(m.shr(pv.clone()).score(), pv.score());
-    }
-
-    #[proptest]
-    fn shift_prepends_move(pv: Pv<3>, m: Move) {
-        assert_eq!(m.shr(pv).head(), Some(m));
-    }
-
-    #[proptest]
     fn truncate_preserves_score(pv: Pv<3>) {
         assert_eq!(pv.score(), pv.truncate::<0>().score());
     }
@@ -135,5 +122,15 @@ mod tests {
             &pv.moves().clone().truncate::<2>(),
             pv.truncate::<2>().moves()
         );
+    }
+
+    #[proptest]
+    fn transpose_preserves_score(pv: Pv<3>, m: Move) {
+        assert_eq!(pv.clone().transpose(m).score(), pv.score());
+    }
+
+    #[proptest]
+    fn transpose_prepends_move(pv: Pv<3>, m: Move) {
+        assert_eq!(pv.clone().transpose(m).head(), Some(m));
     }
 }

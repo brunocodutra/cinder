@@ -80,7 +80,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
         let mut search =
             unsafe { unblock(|| self.engine.search(&self.position, limits, &stopper)) };
 
-        let pv = loop {
+        let result = loop {
             select! {
                 pv = search => break pv,
                 line = self.input.next() => {
@@ -93,15 +93,22 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
             }
         };
 
-        let info = match pv.score().mate() {
-            Some(p) if p > 0 => format!("info score mate {} pv {}", (p + 1) / 2, pv.moves()),
-            Some(p) => format!("info score mate {} pv {}", (p - 1) / 2, pv.moves()),
-            None => format!("info score cp {} pv {}", pv.score(), pv.moves()),
+        let line = result.moves();
+        let depth = result.depth();
+        let info = match result.score().mate() {
+            None => format!("info depth {depth} score cp {} pv {}", result.score(), line),
+            Some(p) => {
+                if p > 0 {
+                    format!("info depth {depth} score mate {} pv {}", (p + 1) / 2, line)
+                } else {
+                    format!("info depth {depth} score mate {} pv {}", (p - 1) / 2, line)
+                }
+            }
         };
 
         self.output.send(info).await?;
 
-        if let Some(m) = pv.head() {
+        if let Some(m) = result.head() {
             self.output.send(format!("bestmove {m}")).await?;
         }
 

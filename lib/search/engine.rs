@@ -201,6 +201,8 @@ impl<'a> Search<'a> {
         ply: Ply,
     ) -> Result<Pv<N>, Interrupted> {
         self.ctrl.interrupted()?;
+
+        (ply > 0).assume();
         let (alpha, beta) = match pos.outcome() {
             None => self.mdp(ply, &bounds),
             Some(o) if o.is_draw() => return Ok(Pv::empty(Score::new(0))),
@@ -514,7 +516,7 @@ impl Engine {
         };
 
         let time_left = clock.saturating_sub(*inc);
-        let moves_left = 280 / pos.fullmoves().get().min(40);
+        let moves_left = 256 / pos.fullmoves().get().min(64);
         let time_per_move = inc.saturating_add(time_left / moves_left);
         time_per_move / 2..time_per_move
     }
@@ -544,7 +546,6 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess::Outcome;
     use proptest::{prop_assume, sample::Selector};
     use test_strategy::proptest;
 
@@ -563,7 +564,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
         d: Depth,
-        #[filter(#p >= 0)] p: Ply,
+        #[filter(#p > 0)] p: Ply,
         #[filter(#s.mate().is_none() && #s >= #b)] s: Score,
         #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
     ) {
@@ -581,7 +582,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
         d: Depth,
-        #[filter(#p >= 0)] p: Ply,
+        #[filter(#p > 0)] p: Ply,
         #[filter(#s.mate().is_none() && #s < #b)] s: Score,
         #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
     ) {
@@ -599,7 +600,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
         d: Depth,
-        #[filter(#p >= 0)] p: Ply,
+        #[filter(#p > 0)] p: Ply,
         #[filter(#s.mate().is_none())] s: Score,
         #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
     ) {
@@ -678,7 +679,7 @@ mod tests {
         #[filter(#pos.outcome().is_some_and(|o| o.is_draw()))] pos: Evaluator,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
-        #[filter(#p > 0 || #pos.outcome() != Some(Outcome::DrawByThreefoldRepetition))] p: Ply,
+        #[filter(#p > 0)] p: Ply,
     ) {
         let mut search = Search::new(&e, Control::Unlimited);
 

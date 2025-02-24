@@ -10,7 +10,7 @@
 Cinder is an independent chess engine written in Rust from scratch.
 With a playing strength that is far superior to what humans are capable of,
 Cinder is primarily developed to play against other engines. It is regularly tested
-at the extremely short time control of 3s+25ms per game. The shorter the time control,
+at the extremely short time control of 1s+10ms per game. The shorter the time control,
 the stronger Cinder tends to play.
 
 ## Usage

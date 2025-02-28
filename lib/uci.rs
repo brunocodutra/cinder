@@ -1,14 +1,21 @@
-use crate::chess::{Color, Move, Perspective};
+use crate::chess::{Color, Move, Perspective, Square};
 use crate::nnue::Evaluator;
 use crate::search::{Depth, Engine, HashSize, Limits, Options, ThreadCount};
 use crate::util::{Assume, Integer, Trigger};
+use derive_more::with_trait::{Display, Error, From};
 use futures::channel::oneshot::channel as oneshot;
 use futures::{future::FusedFuture, prelude::*, select_biased as select, stream::FusedStream};
-use std::time::{Duration, Instant};
-use std::{fmt::Debug, io::Write, mem::transmute, str, thread};
+use nom::error::{Error as ParseError, ErrorKind};
+use nom::{branch::*, bytes::complete::*, combinator::*, sequence::*, *};
+use std::str::{self, FromStr};
+use std::{fmt::Debug, io::Write, mem::transmute, thread, time::Instant};
 
 #[cfg(test)]
 use proptest::{prelude::*, strategy::LazyJust};
+
+mod parser;
+
+pub use parser::*;
 
 /// Runs the provided closure on a thread where blocking is acceptable.
 ///
@@ -42,6 +49,17 @@ impl PartialEq<str> for UciMove {
         let len = if buffer[4] == b'\0' { 4 } else { 5 };
         other == unsafe { str::from_utf8_unchecked(&buffer[..len]) }
     }
+}
+
+/// The reason why executing the UCI command failed.
+#[derive(Debug, Display, Clone, Eq, PartialEq, Error, From)]
+pub enum UciError<I, E> {
+    #[display("failed to parse the uci command")]
+    #[from(forward)]
+    ParseError(ParseError<I>),
+    #[display("fatal error")]
+    #[from(ignore)]
+    Fatal(E),
 }
 
 /// A basic UCI server.
@@ -82,9 +100,9 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
 
         let result = loop {
             select! {
-                pv = search => break pv,
+                result = search => break result,
                 line = self.input.next() => {
-                    match line.as_deref().map(str::trim) {
+                    match line.as_deref().map(str::trim_ascii) {
                         None => break search.await,
                         Some("stop") => { stopper.disarm(); },
                         Some(cmd) => eprintln!("ignored unsupported command `{cmd}` during search"),
@@ -118,14 +136,14 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
     async fn bench(&mut self, limits: &Limits) -> Result<(), O::Error> {
         let stopper = Trigger::armed();
         let timer = Instant::now();
-        self.engine.search(&self.position, limits, &stopper);
+        let result = self.engine.search(&self.position, limits, &stopper);
         let millis = timer.elapsed().as_millis();
 
         let info = match limits {
-            Limits::Depth(d) => format!("info time {millis} depth {d}"),
+            Limits::Depth(_) => format!("info time {millis} depth {}", result.depth()),
             Limits::Nodes(nodes) => format!(
                 "info time {millis} nodes {nodes} nps {}",
-                *nodes as u128 * 1000 / millis
+                *nodes as u128 * 1000 / millis.max(1)
             ),
             _ => return Ok(()),
         };
@@ -140,169 +158,176 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
 
         let info = format!(
             "info time {millis} nodes {nodes} nps {}",
-            nodes as u128 * 1000 / millis
+            nodes as u128 * 1000 / millis.max(1)
         );
 
         self.output.send(info).await
     }
 
+    async fn execute<'i>(&mut self, input: &'i str) -> Result<(), UciError<&'i str, O::Error>> {
+        let mut cmd = t(alt((
+            tag("position"),
+            tag("go"),
+            tag("bench"),
+            tag("perft"),
+            tag("eval"),
+            tag("setoption"),
+            tag("isready"),
+            tag("ucinewgame"),
+            tag("uci"),
+        )));
+
+        match cmd.parse(input).finish()? {
+            (args, "position") => {
+                let word6 = (word, t(word), t(word), t(word), t(word), word);
+                let fen = field("fen", t(recognize(word6))).map_res(Evaluator::from_str);
+                let startpos = t(tag("startpos")).map(|_| Evaluator::default());
+                let moves = opt(field("moves", rest));
+
+                let mut position = terminated((alt((startpos, fen)), moves), eof);
+                let (_, (mut pos, moves)) = position.parse(args).finish()?;
+
+                if let Some(moves) = moves {
+                    for s in moves.split_ascii_whitespace() {
+                        let take2 = take::<_, _, ParseError<&str>>(2usize);
+                        let (_, whence) = take2.map_res(Square::from_str).parse(s).finish()?;
+                        let moves = pos.moves().filter(|ms| ms.whence() == whence);
+                        let Some(m) = moves.flatten().find(|m| UciMove(*m) == *s) else {
+                            return Err(UciError::ParseError(ParseError::new(s, ErrorKind::Fail)));
+                        };
+
+                        pos.play(m);
+                    }
+                }
+
+                self.position = pos;
+            }
+
+            (args, "go") => {
+                let wtime = field("wtime", millis);
+                let winc = field("winc", millis);
+                let btime = field("btime", millis);
+                let binc = field("binc", millis);
+                let mtg = field("movestogo", int);
+
+                let clock = gather5((wtime, winc, btime, binc, mtg)).map(|(wt, wi, bt, bi, _)| {
+                    use {Color::*, Limits::Clock};
+                    match self.position.turn() {
+                        White => Clock(wt.unwrap_or_default(), wi.unwrap_or_default()),
+                        Black => Clock(bt.unwrap_or_default(), bi.unwrap_or_default()),
+                    }
+                });
+
+                let infinite = alt((eof, t(tag("infinite")))).map(|_| Limits::None);
+                let depth = field("depth", int).map(|i| Limits::Depth(i.saturate()));
+                let nodes = field("nodes", int).map(|i| Limits::Nodes(i.saturate()));
+                let movetime = field("movetime", millis).map(Limits::Time);
+
+                let mut go = terminated(alt((infinite, clock, movetime, nodes, depth)), eof);
+                let (_, limits) = go.parse(args).finish()?;
+                drop(go);
+
+                self.go(&limits).await.map_err(UciError::Fatal)?;
+            }
+
+            (args, "bench") => {
+                let depth = field("depth", int).map(|i| Limits::Depth(i.saturate()));
+                let nodes = field("nodes", int).map(|i| Limits::Nodes(i.saturate()));
+                let mut bench = terminated(alt((nodes, depth)), eof);
+                let (_, limits) = bench.parse(args).finish()?;
+                self.bench(&limits).await.map_err(UciError::Fatal)?;
+            }
+
+            (args, "perft") => {
+                let depth = t(int).map(|i| i.saturate());
+                let mut perft = terminated(depth, eof);
+                let (_, depth) = perft.parse(args).finish()?;
+                self.perft(depth).await.map_err(UciError::Fatal)?;
+            }
+
+            ("", "eval") => {
+                let pos = &self.position;
+                let turn = self.position.turn();
+                let value = pos.evaluate().perspective(turn);
+                let info = format!("info value {value:+}");
+                self.output.send(info).await.map_err(UciError::Fatal)?;
+            }
+
+            (args, "setoption") => {
+                let option = |n| preceded((t(tag("name")), tag_no_case(n), t(tag("value"))), word);
+
+                let hash = option("hash").map_res(|s| s.parse());
+                let threads = option("threads").map_res(|s| s.parse());
+
+                let mut setoption = terminated((opt(hash), opt(threads)), eof);
+                let (_, (hash, threads)) = setoption.parse(args).finish()?;
+
+                if let Some(h) = hash {
+                    self.options.hash = h;
+                }
+
+                if let Some(t) = threads {
+                    self.options.threads = t;
+                }
+
+                self.engine = Engine::with_options(&self.options);
+            }
+
+            ("", "isready") => {
+                let readyok = "readyok".to_string();
+                self.output.send(readyok).await.map_err(UciError::Fatal)?
+            }
+
+            ("", "ucinewgame") => {
+                self.engine = Engine::with_options(&self.options);
+                self.position = Evaluator::default();
+            }
+
+            ("", "uci") => {
+                let uciok = "uciok".to_string();
+                let name = format!("id name Cinder {}", env!("CARGO_PKG_VERSION"));
+                let author = "id author Bruno Dutra".to_string();
+
+                let hash = format!(
+                    "option name Hash type spin default {} min {} max {}",
+                    HashSize::default(),
+                    HashSize::lower(),
+                    HashSize::upper()
+                );
+
+                let threads = format!(
+                    "option name Threads type spin default {} min {} max {}",
+                    ThreadCount::default(),
+                    ThreadCount::lower(),
+                    ThreadCount::upper()
+                );
+
+                self.output.send(name).await.map_err(UciError::Fatal)?;
+                self.output.send(author).await.map_err(UciError::Fatal)?;
+                self.output.send(hash).await.map_err(UciError::Fatal)?;
+                self.output.send(threads).await.map_err(UciError::Fatal)?;
+                self.output.send(uciok).await.map_err(UciError::Fatal)?;
+            }
+
+            _ => unreachable!(),
+        }
+
+        Ok(())
+    }
+
     /// Runs the UCI server.
     pub async fn run(&mut self) -> Result<(), O::Error> {
         while let Some(line) = self.input.next().await {
-            match line.split_whitespace().collect::<Vec<_>>().as_slice() {
-                ["quit"] => return Ok(()),
-                [] | ["stop"] => continue,
-
-                ["go", "wtime", wt, "btime", bt, "winc", wi, "binc", bi]
-                | ["go", "wtime", wt, "winc", wi, "btime", bt, "binc", bi] => {
-                    let (t, i) = match self.position.turn() {
-                        Color::White => (wt, wi),
-                        Color::Black => (bt, bi),
-                    };
-
-                    match (t.parse(), i.parse()) {
-                        (Err(e), _) | (_, Err(e)) => eprintln!("{e}"),
-                        (Ok(t), Ok(i)) => {
-                            let t = Duration::from_millis(t);
-                            let i = Duration::from_millis(i);
-                            self.go(&Limits::Clock(t, i)).await?;
-                        }
-                    }
-                }
-
-                ["go", "movetime", time] => match time.parse() {
-                    Ok(ms) => self.go(&Duration::from_millis(ms).into()).await?,
-                    Err(e) => eprintln!("{e}"),
-                },
-
-                ["go", "depth", depth] => match depth.parse() {
-                    Ok(d) => self.go(&Limits::Depth(d)).await?,
-                    Err(e) => eprintln!("{e}"),
-                },
-
-                ["go", "nodes", nodes] => match nodes.parse() {
-                    Ok(n) => self.go(&Limits::Nodes(n)).await?,
-                    Err(e) => eprintln!("{e}"),
-                },
-
-                ["go"] | ["go", "infinite"] => self.go(&Limits::None).await?,
-
-                ["bench", "depth", depth] => match depth.parse() {
-                    Ok(d) => self.bench(&Limits::Depth(d)).await?,
-                    Err(e) => eprintln!("{e}"),
-                },
-
-                ["bench", "nodes", nodes] => match nodes.parse() {
-                    Ok(n) => self.bench(&Limits::Nodes(n)).await?,
-                    Err(e) => eprintln!("{e}"),
-                },
-
-                ["position", kind @ "startpos", args @ ..]
-                | ["position", kind @ "fen", args @ ..] => {
-                    let (pos, args) = match *kind {
-                        "startpos" => (Evaluator::default(), args),
-                        _ => match args[..args.len().min(6)].join(" ").parse() {
-                            Ok(pos) => (pos, &args[6..]),
-                            Err(e) => {
-                                eprintln!("{e}");
-                                continue;
-                            }
-                        },
-                    };
-
-                    let moves = match args {
-                        moves @ [] | ["moves", moves @ ..] => moves,
-                        args => {
-                            let args = args.join(" ");
-                            eprintln!("ignored unsupported command `position {kind} {}`", args);
-                            continue;
-                        }
-                    };
-
-                    self.position = pos;
-                    for s in moves.iter() {
-                        let whence = match s[..s.ceil_char_boundary(2)].parse() {
-                            Ok(whence) => whence,
-                            Err(e) => {
-                                eprintln!("invalid move `{s}`, {e}");
-                                break;
-                            }
-                        };
-
-                        let moves = self.position.moves().filter(|ms| ms.whence() == whence);
-                        let Some(m) = moves.flatten().find(|m| UciMove(*m) == **s) else {
-                            eprintln!("illegal move `{s}` in position `{}`", self.position);
-                            break;
-                        };
-
-                        self.position.play(m);
-                    }
-                }
-
-                ["perft", depth] => match depth.parse() {
-                    Ok(d) => self.perft(d).await?,
-                    Err(e) => eprintln!("{e}"),
-                },
-
-                ["eval"] => {
-                    let pos = &self.position;
-                    let turn = self.position.turn();
-                    let value = pos.evaluate().perspective(turn);
-                    let info = format!("info value {value:+}");
-                    self.output.send(info).await?;
-                }
-
-                ["uci"] => {
-                    let name = format!("id name Cinder {}", env!("CARGO_PKG_VERSION"));
-                    let author = "id author Bruno Dutra".to_string();
-
-                    let hash = format!(
-                        "option name Hash type spin default {} min {} max {}",
-                        HashSize::default(),
-                        HashSize::lower(),
-                        HashSize::upper()
-                    );
-
-                    let threads = format!(
-                        "option name Threads type spin default {} min {} max {}",
-                        ThreadCount::default(),
-                        ThreadCount::lower(),
-                        ThreadCount::upper()
-                    );
-
-                    self.output.send(name).await?;
-                    self.output.send(author).await?;
-                    self.output.send(hash).await?;
-                    self.output.send(threads).await?;
-                    self.output.send("uciok".to_string()).await?;
-                }
-
-                ["ucinewgame"] => {
-                    self.engine = Engine::with_options(&self.options);
-                    self.position = Evaluator::default();
-                }
-
-                ["isready"] => self.output.send("readyok".to_string()).await?,
-
-                ["setoption", "name", "hash", "value", hash]
-                | ["setoption", "name", "Hash", "value", hash] => match hash.parse() {
-                    Err(e) => eprintln!("{e}"),
-                    Ok(h) => {
-                        self.options.hash = h;
-                        self.engine = Engine::with_options(&self.options);
+            match line.trim_ascii() {
+                "quit" => break,
+                "stop" | "" => continue,
+                cmd => match self.execute(cmd).await {
+                    Ok(_) => continue,
+                    Err(UciError::Fatal(e)) => return Err(e),
+                    Err(UciError::ParseError(_)) => {
+                        eprintln!("warning: ignored unrecognized command `{cmd}`")
                     }
                 },
-
-                ["setoption", "name", "threads", "value", threads]
-                | ["setoption", "name", "Threads", "value", threads] => match threads.parse() {
-                    Err(e) => eprintln!("{e}"),
-                    Ok(t) => {
-                        self.options.threads = t;
-                        self.engine = Engine::with_options(&self.options);
-                    }
-                },
-
-                cmd => eprintln!("ignored unsupported command `{}`", cmd.join(" ")),
             }
         }
 
@@ -315,6 +340,7 @@ mod tests {
     use super::*;
     use crate::{chess::Position, search::Depth};
     use futures::executor::block_on;
+    use nom::{character::complete::line_ending, multi::separated_list1};
     use proptest::sample::Selector;
     use std::task::{Context, Poll};
     use std::{collections::VecDeque, pin::Pin};
@@ -429,8 +455,9 @@ mod tests {
         #[strategy("[^[:ascii:]]+")] _s: String,
         #[any(StaticStream::new([format!("position startpos moves {}", #_s)]))] mut uci: MockUci,
     ) {
+        let pos = uci.position.clone();
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert_eq!(uci.position, Evaluator::default());
+        assert_eq!(uci.position, pos);
         assert!(uci.output.is_empty());
     }
 
@@ -440,9 +467,45 @@ mod tests {
         _m: Move,
         #[any(StaticStream::new([format!("position startpos moves {}", #_m)]))] mut uci: MockUci,
     ) {
+        let pos = uci.position.clone();
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert_eq!(uci.position, Evaluator::default());
+        assert_eq!(uci.position, pos);
         assert!(uci.output.is_empty());
+    }
+
+    #[proptest]
+    fn handles_bench_depth(
+        #[filter(#uci.position.outcome().is_none())]
+        #[any(StaticStream::new([format!("bench depth {}", #_d)]))]
+        mut uci: MockUci,
+        _d: Depth,
+    ) {
+        assert_eq!(block_on(uci.run()), Ok(()));
+
+        let output = uci.output.join("\n");
+
+        let time = field("time", int);
+        let depth = field("depth", int);
+        let mut pattern = recognize(terminated((tag("info"), time, depth), eof));
+        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
+    }
+
+    #[proptest]
+    fn handles_bench_nodes(
+        #[filter(#uci.position.outcome().is_none())]
+        #[any(StaticStream::new([format!("bench nodes {}", #_n)]))]
+        mut uci: MockUci,
+        #[strategy(..1000u64)] _n: u64,
+    ) {
+        assert_eq!(block_on(uci.run()), Ok(()));
+
+        let output = uci.output.join("\n");
+
+        let time = field("time", int);
+        let nodes = field("nodes", int);
+        let nps = field("nps", int);
+        let mut pattern = recognize(terminated((tag("info"), time, nodes, nps), eof));
+        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
     #[proptest]
@@ -456,7 +519,16 @@ mod tests {
         #[strategy(..10u8)] _bi: u8,
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert!(uci.output.concat().contains("bestmove"));
+
+        let output = uci.output.join("\n");
+
+        let depth = field("depth", int);
+        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
+        let pv = field("pv", separated_list1(tag(" "), word));
+        let info = (tag("info"), depth, score, pv);
+        let bestmove = field("bestmove", word);
+        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
     #[proptest]
@@ -467,7 +539,16 @@ mod tests {
         _d: Depth,
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert!(uci.output.concat().contains("bestmove"));
+
+        let output = uci.output.join("\n");
+
+        let depth = field("depth", int);
+        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
+        let pv = field("pv", separated_list1(tag(" "), word));
+        let info = (tag("info"), depth, score, pv);
+        let bestmove = field("bestmove", word);
+        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
     #[proptest]
@@ -478,7 +559,16 @@ mod tests {
         #[strategy(..1000u64)] _n: u64,
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert!(uci.output.concat().contains("bestmove"));
+
+        let output = uci.output.join("\n");
+
+        let depth = field("depth", int);
+        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
+        let pv = field("pv", separated_list1(tag(" "), word));
+        let info = (tag("info"), depth, score, pv);
+        let bestmove = field("bestmove", word);
+        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
     #[proptest]
@@ -489,7 +579,16 @@ mod tests {
         #[strategy(..10u8)] _ms: u8,
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert!(uci.output.concat().contains("bestmove"));
+
+        let output = uci.output.join("\n");
+
+        let depth = field("depth", int);
+        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
+        let pv = field("pv", separated_list1(tag(" "), word));
+        let info = (tag("info"), depth, score, pv);
+        let bestmove = field("bestmove", word);
+        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
     #[proptest]
@@ -500,7 +599,16 @@ mod tests {
         mut uci: MockUci,
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert!(uci.output.concat().contains("bestmove"));
+
+        let output = uci.output.join("\n");
+
+        let depth = field("depth", int);
+        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
+        let pv = field("pv", separated_list1(tag(" "), word));
+        let info = (tag("info"), depth, score, pv);
+        let bestmove = field("bestmove", word);
+        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
     #[proptest]
@@ -511,7 +619,16 @@ mod tests {
         mut uci: MockUci,
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert!(uci.output.concat().contains("bestmove"));
+
+        let output = uci.output.join("\n");
+
+        let depth = field("depth", int);
+        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
+        let pv = field("pv", separated_list1(tag(" "), word));
+        let info = (tag("info"), depth, score, pv);
+        let bestmove = field("bestmove", word);
+        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
     #[proptest]
@@ -534,9 +651,14 @@ mod tests {
             Color::Black => -pos.evaluate(),
         };
 
-        let value = format!("value {:+}", value);
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert!(uci.output.concat().ends_with(&value));
+
+        let output = uci.output.join("\n");
+
+        let value = format!("{:+}", value);
+        let info = (tag("info"), field("value", tag(&*value)));
+        let mut pattern = recognize(terminated(info, eof));
+        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
     #[proptest]

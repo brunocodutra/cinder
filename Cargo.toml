@@ -45,6 +45,7 @@ ruzstd = { version = "0.8.0", default-features = false, features = ["std"] }
 criterion = { version = "0.5.1", default-features = false }
 criterion-macro = { version = "0.4.0", default-features = false }
 proptest = { version = "1.6.0", default-features = false, features = ["std"] }
+rand = { version = "0.9.0", default-features = false, features = ["thread_rng"] }
 test-strategy = { version = "0.4.0", default-features = false }
 
 [profile.release]

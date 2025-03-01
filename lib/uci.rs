@@ -204,29 +204,38 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
             }
 
             (args, "go") => {
+                let turn = self.position.turn();
+
                 let wtime = field("wtime", millis);
                 let winc = field("winc", millis);
                 let btime = field("btime", millis);
                 let binc = field("binc", millis);
+                let time = field("movetime", millis);
+                let nodes = field("nodes", int);
+                let depth = field("depth", int);
+                let mate = field("mate", int);
                 let mtg = field("movestogo", int);
+                let inf = t(tag("infinite"));
 
-                let clock = gather5((wtime, winc, btime, binc, mtg)).map(|(wt, wi, bt, bi, _)| {
-                    use {Color::*, Limits::Clock};
-                    match self.position.turn() {
-                        White => Clock(wt.unwrap_or_default(), wi.unwrap_or_default()),
-                        Black => Clock(bt.unwrap_or_default(), bi.unwrap_or_default()),
+                let params = (wtime, winc, btime, binc, time, nodes, depth, mate, mtg, inf);
+                let limits = gather(params).map(|(wt, wi, bt, bi, t, n, d, _, _, _)| {
+                    if let (Color::White, Some(clock)) = (turn, wt) {
+                        Limits::Clock(clock, wi.unwrap_or_default())
+                    } else if let (Color::Black, Some(clock)) = (turn, bt) {
+                        Limits::Clock(clock, bi.unwrap_or_default())
+                    } else if let Some(movetime) = t {
+                        Limits::Time(movetime)
+                    } else if let Some(nodes) = n {
+                        Limits::Nodes(nodes.saturate())
+                    } else if let Some(depth) = d {
+                        Limits::Depth(depth.saturate())
+                    } else {
+                        Limits::None
                     }
                 });
 
-                let infinite = alt((eof, t(tag("infinite")))).map(|_| Limits::None);
-                let depth = field("depth", int).map(|i| Limits::Depth(i.saturate()));
-                let nodes = field("nodes", int).map(|i| Limits::Nodes(i.saturate()));
-                let movetime = field("movetime", millis).map(Limits::Time);
-
-                let mut go = terminated(alt((infinite, clock, movetime, nodes, depth)), eof);
+                let mut go = terminated(opt(limits), eof).map(|l| l.unwrap_or_default());
                 let (_, limits) = go.parse(args).finish()?;
-                drop(go);
-
                 self.go(&limits).await.map_err(UciError::Fatal)?;
             }
 
@@ -256,10 +265,12 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
             (args, "setoption") => {
                 let option = |n| preceded((t(tag("name")), tag_no_case(n), t(tag("value"))), word);
 
-                let hash = option("hash").map_res(|s| s.parse());
-                let threads = option("threads").map_res(|s| s.parse());
+                let options = gather2((
+                    option("hash").map_res(|s| s.parse()),
+                    option("threads").map_res(|s| s.parse()),
+                ));
 
-                let mut setoption = terminated((opt(hash), opt(threads)), eof);
+                let mut setoption = terminated(options, eof);
                 let (_, (hash, threads)) = setoption.parse(args).finish()?;
 
                 if let Some(h) = hash {
@@ -342,6 +353,7 @@ mod tests {
     use futures::executor::block_on;
     use nom::{character::complete::line_ending, multi::separated_list1};
     use proptest::sample::Selector;
+    use rand::seq::SliceRandom;
     use std::task::{Context, Poll};
     use std::{collections::VecDeque, pin::Pin};
     use test_strategy::proptest;
@@ -382,10 +394,12 @@ mod tests {
 
     #[proptest]
     fn handles_position_with_startpos_and_moves(
+        #[by_ref]
+        #[filter(#uci.position.outcome().is_none())]
+        mut uci: MockUci,
         #[strategy(..=4usize)] n: usize,
         selector: Selector,
     ) {
-        let mut uci = MockUci::default();
         let mut input = String::new();
         let mut pos = Evaluator::default();
 
@@ -416,11 +430,13 @@ mod tests {
 
     #[proptest]
     fn handles_position_with_fen_and_moves(
+        #[by_ref]
+        #[filter(#uci.position.outcome().is_none())]
+        mut uci: MockUci,
         mut pos: Evaluator,
         #[strategy(..=4usize)] n: usize,
         selector: Selector,
     ) {
-        let mut uci = MockUci::default();
         let mut input = String::new();
 
         input.push_str(&format!("position fen {pos} moves"));
@@ -510,14 +526,25 @@ mod tests {
 
     #[proptest]
     fn handles_go_time_left(
+        #[by_ref]
         #[filter(#uci.position.outcome().is_none())]
-        #[any(StaticStream::new([format!("go wtime {} btime {} winc {} binc {}", #_wt, #_bt, #_wi, #_bi)]))]
         mut uci: MockUci,
-        #[strategy(..10u8)] _wt: u8,
-        #[strategy(..10u8)] _wi: u8,
-        #[strategy(..10u8)] _bt: u8,
-        #[strategy(..10u8)] _bi: u8,
+        #[strategy(..10u8)] wt: u8,
+        #[strategy(..10u8)] wi: u8,
+        #[strategy(..10u8)] bt: u8,
+        #[strategy(..10u8)] bi: u8,
+        idx: usize,
     ) {
+        let mut input = [
+            "go".to_string(),
+            format!("wtime {}", wt),
+            format!("btime {}", bt),
+            format!("winc {}", wi),
+            format!("binc {}", bi),
+        ];
+
+        input[1..].shuffle(&mut rand::rng());
+        uci.input = StaticStream::new([input[..=(idx % input.len())].join(" ")]);
         assert_eq!(block_on(uci.run()), Ok(()));
 
         let output = uci.output.join("\n");
@@ -592,11 +619,53 @@ mod tests {
     }
 
     #[proptest]
-    fn handles_go(
+    fn handles_go_infinite(
         #[by_ref]
         #[filter(#uci.position.outcome().is_none())]
-        #[any(StaticStream::new(["go"]))]
+        #[any(StaticStream::new(["go infinite"]))]
         mut uci: MockUci,
+    ) {
+        assert_eq!(block_on(uci.run()), Ok(()));
+
+        let output = uci.output.join("\n");
+
+        let depth = field("depth", int);
+        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
+        let pv = field("pv", separated_list1(tag(" "), word));
+        let info = (tag("info"), depth, score, pv);
+        let bestmove = field("bestmove", word);
+        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
+    }
+
+    #[proptest]
+    fn handles_go_with_moves_to_go(
+        #[by_ref]
+        #[filter(#uci.position.outcome().is_none())]
+        #[any(StaticStream::new([format!("go movestogo {}", #_mtg)]))]
+        mut uci: MockUci,
+        _mtg: i8,
+    ) {
+        assert_eq!(block_on(uci.run()), Ok(()));
+
+        let output = uci.output.join("\n");
+
+        let depth = field("depth", int);
+        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
+        let pv = field("pv", separated_list1(tag(" "), word));
+        let info = (tag("info"), depth, score, pv);
+        let bestmove = field("bestmove", word);
+        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
+    }
+
+    #[proptest]
+    fn handles_go_with_mate(
+        #[by_ref]
+        #[filter(#uci.position.outcome().is_none())]
+        #[any(StaticStream::new([format!("go mate {}", #_mate)]))]
+        mut uci: MockUci,
+        _mate: i8,
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
 

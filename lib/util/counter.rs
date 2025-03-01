@@ -9,10 +9,16 @@ pub struct Counter {
 impl Counter {
     /// Constructs a counter with the given limit.
     #[inline(always)]
-    pub fn new(limit: u64) -> Self {
+    pub const fn new(limit: u64) -> Self {
         Counter {
             remaining: AtomicU64::new(limit),
         }
+    }
+
+    /// The number of counts remaining.
+    #[inline(always)]
+    pub fn get(&self) -> u64 {
+        self.remaining.load(Ordering::Relaxed)
     }
 
     /// Increments the counter and returns the number of counts remaining if any.

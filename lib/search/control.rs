@@ -15,6 +15,17 @@ pub enum Control<'a> {
 }
 
 impl Control<'_> {
+    /// A reference to the node counter.
+    #[inline(always)]
+    pub fn counter(&self) -> &Counter {
+        static INFINITE: Counter = Counter::new(u64::MAX);
+
+        match self {
+            Control::Unlimited => &INFINITE,
+            Control::Limited(counter, _, _) => counter,
+        }
+    }
+
     /// A reference to the timer.
     #[inline(always)]
     pub fn timer(&self) -> &Timer {

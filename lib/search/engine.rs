@@ -4,7 +4,8 @@ use crate::search::*;
 use crate::util::{Assume, Counter, Integer, Timer, Trigger};
 use arrayvec::ArrayVec;
 use derive_more::with_trait::{Constructor, Deref};
-use std::{num::Saturating, ops::Range, thread, time::Duration};
+use std::time::{Duration, Instant};
+use std::{num::Saturating, ops::Range, thread};
 
 #[cfg(test)]
 use proptest::strategy::LazyJust;
@@ -14,6 +15,8 @@ use proptest::strategy::LazyJust;
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct SearchResult<const N: usize = { Depth::MAX as _ }> {
     depth: Depth,
+    time: Duration,
+    nodes: u64,
     #[deref]
     pv: Pv<N>,
 }
@@ -23,6 +26,24 @@ impl<const N: usize> SearchResult<N> {
     #[inline(always)]
     pub fn depth(&self) -> Depth {
         self.depth
+    }
+
+    /// The duration searched.
+    #[inline(always)]
+    pub fn time(&self) -> Duration {
+        self.time
+    }
+
+    /// The number of nodes searched.
+    #[inline(always)]
+    pub fn nodes(&self) -> u64 {
+        self.nodes
+    }
+
+    /// The number of nodes searched per second.
+    #[inline(always)]
+    pub fn nps(&self) -> f64 {
+        self.nodes as f64 / self.time().as_secs_f64()
     }
 }
 
@@ -35,6 +56,7 @@ pub struct Search<'a> {
     value: [Value; Ply::MAX as usize + 1],
     killers: [Killers; Ply::MAX as usize + 1],
     continuation: [Option<&'a Reply>; Ply::MAX as usize + 1],
+    timestamp: Instant,
 }
 
 impl<'a> Search<'a> {
@@ -49,6 +71,7 @@ impl<'a> Search<'a> {
             value,
             killers,
             continuation,
+            timestamp: Instant::now(),
         }
     }
 
@@ -89,6 +112,12 @@ impl<'a> Search<'a> {
         let score = ScoreBound::new(bounds, score, ply);
         let tpos = Transposition::new(score, draft, best);
         self.tt.set(pos.zobrist(), tpos);
+    }
+
+    fn result<const N: usize>(&self, limits: &Limits, depth: Depth, pv: Pv<N>) -> SearchResult<N> {
+        let nodes = limits.nodes() - self.ctrl.counter().get();
+        let time = self.timestamp.elapsed();
+        SearchResult::new(depth, time, nodes, pv)
     }
 
     /// An implementation of the [improving heuristic].
@@ -389,7 +418,7 @@ impl<'a> Search<'a> {
     fn aw<const N: usize>(
         &mut self,
         pos: &Evaluator,
-        limit: Depth,
+        limits: &Limits,
         time: Range<Duration>,
     ) -> SearchResult<N> {
         let mut moves: ArrayVec<_, 255> = pos.moves().flatten().map(|m| (m, pos.gain(m))).collect();
@@ -399,16 +428,16 @@ impl<'a> Search<'a> {
         let score = self.value[0].saturate();
         let mut depth = Depth::new(0);
         let mut pv = match &*moves {
-            [] if !pos.is_check() => return SearchResult::new(depth, Pv::empty(score)),
-            [] => return SearchResult::new(depth, Pv::empty(Score::mated(Ply::new(0)))),
-            [(m, _)] => return SearchResult::new(depth, Pv::new(score, Line::singular(*m))),
+            [] if !pos.is_check() => return self.result(limits, depth, Pv::empty(score)),
+            [] => return self.result(limits, depth, Pv::empty(Score::mated(Ply::new(0)))),
+            [(m, _)] => return self.result(limits, depth, Pv::new(score, Line::singular(*m))),
             [.., (m, _)] => match self.tt.get(pos.zobrist()) {
                 None => Pv::new(score, Line::singular(*m)),
                 Some(t) => t.transpose(Ply::new(0)).truncate(),
             },
         };
 
-        while depth < limit {
+        while depth < limits.depth() {
             depth += 1;
 
             let mut draft = depth;
@@ -420,7 +449,7 @@ impl<'a> Search<'a> {
 
             'aw: loop {
                 if self.ctrl.timer().remaining() < Some(time.end - time.start) {
-                    return SearchResult::new(depth - 1, pv);
+                    return self.result(limits, depth - 1, pv);
                 }
 
                 for (m, rating) in moves.iter_mut() {
@@ -435,7 +464,7 @@ impl<'a> Search<'a> {
 
                 moves.sort_unstable_by_key(|(_, rating)| *rating);
                 let partial = match self.pvs(pos, &moves, lower..upper, draft, Ply::new(0)) {
-                    Err(_) => return SearchResult::new(depth - 1, pv),
+                    Err(_) => return self.result(limits, depth - 1, pv),
                     Ok(partial) => partial.assume(),
                 };
 
@@ -461,16 +490,16 @@ impl<'a> Search<'a> {
             }
         }
 
-        SearchResult::new(depth, pv)
+        self.result(limits, depth, pv)
     }
 
     fn go<const N: usize>(
         mut self,
         pos: &Evaluator,
-        limit: Depth,
+        limits: &Limits,
         time: Range<Duration>,
     ) -> SearchResult<N> {
-        self.aw(pos, limit, time)
+        self.aw(pos, limits, time)
     }
 }
 
@@ -533,10 +562,10 @@ impl Engine {
             for _ in 1..self.threads.get() {
                 let time = time.clone();
                 let search = search.clone();
-                s.spawn(|| search.go::<1>(pos, limits.depth(), time));
+                s.spawn(|| search.go::<1>(pos, limits, time));
             }
 
-            let pv = search.go(pos, limits.depth(), time);
+            let pv = search.go(pos, limits, time);
             stopper.disarm();
             pv
         })

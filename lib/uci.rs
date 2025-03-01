@@ -113,16 +113,18 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
 
         let line = result.moves();
         let depth = result.depth();
-        let info = match result.score().mate() {
-            None => format!("info depth {depth} score cp {} pv {}", result.score(), line),
-            Some(p) => {
-                if p > 0 {
-                    format!("info depth {depth} score mate {} pv {}", (p + 1) / 2, line)
-                } else {
-                    format!("info depth {depth} score mate {} pv {}", (p - 1) / 2, line)
-                }
-            }
+        let time = result.time().as_millis();
+        let nodes = result.nodes();
+        let nps = result.nps() as u64;
+
+        let score = match result.score().mate() {
+            None => format!("cp {}", result.score()),
+            Some(p) => format!("mate {}", (p + p.get().signum()) / 2),
         };
+
+        let info = format!(
+            "info depth {depth} time {time} nodes {nodes} nps {nps} score {score} pv {line}"
+        );
 
         self.output.send(info).await?;
 
@@ -131,24 +133,6 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
         }
 
         Ok(())
-    }
-
-    async fn bench(&mut self, limits: &Limits) -> Result<(), O::Error> {
-        let stopper = Trigger::armed();
-        let timer = Instant::now();
-        let result = self.engine.search(&self.position, limits, &stopper);
-        let millis = timer.elapsed().as_millis();
-
-        let info = match limits {
-            Limits::Depth(_) => format!("info time {millis} depth {}", result.depth()),
-            Limits::Nodes(nodes) => format!(
-                "info time {millis} nodes {nodes} nps {}",
-                *nodes as u128 * 1000 / millis.max(1)
-            ),
-            _ => return Ok(()),
-        };
-
-        self.output.send(info).await
     }
 
     async fn perft(&mut self, depth: Depth) -> Result<(), O::Error> {
@@ -168,7 +152,6 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
         let mut cmd = t(alt((
             tag("position"),
             tag("go"),
-            tag("bench"),
             tag("perft"),
             tag("eval"),
             tag("setoption"),
@@ -237,14 +220,6 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                 let mut go = terminated(opt(limits), eof).map(|l| l.unwrap_or_default());
                 let (_, limits) = go.parse(args).finish()?;
                 self.go(&limits).await.map_err(UciError::Fatal)?;
-            }
-
-            (args, "bench") => {
-                let depth = field("depth", int).map(|i| Limits::Depth(i.saturate()));
-                let nodes = field("nodes", int).map(|i| Limits::Nodes(i.saturate()));
-                let mut bench = terminated(alt((nodes, depth)), eof);
-                let (_, limits) = bench.parse(args).finish()?;
-                self.bench(&limits).await.map_err(UciError::Fatal)?;
             }
 
             (args, "perft") => {
@@ -383,6 +358,16 @@ mod tests {
 
     type MockUci = Uci<StaticStream, Vec<String>>;
 
+    fn info(input: &str) -> IResult<&str, &str, ParseError<&str>> {
+        let depth = field("depth", int);
+        let time = field("time", int);
+        let nodes = field("nodes", int);
+        let nps = field("nps", int);
+        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
+        let pv = field("pv", separated_list1(tag(" "), word));
+        recognize((tag("info"), depth, time, nodes, nps, score, pv)).parse(input)
+    }
+
     #[proptest]
     fn handles_position_with_startpos(
         #[any(StaticStream::new(["position startpos"]))] mut uci: MockUci,
@@ -490,41 +475,6 @@ mod tests {
     }
 
     #[proptest]
-    fn handles_bench_depth(
-        #[filter(#uci.position.outcome().is_none())]
-        #[any(StaticStream::new([format!("bench depth {}", #_d)]))]
-        mut uci: MockUci,
-        _d: Depth,
-    ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
-
-        let output = uci.output.join("\n");
-
-        let time = field("time", int);
-        let depth = field("depth", int);
-        let mut pattern = recognize(terminated((tag("info"), time, depth), eof));
-        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
-    }
-
-    #[proptest]
-    fn handles_bench_nodes(
-        #[filter(#uci.position.outcome().is_none())]
-        #[any(StaticStream::new([format!("bench nodes {}", #_n)]))]
-        mut uci: MockUci,
-        #[strategy(..1000u64)] _n: u64,
-    ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
-
-        let output = uci.output.join("\n");
-
-        let time = field("time", int);
-        let nodes = field("nodes", int);
-        let nps = field("nps", int);
-        let mut pattern = recognize(terminated((tag("info"), time, nodes, nps), eof));
-        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
-    }
-
-    #[proptest]
     fn handles_go_time_left(
         #[by_ref]
         #[filter(#uci.position.outcome().is_none())]
@@ -549,10 +499,6 @@ mod tests {
 
         let output = uci.output.join("\n");
 
-        let depth = field("depth", int);
-        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
-        let pv = field("pv", separated_list1(tag(" "), word));
-        let info = (tag("info"), depth, score, pv);
         let bestmove = field("bestmove", word);
         let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
@@ -569,10 +515,6 @@ mod tests {
 
         let output = uci.output.join("\n");
 
-        let depth = field("depth", int);
-        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
-        let pv = field("pv", separated_list1(tag(" "), word));
-        let info = (tag("info"), depth, score, pv);
         let bestmove = field("bestmove", word);
         let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
@@ -589,10 +531,6 @@ mod tests {
 
         let output = uci.output.join("\n");
 
-        let depth = field("depth", int);
-        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
-        let pv = field("pv", separated_list1(tag(" "), word));
-        let info = (tag("info"), depth, score, pv);
         let bestmove = field("bestmove", word);
         let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
@@ -609,10 +547,6 @@ mod tests {
 
         let output = uci.output.join("\n");
 
-        let depth = field("depth", int);
-        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
-        let pv = field("pv", separated_list1(tag(" "), word));
-        let info = (tag("info"), depth, score, pv);
         let bestmove = field("bestmove", word);
         let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
@@ -629,10 +563,6 @@ mod tests {
 
         let output = uci.output.join("\n");
 
-        let depth = field("depth", int);
-        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
-        let pv = field("pv", separated_list1(tag(" "), word));
-        let info = (tag("info"), depth, score, pv);
         let bestmove = field("bestmove", word);
         let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
@@ -650,10 +580,6 @@ mod tests {
 
         let output = uci.output.join("\n");
 
-        let depth = field("depth", int);
-        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
-        let pv = field("pv", separated_list1(tag(" "), word));
-        let info = (tag("info"), depth, score, pv);
         let bestmove = field("bestmove", word);
         let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
@@ -671,10 +597,6 @@ mod tests {
 
         let output = uci.output.join("\n");
 
-        let depth = field("depth", int);
-        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
-        let pv = field("pv", separated_list1(tag(" "), word));
-        let info = (tag("info"), depth, score, pv);
         let bestmove = field("bestmove", word);
         let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
@@ -691,10 +613,6 @@ mod tests {
 
         let output = uci.output.join("\n");
 
-        let depth = field("depth", int);
-        let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
-        let pv = field("pv", separated_list1(tag(" "), word));
-        let info = (tag("info"), depth, score, pv);
         let bestmove = field("bestmove", word);
         let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));

@@ -469,16 +469,21 @@ impl Position {
     /// [insufficient material]: https://www.chessprogramming.org/Material#InsufficientMaterial
     #[inline(always)]
     pub fn is_material_insufficient(&self) -> bool {
-        use Role::*;
+        use {Piece::*, Role::*};
         match self.occupied().len() {
             2 => true,
-            3 => !self.board.by_role(Bishop).is_empty() || !self.board.by_role(Knight).is_empty(),
-            _ => {
-                let bishops = self.board.by_role(Bishop);
-                bishops | self.board.by_role(King) == self.occupied()
-                    && (Bitboard::light().intersection(bishops).is_empty()
-                        || Bitboard::dark().intersection(bishops).is_empty())
+            3 => self.board.by_role(Bishop) | self.board.by_role(Knight) != Bitboard::empty(),
+            4 => {
+                let wb = self.board.by_piece(WhiteBishop);
+                let bb = self.board.by_piece(BlackBishop);
+
+                let dark = Bitboard::dark();
+                let light = Bitboard::light();
+
+                !(light.intersection(wb).is_empty() || light.intersection(bb).is_empty())
+                    || !(dark.intersection(wb).is_empty() || dark.intersection(bb).is_empty())
             }
+            _ => false,
         }
     }
 

@@ -214,24 +214,20 @@ impl FromStr for Board {
 
     #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let fields: Vec<_> = s.split(' ').collect();
-        let [board, turn, castles, en_passant, halfmoves, fullmoves] = &fields[..] else {
-            return Err(ParseFenError::InvalidSyntax);
-        };
+        let tokens = &mut s.split_ascii_whitespace();
 
-        let board: Vec<_> = board.split('/').rev().collect();
-        let board @ [_1, _2, _3, _4, _5, _6, _7, _8] = &board[..] else {
+        let Some(board) = tokens.next() else {
             return Err(ParseFenError::InvalidPlacement);
         };
 
         let mut roles: [_; 6] = Default::default();
         let mut colors: [_; 2] = Default::default();
-        for (rank, segment) in board.iter().enumerate() {
+        for (rank, segment) in board.split('/').rev().enumerate() {
             let mut file = 0;
             for c in segment.chars() {
                 let mut buffer = [0; 4];
 
-                if file >= 8 {
+                if file >= 8 || rank >= 8 {
                     return Err(ParseFenError::InvalidPlacement);
                 } else if let Some(skip) = c.to_digit(10) {
                     file += skip;
@@ -246,35 +242,41 @@ impl FromStr for Board {
             }
         }
 
-        let turn = match &turn[..] {
-            "w" => Color::White,
-            "b" => Color::Black,
+        let turn = match tokens.next() {
+            Some("w") => Color::White,
+            Some("b") => Color::Black,
             _ => return Err(ParseFenError::InvalidSideToMove),
         };
 
-        let castles = match &castles[..] {
-            "-" => Castles::none(),
-            _ => match castles.parse() {
+        let castles = match tokens.next() {
+            None => return Err(ParseFenError::InvalidCastlingRights),
+            Some("-") => Castles::none(),
+            Some(s) => match s.parse() {
                 Err(_) => return Err(ParseFenError::InvalidCastlingRights),
                 Ok(castles) => castles,
             },
         };
 
-        let en_passant = match &en_passant[..] {
-            "-" => None,
-            ep => match ep.parse() {
+        let en_passant = match tokens.next() {
+            None => return Err(ParseFenError::InvalidEnPassantSquare),
+            Some("-") => None,
+            Some(ep) => match ep.parse() {
                 Err(_) => return Err(ParseFenError::InvalidEnPassantSquare),
                 Ok(sq) => Some(sq),
             },
         };
 
-        let Ok(halfmoves) = halfmoves.parse() else {
+        let Some(Ok(halfmoves)) = tokens.next().map(u8::from_str) else {
             return Err(ParseFenError::InvalidHalfmoveClock);
         };
 
-        let Ok(fullmoves) = fullmoves.parse() else {
+        let Some(Ok(fullmoves)) = tokens.next().map(u32::from_str) else {
             return Err(ParseFenError::InvalidHalfmoveClock);
         };
+
+        if tokens.next().is_some() {
+            return Err(ParseFenError::InvalidSyntax);
+        }
 
         Ok(Board {
             roles,

@@ -1,5 +1,6 @@
 #![allow(clippy::collapsible_if)]
 #![cfg_attr(target_arch = "x86_64", feature(stdarch_x86_mm_shuffle))]
+#![cfg_attr(target_arch = "aarch64", feature(stdarch_aarch64_prefetch))]
 #![feature(
     array_chunks,
     coverage_attribute,

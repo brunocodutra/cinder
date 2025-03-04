@@ -448,12 +448,12 @@ impl Position {
         !self.is_check() && Moves::generate(self, &mut ArrayVec::<_, 0>::new()).is_ok()
     }
 
-    /// Whether the game is a draw by [Threefold repetition].
+    /// Whether the game is a draw by [repetition].
     ///
-    /// [Threefold repetition]: https://en.wikipedia.org/wiki/Threefold_repetition
+    /// [repetition]: https://en.wikipedia.org/wiki/Threefold_repetition
     #[inline(always)]
-    pub fn is_draw_by_threefold_repetition(&self) -> bool {
-        self.repetitions() > 1
+    pub fn is_draw_by_repetition(&self) -> bool {
+        self.repetitions() > 0
     }
 
     /// Whether the game is a draw by the [50-move rule].
@@ -494,10 +494,10 @@ impl Position {
             Some(Outcome::Checkmate(!self.turn()))
         } else if self.is_stalemate() {
             Some(Outcome::Stalemate)
-        } else if self.is_draw_by_threefold_repetition() {
-            Some(Outcome::DrawByThreefoldRepetition)
         } else if self.is_draw_by_50_move_rule() {
             Some(Outcome::DrawBy50MoveRule)
+        } else if self.is_draw_by_repetition() {
+            Some(Outcome::DrawByThreefoldRepetition)
         } else if self.is_material_insufficient() {
             Some(Outcome::DrawByInsufficientMaterial)
         } else {
@@ -967,7 +967,7 @@ mod tests {
         prop_assume!(zobrist.is_some());
 
         pos.history[pos.turn() as usize][..2].clone_from_slice(&[zobrist, zobrist]);
-        assert!(pos.is_draw_by_threefold_repetition());
+        assert!(pos.is_draw_by_repetition());
         assert_eq!(pos.outcome(), Some(Outcome::DrawByThreefoldRepetition));
     }
 

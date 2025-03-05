@@ -249,11 +249,8 @@ impl<'a> Search<'a> {
             Some(t) => t.transpose(ply),
         };
 
-        if transposition.is_some() && pos.is_check() {
-            depth += 1;
-        } else if transposition.is_none() && !pos.is_check() {
-            depth -= 2;
-        }
+        depth += pos.is_check() as i8;
+        depth -= transposition.is_none() as i8;
 
         let draft = depth - ply;
         let quiesce = draft <= 0;

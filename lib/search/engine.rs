@@ -418,21 +418,21 @@ impl<'a> Search<'a> {
         limits: &Limits,
         time: Range<Duration>,
     ) -> SearchResult<N> {
-        let mut moves: ArrayVec<_, 255> = pos.moves().flatten().map(|m| (m, pos.gain(m))).collect();
-        moves.sort_unstable_by_key(|(_, rating)| *rating);
-
         self.value[0] = pos.evaluate();
-        let score = self.value[0].saturate();
         let mut depth = Depth::new(0);
-        let mut pv = match &*moves {
-            [] if !pos.is_check() => return self.result(limits, depth, Pv::empty(score)),
-            [] => return self.result(limits, depth, Pv::empty(Score::mated(Ply::new(0)))),
-            [(m, _)] => return self.result(limits, depth, Pv::new(score, Line::singular(*m))),
-            [.., (m, _)] => match self.tt.get(pos.zobrist()) {
-                None => Pv::new(score, Line::singular(*m)),
+        let mut moves: ArrayVec<_, 255> = pos.moves().flatten().map(|m| (m, pos.gain(m))).collect();
+        let mut pv = match moves.iter().max_by_key(|(_, rating)| *rating) {
+            None if !pos.is_check() => return self.result(limits, depth, Pv::empty(Score::new(0))),
+            None => return self.result(limits, depth, Pv::empty(Score::mated(Ply::new(0)))),
+            Some((m, _)) => match self.tt.get(pos.zobrist()) {
+                None => Pv::new(self.value[0].saturate(), Line::singular(*m)),
                 Some(t) => t.transpose(Ply::new(0)).truncate(),
             },
         };
+
+        if matches!(limits, Limits::Clock(..)) && moves.len() < 2 {
+            return self.result(limits, depth, pv);
+        }
 
         while depth < limits.depth() {
             depth += 1;

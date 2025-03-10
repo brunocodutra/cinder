@@ -8,6 +8,7 @@ repository = "https://github.com/brunocodutra/cinder.git"
 license = "GPL-3.0"
 readme = "README.md"
 keywords = ["chess"]
+default-run = "cinder"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
@@ -62,13 +63,13 @@ debug = true
 strip = false
 
 [lib]
-name = "lib"
-path = "lib/lib.rs"
+name = "cinder"
+path = "lib/cinder.rs"
 bench = false
 
 [[bin]]
 name = "cinder"
-path = "bin/main.rs"
+path = "bin/cinder.rs"
 bench = false
 
 [[bench]]

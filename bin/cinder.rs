@@ -1,5 +1,5 @@
+use cinder::uci::Uci;
 use futures::{channel::mpsc::unbounded, executor::block_on, sink::unfold as sink};
-use lib::uci::Uci;
 use std::io::{prelude::*, stdin, stdout};
 use std::{future::ready, thread};
 

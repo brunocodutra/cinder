@@ -1,11 +1,11 @@
 #![feature(custom_test_frameworks)]
 #![test_runner(criterion::runner)]
 
+use cinder::nnue::Evaluator;
+use cinder::search::{Depth, Engine, Limits, Options};
+use cinder::util::{Integer, Trigger};
 use criterion::{Criterion, SamplingMode, Throughput};
 use criterion_macro::criterion;
-use lib::nnue::Evaluator;
-use lib::search::{Depth, Engine, Limits, Options};
-use lib::util::{Integer, Trigger};
 use std::thread::available_parallelism;
 use std::time::{Duration, Instant};
 

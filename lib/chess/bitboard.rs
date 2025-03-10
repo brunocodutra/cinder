@@ -89,7 +89,7 @@ impl Bitboard {
     ///
     /// # Example
     /// ```
-    /// # use lib::chess::*;
+    /// # use cinder::chess::*;
     /// assert_eq!(
     ///     Vec::from_iter(Bitboard::fill(Square::E2, &[(-1, 2), (1, -1)], Square::C6.bitboard())),
     ///     vec![Square::F1, Square::E2, Square::D4, Square::C6]
@@ -120,7 +120,7 @@ impl Bitboard {
     ///
     /// # Example
     /// ```
-    /// # use lib::chess::*;
+    /// # use cinder::chess::*;
     /// assert_eq!(
     ///     Vec::from_iter(Bitboard::line(Square::B4, Square::E1)),
     ///     vec![Square::E1, Square::D2, Square::C3, Square::B4, Square::A5]
@@ -167,7 +167,7 @@ impl Bitboard {
     ///
     /// # Example
     /// ```
-    /// # use lib::chess::*;
+    /// # use cinder::chess::*;
     /// assert_eq!(
     ///     Vec::from_iter(Bitboard::segment(Square::B4, Square::E1)),
     ///     vec![Square::D2, Square::C3]

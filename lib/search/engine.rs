@@ -163,17 +163,6 @@ impl<'a> Search<'a> {
         }
     }
 
-    /// An implementation of [razoring].
-    ///
-    /// [razoring]: https://www.chessprogramming.org/Razoring
-    fn razor(&self, deficit: Score, draft: Depth) -> Option<Depth> {
-        match deficit.get() {
-            ..0 => None,
-            s @ 0..600 => Some(draft - (s + 30) / 210),
-            600.. => Some(draft - 3),
-        }
-    }
-
     /// An implementation of [reverse futility pruning].
     ///
     /// [reverse futility pruning]: https://www.chessprogramming.org/Reverse_Futility_Pruning
@@ -260,12 +249,6 @@ impl<'a> Search<'a> {
 
             if lower >= upper || upper <= alpha || lower >= beta {
                 if !is_pv && t.draft() >= draft {
-                    return Ok(transposed.truncate());
-                }
-            }
-
-            if let Some(d) = self.razor(alpha - upper, draft) {
-                if !is_pv && t.draft() >= d {
                     return Ok(transposed.truncate());
                 }
             }

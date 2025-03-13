@@ -145,8 +145,8 @@ impl<'a> Search<'a> {
     fn nmp(&self, surplus: Score, draft: Depth) -> Option<Depth> {
         match surplus.get() {
             ..0 => None,
-            s @ 0..20 => Some(draft - (s + 10) / 10 - draft / 4),
-            20.. => Some(draft - 3 - draft / 4),
+            s @ 0..20 => Some(draft - (s + 10) / 10 - draft / 3),
+            20.. => Some(draft - 3 - draft / 3),
         }
     }
 

@@ -519,14 +519,13 @@ impl Engine {
     }
 
     fn time_to_search(&self, pos: &Position, limits: &Limits) -> Range<Duration> {
-        let (clock, inc) = match limits {
-            Limits::Clock(c, i) => (c, i),
-            _ => return limits.time()..limits.time(),
+        let Limits::Clock(clock, inc) = *limits else {
+            return limits.time()..limits.time();
         };
 
-        let time_left = clock.saturating_sub(*inc);
+        let time_left = clock.saturating_sub(inc);
         let moves_left = 256 / pos.fullmoves().get().min(64);
-        let time_per_move = inc.saturating_add(time_left / moves_left);
+        let time_per_move = inc.saturating_add(time_left / moves_left).min(clock / 2);
         time_per_move / 2..time_per_move
     }
 

@@ -1,7 +1,6 @@
 use crate::chess::{Color, Move, ParsePositionError, Perspective, Piece, Position, Role, Square};
-use crate::nnue::{Accumulator, Feature, Material, Nnue, Positional, Value};
+use crate::nnue::{Accumulator, Feature, Nnue, Value};
 use crate::util::{Assume, Integer};
-use arrayvec::ArrayVec;
 use derive_more::with_trait::{Debug, Deref, Display};
 use std::str::FromStr;
 
@@ -15,7 +14,7 @@ use proptest::prelude::*;
 pub struct Evaluator {
     #[deref]
     pos: Position,
-    acc: (Material, Positional),
+    acc: Accumulator,
 }
 
 #[cfg(test)]
@@ -37,12 +36,13 @@ impl Default for Evaluator {
 impl Evaluator {
     /// Constructs the evaluator from a [`Position`].
     pub fn new(pos: Position) -> Self {
-        let mut acc: (Material, Positional) = Default::default();
+        let mut acc = Accumulator::default();
 
         for side in Color::iter() {
             let ksq = pos.king(side);
             for (p, s) in pos.iter() {
-                acc.add(side, Feature::new(side, ksq, p, s));
+                let add = Feature::new(side, ksq, p, s);
+                acc.update(side, [None, None], [Some(add), None]);
             }
         }
 
@@ -62,28 +62,30 @@ impl Evaluator {
         let promotion = m.promotion();
         let (wc, wt) = (m.whence(), m.whither());
         let (role, capture) = self.pos.play(m);
-        let mut sides = ArrayVec::<Color, 2>::from([!turn, turn]);
+        let mut sides = [Some(!turn), Some(turn)];
 
         if role == Role::King
             && Feature::new(turn, wc, Piece::lower(), Square::lower())
                 != Feature::new(turn, wt, Piece::lower(), Square::lower())
         {
-            sides.truncate(1);
+            sides[1] = None;
             self.acc.refresh(turn);
             for (p, s) in self.pos.iter() {
-                self.acc.add(turn, Feature::new(turn, wt, p, s));
+                let add = Feature::new(turn, wt, p, s);
+                self.acc.update(turn, [None, None], [Some(add), None]);
             }
         }
 
-        for side in sides {
+        for side in sides.into_iter().flatten() {
             let ksq = self.king(side);
-            let old = Feature::new(side, ksq, Piece::new(role, turn), wc);
-            let new = Feature::new(side, ksq, Piece::new(promotion.unwrap_or(role), turn), wt);
-            self.acc.replace(side, old, new);
+            let old = Piece::new(role, turn);
+            let new = Piece::new(promotion.unwrap_or(role), turn);
+            let mut sub = [Some(Feature::new(side, ksq, old, wc)), None];
+            let mut add = [Some(Feature::new(side, ksq, new, wt)), None];
 
             if let Some((r, sq)) = capture {
                 let victim = Piece::new(r, !turn);
-                self.acc.remove(side, Feature::new(side, ksq, victim, sq));
+                sub[1] = Some(Feature::new(side, ksq, victim, sq));
             } else if role == Role::King && (wt - wc).abs() == 2 {
                 let rook = Piece::new(Role::Rook, turn);
                 let (wc, wt) = if wt > wc {
@@ -92,15 +94,20 @@ impl Evaluator {
                     (Square::A1.perspective(turn), Square::D1.perspective(turn))
                 };
 
-                let old = Feature::new(side, ksq, rook, wc);
-                let new = Feature::new(side, ksq, rook, wt);
-                self.acc.replace(side, old, new);
+                sub[1] = Some(Feature::new(side, ksq, rook, wc));
+                add[1] = Some(Feature::new(side, ksq, rook, wt));
             }
+
+            self.acc.update(side, sub, add);
         }
     }
 
     /// Estimates the material gain of a move.
     pub fn gain(&self, m: Move) -> Value {
+        if m.is_quiet() {
+            return Value::new(0);
+        }
+
         let psqt = Nnue::psqt();
         let turn = self.turn();
         let promotion = m.promotion();
@@ -129,30 +136,17 @@ impl Evaluator {
 
                 let cap = Feature::new(side, ksq, victim, target);
                 *delta -= psqt.get(cap.cast::<usize>()).assume().get(phase).assume();
-            } else if role == Role::King && (wt - wc).abs() == 2 {
-                let rook = Piece::new(Role::Rook, turn);
-                let (wc, wt) = if wt > wc {
-                    (Square::H1.perspective(turn), Square::F1.perspective(turn))
-                } else {
-                    (Square::A1.perspective(turn), Square::D1.perspective(turn))
-                };
-
-                let old = Feature::new(side, ksq, rook, wc);
-                *delta -= psqt.get(old.cast::<usize>()).assume().get(phase).assume();
-
-                let new = Feature::new(side, ksq, rook, wt);
-                *delta += psqt.get(new.cast::<usize>()).assume().get(phase).assume();
             }
         }
 
-        let value = (deltas[0] - deltas[1]) >> 7;
+        let value = (deltas[0] - deltas[1]) / 128;
         value.saturate()
     }
 
     /// The [`Position`]'s evaluation.
     pub fn evaluate(&self) -> Value {
         let phase = (self.occupied().len() - 1) / 4;
-        let value = self.acc.evaluate(self.turn(), phase) >> 7;
+        let value = self.acc.evaluate(self.turn(), phase) / 128;
         value.saturate()
     }
 }

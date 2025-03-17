@@ -296,14 +296,9 @@ impl<'a> Search<'a> {
                     return (m, Value::new(128));
                 }
 
-                let rating = if m.is_quiet() {
-                    Value::new(0)
-                } else {
-                    pos.gain(m)
-                };
-
                 let counter = self.continuation[ply.cast::<usize>() - 1];
-                (m, rating + self.history.get(pos, m) + counter.get(pos, m))
+                let rating = pos.gain(m) + self.history.get(pos, m) + counter.get(pos, m);
+                (m, rating)
             })
             .collect();
 
@@ -435,10 +430,8 @@ impl<'a> Search<'a> {
                 for (m, rating) in moves.iter_mut() {
                     if Some(*m) == pv.head() {
                         *rating = Value::upper();
-                    } else if m.is_quiet() {
-                        *rating = Value::new(0) + self.history.get(pos, *m)
                     } else {
-                        *rating = pos.gain(*m) + self.history.get(pos, *m)
+                        *rating = pos.gain(*m) + self.history.get(pos, *m);
                     }
                 }
 

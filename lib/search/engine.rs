@@ -292,12 +292,15 @@ impl<'a> Search<'a> {
             .map(|m| {
                 if Some(m) == transposed.head() {
                     return (m, Value::upper());
-                } else if killer.contains(m) {
-                    return (m, Value::new(128));
                 }
 
                 let counter = self.continuation[ply.cast::<usize>() - 1];
-                let rating = pos.gain(m) + self.history.get(pos, m) + counter.get(pos, m);
+                let mut rating = pos.gain(m) + self.history.get(pos, m) + counter.get(pos, m);
+
+                if killer.contains(m) {
+                    rating += 128;
+                }
+
                 (m, rating)
             })
             .collect();

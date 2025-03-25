@@ -26,122 +26,106 @@ pub enum Piece {
 impl Piece {
     #[inline(always)]
     fn forks(wc: Square, color: Color) -> Bitboard {
-        mod global {
-            use super::*;
+        pub static FORKS: SyncUnsafeCell<[[Bitboard; 64]; 2]> =
+            unsafe { MaybeUninit::zeroed().assume_init() };
 
-            pub static FORKS: SyncUnsafeCell<[[Bitboard; 64]; 2]> =
-                unsafe { MaybeUninit::zeroed().assume_init() };
+        #[cold]
+        #[ctor::ctor]
+        #[inline(never)]
+        unsafe fn init() {
+            let forks = unsafe { FORKS.get().as_mut_unchecked() };
 
-            #[cold]
-            #[ctor::ctor]
-            #[inline(never)]
-            unsafe fn init() {
-                let forks = unsafe { FORKS.get().as_mut_unchecked() };
-
-                for color in Color::iter() {
-                    for wc in Square::iter() {
-                        let steps = [(-1, 1), (1, 1)];
-                        let moves = Bitboard::fill(wc.perspective(color), &steps, Bitboard::full());
-                        forks[color as usize][wc as usize] = moves.perspective(color).without(wc);
-                    }
+            for color in Color::iter() {
+                for wc in Square::iter() {
+                    let steps = [(-1, 1), (1, 1)];
+                    let moves = Bitboard::fill(wc.perspective(color), &steps, Bitboard::full());
+                    forks[color as usize][wc as usize] = moves.perspective(color).without(wc);
                 }
             }
         }
 
-        unsafe { global::FORKS.get().as_ref_unchecked()[color as usize][wc as usize] }
+        unsafe { FORKS.get().as_ref_unchecked()[color as usize][wc as usize] }
     }
 
     #[inline(always)]
     fn jumps(wc: Square) -> Bitboard {
-        mod global {
-            use super::*;
+        pub static JUMPS: SyncUnsafeCell<[Bitboard; 64]> =
+            unsafe { MaybeUninit::zeroed().assume_init() };
 
-            pub static JUMPS: SyncUnsafeCell<[Bitboard; 64]> =
-                unsafe { MaybeUninit::zeroed().assume_init() };
+        #[cold]
+        #[ctor::ctor]
+        #[inline(never)]
+        unsafe fn init() {
+            let jumps = unsafe { JUMPS.get().as_mut_unchecked() };
 
-            #[cold]
-            #[ctor::ctor]
-            #[inline(never)]
-            unsafe fn init() {
-                let jumps = unsafe { JUMPS.get().as_mut_unchecked() };
-
-                for wc in Square::iter() {
-                    #[rustfmt::skip]
+            for wc in Square::iter() {
+                #[rustfmt::skip]
                 let steps = [(-2, 1), (-1, 2), (1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1)];
-                    let moves = Bitboard::fill(wc, &steps, Bitboard::full()).without(wc);
-                    jumps[wc as usize] = moves;
-                }
+                let moves = Bitboard::fill(wc, &steps, Bitboard::full()).without(wc);
+                jumps[wc as usize] = moves;
             }
         }
 
-        unsafe { global::JUMPS.get().as_ref_unchecked()[wc as usize] }
+        unsafe { JUMPS.get().as_ref_unchecked()[wc as usize] }
     }
 
     #[inline(always)]
     fn steps(wc: Square) -> Bitboard {
-        mod global {
-            use super::*;
+        pub static SLIDES: SyncUnsafeCell<[Bitboard; 64]> =
+            unsafe { MaybeUninit::zeroed().assume_init() };
 
-            pub static SLIDES: SyncUnsafeCell<[Bitboard; 64]> =
-                unsafe { MaybeUninit::zeroed().assume_init() };
+        #[cold]
+        #[ctor::ctor]
+        #[inline(never)]
+        unsafe fn init() {
+            let slides = unsafe { SLIDES.get().as_mut_unchecked() };
 
-            #[cold]
-            #[ctor::ctor]
-            #[inline(never)]
-            unsafe fn init() {
-                let slides = unsafe { SLIDES.get().as_mut_unchecked() };
-
-                for wc in Square::iter() {
-                    #[rustfmt::skip]
+            for wc in Square::iter() {
+                #[rustfmt::skip]
                 let steps = [(-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1)];
-                    let moves = Bitboard::fill(wc, &steps, Bitboard::full()).without(wc);
-                    slides[wc as usize] = moves;
-                }
+                let moves = Bitboard::fill(wc, &steps, Bitboard::full()).without(wc);
+                slides[wc as usize] = moves;
             }
         }
 
-        unsafe { global::SLIDES.get().as_ref_unchecked()[wc as usize] }
+        unsafe { SLIDES.get().as_ref_unchecked()[wc as usize] }
     }
 
     #[inline(always)]
     fn slides(idx: usize) -> Bitboard {
-        mod global {
-            use super::*;
+        pub static BITBOARDS: SyncUnsafeCell<[Bitboard; 88772]> =
+            unsafe { MaybeUninit::zeroed().assume_init() };
 
-            pub static BITBOARDS: SyncUnsafeCell<[Bitboard; 88772]> =
-                unsafe { MaybeUninit::zeroed().assume_init() };
+        #[cold]
+        #[ctor::ctor]
+        #[inline(never)]
+        unsafe fn init() {
+            let bitboard = unsafe { BITBOARDS.get().as_mut_unchecked() };
 
-            #[cold]
-            #[ctor::ctor]
-            #[inline(never)]
-            unsafe fn init() {
-                let bitboard = unsafe { BITBOARDS.get().as_mut_unchecked() };
+            for wc in Square::iter() {
+                let magic = Magic::bishop(wc);
+                for bb in magic.mask().subsets() {
+                    let blockers = bb | !magic.mask();
+                    let steps = [(-1, 1), (1, 1), (1, -1), (-1, -1)];
+                    let moves = Bitboard::fill(wc, &steps, blockers).without(wc);
+                    let idx = (bb.wrapping_mul(magic.factor()) >> 55) as usize + magic.offset();
+                    debug_assert!(bitboard[idx] == moves || bitboard[idx] == Bitboard::empty());
+                    bitboard[idx] = moves;
+                }
 
-                for wc in Square::iter() {
-                    let magic = Magic::bishop(wc);
-                    for bb in magic.mask().subsets() {
-                        let blockers = bb | !magic.mask();
-                        let steps = [(-1, 1), (1, 1), (1, -1), (-1, -1)];
-                        let moves = Bitboard::fill(wc, &steps, blockers).without(wc);
-                        let idx = (bb.wrapping_mul(magic.factor()) >> 55) as usize + magic.offset();
-                        debug_assert!(bitboard[idx] == moves || bitboard[idx] == Bitboard::empty());
-                        bitboard[idx] = moves;
-                    }
-
-                    let magic = Magic::rook(wc);
-                    for bb in magic.mask().subsets() {
-                        let blockers = bb | !magic.mask();
-                        let steps = [(-1, 0), (0, 1), (1, 0), (0, -1)];
-                        let moves = Bitboard::fill(wc, &steps, blockers).without(wc);
-                        let idx = (bb.wrapping_mul(magic.factor()) >> 52) as usize + magic.offset();
-                        debug_assert!(bitboard[idx] == moves || bitboard[idx] == Bitboard::empty());
-                        bitboard[idx] = moves;
-                    }
+                let magic = Magic::rook(wc);
+                for bb in magic.mask().subsets() {
+                    let blockers = bb | !magic.mask();
+                    let steps = [(-1, 0), (0, 1), (1, 0), (0, -1)];
+                    let moves = Bitboard::fill(wc, &steps, blockers).without(wc);
+                    let idx = (bb.wrapping_mul(magic.factor()) >> 52) as usize + magic.offset();
+                    debug_assert!(bitboard[idx] == moves || bitboard[idx] == Bitboard::empty());
+                    bitboard[idx] = moves;
                 }
             }
         }
 
-        unsafe { *global::BITBOARDS.get().as_ref_unchecked().get(idx).assume() }
+        unsafe { *BITBOARDS.get().as_ref_unchecked().get(idx).assume() }
     }
 
     /// Constructs [`Piece`] from a pair of [`Color`] and [`Role`].

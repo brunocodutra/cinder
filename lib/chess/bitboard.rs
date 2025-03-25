@@ -128,39 +128,35 @@ impl Bitboard {
     /// ```
     #[inline(always)]
     pub fn line(whence: Square, whither: Square) -> Self {
-        mod global {
-            use super::*;
+        pub static LINES: SyncUnsafeCell<Butterfly<Bitboard>> =
+            unsafe { MaybeUninit::zeroed().assume_init() };
 
-            pub static LINES: SyncUnsafeCell<Butterfly<Bitboard>> =
-                unsafe { MaybeUninit::zeroed().assume_init() };
+        #[cold]
+        #[ctor::ctor]
+        #[inline(never)]
+        unsafe fn init() {
+            let lines = unsafe { LINES.get().as_mut_unchecked() };
 
-            #[cold]
-            #[ctor::ctor]
-            #[inline(never)]
-            unsafe fn init() {
-                let lines = unsafe { LINES.get().as_mut_unchecked() };
-
-                for wc in Square::iter() {
-                    for wt in Square::iter() {
-                        let df = wt.file() - wc.file();
-                        let dr = wt.rank() - wc.rank();
-                        if df == 0 && dr == 0 {
-                            lines[wc as usize][wt as usize] = wc.bitboard();
-                        } else if df == 0 {
-                            lines[wc as usize][wt as usize] = wc.file().bitboard();
-                        } else if dr == 0 {
-                            lines[wc as usize][wt as usize] = wc.rank().bitboard();
-                        } else if df.abs() == dr.abs() {
-                            let steps = [(df.signum(), dr.signum()), (-df.signum(), -dr.signum())];
-                            let bb = Bitboard::fill(wc, &steps, Bitboard::empty());
-                            lines[wc as usize][wt as usize] = bb;
-                        }
+            for wc in Square::iter() {
+                for wt in Square::iter() {
+                    let df = wt.file() - wc.file();
+                    let dr = wt.rank() - wc.rank();
+                    if df == 0 && dr == 0 {
+                        lines[wc as usize][wt as usize] = wc.bitboard();
+                    } else if df == 0 {
+                        lines[wc as usize][wt as usize] = wc.file().bitboard();
+                    } else if dr == 0 {
+                        lines[wc as usize][wt as usize] = wc.rank().bitboard();
+                    } else if df.abs() == dr.abs() {
+                        let steps = [(df.signum(), dr.signum()), (-df.signum(), -dr.signum())];
+                        let bb = Bitboard::fill(wc, &steps, Bitboard::empty());
+                        lines[wc as usize][wt as usize] = bb;
                     }
                 }
             }
         }
 
-        unsafe { global::LINES.get().as_ref_unchecked()[whence as usize][whither as usize] }
+        unsafe { LINES.get().as_ref_unchecked()[whence as usize][whither as usize] }
     }
 
     /// Bitboard with squares in the open segment between two squares.
@@ -175,33 +171,29 @@ impl Bitboard {
     /// ```
     #[inline(always)]
     pub fn segment(whence: Square, whither: Square) -> Self {
-        mod global {
-            use super::*;
+        pub static SEGMENTS: SyncUnsafeCell<Butterfly<Bitboard>> =
+            unsafe { MaybeUninit::zeroed().assume_init() };
 
-            pub static SEGMENTS: SyncUnsafeCell<Butterfly<Bitboard>> =
-                unsafe { MaybeUninit::zeroed().assume_init() };
+        #[cold]
+        #[ctor::ctor]
+        #[inline(never)]
+        unsafe fn init() {
+            let segments = unsafe { SEGMENTS.get().as_mut_unchecked() };
 
-            #[cold]
-            #[ctor::ctor]
-            #[inline(never)]
-            unsafe fn init() {
-                let segments = unsafe { SEGMENTS.get().as_mut_unchecked() };
-
-                for wc in Square::iter() {
-                    for wt in Square::iter() {
-                        let df = wt.file() - wc.file();
-                        let dr = wt.rank() - wc.rank();
-                        if df == 0 || dr == 0 || df.abs() == dr.abs() {
-                            let steps = [(df.signum(), dr.signum())];
-                            let bb = Bitboard::fill(wc, &steps, wt.bitboard());
-                            segments[wc as usize][wt as usize] = bb.without(wc).without(wt);
-                        }
+            for wc in Square::iter() {
+                for wt in Square::iter() {
+                    let df = wt.file() - wc.file();
+                    let dr = wt.rank() - wc.rank();
+                    if df == 0 || dr == 0 || df.abs() == dr.abs() {
+                        let steps = [(df.signum(), dr.signum())];
+                        let bb = Bitboard::fill(wc, &steps, wt.bitboard());
+                        segments[wc as usize][wt as usize] = bb.without(wc).without(wt);
                     }
                 }
             }
         }
 
-        unsafe { global::SEGMENTS.get().as_ref_unchecked()[whence as usize][whither as usize] }
+        unsafe { SEGMENTS.get().as_ref_unchecked()[whence as usize][whither as usize] }
     }
 
     /// The number of [`Square`]s in the set.

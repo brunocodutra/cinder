@@ -1,11 +1,11 @@
 use crate::chess::{Color, Move, Perspective, Square};
 use crate::nnue::Evaluator;
-use crate::search::{Depth, Engine, HashSize, Limits, Options, ThreadCount};
+use crate::search::{Engine, HashSize, Limits, Options, ThreadCount};
 use crate::util::{Assume, Integer, Trigger};
 use derive_more::with_trait::{Display, Error, From};
 use futures::channel::oneshot::channel as oneshot;
 use futures::{future::FusedFuture, prelude::*, select_biased as select, stream::FusedStream};
-use nom::error::{Error as ParseError, ErrorKind};
+use nom::error::Error as ParseError;
 use nom::{branch::*, bytes::complete::*, combinator::*, sequence::*, *};
 use std::str::{self, FromStr};
 use std::{fmt::Debug, io::Write, mem::transmute, thread, time::Instant};
@@ -52,14 +52,17 @@ impl PartialEq<str> for UciMove {
 }
 
 /// The reason why executing the UCI command failed.
-#[derive(Debug, Display, Clone, Eq, PartialEq, Error, From)]
-pub enum UciError<I, E> {
+#[derive(Debug, Display, Clone, Eq, PartialEq, Error)]
+pub enum UciError<E> {
     #[display("failed to parse the uci command")]
-    #[from(forward)]
-    ParseError(ParseError<I>),
-    #[display("fatal error")]
-    #[from(ignore)]
+    ParseError,
     Fatal(E),
+}
+
+impl<E> From<ParseError<&str>> for UciError<E> {
+    fn from(_: ParseError<&str>) -> Self {
+        UciError::ParseError
+    }
 }
 
 /// A basic UCI server.
@@ -92,7 +95,7 @@ impl<I, O> Uci<I, O> {
 }
 
 impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
-    async fn go(&mut self, limits: &Limits) -> Result<(), O::Error> {
+    async fn go(&mut self, limits: &Limits) -> Result<bool, UciError<O::Error>> {
         let stopper = Trigger::armed();
 
         let mut search =
@@ -103,9 +106,22 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                 result = search => break result,
                 line = self.input.next() => {
                     match line.as_deref().map(str::trim_ascii) {
-                        None => break search.await,
-                        Some("stop") => { stopper.disarm(); },
-                        Some(cmd) => eprintln!("ignored unsupported command `{cmd}` during search"),
+                        None | Some("") => continue,
+
+                        Some("stop") => {
+                            stopper.disarm();
+                            break search.await;
+                        },
+
+                        Some("quit") => {
+                            stopper.disarm();
+                            search.await;
+                            return Ok(false);
+                        },
+
+                        Some(cmd) => {
+                            eprintln!("ignored unsupported command `{cmd}` during search");
+                        },
                     }
                 }
             }
@@ -126,29 +142,17 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
             "info depth {depth} time {time} nodes {nodes} nps {nps} score {score} pv {line}"
         );
 
-        self.output.send(info).await?;
+        self.output.send(info).await.map_err(UciError::Fatal)?;
 
         if let Some(m) = result.head() {
-            self.output.send(format!("bestmove {m}")).await?;
+            let best = format!("bestmove {m}");
+            self.output.send(best).await.map_err(UciError::Fatal)?;
         }
 
-        Ok(())
+        Ok(true)
     }
 
-    async fn perft(&mut self, depth: Depth) -> Result<(), O::Error> {
-        let timer = Instant::now();
-        let nodes = self.position.perft(depth);
-        let millis = timer.elapsed().as_millis();
-
-        let info = format!(
-            "info time {millis} nodes {nodes} nps {}",
-            nodes as u128 * 1000 / millis.max(1)
-        );
-
-        self.output.send(info).await
-    }
-
-    async fn execute<'i>(&mut self, input: &'i str) -> Result<(), UciError<&'i str, O::Error>> {
+    async fn execute(&mut self, input: &str) -> Result<bool, UciError<O::Error>> {
         let mut cmd = t(alt((
             tag("position"),
             tag("go"),
@@ -158,6 +162,8 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
             tag("isready"),
             tag("ucinewgame"),
             tag("uci"),
+            tag("stop"),
+            tag("quit"),
         )));
 
         match cmd.parse(input).finish()? {
@@ -176,7 +182,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                         let (_, whence) = take2.map_res(Square::from_str).parse(s).finish()?;
                         let moves = pos.moves().filter(|ms| ms.whence() == whence);
                         let Some(m) = moves.flatten().find(|m| UciMove(*m) == *s) else {
-                            return Err(UciError::ParseError(ParseError::new(s, ErrorKind::Fail)));
+                            return Err(UciError::ParseError);
                         };
 
                         pos.play(m);
@@ -184,6 +190,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                 }
 
                 self.position = pos;
+                Ok(true)
             }
 
             (args, "go") => {
@@ -219,14 +226,26 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
 
                 let mut go = terminated(opt(limits), eof).map(|l| l.unwrap_or_default());
                 let (_, limits) = go.parse(args).finish()?;
-                self.go(&limits).await.map_err(UciError::Fatal)?;
+                self.go(&limits).await
             }
 
             (args, "perft") => {
                 let depth = t(int).map(|i| i.saturate());
                 let mut perft = terminated(depth, eof);
                 let (_, depth) = perft.parse(args).finish()?;
-                self.perft(depth).await.map_err(UciError::Fatal)?;
+
+                let timer = Instant::now();
+                let nodes = self.position.perft(depth);
+                let millis = timer.elapsed().as_millis();
+
+                let info = format!(
+                    "info time {millis} nodes {nodes} nps {}",
+                    nodes as u128 * 1000 / millis.max(1)
+                );
+
+                self.output.send(info).await.map_err(UciError::Fatal)?;
+
+                Ok(true)
             }
 
             ("", "eval") => {
@@ -234,7 +253,10 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                 let turn = self.position.turn();
                 let value = pos.evaluate().perspective(turn);
                 let info = format!("info value {value:+}");
+
                 self.output.send(info).await.map_err(UciError::Fatal)?;
+
+                Ok(true)
             }
 
             (args, "setoption") => {
@@ -257,16 +279,22 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                 }
 
                 self.engine = Engine::with_options(&self.options);
+
+                Ok(true)
             }
 
             ("", "isready") => {
                 let readyok = "readyok".to_string();
-                self.output.send(readyok).await.map_err(UciError::Fatal)?
+                self.output.send(readyok).await.map_err(UciError::Fatal)?;
+
+                Ok(true)
             }
 
             ("", "ucinewgame") => {
                 self.engine = Engine::with_options(&self.options);
                 self.position = Evaluator::default();
+
+                Ok(true)
             }
 
             ("", "uci") => {
@@ -293,24 +321,28 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                 self.output.send(hash).await.map_err(UciError::Fatal)?;
                 self.output.send(threads).await.map_err(UciError::Fatal)?;
                 self.output.send(uciok).await.map_err(UciError::Fatal)?;
+
+                Ok(true)
             }
+
+            ("", "stop") => Ok(true),
+
+            ("", "quit") => Ok(false),
 
             _ => unreachable!(),
         }
-
-        Ok(())
     }
 
     /// Runs the UCI server.
     pub async fn run(&mut self) -> Result<(), O::Error> {
         while let Some(line) = self.input.next().await {
             match line.trim_ascii() {
-                "quit" => break,
-                "stop" | "" => continue,
+                "" => continue,
                 cmd => match self.execute(cmd).await {
-                    Ok(_) => continue,
+                    Ok(false) => break,
+                    Ok(true) => continue,
                     Err(UciError::Fatal(e)) => return Err(e),
-                    Err(UciError::ParseError(_)) => {
+                    Err(UciError::ParseError) => {
                         eprintln!("warning: ignored unrecognized command `{cmd}`")
                     }
                 },
@@ -374,7 +406,7 @@ mod tests {
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
         assert_eq!(uci.position, Evaluator::default());
-        assert!(uci.output.is_empty());
+        assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
@@ -400,7 +432,7 @@ mod tests {
         uci.input = StaticStream::new([input]);
         assert_eq!(block_on(uci.run()), Ok(()));
         assert_eq!(uci.position, pos);
-        assert!(uci.output.is_empty());
+        assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
@@ -410,7 +442,7 @@ mod tests {
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
         assert_eq!(uci.position.to_string(), pos.to_string());
-        assert!(uci.output.is_empty());
+        assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
@@ -437,7 +469,7 @@ mod tests {
         uci.input = StaticStream::new([input]);
         assert_eq!(block_on(uci.run()), Ok(()));
         assert_eq!(uci.position.to_string(), pos.to_string());
-        assert!(uci.output.is_empty());
+        assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
@@ -448,7 +480,7 @@ mod tests {
         let pos = uci.position.clone();
         assert_eq!(block_on(uci.run()), Ok(()));
         assert_eq!(uci.position, pos);
-        assert!(uci.output.is_empty());
+        assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
@@ -459,7 +491,7 @@ mod tests {
         let pos = uci.position.clone();
         assert_eq!(block_on(uci.run()), Ok(()));
         assert_eq!(uci.position, pos);
-        assert!(uci.output.is_empty());
+        assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
@@ -471,7 +503,7 @@ mod tests {
         let pos = uci.position.clone();
         assert_eq!(block_on(uci.run()), Ok(()));
         assert_eq!(uci.position, pos);
-        assert!(uci.output.is_empty());
+        assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
@@ -619,15 +651,26 @@ mod tests {
     }
 
     #[proptest]
+    fn handles_quit_during_search(
+        #[by_ref]
+        #[filter(#uci.position.outcome().is_none())]
+        #[any(StaticStream::new(["go", "quit"]))]
+        mut uci: MockUci,
+    ) {
+        assert_eq!(block_on(uci.run()), Ok(()));
+        assert_eq!(uci.output.join("\n"), "");
+    }
+
+    #[proptest]
     fn handles_stop(#[any(StaticStream::new(["stop"]))] mut uci: MockUci) {
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert!(uci.output.is_empty());
+        assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
     fn handles_quit(#[any(StaticStream::new(["quit"]))] mut uci: MockUci) {
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert!(uci.output.is_empty());
+        assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
@@ -658,7 +701,7 @@ mod tests {
     fn handles_new_game(#[any(StaticStream::new(["ucinewgame"]))] mut uci: MockUci) {
         assert_eq!(block_on(uci.run()), Ok(()));
         assert_eq!(uci.position, Evaluator::default());
-        assert!(uci.output.is_empty());
+        assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
@@ -674,7 +717,7 @@ mod tests {
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
         assert_eq!(uci.options.hash, h >> 20 << 20);
-        assert!(uci.output.is_empty());
+        assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
@@ -685,7 +728,7 @@ mod tests {
         let o = uci.options.clone();
         assert_eq!(block_on(uci.run()), Ok(()));
         assert_eq!(uci.options, o);
-        assert!(uci.output.is_empty());
+        assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
@@ -696,7 +739,7 @@ mod tests {
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
         assert_eq!(uci.options.threads, t);
-        assert!(uci.output.is_empty());
+        assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
@@ -708,7 +751,7 @@ mod tests {
         let o = uci.options.clone();
         assert_eq!(block_on(uci.run()), Ok(()));
         assert_eq!(uci.options, o);
-        assert!(uci.output.is_empty());
+        assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
@@ -717,6 +760,6 @@ mod tests {
         #[strategy("[^[:ascii:]]*")] _s: String,
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert!(uci.output.is_empty());
+        assert_eq!(uci.output.join("\n"), "");
     }
 }

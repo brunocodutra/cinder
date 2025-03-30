@@ -128,6 +128,12 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
         };
 
         let line = result.moves();
+        let Some(best) = line.head() else {
+            let bestmove = "bestmove 0000".to_string();
+            self.output.send(bestmove).await.map_err(UciError::Fatal)?;
+            return Ok(true);
+        };
+
         let depth = result.depth();
         let time = result.time().as_millis();
         let nodes = result.nodes();
@@ -144,10 +150,8 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
 
         self.output.send(info).await.map_err(UciError::Fatal)?;
 
-        if let Some(m) = result.head() {
-            let best = format!("bestmove {m}");
-            self.output.send(best).await.map_err(UciError::Fatal)?;
-        }
+        let bestmove = format!("bestmove {best}");
+        self.output.send(bestmove).await.map_err(UciError::Fatal)?;
 
         Ok(true)
     }
@@ -597,6 +601,22 @@ mod tests {
 
         let bestmove = field("bestmove", word);
         let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
+    }
+
+    #[proptest]
+    fn handles_go_with_no_move(
+        #[by_ref]
+        #[filter(#uci.position.moves().next().is_none())]
+        #[any(StaticStream::new(["go"]))]
+        mut uci: MockUci,
+    ) {
+        assert_eq!(block_on(uci.run()), Ok(()));
+
+        let output = uci.output.join("\n");
+
+        let bestmove = field("bestmove", tag("0000"));
+        let mut pattern = recognize(terminated(bestmove, eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 

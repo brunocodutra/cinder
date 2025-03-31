@@ -1,7 +1,7 @@
 use crate::chess::{Color, Move, Perspective, Square};
 use crate::nnue::Evaluator;
-use crate::search::{Engine, HashSize, Limits, Options, ThreadCount};
-use crate::util::{Assume, Integer, Trigger};
+use crate::search::{Control, Engine, HashSize, Limits, Options, ThreadCount};
+use crate::util::{Assume, Integer};
 use derive_more::with_trait::{Display, Error, From};
 use futures::channel::oneshot::channel as oneshot;
 use futures::{future::FusedFuture, prelude::*, select_biased as select, stream::FusedStream};
@@ -95,11 +95,9 @@ impl<I, O> Uci<I, O> {
 }
 
 impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
-    async fn go(&mut self, limits: &Limits) -> Result<bool, UciError<O::Error>> {
-        let stopper = Trigger::armed();
-
-        let mut search =
-            unsafe { unblock(|| self.engine.search(&self.position, limits, &stopper)) };
+    async fn go(&mut self, limits: Limits) -> Result<bool, UciError<O::Error>> {
+        let ctrl = Control::new(&self.position, limits);
+        let mut search = unsafe { unblock(|| self.engine.search(&self.position, &ctrl)) };
 
         let result = loop {
             select! {
@@ -109,12 +107,12 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                         None | Some("") => continue,
 
                         Some("stop") => {
-                            stopper.disarm();
+                            ctrl.abort();
                             break search.await;
                         },
 
                         Some("quit") => {
-                            stopper.disarm();
+                            ctrl.abort();
                             search.await;
                             return Ok(false);
                         },
@@ -230,7 +228,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
 
                 let mut go = terminated(opt(limits), eof).map(|l| l.unwrap_or_default());
                 let (_, limits) = go.parse(args).finish()?;
-                self.go(&limits).await
+                self.go(limits).await
             }
 
             (args, "perft") => {

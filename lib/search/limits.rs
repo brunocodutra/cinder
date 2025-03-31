@@ -4,6 +4,7 @@ use std::time::Duration;
 
 /// Configuration for search limits.
 #[derive(Debug, Default, Clone, Eq, PartialEq, From)]
+#[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub enum Limits {
     /// Unlimited search.
     #[default]

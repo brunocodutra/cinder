@@ -1,9 +1,8 @@
 #![feature(custom_test_frameworks)]
 #![test_runner(criterion::runner)]
 
-use cinder::nnue::Evaluator;
-use cinder::search::{Depth, Engine, Limits, Options};
-use cinder::util::{Integer, Trigger};
+use cinder::search::{Control, Depth, Engine, Limits, Options};
+use cinder::{nnue::Evaluator, util::Integer};
 use criterion::{Criterion, SamplingMode, Throughput};
 use criterion_macro::criterion;
 use std::thread::available_parallelism;
@@ -13,11 +12,11 @@ fn bench(reps: u64, options: &Options, limits: &Limits) -> Duration {
     let mut time = Duration::ZERO;
 
     for _ in 0..reps {
-        let e = Engine::with_options(options);
-        let stopper = Trigger::armed();
+        let engine = Engine::with_options(options);
         let pos = Evaluator::default();
+        let ctrl = Control::new(&pos, limits.clone());
         let timer = Instant::now();
-        e.search(&pos, limits, &stopper);
+        engine.search(&pos, &ctrl);
         time += timer.elapsed();
     }
 

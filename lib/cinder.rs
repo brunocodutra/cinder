@@ -7,6 +7,7 @@
 #![feature(
     array_chunks,
     coverage_attribute,
+    gen_blocks,
     new_zeroed_alloc,
     ptr_as_ref_unchecked,
     round_char_boundary,

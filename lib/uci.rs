@@ -1,14 +1,14 @@
 use crate::chess::{Color, Move, Perspective, Square};
 use crate::nnue::Evaluator;
-use crate::search::{Control, Engine, HashSize, Limits, Options, ThreadCount};
+use crate::search::{Control, Engine, HashSize, Info, Limits, Options, ThreadCount};
 use crate::util::{Assume, Integer};
 use derive_more::with_trait::{Display, Error, From};
-use futures::channel::oneshot::channel as oneshot;
-use futures::{future::FusedFuture, prelude::*, select_biased as select, stream::FusedStream};
+use futures::{prelude::*, select_biased as select, stream::FusedStream};
 use nom::error::Error as ParseError;
 use nom::{branch::*, bytes::complete::*, combinator::*, sequence::*, *};
+use std::fmt::{self, Debug, Formatter};
 use std::str::{self, FromStr};
-use std::{fmt::Debug, io::Write, mem::transmute, thread, time::Instant};
+use std::{io::Write, time::Instant};
 
 #[cfg(test)]
 use proptest::{prelude::*, strategy::LazyJust};
@@ -17,29 +17,7 @@ mod parser;
 
 pub use parser::*;
 
-/// Runs the provided closure on a thread where blocking is acceptable.
-///
-/// # Safety
-///
-/// Must be awaited on through completion strictly before any
-/// of the variables `f` may capture is dropped.
-#[must_use]
-unsafe fn unblock<F, R>(f: F) -> impl FusedFuture<Output = R>
-where
-    F: FnOnce() -> R + Send,
-    R: Send,
-{
-    unsafe {
-        let (tx, rx) = oneshot();
-        thread::spawn(transmute::<
-            Box<dyn FnOnce() + Send>,
-            Box<dyn FnOnce() + Send + 'static>,
-        >(Box::new(move || tx.send(f()).assume()) as _));
-        rx.map(Assume::assume)
-    }
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 struct UciMove(Move);
 
 impl PartialEq<str> for UciMove {
@@ -51,9 +29,43 @@ impl PartialEq<str> for UciMove {
     }
 }
 
-/// The reason why executing the UCI command failed.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+struct UciSearchInfo(Info);
+
+impl Display for UciSearchInfo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("info")?;
+
+        write!(f, " depth {}", self.0.depth())?;
+        write!(f, " time {}", self.0.time().as_millis())?;
+        write!(f, " nodes {}", self.0.nodes())?;
+        write!(f, " nps {}", self.0.nps() as u64)?;
+
+        match self.0.score().mate() {
+            None => write!(f, " score cp {}", self.0.score())?,
+            Some(p) => write!(f, " score mate {}", (p + p.get().signum()) / 2)?,
+        }
+
+        write!(f, " pv {}", self.0.moves())?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+struct UciBestMove(Option<Move>);
+
+impl Display for UciBestMove {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            None => f.write_str("bestmove 0000"),
+            Some(best) => write!(f, "bestmove {best}"),
+        }
+    }
+}
+
 #[derive(Debug, Display, Clone, Eq, PartialEq, Error)]
-pub enum UciError<E> {
+enum UciError<E> {
     #[display("failed to parse the uci command")]
     ParseError,
     Fatal(E),
@@ -97,58 +109,36 @@ impl<I, O> Uci<I, O> {
 impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
     async fn go(&mut self, limits: Limits) -> Result<bool, UciError<O::Error>> {
         let ctrl = Control::new(&self.position, limits);
-        let mut search = unsafe { unblock(|| self.engine.search(&self.position, &ctrl)) };
+        let mut search = self.engine.search(&self.position, &ctrl);
+        let mut best = UciBestMove(None);
 
-        let result = loop {
+        loop {
             select! {
-                result = search => break result,
+                info = search.next() => {
+                    match info {
+                        None => break,
+                        Some(i) => {
+                            best = UciBestMove(i.head());
+                            if i.head().is_some() {
+                                let info = UciSearchInfo(i).to_string();
+                                self.output.send(info).await.map_err(UciError::Fatal)?;
+                            }
+                        }
+                    }
+                },
+
                 line = self.input.next() => {
                     match line.as_deref().map(str::trim_ascii) {
                         None | Some("") => continue,
-
-                        Some("stop") => {
-                            ctrl.abort();
-                            break search.await;
-                        },
-
-                        Some("quit") => {
-                            ctrl.abort();
-                            search.await;
-                            return Ok(false);
-                        },
-
-                        Some(cmd) => {
-                            eprintln!("ignored unsupported command `{cmd}` during search");
-                        },
+                        Some("quit") => return Ok(false),
+                        Some("stop") => { ctrl.abort(); },
+                        Some(cmd) => eprintln!("ignored unsupported command `{cmd}` during search"),
                     }
                 }
             }
-        };
+        }
 
-        let line = result.moves();
-        let Some(best) = line.head() else {
-            let bestmove = "bestmove 0000".to_string();
-            self.output.send(bestmove).await.map_err(UciError::Fatal)?;
-            return Ok(true);
-        };
-
-        let depth = result.depth();
-        let time = result.time().as_millis();
-        let nodes = result.nodes();
-        let nps = result.nps() as u64;
-
-        let score = match result.score().mate() {
-            None => format!("cp {}", result.score()),
-            Some(p) => format!("mate {}", (p + p.get().signum()) / 2),
-        };
-
-        let info = format!(
-            "info depth {depth} time {time} nodes {nodes} nps {nps} score {score} pv {line}"
-        );
-
-        self.output.send(info).await.map_err(UciError::Fatal)?;
-
-        let bestmove = format!("bestmove {best}");
+        let bestmove = best.to_string();
         self.output.send(bestmove).await.map_err(UciError::Fatal)?;
 
         Ok(true)
@@ -399,7 +389,8 @@ mod tests {
         let nps = field("nps", int);
         let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
         let pv = field("pv", separated_list1(tag(" "), word));
-        recognize((tag("info"), depth, time, nodes, nps, score, pv)).parse(input)
+        let info = (tag("info"), depth, time, nodes, nps, score, pv);
+        recognize(separated_list1(line_ending, info)).parse(input)
     }
 
     #[proptest]
@@ -676,7 +667,6 @@ mod tests {
         mut uci: MockUci,
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]

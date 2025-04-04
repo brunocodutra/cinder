@@ -14,10 +14,10 @@ use proptest::strategy::LazyJust;
 #[display("the search was interrupted")]
 pub struct Interrupted;
 
-/// The search result.
+/// Information about the search result.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Deref, Constructor)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
-pub struct SearchResult<const N: usize = { Depth::MAX as _ }> {
+pub struct Info<const N: usize = { Depth::MAX as _ }> {
     depth: Depth,
     time: Duration,
     nodes: u64,
@@ -25,50 +25,45 @@ pub struct SearchResult<const N: usize = { Depth::MAX as _ }> {
     pv: Pv<N>,
 }
 
-impl<const N: usize> SearchResult<N> {
+impl<const N: usize> Info<N> {
     /// The depth searched.
-    #[inline(always)]
     pub fn depth(&self) -> Depth {
         self.depth
     }
 
     /// The duration searched.
-    #[inline(always)]
     pub fn time(&self) -> Duration {
         self.time
     }
 
     /// The number of nodes searched.
-    #[inline(always)]
     pub fn nodes(&self) -> u64 {
         self.nodes
     }
 
     /// The number of nodes searched per second.
-    #[inline(always)]
     pub fn nps(&self) -> f64 {
         self.nodes as f64 / self.time().as_secs_f64()
     }
 }
 
-/// A chess engine.
 #[derive(Debug, Clone, Deref)]
-pub struct Search<'a> {
+struct Worker<'e, 'c> {
     #[deref]
-    engine: &'a Engine,
-    ctrl: &'a Control,
+    engine: &'e Engine,
+    ctrl: &'c Control,
     value: [Value; Ply::MAX as usize + 1],
     killers: [Killers; Ply::MAX as usize + 1],
-    continuation: [Option<&'a Reply>; Ply::MAX as usize + 1],
+    continuation: [Option<&'e Reply>; Ply::MAX as usize + 1],
 }
 
-impl<'a> Search<'a> {
-    fn new(engine: &'a Engine, ctrl: &'a Control) -> Self {
+impl<'e, 'c> Worker<'e, 'c> {
+    fn new(engine: &'e Engine, ctrl: &'c Control) -> Self {
         let value = [Default::default(); Ply::MAX as usize + 1];
         let killers = [Default::default(); Ply::MAX as usize + 1];
         let continuation = [Default::default(); Ply::MAX as usize + 1];
 
-        Search {
+        Worker {
             engine,
             ctrl,
             value,
@@ -116,8 +111,8 @@ impl<'a> Search<'a> {
         self.tt.set(pos.zobrist(), tpos);
     }
 
-    fn result<const N: usize>(&self, depth: Depth, pv: Pv<N>) -> SearchResult<N> {
-        SearchResult::new(depth, self.ctrl.time(), self.ctrl.nodes(), pv)
+    fn info<const N: usize>(&self, depth: Depth, pv: Pv<N>) -> Info<N> {
+        Info::new(depth, self.ctrl.time(), self.ctrl.nodes(), pv)
     }
 
     /// An implementation of the [improving heuristic].
@@ -395,13 +390,13 @@ impl<'a> Search<'a> {
     ///
     /// [aspiration windows]: https://www.chessprogramming.org/Aspiration_Windows
     /// [iterative deepening]: https://www.chessprogramming.org/Iterative_Deepening
-    fn aw<const N: usize>(&mut self, pos: &Evaluator) -> SearchResult<N> {
+    fn aw<const N: usize>(&mut self, pos: &Evaluator) -> Info<N> {
         self.value[0] = pos.evaluate();
         let mut depth = Depth::new(0);
         let mut moves: ArrayVec<_, 255> = pos.moves().flatten().map(|m| (m, pos.gain(m))).collect();
         let mut pv = match moves.iter().max_by_key(|(_, rating)| *rating) {
-            None if !pos.is_check() => return self.result(depth, Pv::empty(Score::new(0))),
-            None => return self.result(depth, Pv::empty(Score::mated(Ply::new(0)))),
+            None if !pos.is_check() => return self.info(depth, Pv::empty(Score::new(0))),
+            None => return self.info(depth, Pv::empty(Score::mated(Ply::new(0)))),
             Some((m, _)) => match self.tt.get(pos.zobrist()) {
                 None => Pv::new(self.value[0].saturate(), Line::singular(*m)),
                 Some(t) => t.transpose(Ply::new(0)).truncate(),
@@ -409,7 +404,7 @@ impl<'a> Search<'a> {
         };
 
         if matches!(self.ctrl.limits(), Limits::Clock(..)) && moves.len() < 2 {
-            return self.result(depth, pv);
+            return self.info(depth, pv);
         }
 
         while depth < self.ctrl.limits().depth() {
@@ -424,7 +419,7 @@ impl<'a> Search<'a> {
 
             'aw: loop {
                 if self.ctrl.check() != ControlFlow::Continue {
-                    return self.result(depth - 1, pv);
+                    return self.info(depth - 1, pv);
                 }
 
                 for (m, rating) in moves.iter_mut() {
@@ -437,7 +432,7 @@ impl<'a> Search<'a> {
 
                 moves.sort_unstable_by_key(|(_, rating)| *rating);
                 let partial = match self.pvs(pos, &moves, lower..upper, draft, Ply::new(0)) {
-                    Err(_) => return self.result(depth - 1, pv),
+                    Err(_) => return self.info(depth - 1, pv),
                     Ok(partial) => partial.assume(),
                 };
 
@@ -463,7 +458,32 @@ impl<'a> Search<'a> {
             }
         }
 
-        self.result(depth, pv)
+        self.info(depth, pv)
+    }
+}
+
+/// A handle to an ongoing search.
+#[derive(Debug)]
+pub struct Search<'e, 'p, 'c> {
+    position: &'p Evaluator,
+    worker: Worker<'e, 'c>,
+}
+
+impl<'e, 'p, 'c> Search<'e, 'p, 'c> {
+    pub fn go(mut self) -> Info {
+        let engine = self.worker.engine;
+        let ctrl = self.worker.ctrl;
+
+        thread::scope(|s| {
+            for _ in 1..engine.threads.get() {
+                let mut search = self.worker.clone();
+                s.spawn(move || search.aw::<1>(self.position));
+            }
+
+            let info = self.worker.aw(self.position);
+            ctrl.interrupt();
+            info
+        })
     }
 }
 
@@ -502,20 +522,16 @@ impl Engine {
         }
     }
 
-    /// Searches for the [principal variation][`Pv`].
-    pub fn search(&self, pos: &Evaluator, ctrl: &Control) -> SearchResult {
-        let mut search = Search::new(self, ctrl);
-
-        thread::scope(|s| {
-            for _ in 1..self.threads.get() {
-                let mut search = search.clone();
-                s.spawn(move || search.aw::<1>(pos));
-            }
-
-            let pv = search.aw(pos);
-            ctrl.interrupt();
-            pv
-        })
+    /// Initiates a [`Search`].
+    pub fn search<'e, 'p, 'c>(
+        &'e self,
+        position: &'p Evaluator,
+        ctrl: &'c Control,
+    ) -> Search<'e, 'p, 'c> {
+        Search {
+            position,
+            worker: Worker::new(self, ctrl),
+        }
     }
 }
 
@@ -548,8 +564,8 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut search = Search::new(&e, &ctrl);
-        assert_eq!(search.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
+        let mut worker = Worker::new(&e, &ctrl);
+        assert_eq!(worker.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -568,8 +584,8 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut search = Search::new(&e, &ctrl);
-        assert_eq!(search.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
+        let mut worker = Worker::new(&e, &ctrl);
+        assert_eq!(worker.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -588,8 +604,8 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut search = Search::new(&e, &ctrl);
-        assert_eq!(search.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
+        let mut worker = Worker::new(&e, &ctrl);
+        assert_eq!(worker.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -599,10 +615,10 @@ mod tests {
         d: Depth,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut search = Search::new(&e, &ctrl);
+        let mut worker = Worker::new(&e, &ctrl);
 
         assert_eq!(
-            search.ab::<1>(&pos, Score::lower()..Score::upper(), d, Ply::upper()),
+            worker.ab::<1>(&pos, Score::lower()..Score::upper(), d, Ply::upper()),
             Ok(Pv::empty(pos.evaluate().saturate()))
         );
     }
@@ -616,8 +632,8 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::Nodes(0));
-        let mut search = Search::new(&e, &ctrl);
-        assert_eq!(search.ab::<1>(&pos, b, d, p), Err(Interrupted));
+        let mut worker = Worker::new(&e, &ctrl);
+        assert_eq!(worker.ab::<1>(&pos, b, d, p), Err(Interrupted));
     }
 
     #[proptest]
@@ -629,9 +645,9 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
-        let mut search = Search::new(&e, &ctrl);
+        let mut worker = Worker::new(&e, &ctrl);
         std::thread::sleep(Duration::from_millis(1));
-        assert_eq!(search.ab::<1>(&pos, b, d, p), Err(Interrupted));
+        assert_eq!(worker.ab::<1>(&pos, b, d, p), Err(Interrupted));
     }
 
     #[proptest]
@@ -643,9 +659,9 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut search = Search::new(&e, &ctrl);
+        let mut worker = Worker::new(&e, &ctrl);
         ctrl.interrupt();
-        assert_eq!(search.ab::<1>(&pos, b, d, p), Err(Interrupted));
+        assert_eq!(worker.ab::<1>(&pos, b, d, p), Err(Interrupted));
     }
 
     #[proptest]
@@ -657,8 +673,8 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut search = Search::new(&e, &ctrl);
-        assert_eq!(search.ab::<1>(&pos, b, d, p), Ok(Pv::empty(Score::new(0))));
+        let mut worker = Worker::new(&e, &ctrl);
+        assert_eq!(worker.ab::<1>(&pos, b, d, p), Ok(Pv::empty(Score::new(0))));
     }
 
     #[proptest]
@@ -670,10 +686,10 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut search = Search::new(&e, &ctrl);
+        let mut worker = Worker::new(&e, &ctrl);
 
         assert_eq!(
-            search.ab::<1>(&pos, b, d, p),
+            worker.ab::<1>(&pos, b, d, p),
             Ok(Pv::empty(Score::mated(p)))
         );
     }
@@ -684,8 +700,8 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
     ) {
         let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
-        let mut search = Search::new(&e, &ctrl);
-        assert_ne!(search.aw::<1>(&pos).head(), None);
+        let mut worker = Worker::new(&e, &ctrl);
+        assert_ne!(worker.aw::<1>(&pos).head(), None);
     }
 
     #[proptest]
@@ -694,7 +710,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
     ) {
         let ctrl = Control::new(&pos, Limits::Depth(Depth::lower()));
-        let mut search = Search::new(&e, &ctrl);
-        assert_ne!(search.aw::<1>(&pos).head(), None);
+        let mut worker = Worker::new(&e, &ctrl);
+        assert_ne!(worker.aw::<1>(&pos).head(), None);
     }
 }

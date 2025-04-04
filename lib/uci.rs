@@ -8,7 +8,7 @@ use futures::{future::FusedFuture, prelude::*, select_biased as select, stream::
 use nom::error::Error as ParseError;
 use nom::{branch::*, bytes::complete::*, combinator::*, sequence::*, *};
 use std::str::{self, FromStr};
-use std::{fmt::Debug, io::Write, mem::transmute, thread, time::Instant};
+use std::{fmt::Debug, io::Write, thread, time::Instant};
 
 #[cfg(test)]
 use proptest::{prelude::*, strategy::LazyJust};
@@ -17,26 +17,15 @@ mod parser;
 
 pub use parser::*;
 
-/// Runs the provided closure on a thread where blocking is acceptable.
-///
-/// # Safety
-///
-/// Must be awaited on through completion strictly before any
-/// of the variables `f` may capture is dropped.
 #[must_use]
-unsafe fn unblock<F, R>(f: F) -> impl FusedFuture<Output = R>
+fn unblock<F, R>(f: F) -> impl FusedFuture<Output = R>
 where
-    F: FnOnce() -> R + Send,
-    R: Send,
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
 {
-    unsafe {
-        let (tx, rx) = oneshot();
-        thread::spawn(transmute::<
-            Box<dyn FnOnce() + Send>,
-            Box<dyn FnOnce() + Send + 'static>,
-        >(Box::new(move || tx.send(f()).assume()) as _));
-        rx.map(Assume::assume)
-    }
+    let (tx, rx) = oneshot();
+    thread::spawn(move || tx.send(f()).assume());
+    rx.map(Assume::assume)
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
@@ -97,11 +86,14 @@ impl<I, O> Uci<I, O> {
 impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
     async fn go(&mut self, limits: Limits) -> Result<bool, UciError<O::Error>> {
         let ctrl = Control::new(&self.position, limits);
-        let mut search = unsafe { unblock(|| self.engine.search(&self.position, &ctrl)) };
+        let ctrl: &'static Control = unsafe { &*(&ctrl as *const _) };
+        let pos: &'static Evaluator = unsafe { &*(&self.position as *const _) };
+        let engine: &'static Engine = unsafe { &*(&self.engine as *const _) };
+        let mut search = unblock(move || engine.search(pos, ctrl).go());
 
         let result = loop {
             select! {
-                result = search => break result,
+                info = search => break info,
                 line = self.input.next() => {
                     match line.as_deref().map(str::trim_ascii) {
                         None | Some("") => continue,

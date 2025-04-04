@@ -4,20 +4,26 @@ use crate::search::*;
 use crate::util::{Assume, Integer};
 use arrayvec::ArrayVec;
 use derive_more::with_trait::{Constructor, Deref, Display, Error};
-use std::{num::Saturating, ops::Range, thread, time::Duration};
+use futures::channel::mpsc::{UnboundedReceiver, unbounded};
+use futures::{Stream, StreamExt, stream::FusedStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::task::{Context, Poll};
+use std::{num::Saturating, ops::Range, pin::Pin, thread, time::Duration};
 
 #[cfg(test)]
 use proptest::strategy::LazyJust;
+
+type MovesBuf<T = ()> = ArrayVec<(Move, T), 255>;
 
 /// Indicates the search was aborted .
 #[derive(Debug, Display, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Error)]
 #[display("the search was aborted")]
 pub struct Aborted;
 
-/// The search result.
+/// Information about the search result.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Deref, Constructor)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
-pub struct SearchResult<const N: usize = { Depth::MAX as _ }> {
+pub struct Info<const N: usize = { Depth::MAX as _ }> {
     depth: Depth,
     time: Duration,
     nodes: u64,
@@ -25,55 +31,59 @@ pub struct SearchResult<const N: usize = { Depth::MAX as _ }> {
     pv: Pv<N>,
 }
 
-impl<const N: usize> SearchResult<N> {
+impl<const N: usize> Info<N> {
     /// The depth searched.
-    #[inline(always)]
     pub fn depth(&self) -> Depth {
         self.depth
     }
 
     /// The duration searched.
-    #[inline(always)]
     pub fn time(&self) -> Duration {
         self.time
     }
 
     /// The number of nodes searched.
-    #[inline(always)]
     pub fn nodes(&self) -> u64 {
         self.nodes
     }
 
     /// The number of nodes searched per second.
-    #[inline(always)]
     pub fn nps(&self) -> f64 {
         self.nodes as f64 / self.time().as_secs_f64()
     }
+
+    /// The principal variation.
+    pub fn pv(&self) -> &Pv<N> {
+        &self.pv
+    }
 }
 
-/// A chess engine.
-#[derive(Debug, Clone, Deref)]
-pub struct Search<'a> {
-    #[deref]
-    engine: &'a Engine,
+#[derive(Debug, Clone)]
+struct Worker<'a> {
     ctrl: &'a Control,
-    value: [Value; Ply::MAX as usize + 1],
+    tt: &'a TranspositionTable,
+    history: &'a History,
+    continuation: &'a Continuation,
+    replies: [Option<&'a Reply>; Ply::MAX as usize + 1],
     killers: [Killers; Ply::MAX as usize + 1],
-    continuation: [Option<&'a Reply>; Ply::MAX as usize + 1],
+    value: [Value; Ply::MAX as usize + 1],
 }
 
-impl<'a> Search<'a> {
-    fn new(engine: &'a Engine, ctrl: &'a Control) -> Self {
-        let value = [Default::default(); Ply::MAX as usize + 1];
-        let killers = [Default::default(); Ply::MAX as usize + 1];
-        let continuation = [Default::default(); Ply::MAX as usize + 1];
-
-        Search {
-            engine,
+impl<'a> Worker<'a> {
+    fn new(
+        ctrl: &'a Control,
+        tt: &'a TranspositionTable,
+        history: &'a History,
+        continuation: &'a Continuation,
+    ) -> Self {
+        Worker {
             ctrl,
-            value,
-            killers,
+            tt,
+            history,
             continuation,
+            replies: [Default::default(); Ply::MAX as usize + 1],
+            killers: [Default::default(); Ply::MAX as usize + 1],
+            value: [Default::default(); Ply::MAX as usize + 1],
         }
     }
 
@@ -96,7 +106,7 @@ impl<'a> Search<'a> {
 
             self.history.update(pos, best, draft.get());
 
-            let counter = self.continuation.get(ply.cast::<usize>().wrapping_sub(1));
+            let counter = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
             counter.update(pos, best, draft.get());
 
             for &(m, _) in moves.iter().rev() {
@@ -105,7 +115,7 @@ impl<'a> Search<'a> {
                 } else {
                     self.history.update(pos, m, -draft.get());
 
-                    let counter = self.continuation.get(ply.cast::<usize>().wrapping_sub(1));
+                    let counter = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
                     counter.update(pos, m, -draft.get())
                 }
             }
@@ -116,8 +126,8 @@ impl<'a> Search<'a> {
         self.tt.set(pos.zobrist(), tpos);
     }
 
-    fn result<const N: usize>(&self, depth: Depth, pv: Pv<N>) -> SearchResult<N> {
-        SearchResult::new(depth, self.ctrl.time(), self.ctrl.nodes(), pv)
+    fn info<const N: usize>(&self, depth: Depth, pv: Pv<N>) -> Info<N> {
+        Info::new(depth, self.ctrl.time(), self.ctrl.nodes(), pv)
     }
 
     /// An implementation of the [improving heuristic].
@@ -278,7 +288,7 @@ impl<'a> Search<'a> {
                     let mut next = pos.clone();
                     next.pass();
                     self.tt.prefetch(next.zobrist());
-                    self.continuation[ply.cast::<usize>()] = None;
+                    self.replies[ply.cast::<usize>()] = None;
                     if -self.nw::<0>(&next, -beta + 1, d + ply, ply + 1)? >= beta {
                         return Ok(transposed.truncate());
                     }
@@ -287,7 +297,7 @@ impl<'a> Search<'a> {
         }
 
         let killer = self.killers[ply.cast::<usize>()];
-        let mut moves: ArrayVec<_, 255> = pos
+        let mut moves: MovesBuf<_> = pos
             .moves()
             .filter(|ms| !quiesce || !ms.is_quiet())
             .flatten()
@@ -296,7 +306,7 @@ impl<'a> Search<'a> {
                     return (m, Value::upper());
                 }
 
-                let counter = self.continuation[ply.cast::<usize>() - 1];
+                let counter = self.replies[ply.cast::<usize>() - 1];
                 let mut rating = pos.gain(m) + self.history.get(pos, m) + counter.get(pos, m);
 
                 if killer.contains(m) {
@@ -317,8 +327,7 @@ impl<'a> Search<'a> {
                         let mut next = pos.clone();
                         next.play(*m);
                         self.tt.prefetch(next.zobrist());
-                        self.continuation[ply.cast::<usize>()] =
-                            Some(self.engine.continuation.reply(pos, *m));
+                        self.replies[ply.cast::<usize>()] = Some(self.continuation.reply(pos, *m));
                         if -self.nw::<0>(&next, -beta + 1, d + ply, ply + 1)? >= beta {
                             return Ok(transposed.truncate());
                         }
@@ -354,8 +363,7 @@ impl<'a> Search<'a> {
                 let mut next = pos.clone();
                 next.play(m);
                 self.tt.prefetch(next.zobrist());
-                self.continuation[ply.cast::<usize>()] =
-                    Some(self.engine.continuation.reply(pos, m));
+                self.replies[ply.cast::<usize>()] = Some(self.continuation.reply(pos, m));
                 (m, -self.ab(&next, -beta..-alpha, depth, ply + 1)?)
             }
         };
@@ -376,7 +384,7 @@ impl<'a> Search<'a> {
 
             self.tt.prefetch(next.zobrist());
             let lmr = self.lmr(draft, idx) - (is_pv as i8) - improving;
-            self.continuation[ply.cast::<usize>()] = Some(self.engine.continuation.reply(pos, m));
+            self.replies[ply.cast::<usize>()] = Some(self.continuation.reply(pos, m));
             let partial = match -self.nw(&next, -alpha, depth - lmr, ply + 1)? {
                 partial if partial <= alpha || (partial >= beta && lmr <= 0) => partial,
                 _ => -self.ab(&next, -beta..-alpha, depth, ply + 1)?,
@@ -395,75 +403,155 @@ impl<'a> Search<'a> {
     ///
     /// [aspiration windows]: https://www.chessprogramming.org/Aspiration_Windows
     /// [iterative deepening]: https://www.chessprogramming.org/Iterative_Deepening
-    fn aw<const N: usize>(&mut self, pos: &Evaluator) -> SearchResult<N> {
-        self.value[0] = pos.evaluate();
-        let mut depth = Depth::new(0);
-        let mut moves: ArrayVec<_, 255> = pos.moves().flatten().map(|m| (m, pos.gain(m))).collect();
-        let mut pv = match moves.iter().max_by_key(|(_, rating)| *rating) {
-            None if !pos.is_check() => return self.result(depth, Pv::empty(Score::new(0))),
-            None => return self.result(depth, Pv::empty(Score::mated(Ply::new(0)))),
-            Some((m, _)) => match self.tt.get(pos.zobrist()) {
-                None => Pv::new(self.value[0].saturate(), Line::singular(*m)),
-                Some(t) => t.transpose(Ply::new(0)).truncate(),
-            },
-        };
-
-        if matches!(self.ctrl.limits(), Limits::Clock(..)) && moves.len() < 2 {
-            return self.result(depth, pv);
-        }
-
-        while depth < self.ctrl.limits().depth() {
-            depth += 1;
-
-            let mut draft = depth;
-            let mut delta = Saturating(5i16);
-            let (mut lower, mut upper) = match depth.get() {
-                ..=4 => (Score::lower(), Score::upper()),
-                _ => (pv.score() - delta, pv.score() + delta),
+    fn aw<const N: usize>(&mut self, pos: &Evaluator) -> impl IntoIterator<Item = Info<N>> {
+        gen move {
+            self.value[0] = pos.evaluate();
+            let mut depth = Depth::new(0);
+            let mut moves: MovesBuf<_> = pos.moves().flatten().map(|m| (m, pos.gain(m))).collect();
+            let mut pv = match moves.iter().max_by_key(|(_, rating)| *rating) {
+                None if !pos.is_check() => Pv::empty(Score::new(0)),
+                None => Pv::empty(Score::mated(Ply::new(0))),
+                Some((m, _)) => match self.tt.get(pos.zobrist()) {
+                    None => Pv::new(self.value[0].saturate(), Line::singular(*m)),
+                    Some(t) => t.transpose(Ply::new(0)).truncate(),
+                },
             };
 
-            'aw: loop {
-                if self.ctrl.check() != ControlFlow::Continue {
-                    return self.result(depth - 1, pv);
+            let mut stop = false;
+            let limits = self.ctrl.limits();
+            if matches!((&*moves, limits), (&[], _) | (&[_], Limits::Clock(..))) {
+                stop = true;
+            }
+
+            loop {
+                yield self.info(depth, pv.clone());
+                if stop || depth >= limits.depth() {
+                    return;
                 }
 
-                for (m, rating) in moves.iter_mut() {
-                    if Some(*m) == pv.head() {
-                        *rating = Value::upper();
-                    } else {
-                        *rating = pos.gain(*m) + self.history.get(pos, *m);
-                    }
-                }
-
-                moves.sort_unstable_by_key(|(_, rating)| *rating);
-                let partial = match self.pvs(pos, &moves, lower..upper, draft, Ply::new(0)) {
-                    Err(_) => return self.result(depth - 1, pv),
-                    Ok(partial) => partial.assume(),
+                depth += 1;
+                let mut draft = depth;
+                let mut delta = Saturating(5i16);
+                let (mut lower, mut upper) = match depth.get() {
+                    ..=4 => (Score::lower(), Score::upper()),
+                    _ => (pv.score() - delta, pv.score() + delta),
                 };
 
-                delta *= 2;
-                match partial.score() {
-                    score if (-lower..Score::upper()).contains(&-score) => {
-                        draft = depth;
-                        upper = lower / 2 + upper / 2;
-                        lower = score - delta;
+                loop {
+                    if self.ctrl.check() != ControlFlow::Continue {
+                        break stop = true;
                     }
 
-                    score if (upper..Score::upper()).contains(&score) => {
-                        draft = Depth::new(1).max(draft - 1);
-                        upper = score + delta;
-                        pv = partial;
+                    for (m, rating) in moves.iter_mut() {
+                        if Some(*m) == pv.head() {
+                            *rating = Value::upper();
+                        } else {
+                            *rating = pos.gain(*m) + self.history.get(pos, *m);
+                        }
                     }
 
-                    _ => {
-                        pv = partial;
-                        break 'aw;
+                    moves.sort_unstable_by_key(|(_, rating)| *rating);
+                    let partial = match self.pvs(pos, &moves, lower..upper, draft, Ply::new(0)) {
+                        Ok(partial) => partial.assume(),
+                        Err(_) => break stop = true,
+                    };
+
+                    delta *= 2;
+                    match partial.score() {
+                        score if (-lower..Score::upper()).contains(&-score) => {
+                            draft = depth;
+                            upper = lower / 2 + upper / 2;
+                            lower = score - delta;
+                        }
+
+                        score if (upper..Score::upper()).contains(&score) => {
+                            draft = Depth::new(1).max(draft - 1);
+                            upper = score + delta;
+                            pv = partial;
+                        }
+
+                        _ => break pv = partial,
                     }
                 }
             }
         }
+    }
+}
 
-        self.result(depth, pv)
+/// A handle to an ongoing search.
+#[derive(Debug)]
+pub struct Search<'e, 'p, 'c> {
+    engine: &'e mut Engine,
+    position: &'p Evaluator,
+    ctrl: &'c Control,
+    workers: AtomicUsize,
+    channel: Option<UnboundedReceiver<Info>>,
+}
+
+impl<'e, 'p, 'c> Search<'e, 'p, 'c> {
+    fn new(engine: &'e mut Engine, position: &'p Evaluator, ctrl: &'c Control) -> Self {
+        Search {
+            engine,
+            position,
+            ctrl,
+            workers: AtomicUsize::new(0),
+            channel: None,
+        }
+    }
+}
+
+impl<'e, 'p, 'c> Drop for Search<'e, 'p, 'c> {
+    fn drop(&mut self) {
+        self.ctrl.abort();
+        while self.workers.load(Ordering::Acquire) > 0 {
+            thread::yield_now();
+        }
+    }
+}
+
+impl<'e, 'p, 'c> FusedStream for Search<'e, 'p, 'c> {
+    fn is_terminated(&self) -> bool {
+        self.channel.as_ref().is_some_and(|c| c.is_terminated())
+    }
+}
+
+impl<'e, 'p, 'c> Stream for Search<'e, 'p, 'c> {
+    type Item = Info;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if let Some(channel) = &mut self.channel {
+            return channel.poll_next_unpin(cx);
+        }
+
+        let (tx, mut rx) = unbounded();
+
+        *self.workers.get_mut() = self.engine.threads.get();
+        let pos: &'static _ = unsafe { &*(self.position as *const _) };
+        let ctrl: &'static _ = unsafe { &*(self.ctrl as *const _) };
+        let tt: &'static _ = unsafe { &*(&self.engine.tt as *const _) };
+        let history: &'static _ = unsafe { &*(&self.engine.history as *const _) };
+        let continuation: &'static _ = unsafe { &*(&self.engine.continuation as *const _) };
+        let workers: &'static AtomicUsize = unsafe { &*(&self.workers as *const _) };
+
+        thread::spawn(move || {
+            for info in Worker::new(ctrl, tt, history, continuation).aw(pos) {
+                tx.unbounded_send(info).assume();
+            }
+
+            drop(tx);
+            workers.fetch_sub(1, Ordering::Release);
+        });
+
+        for _ in 1..self.engine.threads.get() {
+            thread::spawn(|| {
+                for _ in Worker::new(ctrl, tt, history, continuation).aw::<1>(pos) {}
+                workers.fetch_sub(1, Ordering::Release);
+            });
+        }
+
+        let poll = rx.poll_next_unpin(cx);
+        self.channel = Some(rx);
+        poll
     }
 }
 
@@ -502,20 +590,13 @@ impl Engine {
         }
     }
 
-    /// Searches for the [principal variation][`Pv`].
-    pub fn search(&self, pos: &Evaluator, ctrl: &Control) -> SearchResult {
-        let mut search = Search::new(self, ctrl);
-
-        thread::scope(|s| {
-            for _ in 1..self.threads.get() {
-                let mut search = search.clone();
-                s.spawn(move || search.aw::<1>(pos));
-            }
-
-            let pv = search.aw(pos);
-            ctrl.abort();
-            pv
-        })
+    /// Initiates a [`Search`].
+    pub fn search<'e, 'p, 'c>(
+        &'e mut self,
+        pos: &'p Evaluator,
+        ctrl: &'c Control,
+    ) -> Search<'e, 'p, 'c> {
+        Search::new(self, pos, ctrl)
     }
 }
 
@@ -548,8 +629,8 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut search = Search::new(&e, &ctrl);
-        assert_eq!(search.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
+        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        assert_eq!(worker.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -568,8 +649,8 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut search = Search::new(&e, &ctrl);
-        assert_eq!(search.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
+        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        assert_eq!(worker.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -588,8 +669,8 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut search = Search::new(&e, &ctrl);
-        assert_eq!(search.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
+        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        assert_eq!(worker.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -599,10 +680,10 @@ mod tests {
         d: Depth,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut search = Search::new(&e, &ctrl);
+        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
 
         assert_eq!(
-            search.ab::<1>(&pos, Score::lower()..Score::upper(), d, Ply::upper()),
+            worker.ab::<1>(&pos, Score::lower()..Score::upper(), d, Ply::upper()),
             Ok(Pv::empty(pos.evaluate().saturate()))
         );
     }
@@ -616,8 +697,8 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::Nodes(0));
-        let mut search = Search::new(&e, &ctrl);
-        assert_eq!(search.ab::<1>(&pos, b, d, p), Err(Aborted));
+        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        assert_eq!(worker.ab::<1>(&pos, b, d, p), Err(Aborted));
     }
 
     #[proptest]
@@ -629,9 +710,9 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
-        let mut search = Search::new(&e, &ctrl);
-        std::thread::sleep(Duration::from_millis(1));
-        assert_eq!(search.ab::<1>(&pos, b, d, p), Err(Aborted));
+        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        thread::sleep(Duration::from_millis(1));
+        assert_eq!(worker.ab::<1>(&pos, b, d, p), Err(Aborted));
     }
 
     #[proptest]
@@ -643,9 +724,9 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut search = Search::new(&e, &ctrl);
+        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
         ctrl.abort();
-        assert_eq!(search.ab::<1>(&pos, b, d, p), Err(Aborted));
+        assert_eq!(worker.ab::<1>(&pos, b, d, p), Err(Aborted));
     }
 
     #[proptest]
@@ -657,8 +738,8 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut search = Search::new(&e, &ctrl);
-        assert_eq!(search.ab::<1>(&pos, b, d, p), Ok(Pv::empty(Score::new(0))));
+        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        assert_eq!(worker.ab::<1>(&pos, b, d, p), Ok(Pv::empty(Score::new(0))));
     }
 
     #[proptest]
@@ -670,10 +751,10 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut search = Search::new(&e, &ctrl);
+        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
 
         assert_eq!(
-            search.ab::<1>(&pos, b, d, p),
+            worker.ab::<1>(&pos, b, d, p),
             Ok(Pv::empty(Score::mated(p)))
         );
     }
@@ -684,8 +765,9 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
     ) {
         let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
-        let mut search = Search::new(&e, &ctrl);
-        assert_ne!(search.aw::<1>(&pos).head(), None);
+        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        let last = worker.aw::<1>(&pos).into_iter().last();
+        assert_ne!(last.and_then(|pv| pv.head()), None);
     }
 
     #[proptest]
@@ -694,7 +776,8 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
     ) {
         let ctrl = Control::new(&pos, Limits::Depth(Depth::lower()));
-        let mut search = Search::new(&e, &ctrl);
-        assert_ne!(search.aw::<1>(&pos).head(), None);
+        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        let last = worker.aw::<1>(&pos).into_iter().last();
+        assert_ne!(last.and_then(|pv| pv.head()), None);
     }
 }

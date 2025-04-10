@@ -79,6 +79,7 @@ pub unsafe trait Integer: Copy {
 /// Trait for primitive integer types.
 pub trait Primitive:
     Integer<Repr = Self>
+    + Default
     + Eq
     + PartialEq
     + Ord

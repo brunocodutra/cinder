@@ -15,23 +15,23 @@ use proptest::strategy::LazyJust;
 
 type MovesBuf<T = ()> = ArrayVec<(Move, T), 255>;
 
-/// Indicates the search was aborted .
+/// Indicates the search was interrupted .
 #[derive(Debug, Display, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Error)]
-#[display("the search was aborted")]
-pub struct Aborted;
+#[display("the search was interrupted")]
+pub struct Interrupt;
 
 /// Information about the search result.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Deref, Constructor)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
-pub struct Info<const N: usize = { Depth::MAX as _ }> {
+pub struct Info {
     depth: Depth,
     time: Duration,
     nodes: u64,
     #[deref]
-    pv: Pv<N>,
+    pv: Pv,
 }
 
-impl<const N: usize> Info<N> {
+impl Info {
     /// The depth searched.
     pub fn depth(&self) -> Depth {
         self.depth
@@ -53,14 +53,17 @@ impl<const N: usize> Info<N> {
     }
 
     /// The principal variation.
-    pub fn pv(&self) -> &Pv<N> {
+    pub fn pv(&self) -> &Pv {
         &self.pv
     }
 }
 
 #[derive(Debug, Clone)]
 struct Worker<'a> {
+    root: &'a Evaluator,
+    pv: Pv,
     ctrl: &'a Control,
+    nodes: Option<&'a Counter>,
     tt: &'a TranspositionTable,
     history: &'a History,
     continuation: &'a Continuation,
@@ -71,13 +74,17 @@ struct Worker<'a> {
 
 impl<'a> Worker<'a> {
     fn new(
+        root: &'a Evaluator,
         ctrl: &'a Control,
         tt: &'a TranspositionTable,
         history: &'a History,
         continuation: &'a Continuation,
     ) -> Self {
         Worker {
+            root,
+            pv: Pv::empty(Score::lower()),
             ctrl,
+            nodes: None,
             tt,
             history,
             continuation,
@@ -124,10 +131,6 @@ impl<'a> Worker<'a> {
         let score = ScoreBound::new(bounds, score, ply);
         let tpos = Transposition::new(score, draft, best);
         self.tt.set(pos.zobrist(), tpos);
-    }
-
-    fn info<const N: usize>(&self, depth: Depth, pv: Pv<N>) -> Info<N> {
-        Info::new(depth, self.ctrl.time(), self.ctrl.nodes(), pv)
     }
 
     /// An implementation of the [improving heuristic].
@@ -200,7 +203,7 @@ impl<'a> Worker<'a> {
         beta: Score,
         depth: Depth,
         ply: Ply,
-    ) -> Result<Pv<N>, Aborted> {
+    ) -> Result<Pv<N>, Interrupt> {
         self.ab(pos, beta - 1..beta, depth, ply)
     }
 
@@ -213,23 +216,27 @@ impl<'a> Worker<'a> {
         bounds: Range<Score>,
         depth: Depth,
         ply: Ply,
-    ) -> Result<Pv<N>, Aborted> {
+    ) -> Result<Pv<N>, Interrupt> {
         if ply.cast::<usize>() < N && depth > ply && bounds.start + 1 < bounds.end {
-            self.recurse(pos, bounds, depth, ply)
+            self.pvs(pos, bounds, depth, ply)
         } else {
-            Ok(self.recurse::<0>(pos, bounds, depth, ply)?.truncate())
+            Ok(self.pvs::<0>(pos, bounds, depth, ply)?.truncate())
         }
     }
 
-    fn recurse<const N: usize>(
+    /// An implementation of [PVS].
+    ///
+    /// [PVS]: https://www.chessprogramming.org/Principal_Variation_Search
+    fn pvs<const N: usize>(
         &mut self,
         pos: &Evaluator,
         bounds: Range<Score>,
         mut depth: Depth,
         ply: Ply,
-    ) -> Result<Pv<N>, Aborted> {
-        if self.ctrl.check() == ControlFlow::Abort {
-            return Err(Aborted);
+    ) -> Result<Pv<N>, Interrupt> {
+        self.nodes.update(1);
+        if self.ctrl.check(self.root, self.pv.head().assume()) == ControlFlow::Abort {
+            return Err(Interrupt);
         }
 
         (ply > 0).assume();
@@ -336,29 +343,8 @@ impl<'a> Worker<'a> {
             }
         }
 
-        match self.pvs(pos, &moves, alpha..beta, depth, ply)? {
-            None => Ok(transposed.truncate()),
-            Some(pv) => Ok(pv),
-        }
-    }
-
-    /// An implementation of [PVS].
-    ///
-    /// [PVS]: https://www.chessprogramming.org/Principal_Variation_Search
-    fn pvs<const N: usize>(
-        &mut self,
-        pos: &Evaluator,
-        moves: &[(Move, Value)],
-        bounds: Range<Score>,
-        depth: Depth,
-        ply: Ply,
-    ) -> Result<Option<Pv<N>>, Aborted> {
-        let (alpha, beta) = (bounds.start, bounds.end);
-        let is_pv = alpha + 1 < beta;
-        let draft = depth - ply;
-
         let (mut head, mut tail) = match moves.last() {
-            None => return Ok(None),
+            None => return Ok(transposed.truncate()),
             Some(&(m, _)) => {
                 let mut next = pos.clone();
                 next.play(m);
@@ -385,30 +371,94 @@ impl<'a> Worker<'a> {
             self.tt.prefetch(next.zobrist());
             let lmr = self.lmr(draft, idx) - (is_pv as i8) - improving;
             self.replies[ply.cast::<usize>()] = Some(self.continuation.reply(pos, m));
-            let partial = match -self.nw(&next, -alpha, depth - lmr, ply + 1)? {
-                partial if partial <= alpha || (partial >= beta && lmr <= 0) => partial,
+            let pv = match -self.nw(&next, -alpha, depth - lmr, ply + 1)? {
+                pv if pv <= alpha || (pv >= beta && lmr <= 0) => pv,
                 _ => -self.ab(&next, -beta..-alpha, depth, ply + 1)?,
             };
 
-            if partial > tail {
-                (head, tail) = (m, partial);
+            if pv > tail {
+                (head, tail) = (m, pv);
             }
         }
 
-        self.record(pos, moves, bounds, depth, ply, head, tail.score());
-        Ok(Some(tail.transpose(head)))
+        self.record(pos, &moves, bounds, depth, ply, head, tail.score());
+        Ok(tail.transpose(head))
+    }
+
+    /// An implementation of the [Root Search].
+    ///
+    /// [Root Search]: https://www.chessprogramming.org/Root
+    fn root(
+        &mut self,
+        moves: &mut [(Move, Value)],
+        bounds: Range<Score>,
+        depth: Depth,
+    ) -> Result<Pv, Interrupt> {
+        let ply = Ply::new(0);
+        let best = self.pv.head().assume();
+        let (alpha, beta) = (bounds.start, bounds.end);
+        if self.ctrl.check(self.root, best) != ControlFlow::Continue {
+            return Err(Interrupt);
+        }
+
+        for (m, rating) in moves.iter_mut() {
+            if *m == best {
+                *rating = Value::upper();
+            } else {
+                *rating = self.root.gain(*m) + self.history.get(self.root, *m);
+            }
+        }
+
+        moves.sort_unstable_by_key(|(_, rating)| *rating);
+        let &(mut head, _) = moves.last().assume();
+        let mut next = self.root.clone();
+        next.play(head);
+        self.tt.prefetch(next.zobrist());
+        self.nodes = Some(self.ctrl.attention().nodes(head));
+        self.replies[0] = Some(self.continuation.reply(self.root, head));
+        let mut tail = -self.ab(&next, -beta..-alpha, depth, ply + 1)?;
+
+        for (idx, &(m, _)) in moves.iter().rev().skip(1).enumerate() {
+            let alpha = match tail.score() {
+                s if s >= beta => break,
+                s => s.max(alpha),
+            };
+
+            if idx as i32 > 1 + depth.cast::<i32>().pow(2) / 2 {
+                break;
+            }
+
+            let mut next = self.root.clone();
+            next.play(m);
+
+            let lmr = self.lmr(depth, idx) - 1;
+            self.nodes = Some(self.ctrl.attention().nodes(m));
+            self.replies[0] = Some(self.continuation.reply(self.root, m));
+            let pv = match -self.nw(&next, -alpha, depth - lmr, ply + 1)? {
+                pv if pv <= alpha || (pv >= beta && lmr <= 0) => pv,
+                _ => -self.ab(&next, -beta..-alpha, depth, ply + 1)?,
+            };
+
+            if pv > tail {
+                (head, tail) = (m, pv);
+            }
+        }
+
+        self.record(self.root, moves, bounds, depth, ply, head, tail.score());
+        Ok(tail.transpose(head))
     }
 
     /// An implementation of [aspiration windows] with [iterative deepening].
     ///
     /// [aspiration windows]: https://www.chessprogramming.org/Aspiration_Windows
     /// [iterative deepening]: https://www.chessprogramming.org/Iterative_Deepening
-    fn aw<const N: usize>(&mut self, pos: &Evaluator) -> impl IntoIterator<Item = Info<N>> {
+    fn aw(&mut self) -> impl IntoIterator<Item = Info> {
         gen move {
-            self.value[0] = pos.evaluate();
+            let pos = self.root;
             let mut depth = Depth::new(0);
             let mut moves: MovesBuf<_> = pos.moves().flatten().map(|m| (m, pos.gain(m))).collect();
-            let mut pv = match moves.iter().max_by_key(|(_, rating)| *rating) {
+            self.value[0] = pos.evaluate();
+            self.pv = match moves.iter().max_by_key(|(_, rating)| *rating) {
                 None if !pos.is_check() => Pv::empty(Score::new(0)),
                 None => Pv::empty(Score::mated(Ply::new(0))),
                 Some((m, _)) => match self.tt.get(pos.zobrist()) {
@@ -424,7 +474,8 @@ impl<'a> Worker<'a> {
             }
 
             loop {
-                yield self.info(depth, pv.clone());
+                let pv = self.pv.clone().truncate();
+                yield Info::new(depth, self.ctrl.time(), self.ctrl.nodes(), pv);
                 if stop || depth >= limits.depth() {
                     return;
                 }
@@ -434,26 +485,13 @@ impl<'a> Worker<'a> {
                 let mut delta = Saturating(5i16);
                 let (mut lower, mut upper) = match depth.get() {
                     ..=4 => (Score::lower(), Score::upper()),
-                    _ => (pv.score() - delta, pv.score() + delta),
+                    _ => (self.pv.score() - delta, self.pv.score() + delta),
                 };
 
                 loop {
-                    if self.ctrl.check() != ControlFlow::Continue {
-                        break stop = true;
-                    }
-
-                    for (m, rating) in moves.iter_mut() {
-                        if Some(*m) == pv.head() {
-                            *rating = Value::upper();
-                        } else {
-                            *rating = pos.gain(*m) + self.history.get(pos, *m);
-                        }
-                    }
-
-                    moves.sort_unstable_by_key(|(_, rating)| *rating);
-                    let partial = match self.pvs(pos, &moves, lower..upper, draft, Ply::new(0)) {
-                        Ok(partial) => partial.assume(),
+                    let partial = match self.root(&mut moves, lower..upper, draft) {
                         Err(_) => break stop = true,
+                        Ok(pv) => pv,
                     };
 
                     delta *= 2;
@@ -467,10 +505,10 @@ impl<'a> Worker<'a> {
                         score if (upper..Score::upper()).contains(&score) => {
                             draft = Depth::new(1).max(draft - 1);
                             upper = score + delta;
-                            pv = partial;
+                            self.pv = partial;
                         }
 
-                        _ => break pv = partial,
+                        _ => break self.pv = partial,
                     }
                 }
             }
@@ -526,7 +564,7 @@ impl<'e, 'p, 'c> Stream for Search<'e, 'p, 'c> {
         let (tx, mut rx) = unbounded();
 
         *self.workers.get_mut() = self.engine.threads.get();
-        let pos: &'static _ = unsafe { &*(self.position as *const _) };
+        let root: &'static _ = unsafe { &*(self.position as *const _) };
         let ctrl: &'static _ = unsafe { &*(self.ctrl as *const _) };
         let tt: &'static _ = unsafe { &*(&self.engine.tt as *const _) };
         let history: &'static _ = unsafe { &*(&self.engine.history as *const _) };
@@ -534,7 +572,7 @@ impl<'e, 'p, 'c> Stream for Search<'e, 'p, 'c> {
         let workers: &'static AtomicUsize = unsafe { &*(&self.workers as *const _) };
 
         thread::spawn(move || {
-            for info in Worker::new(ctrl, tt, history, continuation).aw(pos) {
+            for info in Worker::new(root, ctrl, tt, history, continuation).aw() {
                 tx.unbounded_send(info).assume();
             }
 
@@ -544,7 +582,7 @@ impl<'e, 'p, 'c> Stream for Search<'e, 'p, 'c> {
 
         for _ in 1..self.engine.threads.get() {
             thread::spawn(|| {
-                for _ in Worker::new(ctrl, tt, history, continuation).aw::<1>(pos) {}
+                for _ in Worker::new(root, ctrl, tt, history, continuation).aw() {}
                 workers.fetch_sub(1, Ordering::Release);
             });
         }
@@ -619,17 +657,18 @@ mod tests {
         #[filter(#e.tt.capacity() > 0)]
         e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
+        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
         #[filter(#s.mate().is_none() && #s >= #b)] s: Score,
-        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
     ) {
         let tpos = Transposition::new(ScoreBound::Lower(s), d, m);
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        let mut worker = Worker::new(&pos, &ctrl, &e.tt, &e.history, &e.continuation);
+        worker.pv = worker.pv.transpose(m);
         assert_eq!(worker.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
     }
 
@@ -639,17 +678,18 @@ mod tests {
         #[filter(#e.tt.capacity() > 0)]
         e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
+        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
         #[filter(#s.mate().is_none() && #s < #b)] s: Score,
-        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
     ) {
         let tpos = Transposition::new(ScoreBound::Upper(s), d, m);
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        let mut worker = Worker::new(&pos, &ctrl, &e.tt, &e.history, &e.continuation);
+        worker.pv = worker.pv.transpose(m);
         assert_eq!(worker.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
     }
 
@@ -659,17 +699,18 @@ mod tests {
         #[filter(#e.tt.capacity() > 0)]
         e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
+        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
         #[filter(#s.mate().is_none())] s: Score,
-        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
     ) {
         let tpos = Transposition::new(ScoreBound::Exact(s), d, m);
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        let mut worker = Worker::new(&pos, &ctrl, &e.tt, &e.history, &e.continuation);
+        worker.pv = worker.pv.transpose(m);
         assert_eq!(worker.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
     }
 
@@ -677,10 +718,12 @@ mod tests {
     fn ab_returns_static_evaluation_if_max_ply(
         e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
+        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
         d: Depth,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        let mut worker = Worker::new(&pos, &ctrl, &e.tt, &e.history, &e.continuation);
+        worker.pv = worker.pv.transpose(m);
 
         assert_eq!(
             worker.ab::<1>(&pos, Score::lower()..Score::upper(), d, Ply::upper()),
@@ -691,54 +734,62 @@ mod tests {
     #[proptest]
     fn ab_aborts_if_maximum_number_of_nodes_visited(
         e: Engine,
-        pos: Evaluator,
+        #[filter(#pos.outcome().is_none())] pos: Evaluator,
+        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::Nodes(0));
-        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
-        assert_eq!(worker.ab::<1>(&pos, b, d, p), Err(Aborted));
+        let mut worker = Worker::new(&pos, &ctrl, &e.tt, &e.history, &e.continuation);
+        worker.pv = worker.pv.transpose(m);
+        assert_eq!(worker.ab::<1>(&pos, b, d, p), Err(Interrupt));
     }
 
     #[proptest]
     fn ab_aborts_if_time_is_up(
         e: Engine,
-        pos: Evaluator,
+        #[filter(#pos.outcome().is_none())] pos: Evaluator,
+        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
-        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        let mut worker = Worker::new(&pos, &ctrl, &e.tt, &e.history, &e.continuation);
+        worker.pv = worker.pv.transpose(m);
         thread::sleep(Duration::from_millis(1));
-        assert_eq!(worker.ab::<1>(&pos, b, d, p), Err(Aborted));
+        assert_eq!(worker.ab::<1>(&pos, b, d, p), Err(Interrupt));
     }
 
     #[proptest]
     fn ab_can_be_aborted_upon_request(
         e: Engine,
-        pos: Evaluator,
+        #[filter(#pos.outcome().is_none())] pos: Evaluator,
+        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        let mut worker = Worker::new(&pos, &ctrl, &e.tt, &e.history, &e.continuation);
+        worker.pv = worker.pv.transpose(m);
         ctrl.abort();
-        assert_eq!(worker.ab::<1>(&pos, b, d, p), Err(Aborted));
+        assert_eq!(worker.ab::<1>(&pos, b, d, p), Err(Interrupt));
     }
 
     #[proptest]
     fn ab_returns_drawn_score_if_game_ends_in_a_draw(
         #[by_ref] e: Engine,
         #[filter(#pos.outcome().is_some_and(|o| o.is_draw()))] pos: Evaluator,
+        m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        let mut worker = Worker::new(&pos, &ctrl, &e.tt, &e.history, &e.continuation);
+        worker.pv = worker.pv.transpose(m);
         assert_eq!(worker.ab::<1>(&pos, b, d, p), Ok(Pv::empty(Score::new(0))));
     }
 
@@ -746,12 +797,14 @@ mod tests {
     fn ab_returns_lost_score_if_game_ends_in_checkmate(
         e: Engine,
         #[filter(#pos.outcome().is_some_and(|o| o.is_decisive()))] pos: Evaluator,
+        m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
+        let mut worker = Worker::new(&pos, &ctrl, &e.tt, &e.history, &e.continuation);
+        worker.pv = worker.pv.transpose(m);
 
         assert_eq!(
             worker.ab::<1>(&pos, b, d, p),
@@ -765,8 +818,8 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
     ) {
         let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
-        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
-        let last = worker.aw::<1>(&pos).into_iter().last();
+        let mut worker = Worker::new(&pos, &ctrl, &e.tt, &e.history, &e.continuation);
+        let last = worker.aw().into_iter().last();
         assert_ne!(last.and_then(|pv| pv.head()), None);
     }
 
@@ -776,8 +829,8 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
     ) {
         let ctrl = Control::new(&pos, Limits::Depth(Depth::lower()));
-        let mut worker = Worker::new(&ctrl, &e.tt, &e.history, &e.continuation);
-        let last = worker.aw::<1>(&pos).into_iter().last();
+        let mut worker = Worker::new(&pos, &ctrl, &e.tt, &e.history, &e.continuation);
+        let last = worker.aw().into_iter().last();
         assert_ne!(last.and_then(|pv| pv.head()), None);
     }
 }

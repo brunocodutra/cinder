@@ -1,5 +1,5 @@
-use crate::chess::Move;
-use crate::search::{Line, Score};
+use crate::search::{Depth, Line, Score};
+use crate::{chess::Move, util::Integer};
 use derive_more::with_trait::{Constructor, Deref};
 use std::cmp::Ordering;
 use std::ops::Neg;
@@ -9,7 +9,7 @@ use std::ops::Neg;
 /// [principal variation]: https://www.chessprogramming.org/Principal_Variation
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Deref, Constructor)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
-pub struct Pv<const N: usize> {
+pub struct Pv<const N: usize = { Depth::MAX as _ }> {
     score: Score,
     #[deref]
     moves: Line<N>,

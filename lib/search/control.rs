@@ -1,11 +1,11 @@
-use crate::{chess::Position, search::Limits, util::Integer};
-use std::ops::Range;
-use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+use crate::chess::{Butterfly, Move, Position};
+use crate::search::{Attention, Limits, Statistics};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
+use std::{mem::MaybeUninit, ops::Range};
 
 /// Controls the search flow.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-#[repr(u8)]
 pub enum ControlFlow {
     /// Continue searching.
     Continue,
@@ -15,20 +15,16 @@ pub enum ControlFlow {
     Abort,
 }
 
-unsafe impl Integer for ControlFlow {
-    type Repr = u8;
-    const MIN: Self::Repr = ControlFlow::Continue as _;
-    const MAX: Self::Repr = ControlFlow::Abort as _;
-}
-
 /// The search control.
 #[derive(Debug)]
 pub struct Control {
     limits: Limits,
-    flow: AtomicU8,
     nodes: AtomicU64,
+    attention: Attention,
     time: Range<Duration>,
     timestamp: Instant,
+    abort: AtomicBool,
+    stop: Butterfly<AtomicBool>,
 }
 
 impl Control {
@@ -39,20 +35,22 @@ impl Control {
         };
 
         let time_left = clock.saturating_sub(inc);
-        let moves_left = 256 / pos.fullmoves().get().min(64);
-        let time_per_move = inc.saturating_add(time_left / moves_left).min(clock / 2);
-        time_per_move / 2..time_per_move
+        let moves_left = 225 / pos.fullmoves().get().min(75);
+        let time_per_move = inc.saturating_add(time_left / moves_left);
+        time_per_move / 2..clock / 2
     }
 
     /// Sets up the controller for a new search.
     #[inline(always)]
     pub fn new(pos: &Position, limits: Limits) -> Control {
         Control {
-            flow: AtomicU8::new(ControlFlow::Continue.get()),
             nodes: AtomicU64::new(limits.nodes()),
+            attention: Attention::default(),
             time: Self::time_to_search(pos, &limits),
             timestamp: Instant::now(),
             limits,
+            abort: AtomicBool::new(false),
+            stop: unsafe { MaybeUninit::zeroed().assume_init() },
         }
     }
 
@@ -76,19 +74,24 @@ impl Control {
         self.limits.nodes() - self.nodes.load(Ordering::Relaxed)
     }
 
+    /// The PV [`Attention`] statistics.
+    #[inline(always)]
+    pub fn attention(&self) -> &Attention {
+        &self.attention
+    }
+
     /// Interrupts an ongoing search.
     #[inline(always)]
     pub fn abort(&self) {
-        use {ControlFlow::*, Ordering::Relaxed};
-        self.flow.store(Abort.get(), Relaxed);
+        self.abort.store(true, Ordering::Relaxed);
     }
 
     /// Whether the search should expand a node.
     #[inline(always)]
-    pub fn check(&self) -> ControlFlow {
+    pub fn check(&self, root: &Position, m: Move) -> ControlFlow {
         use Ordering::Relaxed;
 
-        if ControlFlow::new(self.flow.load(Relaxed)) == ControlFlow::Abort {
+        if self.abort.load(Relaxed) {
             return ControlFlow::Abort;
         }
 
@@ -96,23 +99,33 @@ impl Control {
         let nodes = match self.nodes.fetch_update(Relaxed, Relaxed, checked_dec) {
             Ok(count) => self.limits.nodes() - count,
             Err(_) => {
-                self.flow.store(ControlFlow::Abort.get(), Relaxed);
+                self.abort.store(true, Relaxed);
                 return ControlFlow::Abort;
             }
+        };
+
+        let stop = &self.stop[m.whence() as usize][m.whither() as usize];
+        let focus = match self.limits {
+            Limits::Clock(..) => self.attention.get(root, m) as f64 / nodes.max(1024) as f64,
+            _ => 0.,
         };
 
         if nodes % 1024 == 0 {
             let time = self.time();
             if time >= self.time.end {
-                self.flow.store(ControlFlow::Abort.get(), Relaxed);
+                self.abort.store(true, Relaxed);
                 return ControlFlow::Abort;
-            } else if time >= self.time.start {
-                self.flow.store(ControlFlow::Stop.get(), Relaxed);
+            } else if time.as_secs_f64() > self.time.start.as_secs_f64() * (3. - 2.8 * focus) {
+                stop.store(true, Relaxed);
                 return ControlFlow::Stop;
             }
         }
 
-        ControlFlow::new(self.flow.load(Relaxed))
+        if stop.load(Relaxed) {
+            ControlFlow::Stop
+        } else {
+            ControlFlow::Continue
+        }
     }
 }
 
@@ -137,44 +150,44 @@ mod tests {
     }
 
     #[proptest]
-    fn aborts_if_time_is_up(pos: Position) {
+    fn aborts_if_time_is_up(pos: Position, m: Move) {
         let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
-        assert_eq!(ctrl.check(), ControlFlow::Abort);
-        assert_eq!(ctrl.check(), ControlFlow::Abort);
-        assert_eq!(ctrl.check(), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, m), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, m), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, m), ControlFlow::Abort);
     }
 
     #[proptest]
-    fn stops_if_searched_for_sufficient_time(pos: Position) {
+    fn stops_if_searched_for_sufficient_time(pos: Position, m: Move) {
         let mut ctrl = Control::new(&pos, Limits::Time(Duration::MAX));
         ctrl.time.start = Duration::ZERO;
-        assert_eq!(ctrl.check(), ControlFlow::Stop);
-        assert_eq!(ctrl.check(), ControlFlow::Stop);
-        assert_eq!(ctrl.check(), ControlFlow::Stop);
+        assert_eq!(ctrl.check(&pos, m), ControlFlow::Stop);
+        assert_eq!(ctrl.check(&pos, m), ControlFlow::Stop);
+        assert_eq!(ctrl.check(&pos, m), ControlFlow::Stop);
     }
 
     #[proptest]
-    fn counts_nodes_searched(pos: Position, n: u64) {
+    fn counts_nodes_searched(pos: Position, n: u64, m: Move) {
         let ctrl = Control::new(&pos, Limits::Nodes(n));
         assert_eq!(ctrl.nodes(), 0);
-        assert_eq!(ctrl.check(), ControlFlow::Continue);
+        assert_eq!(ctrl.check(&pos, m), ControlFlow::Continue);
         assert_eq!(ctrl.nodes(), 1);
     }
 
     #[proptest]
-    fn aborts_if_node_count_is_reached(pos: Position) {
+    fn aborts_if_node_count_is_reached(pos: Position, m: Move) {
         let ctrl = Control::new(&pos, Limits::Nodes(0));
-        assert_eq!(ctrl.check(), ControlFlow::Abort);
-        assert_eq!(ctrl.check(), ControlFlow::Abort);
-        assert_eq!(ctrl.check(), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, m), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, m), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, m), ControlFlow::Abort);
     }
 
     #[proptest]
-    fn aborts_upon_request(pos: Position) {
+    fn aborts_upon_request(pos: Position, m: Move) {
         let ctrl = Control::new(&pos, Limits::None);
         ctrl.abort();
-        assert_eq!(ctrl.check(), ControlFlow::Abort);
-        assert_eq!(ctrl.check(), ControlFlow::Abort);
-        assert_eq!(ctrl.check(), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, m), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, m), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, m), ControlFlow::Abort);
     }
 }

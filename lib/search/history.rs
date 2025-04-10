@@ -1,5 +1,5 @@
 use crate::chess::{Butterfly, Move, Position};
-use crate::search::{Graviton, Rating};
+use crate::search::{Graviton, Stat, Statistics};
 use derive_more::with_trait::Debug;
 use std::mem::MaybeUninit;
 
@@ -25,16 +25,16 @@ impl History {
     }
 }
 
-impl Rating for History {
-    type Bonus = i8;
+impl Statistics for History {
+    type Stat = Graviton;
 
     #[inline(always)]
-    fn get(&self, pos: &Position, m: Move) -> Self::Bonus {
+    fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
         self.graviton(pos, m).get()
     }
 
     #[inline(always)]
-    fn update(&self, pos: &Position, m: Move, bonus: Self::Bonus) {
-        self.graviton(pos, m).update(bonus);
+    fn update(&self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
+        self.graviton(pos, m).update(delta);
     }
 }

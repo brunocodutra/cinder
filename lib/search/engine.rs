@@ -235,7 +235,7 @@ impl<'a> Worker<'a> {
         ply: Ply,
     ) -> Result<Pv<N>, Interrupt> {
         self.nodes.update(1);
-        if self.ctrl.check(self.root, self.pv.head().assume()) == ControlFlow::Abort {
+        if self.ctrl.check(self.root, &self.pv, ply) == ControlFlow::Abort {
             return Err(Interrupt);
         }
 
@@ -395,14 +395,13 @@ impl<'a> Worker<'a> {
         depth: Depth,
     ) -> Result<Pv, Interrupt> {
         let ply = Ply::new(0);
-        let best = self.pv.head().assume();
         let (alpha, beta) = (bounds.start, bounds.end);
-        if self.ctrl.check(self.root, best) != ControlFlow::Continue {
+        if self.ctrl.check(self.root, &self.pv, ply) != ControlFlow::Continue {
             return Err(Interrupt);
         }
 
         for (m, rating) in moves.iter_mut() {
-            if *m == best {
+            if Some(*m) == self.pv.head() {
                 *rating = Value::upper();
             } else {
                 *rating = self.root.gain(*m) + self.history.get(self.root, *m);

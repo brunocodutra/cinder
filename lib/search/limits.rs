@@ -52,24 +52,6 @@ impl Limits {
             _ => Duration::MAX,
         }
     }
-
-    /// Time left on the clock or [`Duration::MAX`].
-    #[inline(always)]
-    pub fn clock(&self) -> Duration {
-        match self {
-            Limits::Clock(t, _) => *t,
-            _ => Duration::MAX,
-        }
-    }
-
-    /// Time increment or [`Duration::ZERO`].
-    #[inline(always)]
-    pub fn increment(&self) -> Duration {
-        match self {
-            Limits::Clock(_, i) => *i,
-            _ => Duration::ZERO,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -114,31 +96,5 @@ mod tests {
         assert_eq!(Limits::Depth(d).time(), Duration::MAX);
         assert_eq!(Limits::Nodes(n).time(), Duration::MAX);
         assert_eq!(Limits::Clock(t, i).time(), t);
-    }
-
-    #[proptest]
-    fn clock_returns_value_if_set(t: Duration, i: Duration) {
-        assert_eq!(Limits::Clock(t, i).clock(), t);
-    }
-
-    #[proptest]
-    fn clock_returns_max_by_default(d: Depth, n: u64, t: Duration) {
-        assert_eq!(Limits::None.clock(), Duration::MAX);
-        assert_eq!(Limits::Depth(d).clock(), Duration::MAX);
-        assert_eq!(Limits::Nodes(n).clock(), Duration::MAX);
-        assert_eq!(Limits::Time(t).clock(), Duration::MAX);
-    }
-
-    #[proptest]
-    fn increment_returns_value_if_set(t: Duration, i: Duration) {
-        assert_eq!(Limits::Clock(t, i).increment(), i);
-    }
-
-    #[proptest]
-    fn increment_returns_zero_by_default(d: Depth, n: u64, t: Duration) {
-        assert_eq!(Limits::None.increment(), Duration::ZERO);
-        assert_eq!(Limits::Depth(d).increment(), Duration::ZERO);
-        assert_eq!(Limits::Nodes(n).increment(), Duration::ZERO);
-        assert_eq!(Limits::Time(t).increment(), Duration::ZERO);
     }
 }

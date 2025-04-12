@@ -1,13 +1,13 @@
 use crate::search::{Depth, Line, Score};
 use crate::{chess::Move, util::Integer};
 use derive_more::with_trait::{Constructor, Deref};
-use std::cmp::Ordering;
-use std::ops::Neg;
+use std::{cmp::Ordering, hash::Hash};
+use std::{hash::Hasher, ops::Neg};
 
 /// The [principal variation].
 ///
 /// [principal variation]: https://www.chessprogramming.org/Principal_Variation
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Deref, Constructor)]
+#[derive(Debug, Clone, Deref, Constructor)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Pv<const N: usize = { Depth::MAX as _ }> {
     score: Score,
@@ -47,6 +47,15 @@ impl<const N: usize> Pv<N> {
     }
 }
 
+impl<const N: usize> Eq for Pv<N> {}
+
+impl<const N: usize> PartialEq for Pv<N> {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.score.eq(&other.score)
+    }
+}
+
 impl<const N: usize> Ord for Pv<N> {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
@@ -81,6 +90,13 @@ where
     }
 }
 
+impl<const N: usize> Hash for Pv<N> {
+    #[inline(always)]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.score.hash(state);
+    }
+}
+
 impl<const N: usize> Neg for Pv<N> {
     type Output = Self;
 
@@ -97,27 +113,38 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
-    fn pv_with_larger_score_is_larger(p: Pv<3>, #[filter(#p.score() != #q.score())] q: Pv<3>) {
+    #[allow(clippy::nonminimal_bool, clippy::double_comparisons)]
+    fn pv_ordering_is_consistent(p: Pv, q: Pv) {
+        assert_eq!(p == q, p.partial_cmp(&q) == Some(Ordering::Equal));
+        assert_eq!(p < q, p.partial_cmp(&q) == Some(Ordering::Less));
+        assert_eq!(p > q, p.partial_cmp(&q) == Some(Ordering::Greater));
+        assert_eq!(p <= q, p < q || p == q);
+        assert_eq!(p >= q, p > q || p == q);
+        assert_eq!(p != q, !(p == q));
+    }
+
+    #[proptest]
+    fn pv_with_larger_score_is_larger(p: Pv, q: Pv) {
         assert_eq!(p < q, p.score() < q.score());
     }
 
     #[proptest]
-    fn negation_changes_score(pv: Pv<3>) {
+    fn negation_changes_score(pv: Pv) {
         assert_eq!(pv.clone().neg().score(), -pv.score());
     }
 
     #[proptest]
-    fn negation_preserves_moves(pv: Pv<3>) {
+    fn negation_preserves_moves(pv: Pv) {
         assert_eq!(pv.clone().moves(), pv.neg().moves());
     }
 
     #[proptest]
-    fn truncate_preserves_score(pv: Pv<3>) {
+    fn truncate_preserves_score(pv: Pv) {
         assert_eq!(pv.score(), pv.truncate::<0>().score());
     }
 
     #[proptest]
-    fn truncate_discards_moves(pv: Pv<3>) {
+    fn truncate_discards_moves(pv: Pv) {
         assert_eq!(
             &pv.moves().clone().truncate::<2>(),
             pv.truncate::<2>().moves()
@@ -125,12 +152,12 @@ mod tests {
     }
 
     #[proptest]
-    fn transpose_preserves_score(pv: Pv<3>, m: Move) {
+    fn transpose_preserves_score(pv: Pv, m: Move) {
         assert_eq!(pv.clone().transpose(m).score(), pv.score());
     }
 
     #[proptest]
-    fn transpose_prepends_move(pv: Pv<3>, m: Move) {
+    fn transpose_prepends_move(pv: Pv, m: Move) {
         assert_eq!(pv.clone().transpose(m).head(), Some(m));
     }
 }

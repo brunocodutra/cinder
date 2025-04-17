@@ -286,32 +286,33 @@ impl<'a> Searcher<'a> {
             .collect();
 
         moves.sort_unstable_by_key(|(_, rating)| *rating);
-
-        if let Some(t) = transposition {
-            if let Some(d) = self.mcp(t.score().lower(ply) - beta, draft) {
-                if t.draft() >= d {
-                    depth += 1;
-                    for (m, _) in moves.iter().rev().skip(1) {
-                        let mut next = pos.clone();
-                        next.play(*m);
-                        self.tt.prefetch(next.zobrist());
-                        self.replies[ply.cast::<usize>()] = Some(self.continuation.reply(pos, *m));
-                        if -self.nw::<0>(&next, -beta + 1, d + ply, ply + 1)? >= beta {
-                            return Ok(transposed.truncate());
-                        }
-                    }
-                }
-            }
-        }
-
         let (mut head, mut tail) = match moves.last() {
             None => return Ok(transposed.truncate()),
             Some(&(m, _)) => {
+                let mut sme = 0i8;
+                if let Some(t) = transposition {
+                    if let Some(d) = self.mcp(t.score().lower(ply) - beta, draft) {
+                        if t.draft() >= d {
+                            sme += 1;
+                            for (m, _) in moves.iter().rev().skip(1) {
+                                let mut next = pos.clone();
+                                next.play(*m);
+                                self.tt.prefetch(next.zobrist());
+                                self.replies[ply.cast::<usize>()] =
+                                    Some(self.continuation.reply(pos, *m));
+                                if -self.nw::<0>(&next, -beta + 1, d + ply, ply + 1)? >= beta {
+                                    return Ok(transposed.truncate());
+                                }
+                            }
+                        }
+                    }
+                }
+
                 let mut next = pos.clone();
                 next.play(m);
                 self.tt.prefetch(next.zobrist());
                 self.replies[ply.cast::<usize>()] = Some(self.continuation.reply(pos, m));
-                (m, -self.ab(&next, -beta..-alpha, depth, ply + 1)?)
+                (m, -self.ab(&next, -beta..-alpha, depth + sme, ply + 1)?)
             }
         };
 

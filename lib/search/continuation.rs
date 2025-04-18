@@ -38,12 +38,12 @@ impl Statistics for Reply {
 
 #[derive(Debug)]
 #[debug("Continuation")]
-pub struct Continuation(Box<[[[Reply; 6]; 64]; 12]>);
+pub struct Continuation([[[Reply; 6]; 64]; 12]);
 
 impl Default for Continuation {
     #[inline(always)]
     fn default() -> Self {
-        Self(unsafe { Box::new_zeroed().assume_init() })
+        Self(unsafe { MaybeUninit::zeroed().assume_init() })
     }
 }
 

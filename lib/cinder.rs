@@ -7,14 +7,11 @@
 #![feature(
     array_chunks,
     coverage_attribute,
-    fn_traits,
     gen_blocks,
-    impl_trait_in_assoc_type,
     new_zeroed_alloc,
     ptr_as_ref_unchecked,
     round_char_boundary,
-    sync_unsafe_cell,
-    unboxed_closures
+    sync_unsafe_cell
 )]
 
 /// Chess domain types.

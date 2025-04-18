@@ -14,7 +14,7 @@ fn bench(reps: u64, options: &Options, limits: &Limits) -> Duration {
     let mut time = Duration::ZERO;
 
     for _ in 0..reps {
-        let engine = Engine::with_options(options);
+        let mut engine = Engine::with_options(options);
         let ctrl = Control::new(&position, limits.clone());
         let search = engine.search(&position, &ctrl);
 

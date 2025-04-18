@@ -148,6 +148,17 @@ impl<'a> Searcher<'a> {
         }
     }
 
+    /// An implementation of [razoring].
+    ///
+    /// [razoring]: https://www.chessprogramming.org/Razoring
+    fn razor(&self, deficit: Score, draft: Depth) -> Option<Depth> {
+        match deficit.get() {
+            ..0 => None,
+            s @ 0..900 => Some(draft - (s + 180) / 360),
+            900.. => Some(draft - 3),
+        }
+    }
+
     /// An implementation of [late move reductions].
     ///
     /// [late move reductions]: https://www.chessprogramming.org/Late_Move_Reductions
@@ -234,6 +245,12 @@ impl<'a> Searcher<'a> {
             }
 
             if let Some(d) = self.rfp(lower - beta, draft) {
+                if !is_pv && t.draft() >= d {
+                    return Ok(transposed.truncate());
+                }
+            }
+
+            if let Some(d) = self.razor(alpha - upper, draft) {
                 if !is_pv && t.draft() >= d {
                     return Ok(transposed.truncate());
                 }

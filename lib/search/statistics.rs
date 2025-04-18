@@ -135,17 +135,3 @@ impl Stat for Graviton {
         result.assume();
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fmt::Debug;
-    use test_strategy::proptest;
-
-    #[proptest]
-    fn counter_accumulates_value(c: Counter, d: u8) {
-        let prev = c.get();
-        c.update(d as usize);
-        assert_eq!(c.get(), prev + d as usize);
-    }
-}

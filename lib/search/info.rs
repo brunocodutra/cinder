@@ -46,26 +46,31 @@ impl Hash for Info {
 
 impl Info {
     /// The depth searched.
+    #[inline(always)]
     pub fn depth(&self) -> Depth {
         self.depth
     }
 
     /// The duration searched.
+    #[inline(always)]
     pub fn time(&self) -> Duration {
         self.time
     }
 
     /// The number of nodes searched.
+    #[inline(always)]
     pub fn nodes(&self) -> u64 {
         self.nodes
     }
 
     /// The number of nodes searched per second.
+    #[inline(always)]
     pub fn nps(&self) -> f64 {
         self.nodes as f64 / self.time().as_secs_f64()
     }
 
     /// The principal variation.
+    #[inline(always)]
     pub fn pv(&self) -> &Pv {
         &self.pv
     }

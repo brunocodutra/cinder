@@ -67,15 +67,15 @@ impl FromStr for HashSize {
 #[debug("ThreadCount({_0})")]
 #[display("{_0}")]
 #[repr(transparent)]
-pub struct ThreadCount(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] usize);
+pub struct ThreadCount(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] u16);
 
 unsafe impl Integer for ThreadCount {
-    type Repr = usize;
+    type Repr = u16;
 
     const MIN: Self::Repr = 1;
 
     #[cfg(not(test))]
-    const MAX: Self::Repr = 1 << 16;
+    const MAX: Self::Repr = 1 << 12;
 
     #[cfg(test)]
     const MAX: Self::Repr = 4;
@@ -87,13 +87,13 @@ impl Default for ThreadCount {
     }
 }
 
-impl<I: Integer<Repr = usize>> PartialEq<I> for ThreadCount {
+impl<I: Integer<Repr = u16>> PartialEq<I> for ThreadCount {
     fn eq(&self, other: &I) -> bool {
         self.get().eq(&other.get())
     }
 }
 
-impl<I: Integer<Repr = usize>> PartialOrd<I> for ThreadCount {
+impl<I: Integer<Repr = u16>> PartialOrd<I> for ThreadCount {
     fn partial_cmp(&self, other: &I) -> Option<Ordering> {
         self.get().partial_cmp(&other.get())
     }
@@ -176,7 +176,7 @@ mod tests {
 
     #[proptest]
     fn thread_count_constructs_if_count_not_too_large(
-        #[strategy(ThreadCount::MIN..=ThreadCount::MAX)] n: usize,
+        #[strategy(ThreadCount::MIN..=ThreadCount::MAX)] n: u16,
     ) {
         assert_eq!(ThreadCount::new(n), n);
     }
@@ -188,7 +188,7 @@ mod tests {
 
     #[proptest]
     fn parsing_thread_count_fails_for_numbers_too_large(
-        #[strategy(ThreadCount::MAX + 1..)] n: usize,
+        #[strategy(ThreadCount::MAX + 1..)] n: u16,
     ) {
         assert_eq!(
             n.to_string().parse::<ThreadCount>(),

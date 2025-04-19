@@ -1,7 +1,6 @@
 use crate::chess::*;
 use crate::util::{Bits, Integer};
 use rand::prelude::*;
-use rand_pcg::Pcg64;
 use std::{cell::SyncUnsafeCell, mem::MaybeUninit};
 
 /// A type representing a [`Position`]'s [zobrist hash].
@@ -24,7 +23,7 @@ static ZOBRIST: SyncUnsafeCell<ZobristNumbers> = unsafe { MaybeUninit::zeroed().
 #[inline(never)]
 unsafe fn init() {
     let zobrist = unsafe { ZOBRIST.get().as_mut_unchecked() };
-    let mut rng = Pcg64::seed_from_u64(0x980E8CE238E3B114);
+    let mut rng = SmallRng::seed_from_u64(0x980E8CE238E3B114);
     zobrist.pieces = rng.random();
     zobrist.castles = rng.random();
     zobrist.en_passant = rng.random();

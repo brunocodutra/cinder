@@ -7,8 +7,10 @@ use derive_more::with_trait::{Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
 use std::task::{Context, Poll};
-use std::thread::{self, JoinHandle};
 use std::{num::Saturating, ops::Range, pin::Pin};
+
+#[cfg(test)]
+use proptest::prelude::*;
 
 type MovesBuf<T = ()> = ArrayVec<(Move, T), 255>;
 
@@ -19,8 +21,8 @@ pub struct Interrupt;
 
 #[derive(Debug)]
 struct Stack<'a> {
-    engine: &'a Engine,
     searcher: &'a Searcher,
+    tt: &'a TranspositionTable,
     ctrl: &'a Control,
     root: &'a Evaluator,
     nodes: Option<&'a Counter>,
@@ -32,14 +34,14 @@ struct Stack<'a> {
 
 impl<'a> Stack<'a> {
     fn new(
-        engine: &'a Engine,
         searcher: &'a Searcher,
+        tt: &'a TranspositionTable,
         ctrl: &'a Control,
         root: &'a Evaluator,
     ) -> Self {
         Stack {
-            engine,
             searcher,
+            tt,
             ctrl,
             root,
             nodes: None,
@@ -86,7 +88,7 @@ impl<'a> Stack<'a> {
 
         let score = ScoreBound::new(bounds, score, ply);
         let tpos = Transposition::new(score, draft, best);
-        self.engine.tt.set(pos.zobrist(), tpos);
+        self.tt.set(pos.zobrist(), tpos);
     }
 
     /// An implementation of the [improving heuristic].
@@ -218,7 +220,7 @@ impl<'a> Stack<'a> {
         }
 
         self.value[ply.cast::<usize>()] = pos.evaluate();
-        let transposition = self.engine.tt.get(pos.zobrist());
+        let transposition = self.tt.get(pos.zobrist());
         let transposed = match transposition {
             None => Pv::empty(self.value[ply.cast::<usize>()].saturate()),
             Some(t) => t.transpose(ply),
@@ -267,7 +269,7 @@ impl<'a> Stack<'a> {
                 } else {
                     let mut next = pos.clone();
                     next.pass();
-                    self.engine.tt.prefetch(next.zobrist());
+                    self.tt.prefetch(next.zobrist());
                     self.replies[ply.cast::<usize>()] = None;
                     if -self.nw::<0>(&next, -beta + 1, d + ply, ply + 1)? >= beta {
                         return Ok(transposed.truncate());
@@ -310,7 +312,7 @@ impl<'a> Stack<'a> {
                             for (m, _) in moves.iter().rev().skip(1) {
                                 let mut next = pos.clone();
                                 next.play(*m);
-                                self.engine.tt.prefetch(next.zobrist());
+                                self.tt.prefetch(next.zobrist());
                                 self.replies[ply.cast::<usize>()] =
                                     Some(self.searcher.continuation.reply(pos, *m));
                                 if -self.nw::<0>(&next, -beta + 1, d + ply, ply + 1)? >= beta {
@@ -323,7 +325,7 @@ impl<'a> Stack<'a> {
 
                 let mut next = pos.clone();
                 next.play(m);
-                self.engine.tt.prefetch(next.zobrist());
+                self.tt.prefetch(next.zobrist());
                 self.replies[ply.cast::<usize>()] = Some(self.searcher.continuation.reply(pos, m));
                 (m, -self.ab(&next, -beta..-alpha, depth + sme, ply + 1)?)
             }
@@ -343,7 +345,7 @@ impl<'a> Stack<'a> {
             let mut next = pos.clone();
             next.play(m);
 
-            self.engine.tt.prefetch(next.zobrist());
+            self.tt.prefetch(next.zobrist());
             let lmr = self.lmr(draft, idx) - (is_pv as i8) - improving;
             self.replies[ply.cast::<usize>()] = Some(self.searcher.continuation.reply(pos, m));
             let pv = match -self.nw(&next, -alpha, depth - lmr, ply + 1)? {
@@ -387,7 +389,7 @@ impl<'a> Stack<'a> {
         let &(mut head, _) = moves.last().assume();
         let mut next = self.root.clone();
         next.play(head);
-        self.engine.tt.prefetch(next.zobrist());
+        self.tt.prefetch(next.zobrist());
         self.nodes = Some(self.ctrl.attention().nodes(head));
         self.replies[0] = Some(self.searcher.continuation.reply(self.root, head));
         let mut tail = -self.ab(&next, -beta..-alpha, depth, ply + 1)?;
@@ -404,7 +406,7 @@ impl<'a> Stack<'a> {
 
             let mut next = self.root.clone();
             next.play(m);
-            self.engine.tt.prefetch(next.zobrist());
+            self.tt.prefetch(next.zobrist());
             let lmr = self.lmr(depth, idx) - 1;
             self.nodes = Some(self.ctrl.attention().nodes(m));
             self.replies[0] = Some(self.searcher.continuation.reply(self.root, m));
@@ -435,7 +437,7 @@ impl<'a> Stack<'a> {
             self.pv = match moves.iter().max_by_key(|(_, rating)| *rating) {
                 None if !pos.is_check() => Pv::empty(Score::new(0)),
                 None => Pv::empty(Score::mated(Ply::new(0))),
-                Some((m, _)) => match self.engine.tt.get(pos.zobrist()) {
+                Some((m, _)) => match self.tt.get(pos.zobrist()) {
                     None => Pv::new(self.value[0].saturate(), Line::singular(*m)),
                     Some(t) => t.transpose(Ply::new(0)).truncate(),
                 },
@@ -496,19 +498,15 @@ pub struct Search<'e, 'c, 'p> {
     engine: &'e mut Engine,
     ctrl: &'c Control,
     position: &'p Evaluator,
-    threads: Vec<JoinHandle<()>>,
-    channel: Option<UnboundedReceiver<Info>>,
+    channel: Option<(UnboundedReceiver<Info>, Task<'e>)>,
 }
 
 impl<'e, 'c, 'p> Search<'e, 'c, 'p> {
     fn new(engine: &'e mut Engine, ctrl: &'c Control, position: &'p Evaluator) -> Self {
-        let threads = Vec::with_capacity(engine.searchers.len());
-
         Search {
             engine,
             ctrl,
             position,
-            threads,
             channel: None,
         }
     }
@@ -516,16 +514,19 @@ impl<'e, 'c, 'p> Search<'e, 'c, 'p> {
 
 impl<'e, 'p, 'c> Drop for Search<'e, 'p, 'c> {
     fn drop(&mut self) {
-        self.ctrl.abort();
-        for thread in self.threads.drain(..) {
-            thread.join().assume();
+        if let Some((channel, task)) = self.channel.take() {
+            self.ctrl.abort();
+            drop(task);
+            drop(channel);
         }
     }
 }
 
 impl<'e, 'p, 'c> FusedStream for Search<'e, 'p, 'c> {
     fn is_terminated(&self) -> bool {
-        self.channel.as_ref().is_some_and(|c| c.is_terminated())
+        self.channel
+            .as_ref()
+            .is_some_and(|(c, _)| c.is_terminated())
     }
 }
 
@@ -533,32 +534,36 @@ impl<'e, 'p, 'c> Stream for Search<'e, 'p, 'c> {
     type Item = Info;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        if let Some(channel) = &mut self.channel {
+        if let Some((channel, _)) = &mut self.channel {
             return channel.poll_next_unpin(cx);
         }
 
-        let engine: &'static Engine = unsafe { &*(self.engine as *const _) };
+        let executor: &mut Executor = unsafe { &mut *(&mut self.engine.executor as *mut _) };
+        let searchers: &'static [Searcher] = unsafe { &*(&*self.engine.searchers as *const _) };
+        let tt: &'static TranspositionTable = unsafe { &*(&self.engine.tt as *const _) };
         let ctrl: &'static Control = unsafe { &*(self.ctrl as *const _) };
         let root: &'static Evaluator = unsafe { &*(self.position as *const _) };
 
-        for searcher in engine.searchers.iter().skip(1) {
-            self.threads.push(thread::spawn(move || {
-                for _ in Stack::new(engine, searcher, ctrl, root).aw() {}
-            }));
-        }
-
         let (tx, rx) = unbounded();
-        self.channel = Some(rx);
-        self.threads.push(thread::spawn(move || {
-            for info in Stack::new(engine, &engine.searchers[0], ctrl, root).aw() {
-                let depth = info.depth();
-                tx.unbounded_send(info).assume();
-                if depth >= ctrl.limits().depth() {
-                    break;
+        let task = executor.execute(move |idx| {
+            let searcher = searchers.get(idx).assume();
+            for info in Stack::new(searcher, tt, ctrl, root).aw() {
+                if idx == 0 {
+                    let depth = info.depth();
+                    tx.unbounded_send(info).assume();
+                    if depth >= ctrl.limits().depth() {
+                        break;
+                    }
                 }
             }
-        }));
 
+            if idx == 0 {
+                tx.close_channel();
+                ctrl.abort();
+            }
+        });
+
+        self.channel = Some((rx, task));
         self.poll_next(cx)
     }
 }
@@ -571,12 +576,22 @@ struct Searcher {
 
 /// A chess engine.
 #[derive(Debug)]
-#[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Engine {
-    #[cfg_attr(test, map(|s: HashSize| TranspositionTable::new(s)))]
     tt: TranspositionTable,
-    #[cfg_attr(test, map(|s: ThreadCount| (0..s.get()).map(|_| Searcher::default()).collect()))]
+    executor: Executor,
     searchers: Box<[Searcher]>,
+}
+
+#[cfg(test)]
+impl Arbitrary for Engine {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        any::<Options>()
+            .prop_map(|o| Engine::with_options(&o))
+            .boxed()
+    }
 }
 
 impl Default for Engine {
@@ -595,6 +610,7 @@ impl Engine {
     pub fn with_options(options: &Options) -> Self {
         Engine {
             tt: TranspositionTable::new(options.hash),
+            executor: Executor::new(options.threads),
             searchers: (0..options.threads.get())
                 .map(|_| Searcher::default())
                 .collect(),
@@ -616,7 +632,7 @@ mod tests {
     use super::*;
     use futures::executor::block_on_stream;
     use proptest::{prop_assume, sample::Selector};
-    use std::time::Duration;
+    use std::{thread, time::Duration};
     use test_strategy::proptest;
 
     #[proptest]
@@ -642,7 +658,7 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e, &e.searchers[0], &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
     }
@@ -663,7 +679,7 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e, &e.searchers[0], &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
     }
@@ -684,7 +700,7 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e, &e.searchers[0], &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
     }
@@ -697,7 +713,7 @@ mod tests {
         d: Depth,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e, &e.searchers[0], &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
 
         assert_eq!(
@@ -716,7 +732,7 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::Nodes(0));
-        let mut stack = Stack::new(&e, &e.searchers[0], &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.ab::<1>(&pos, b, d, p), Err(Interrupt));
     }
@@ -731,7 +747,7 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
-        let mut stack = Stack::new(&e, &e.searchers[0], &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         thread::sleep(Duration::from_millis(1));
         assert_eq!(stack.ab::<1>(&pos, b, d, p), Err(Interrupt));
@@ -747,7 +763,7 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e, &e.searchers[0], &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         ctrl.abort();
         assert_eq!(stack.ab::<1>(&pos, b, d, p), Err(Interrupt));
@@ -763,7 +779,7 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e, &e.searchers[0], &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.ab::<1>(&pos, b, d, p), Ok(Pv::empty(Score::new(0))));
     }
@@ -778,7 +794,7 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e, &e.searchers[0], &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
 
         assert_eq!(stack.ab::<1>(&pos, b, d, p), Ok(Pv::empty(Score::mated(p))));
@@ -790,7 +806,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
     ) {
         let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
-        let mut stack = Stack::new(&e, &e.searchers[0], &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         let last = stack.aw().last();
         assert_ne!(last.and_then(|pv| pv.head()), None);
     }
@@ -801,7 +817,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
     ) {
         let ctrl = Control::new(&pos, Limits::Depth(Depth::lower()));
-        let mut stack = Stack::new(&e, &e.searchers[0], &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         let last = stack.aw().last();
         assert_ne!(last.and_then(|pv| pv.head()), None);
     }

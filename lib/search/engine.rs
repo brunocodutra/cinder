@@ -145,6 +145,13 @@ impl<'a> Stack<'a> {
         }
     }
 
+    /// Computes the [futility pruning] margin.
+    ///
+    /// [futility pruning]: https://www.chessprogramming.org/Futility_Pruning
+    fn fp(&self, draft: Depth) -> Value {
+        (draft.cast::<i16>() * 80 + 60).saturate()
+    }
+
     /// An implementation of [razoring].
     ///
     /// [razoring]: https://www.chessprogramming.org/Razoring
@@ -342,11 +349,14 @@ impl<'a> Stack<'a> {
                 break;
             }
 
+            let lmr = self.lmr(draft, idx) - (is_pv as i8) - improving;
+            if self.value[ply.cast::<usize>()] + pos.gain(m) + self.fp(draft - lmr) < alpha {
+                break;
+            }
+
             let mut next = pos.clone();
             next.play(m);
-
             self.tt.prefetch(next.zobrist());
-            let lmr = self.lmr(draft, idx) - (is_pv as i8) - improving;
             self.replies[ply.cast::<usize>()] = Some(self.searcher.continuation.reply(pos, m));
             let pv = match -self.nw(&next, -alpha, depth - lmr, ply + 1)? {
                 pv if pv <= alpha || (pv >= beta && lmr <= 0) => pv,
@@ -404,10 +414,14 @@ impl<'a> Stack<'a> {
                 break;
             }
 
+            let lmr = self.lmr(depth, idx) - 1;
+            if self.value[0] + self.root.gain(m) + self.fp(depth - lmr) < alpha {
+                break;
+            }
+
             let mut next = self.root.clone();
             next.play(m);
             self.tt.prefetch(next.zobrist());
-            let lmr = self.lmr(depth, idx) - 1;
             self.nodes = Some(self.ctrl.attention().nodes(m));
             self.replies[0] = Some(self.searcher.continuation.reply(self.root, m));
             let pv = match -self.nw(&next, -alpha, depth - lmr, ply + 1)? {

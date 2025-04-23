@@ -245,6 +245,31 @@ pub struct Position {
     history: [[Option<NonZeroU32>; 32]; 2],
 }
 
+#[cfg(test)]
+impl Arbitrary for Position {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        (0..256, any::<Selector>())
+            .prop_map(|(moves, selector)| {
+                let mut pos = Position::default();
+
+                for _ in 0..moves {
+                    if pos.outcome().is_none() {
+                        pos.play(selector.select(pos.moves().flatten()));
+                    } else {
+                        break;
+                    }
+                }
+
+                pos
+            })
+            .no_shrink()
+            .boxed()
+    }
+}
+
 impl Default for Position {
     #[inline(always)]
     fn default() -> Self {
@@ -271,31 +296,6 @@ impl PartialEq for Position {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.board.eq(&other.board)
-    }
-}
-
-#[cfg(test)]
-impl Arbitrary for Position {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        (0..256, any::<Selector>())
-            .prop_map(|(moves, selector)| {
-                let mut pos = Position::default();
-
-                for _ in 0..moves {
-                    if pos.outcome().is_none() {
-                        pos.play(selector.select(pos.moves().flatten()));
-                    } else {
-                        break;
-                    }
-                }
-
-                pos
-            })
-            .no_shrink()
-            .boxed()
     }
 }
 
@@ -517,6 +517,79 @@ impl Position {
         }
 
         moves.into_iter()
+    }
+
+    /// The sequence of captures om a square starting from a move ordered by least valued captor.
+    ///
+    /// Pins and checks are ignored.
+    #[inline(always)]
+    pub fn exchanges(&self, m: Move) -> impl Iterator<Item = (Move, Role, Role)> {
+        use {Color::*, Piece::*, Role::*};
+
+        gen move {
+            let sq = m.whither();
+            let queens = self.board.by_role(Queen);
+            let rooks = self.board.by_role(Rook);
+            let bishops = self.board.by_role(Bishop);
+
+            let mut turn = self.turn();
+            let mut attackers = Bitboard::empty();
+            let mut occupied = self.occupied().without(m.whence()).without(sq);
+            let mut victim = match m.promotion() {
+                None => self.board.role_on(m.whence()).assume(),
+                Some(r) => r,
+            };
+
+            for piece in [WhitePawn, BlackPawn] {
+                attackers |= self.board.by_piece(piece) & piece.flip().attacks(sq, occupied);
+            }
+
+            for role in [Knight, King] {
+                let candidates = self.board.by_role(role);
+                attackers |= candidates & Piece::new(role, White).attacks(sq, occupied);
+            }
+
+            for (role, candidates) in [(Bishop, bishops | queens), (Rook, rooks | queens)] {
+                attackers |= candidates & Piece::new(role, White).attacks(sq, occupied);
+            }
+
+            loop {
+                turn = !turn;
+                let candidates = attackers & self.material(turn);
+                if candidates.is_empty() {
+                    break;
+                }
+
+                let mut lva = None;
+                for role in [Pawn, Knight, Bishop, Rook, Queen, King] {
+                    let bb = candidates & self.board.by_role(role);
+                    if let Some(wc) = bb.into_iter().next() {
+                        let piece = Piece::new(role, turn);
+                        let moves = MoveSet::capture(piece, wc, sq.bitboard());
+                        lva = moves.into_iter().next().map(|m| (m, role));
+                        occupied ^= wc.bitboard();
+                        break;
+                    }
+                }
+
+                let (m, captor) = lva.assume();
+                if matches!(captor, Pawn | Bishop | Queen) {
+                    attackers |= (bishops | queens) & WhiteBishop.attacks(sq, occupied);
+                }
+
+                if matches!(captor, Rook | Queen) {
+                    attackers |= (rooks | queens) & WhiteRook.attacks(sq, occupied);
+                }
+
+                attackers &= occupied;
+                if captor == King && !self.material(!turn).intersection(attackers).is_empty() {
+                    break;
+                }
+
+                yield (m, captor, victim);
+                victim = m.promotion().unwrap_or(captor);
+            }
+        }
     }
 
     /// Play a [`Move`].
@@ -765,7 +838,7 @@ impl FromStr for Position {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fmt::Debug, hash::DefaultHasher};
+    use std::{cmp::Reverse, fmt::Debug, hash::DefaultHasher};
     use test_strategy::proptest;
 
     #[proptest]
@@ -848,9 +921,36 @@ mod tests {
     }
 
     #[proptest]
+    fn exchanges_iterator_is_sorted_by_captor_of_least_value(
+        #[filter(#pos.outcome().is_none())] pos: Position,
+        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
+    ) {
+        let sq = m.whither();
+        let exchanges = pos.exchanges(m);
+        let mut pos = pos.clone();
+        pos.play(m);
+
+        for (m, captor, victim) in exchanges {
+            prop_assume!(pos.pinned().is_empty());
+            prop_assume!(pos.checkers().is_empty());
+
+            assert_eq!(
+                Some((Some(captor), m.promotion())),
+                pos.moves()
+                    .filter(|m| m.whither().contains(sq))
+                    .flatten()
+                    .map(|m| (pos.board.role_on(m.whence()), m.promotion()))
+                    .min_by_key(|&(r, p)| (r, Reverse(p)))
+            );
+
+            assert!(matches!(pos.play(m), (c, Some((v, _))) if c == captor && v == victim));
+        }
+    }
+
+    #[proptest]
     fn captures_reduce_material(
         #[filter(#pos.moves().any(|ms| ms.is_capture()))] mut pos: Position,
-        #[map(|s: Selector| s.select(#pos.moves().filter(MoveSet::is_capture).flatten()))] m: Move,
+        #[map(|s: Selector| s.select(#pos.moves().filter(|ms| ms.is_capture()).flatten()))] m: Move,
     ) {
         let prev = pos.clone();
         pos.play(m);
@@ -860,7 +960,7 @@ mod tests {
     #[proptest]
     fn promotions_exchange_pawns(
         #[filter(#pos.moves().any(|ms| ms.is_promotion()))] mut pos: Position,
-        #[map(|s: Selector| s.select(#pos.moves().filter(MoveSet::is_promotion).flatten()))]
+        #[map(|s: Selector| s.select(#pos.moves().filter(|ms| ms.is_promotion()).flatten()))]
         m: Move,
     ) {
         let prev = pos.clone();

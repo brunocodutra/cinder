@@ -354,6 +354,11 @@ impl<'a> Stack<'a> {
                 break;
             }
 
+            let benchmark = Value::new(75) * (draft - lmr);
+            if pos.see(m, -benchmark) < -benchmark {
+                continue;
+            }
+
             let mut next = pos.clone();
             next.play(m);
             self.tt.prefetch(next.zobrist());

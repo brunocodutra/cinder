@@ -1,3 +1,5 @@
+use crate::chess::{Color, Piece, Role, Square};
+use crate::util::{Assume, Integer};
 use byteorder::{LittleEndian, ReadBytesExt};
 use ruzstd::decoding::StreamingDecoder;
 use std::cell::SyncUnsafeCell;
@@ -26,6 +28,7 @@ struct Nnue {
     ft: Affine<i16, { Accumulator::POSITIONAL }>,
     psqt: Linear<i32, { Accumulator::MATERIAL }>,
     hidden: [Hidden<{ Accumulator::POSITIONAL }>; Accumulator::MATERIAL],
+    pt: [[i32; Role::MAX as usize + 1]; Accumulator::MATERIAL],
 }
 
 static NNUE: SyncUnsafeCell<Nnue> = unsafe { MaybeUninit::zeroed().assume_init() };
@@ -69,6 +72,22 @@ impl Nnue {
 
         debug_assert!(reader.read_u8().is_err());
 
+        for phase in 0..Accumulator::MATERIAL {
+            for role in Role::iter() {
+                let mut deltas = [0i32, 0i32];
+                for sq in Square::iter() {
+                    for (delta, side) in deltas.iter_mut().zip(Color::iter()) {
+                        let ksq = [Square::E1, Square::E8][side.cast::<usize>()];
+                        let feat = Feature::new(side, ksq, Piece::new(role, Color::White), sq);
+                        *delta += self.psqt.weight[feat.cast::<usize>()].get(phase).assume();
+                    }
+                }
+
+                self.pt[phase][role.cast::<usize>()] =
+                    (deltas[0] - deltas[1]) / (Square::MAX as i32 + 1);
+            }
+        }
+
         Ok(())
     }
 
@@ -85,6 +104,11 @@ impl Nnue {
     #[inline(always)]
     fn hidden(phase: usize) -> &'static Hidden<{ Accumulator::POSITIONAL }> {
         unsafe { NNUE.get().as_ref_unchecked().hidden.get_unchecked(phase) }
+    }
+
+    #[inline(always)]
+    fn pt(phase: usize) -> &'static [i32; Role::MAX as usize + 1] {
+        unsafe { &NNUE.get().as_ref_unchecked().pt.get_unchecked(phase) }
     }
 }
 

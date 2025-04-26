@@ -512,10 +512,10 @@ mod tests {
     ) {
         let mut input = [
             "go".to_string(),
-            format!("wtime {}", wt),
-            format!("btime {}", bt),
-            format!("winc {}", wi),
-            format!("binc {}", bi),
+            format!("wtime {wt}"),
+            format!("btime {bt}"),
+            format!("winc {wi}"),
+            format!("binc {bi}"),
         ];
 
         input[1..].shuffle(&mut rand::rng());
@@ -693,7 +693,7 @@ mod tests {
 
         let output = uci.output.join("\n");
 
-        let value = format!("{:+}", value);
+        let value = format!("{value:+}");
         let info = (tag("info"), field("value", tag(&*value)));
         let mut pattern = recognize(terminated(info, eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));

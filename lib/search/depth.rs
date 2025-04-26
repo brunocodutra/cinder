@@ -14,7 +14,7 @@ unsafe impl Integer for DepthRepr {
     const MAX: Self::Repr = 63;
 
     #[cfg(test)]
-    const MAX: Self::Repr = 15;
+    const MAX: Self::Repr = 7;
 }
 
 /// The search depth.

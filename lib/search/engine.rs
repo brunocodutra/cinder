@@ -329,8 +329,8 @@ impl<'a> Stack<'a> {
 
             let lmr = self.lmr(draft, idx) - (is_pv as i8) - improving;
             let margin = alpha - self.value[ply.cast::<usize>()] - self.futility(draft - lmr);
-            if !pos.winning(m, margin.saturate()) {
-                continue;
+            if margin > 0 && !pos.winning(m, margin.saturate()) {
+                break;
             }
 
             let mut next = pos.clone();
@@ -393,8 +393,8 @@ impl<'a> Stack<'a> {
 
             let lmr = self.lmr(depth, idx) - 1;
             let margin = alpha - self.value[0] - self.futility(depth - lmr);
-            if !self.root.winning(m, margin.saturate()) {
-                continue;
+            if margin > 0 && !self.root.winning(m, margin.saturate()) {
+                break;
             }
 
             let mut next = self.root.clone();

@@ -91,9 +91,7 @@ impl<'a> Stack<'a> {
         self.tt.set(pos.zobrist(), tpos);
     }
 
-    /// An implementation of the [improving heuristic].
-    ///
-    /// [improving heuristic]: https://www.chessprogramming.org/Improving
+    /// A measure for how much the position is improving.
     fn improving(&mut self, ply: Ply) -> i32 {
         let idx = ply.cast::<usize>();
 
@@ -101,18 +99,14 @@ impl<'a> Stack<'a> {
             + (idx >= 4 && self.value[idx] > self.value[idx - 4]) as i32
     }
 
-    /// An implementation of [mate distance pruning].
-    ///
-    /// [mate distance pruning]: https://www.chessprogramming.org/Mate_Distance_Pruning
+    /// The mate distance pruning.
     fn mdp(&self, ply: Ply, bounds: &Range<Score>) -> (Score, Score) {
         let lower = Score::mated(ply);
         let upper = Score::mating(ply + 1); // One can't mate in 0 plies!
         (bounds.start.max(lower), bounds.end.min(upper))
     }
 
-    /// An implementation of [null move pruning].
-    ///
-    /// [null move pruning]: https://www.chessprogramming.org/Null_Move_Pruning
+    /// Computes the null move pruning reduction.
     fn nmp(&self, surplus: Score, draft: Depth) -> Option<Depth> {
         match surplus.get() {
             ..0 => None,
@@ -121,9 +115,7 @@ impl<'a> Stack<'a> {
         }
     }
 
-    /// An implementation of [multi-cut pruning].
-    ///
-    /// [multi-cut pruning]: https://www.chessprogramming.org/Multi-Cut
+    /// Computes the multi-cut pruning reduction.
     fn mcp(&self, surplus: Score, draft: Depth) -> Option<Depth> {
         match draft.get() {
             ..6 => None,
@@ -134,10 +126,8 @@ impl<'a> Stack<'a> {
         }
     }
 
-    /// An implementation of [reverse futility pruning].
-    ///
-    /// [reverse futility pruning]: https://www.chessprogramming.org/Reverse_Futility_Pruning
-    fn rfp(&self, surplus: Score, draft: Depth) -> Option<Depth> {
+    /// Computes fail-high pruning reduction.
+    fn fhp(&self, surplus: Score, draft: Depth) -> Option<Depth> {
         match surplus.get() {
             ..0 => None,
             s @ 0..360 => Some(draft - (s + 60) / 140),
@@ -145,17 +135,8 @@ impl<'a> Stack<'a> {
         }
     }
 
-    /// Computes the [futility pruning] margin.
-    ///
-    /// [futility pruning]: https://www.chessprogramming.org/Futility_Pruning
-    fn fp(&self, draft: Depth) -> Value {
-        (draft.cast::<i16>() * 80 + 60).saturate()
-    }
-
-    /// An implementation of [razoring].
-    ///
-    /// [razoring]: https://www.chessprogramming.org/Razoring
-    fn razor(&self, deficit: Score, draft: Depth) -> Option<Depth> {
+    /// Computes the fail-low pruning reduction.
+    fn flp(&self, deficit: Score, draft: Depth) -> Option<Depth> {
         match deficit.get() {
             ..0 => None,
             s @ 0..900 => Some(draft - (s + 180) / 360),
@@ -163,16 +144,17 @@ impl<'a> Stack<'a> {
         }
     }
 
-    /// An implementation of [late move reductions].
-    ///
-    /// [late move reductions]: https://www.chessprogramming.org/Late_Move_Reductions
+    /// Computes the late move reduction.
     fn lmr(&self, draft: Depth, idx: usize) -> Depth {
         (draft.get().max(1).ilog2() as i16 * idx.max(1).ilog2() as i16 / 2).saturate()
     }
 
-    /// The [zero-window] alpha-beta search.
-    ///
-    /// [zero-window]: https://www.chessprogramming.org/Null_Window
+    /// Computes the futility margin.
+    fn futility(&self, draft: Depth) -> Value {
+        (draft.cast::<i16>() * 80 + 60).saturate()
+    }
+
+    /// The zero-window alpha-beta search.
     fn nw<const N: usize>(
         &mut self,
         pos: &Evaluator,
@@ -183,9 +165,7 @@ impl<'a> Stack<'a> {
         self.ab(pos, beta - 1..beta, depth, ply)
     }
 
-    /// The [alpha-beta] search.
-    ///
-    /// [alpha-beta]: https://www.chessprogramming.org/Alpha-Beta
+    /// The alpha-beta search.
     fn ab<const N: usize>(
         &mut self,
         pos: &Evaluator,
@@ -200,9 +180,7 @@ impl<'a> Stack<'a> {
         }
     }
 
-    /// An implementation of [PVS].
-    ///
-    /// [PVS]: https://www.chessprogramming.org/Principal_Variation_Search
+    /// The principal variation search.
     fn pvs<const N: usize>(
         &mut self,
         pos: &Evaluator,
@@ -248,13 +226,13 @@ impl<'a> Stack<'a> {
                 }
             }
 
-            if let Some(d) = self.rfp(lower - beta, draft) {
+            if let Some(d) = self.fhp(lower - beta, draft) {
                 if !is_pv && t.draft() >= d {
                     return Ok(transposed.truncate());
                 }
             }
 
-            if let Some(d) = self.razor(alpha - upper, draft) {
+            if let Some(d) = self.flp(alpha - upper, draft) {
                 if !is_pv && t.draft() >= d {
                     return Ok(transposed.truncate());
                 }
@@ -350,12 +328,8 @@ impl<'a> Stack<'a> {
             }
 
             let lmr = self.lmr(draft, idx) - (is_pv as i8) - improving;
-            if self.value[ply.cast::<usize>()] + pos.gain(m) + self.fp(draft - lmr) < alpha {
-                break;
-            }
-
-            let benchmark = Value::new(75) * (draft - lmr);
-            if pos.see(m, -benchmark) < -benchmark {
+            let margin = alpha - self.value[ply.cast::<usize>()] - self.futility(draft - lmr);
+            if !pos.winning(m, margin.saturate()) {
                 continue;
             }
 
@@ -377,9 +351,7 @@ impl<'a> Stack<'a> {
         Ok(tail.transpose(head))
     }
 
-    /// An implementation of the [Root Search].
-    ///
-    /// [Root Search]: https://www.chessprogramming.org/Root
+    /// The root of the principal variation search.
     fn root(
         &mut self,
         moves: &mut [(Move, Value)],
@@ -420,8 +392,9 @@ impl<'a> Stack<'a> {
             }
 
             let lmr = self.lmr(depth, idx) - 1;
-            if self.value[0] + self.root.gain(m) + self.fp(depth - lmr) < alpha {
-                break;
+            let margin = alpha - self.value[0] - self.futility(depth - lmr);
+            if !self.root.winning(m, margin.saturate()) {
+                continue;
             }
 
             let mut next = self.root.clone();
@@ -443,10 +416,7 @@ impl<'a> Stack<'a> {
         Ok(tail.transpose(head))
     }
 
-    /// An implementation of [aspiration windows] with [iterative deepening].
-    ///
-    /// [aspiration windows]: https://www.chessprogramming.org/Aspiration_Windows
-    /// [iterative deepening]: https://www.chessprogramming.org/Iterative_Deepening
+    /// An implementation of aspiration windows with iterative deepening.
     fn aw(&mut self) -> impl Iterator<Item = Info> {
         gen move {
             let pos = self.root;

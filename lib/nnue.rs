@@ -1,5 +1,5 @@
 use crate::chess::{Color, Piece, Role, Square};
-use crate::util::{Assume, Integer};
+use crate::util::Integer;
 use byteorder::{LittleEndian, ReadBytesExt};
 use ruzstd::decoding::StreamingDecoder;
 use std::cell::SyncUnsafeCell;
@@ -25,10 +25,10 @@ pub use value::*;
 /// [NNUE]: https://www.chessprogramming.org/NNUE
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 struct Nnue {
-    ft: Affine<i16, { Accumulator::POSITIONAL }>,
-    psqt: Linear<i32, { Accumulator::MATERIAL }>,
+    positional: Affine<i16, { Accumulator::POSITIONAL }>,
+    material: Linear<i32, { Accumulator::MATERIAL }>,
     hidden: [Hidden<{ Accumulator::POSITIONAL }>; Accumulator::MATERIAL],
-    pt: [[i32; Role::MAX as usize + 1]; Accumulator::MATERIAL],
+    pieces: [[i32; Role::MAX as usize + 1]; Accumulator::MATERIAL],
 }
 
 static NNUE: SyncUnsafeCell<Nnue> = unsafe { MaybeUninit::zeroed().assume_init() };
@@ -45,19 +45,19 @@ unsafe fn init() {
 impl Nnue {
     #[inline(always)]
     fn load<T: Read>(&mut self, mut reader: T) -> io::Result<()> {
-        reader.read_i16_into::<LittleEndian>(&mut *self.ft.bias)?;
+        reader.read_i16_into::<LittleEndian>(&mut *self.positional.bias)?;
         reader.read_i16_into::<LittleEndian>(unsafe {
             transmute::<
                 &mut [[_; Accumulator::POSITIONAL]; Feature::LEN],
                 &mut [_; Feature::LEN * Accumulator::POSITIONAL],
-            >(&mut *self.ft.weight)
+            >(&mut *self.positional.weight)
         })?;
 
         reader.read_i32_into::<LittleEndian>(unsafe {
             transmute::<
                 &mut [[_; Accumulator::MATERIAL]; Feature::LEN],
                 &mut [_; Feature::LEN * Accumulator::MATERIAL],
-            >(&mut *self.psqt.weight)
+            >(&mut *self.material.weight)
         })?;
 
         for Hidden { bias, weight } in &mut self.hidden {
@@ -75,16 +75,18 @@ impl Nnue {
         for phase in 0..Accumulator::MATERIAL {
             for role in Role::iter() {
                 let mut deltas = [0i32, 0i32];
+
                 for sq in Square::iter() {
                     for (delta, side) in deltas.iter_mut().zip(Color::iter()) {
-                        let ksq = [Square::E1, Square::E8][side.cast::<usize>()];
-                        let feat = Feature::new(side, ksq, Piece::new(role, Color::White), sq);
-                        *delta += self.psqt.weight[feat.cast::<usize>()].get(phase).assume();
+                        for ksq in Square::iter() {
+                            let feat = Feature::new(side, ksq, Piece::new(role, Color::White), sq);
+                            *delta += self.material.weight[feat.cast::<usize>()][phase];
+                        }
                     }
                 }
 
-                self.pt[phase][role.cast::<usize>()] =
-                    (deltas[0] - deltas[1]) / (Square::MAX as i32 + 1);
+                self.pieces[phase][role.cast::<usize>()] =
+                    (deltas[0] - deltas[1]) / (Square::MAX as i32 + 1).pow(2);
             }
         }
 
@@ -92,13 +94,13 @@ impl Nnue {
     }
 
     #[inline(always)]
-    fn psqt() -> &'static Linear<i32, { Accumulator::MATERIAL }> {
-        unsafe { &NNUE.get().as_ref_unchecked().psqt }
+    fn positional() -> &'static Affine<i16, { Accumulator::POSITIONAL }> {
+        unsafe { &NNUE.get().as_ref_unchecked().positional }
     }
 
     #[inline(always)]
-    fn ft() -> &'static Affine<i16, { Accumulator::POSITIONAL }> {
-        unsafe { &NNUE.get().as_ref_unchecked().ft }
+    fn material() -> &'static Linear<i32, { Accumulator::MATERIAL }> {
+        unsafe { &NNUE.get().as_ref_unchecked().material }
     }
 
     #[inline(always)]
@@ -107,8 +109,8 @@ impl Nnue {
     }
 
     #[inline(always)]
-    fn pt(phase: usize) -> &'static [i32; Role::MAX as usize + 1] {
-        unsafe { &NNUE.get().as_ref_unchecked().pt.get_unchecked(phase) }
+    fn pieces(phase: usize) -> &'static [i32; Role::MAX as usize + 1] {
+        unsafe { NNUE.get().as_ref_unchecked().pieces.get_unchecked(phase) }
     }
 }
 
@@ -120,9 +122,9 @@ mod tests {
     #[test]
     fn feature_transformer_does_not_overflow() {
         (0..Accumulator::POSITIONAL).for_each(|i| {
-            let bias = Nnue::ft().bias[i] as i32;
+            let bias = Nnue::positional().bias[i] as i32;
             let mut features = ArrayVec::<_, { Feature::LEN }>::from_iter(
-                Nnue::ft().weight.iter().map(|a| a[i] as i32),
+                Nnue::positional().weight.iter().map(|a| a[i] as i32),
             );
 
             for weights in features.array_chunks_mut::<768>() {

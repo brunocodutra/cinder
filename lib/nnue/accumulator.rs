@@ -19,8 +19,8 @@ impl Default for Accumulator {
     #[inline(always)]
     fn default() -> Self {
         Accumulator {
-            material: AlignTo64([Nnue::psqt().fresh(); 2]),
-            positional: AlignTo64([Nnue::ft().fresh(); 2]),
+            material: AlignTo64([Nnue::material().fresh(); 2]),
+            positional: AlignTo64([Nnue::positional().fresh(); 2]),
         }
     }
 }
@@ -31,31 +31,34 @@ impl Accumulator {
 
     #[inline(always)]
     pub fn refresh(&mut self, side: Color) {
-        self.material[side as usize] = Nnue::psqt().fresh();
-        self.positional[side as usize] = Nnue::ft().fresh();
+        self.material[side as usize] = Nnue::material().fresh();
+        self.positional[side as usize] = Nnue::positional().fresh();
     }
 
     #[inline(always)]
     pub fn update(&mut self, side: Color, sub: [Option<Feature>; 2], add: [Option<Feature>; 2]) {
+        let material = Nnue::material();
+        let positional = Nnue::positional();
+
         match (sub, add) {
             ([None, None], [Some(a1), None]) => {
-                Nnue::psqt().add(a1, &mut self.material[side as usize]);
-                Nnue::ft().add(a1, &mut self.positional[side as usize]);
+                material.add(a1, &mut self.material[side as usize]);
+                positional.add(a1, &mut self.positional[side as usize]);
             }
 
             ([Some(s1), None], [Some(a1), None]) => {
-                Nnue::psqt().sub_add(s1, a1, &mut self.material[side as usize]);
-                Nnue::ft().sub_add(s1, a1, &mut self.positional[side as usize]);
+                material.sub_add(s1, a1, &mut self.material[side as usize]);
+                positional.sub_add(s1, a1, &mut self.positional[side as usize]);
             }
 
             ([Some(s1), Some(s2)], [Some(a1), None]) => {
-                Nnue::psqt().sub_sub_add(s1, s2, a1, &mut self.material[side as usize]);
-                Nnue::ft().sub_sub_add(s1, s2, a1, &mut self.positional[side as usize]);
+                material.sub_sub_add(s1, s2, a1, &mut self.material[side as usize]);
+                positional.sub_sub_add(s1, s2, a1, &mut self.positional[side as usize]);
             }
 
             ([Some(s1), Some(s2)], [Some(a1), Some(a2)]) => {
-                Nnue::psqt().sub_sub_add_add(s1, s2, a1, a2, &mut self.material[side as usize]);
-                Nnue::ft().sub_sub_add_add(s1, s2, a1, a2, &mut self.positional[side as usize]);
+                material.sub_sub_add_add(s1, s2, a1, a2, &mut self.material[side as usize]);
+                positional.sub_sub_add_add(s1, s2, a1, a2, &mut self.positional[side as usize]);
             }
 
             _ => unsafe { unreachable_unchecked() },

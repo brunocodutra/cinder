@@ -151,7 +151,12 @@ impl<'a> Stack<'a> {
 
     /// Computes the futility margin.
     fn futility(&self, draft: Depth) -> Value {
-        (draft.cast::<i16>() * 80 + 60).saturate()
+        Value::new(80) * draft + 60
+    }
+
+    /// Computes the static SEE pruning margin.
+    fn ssp(&self, draft: Depth) -> Value {
+        Value::new(75) * draft
     }
 
     /// The zero-window alpha-beta search.
@@ -331,6 +336,8 @@ impl<'a> Stack<'a> {
             let margin = alpha - self.value[ply.cast::<usize>()] - self.futility(draft - lmr);
             if margin > 0 && !pos.winning(m, margin.saturate()) {
                 break;
+            } else if margin <= 0 && !pos.winning(m, -self.ssp(draft - lmr)) {
+                continue;
             }
 
             let mut next = pos.clone();

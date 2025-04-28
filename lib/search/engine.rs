@@ -115,17 +115,6 @@ impl<'a> Stack<'a> {
         }
     }
 
-    /// Computes the multi-cut pruning reduction.
-    fn mcp(&self, surplus: Score, draft: Depth) -> Option<Depth> {
-        match draft.get() {
-            ..6 => None,
-            6.. => match surplus.get() {
-                ..0 => None,
-                0.. => Some(draft / 2),
-            },
-        }
-    }
-
     /// Computes fail-high pruning reduction.
     fn fhp(&self, surplus: Score, draft: Depth) -> Option<Depth> {
         match surplus.get() {
@@ -296,18 +285,22 @@ impl<'a> Stack<'a> {
             Some(&(m, _)) => {
                 let mut sme = 0i8;
                 if let Some(t) = transposition {
-                    if let Some(d) = self.mcp(t.score().lower(ply) - beta, draft) {
-                        if t.draft() >= d {
-                            sme += 1;
-                            for (m, _) in moves.iter().rev().skip(1) {
-                                let mut next = pos.clone();
-                                next.play(*m);
-                                self.tt.prefetch(next.zobrist());
-                                self.replies[ply.cast::<usize>()] =
-                                    Some(self.searcher.continuation.reply(pos, *m));
-                                if -self.nw::<0>(&next, -beta + 1, d + ply, ply + 1)? >= beta {
-                                    return Ok(transposed.truncate());
-                                }
+                    let smb = beta - draft;
+                    let smd = (draft - 1) / 2;
+                    if t.score().lower(ply) >= beta && t.draft() >= smd && smd >= 3 {
+                        sme = 1;
+                        for (m, _) in moves.iter().rev().skip(1) {
+                            let mut next = pos.clone();
+                            next.play(*m);
+                            self.tt.prefetch(next.zobrist());
+                            self.replies[ply.cast::<usize>()] =
+                                Some(self.searcher.continuation.reply(pos, *m));
+                            let pv = -self.nw(&next, -smb + 1, smd + ply, ply + 1)?;
+                            if pv >= beta {
+                                return Ok(pv.transpose(*m));
+                            } else if pv >= smb {
+                                sme = -1;
+                                break;
                             }
                         }
                     }

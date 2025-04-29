@@ -155,8 +155,9 @@ impl<'a> Stack<'a> {
         beta: Score,
         depth: Depth,
         ply: Ply,
+        cut: bool,
     ) -> Result<Pv<N>, Interrupt> {
-        self.ab(pos, beta - 1..beta, depth, ply)
+        self.ab(pos, beta - 1..beta, depth, ply, cut)
     }
 
     /// The alpha-beta search.
@@ -166,11 +167,12 @@ impl<'a> Stack<'a> {
         bounds: Range<Score>,
         depth: Depth,
         ply: Ply,
+        cut: bool,
     ) -> Result<Pv<N>, Interrupt> {
         if ply.cast::<usize>() < N && depth > ply && bounds.start + 1 < bounds.end {
-            self.pvs(pos, bounds, depth, ply)
+            self.pvs(pos, bounds, depth, ply, cut)
         } else {
-            Ok(self.pvs::<0>(pos, bounds, depth, ply)?.truncate())
+            Ok(self.pvs::<0>(pos, bounds, depth, ply, cut)?.truncate())
         }
     }
 
@@ -181,6 +183,7 @@ impl<'a> Stack<'a> {
         bounds: Range<Score>,
         mut depth: Depth,
         ply: Ply,
+        mut cut: bool,
     ) -> Result<Pv<N>, Interrupt> {
         (ply > 0).assume();
         self.nodes.update(1);
@@ -250,7 +253,7 @@ impl<'a> Stack<'a> {
                     next.pass();
                     self.tt.prefetch(next.zobrist());
                     self.replies[ply.cast::<usize>()] = None;
-                    if -self.nw::<0>(&next, -beta + 1, d + ply, ply + 1)? >= beta {
+                    if -self.nw::<0>(&next, -beta + 1, d + ply, ply + 1, !cut)? >= beta {
                         return Ok(transposed.truncate());
                     }
                 }
@@ -295,10 +298,11 @@ impl<'a> Stack<'a> {
                             self.tt.prefetch(next.zobrist());
                             self.replies[ply.cast::<usize>()] =
                                 Some(self.searcher.continuation.reply(pos, *m));
-                            let pv = -self.nw(&next, -smb + 1, smd + ply, ply + 1)?;
+                            let pv = -self.nw(&next, -smb + 1, smd + ply, ply + 1, !cut)?;
                             if pv >= beta {
                                 return Ok(pv.transpose(*m));
                             } else if pv >= smb {
+                                cut = true;
                                 sme = -1;
                                 break;
                             }
@@ -310,7 +314,8 @@ impl<'a> Stack<'a> {
                 next.play(m);
                 self.tt.prefetch(next.zobrist());
                 self.replies[ply.cast::<usize>()] = Some(self.searcher.continuation.reply(pos, m));
-                (m, -self.ab(&next, -beta..-alpha, depth + sme, ply + 1)?)
+                let pv = -self.ab(&next, -beta..-alpha, depth + sme, ply + 1, false)?;
+                (m, pv)
             }
         };
 
@@ -325,7 +330,7 @@ impl<'a> Stack<'a> {
                 break;
             }
 
-            let lmr = self.lmr(draft, idx) - (is_pv as i8) - improving;
+            let lmr = self.lmr(draft, idx) + cut as i8 - is_pv as i8 - improving;
             let margin = alpha - self.value[ply.cast::<usize>()] - self.futility(draft - lmr);
             if margin > 0 && !pos.winning(m, margin.saturate()) {
                 break;
@@ -337,9 +342,9 @@ impl<'a> Stack<'a> {
             next.play(m);
             self.tt.prefetch(next.zobrist());
             self.replies[ply.cast::<usize>()] = Some(self.searcher.continuation.reply(pos, m));
-            let pv = match -self.nw(&next, -alpha, depth - lmr, ply + 1)? {
+            let pv = match -self.nw(&next, -alpha, depth - lmr, ply + 1, !cut || lmr > 0)? {
                 pv if pv <= alpha || (pv >= beta && lmr <= 0) => pv,
-                _ => -self.ab(&next, -beta..-alpha, depth, ply + 1)?,
+                _ => -self.ab(&next, -beta..-alpha, depth, ply + 1, false)?,
             };
 
             if pv > tail {
@@ -379,7 +384,7 @@ impl<'a> Stack<'a> {
         self.tt.prefetch(next.zobrist());
         self.nodes = Some(self.ctrl.attention().nodes(head));
         self.replies[0] = Some(self.searcher.continuation.reply(self.root, head));
-        let mut tail = -self.ab(&next, -beta..-alpha, depth, ply + 1)?;
+        let mut tail = -self.ab(&next, -beta..-alpha, depth, ply + 1, false)?;
 
         for (idx, &(m, _)) in moves.iter().rev().skip(1).enumerate() {
             let alpha = match tail.score() {
@@ -402,9 +407,9 @@ impl<'a> Stack<'a> {
             self.tt.prefetch(next.zobrist());
             self.nodes = Some(self.ctrl.attention().nodes(m));
             self.replies[0] = Some(self.searcher.continuation.reply(self.root, m));
-            let pv = match -self.nw(&next, -alpha, depth - lmr, ply + 1)? {
+            let pv = match -self.nw(&next, -alpha, depth - lmr, ply + 1, false)? {
                 pv if pv <= alpha || (pv >= beta && lmr <= 0) => pv,
-                _ => -self.ab(&next, -beta..-alpha, depth, ply + 1)?,
+                _ => -self.ab(&next, -beta..-alpha, depth, ply + 1, false)?,
             };
 
             if pv > tail {
@@ -642,6 +647,7 @@ mod tests {
         d: Depth,
         #[filter(#p > 0)] p: Ply,
         #[filter(#s.mate().is_none() && #s >= #b)] s: Score,
+        cut: bool,
     ) {
         let tpos = Transposition::new(ScoreBound::Lower(s), d, m);
         e.tt.set(pos.zobrist(), tpos);
@@ -649,7 +655,7 @@ mod tests {
         let ctrl = Control::new(&pos, Limits::None);
         let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
-        assert_eq!(stack.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
+        assert_eq!(stack.nw::<1>(&pos, b, d, p, cut), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -663,6 +669,7 @@ mod tests {
         d: Depth,
         #[filter(#p > 0)] p: Ply,
         #[filter(#s.mate().is_none() && #s < #b)] s: Score,
+        cut: bool,
     ) {
         let tpos = Transposition::new(ScoreBound::Upper(s), d, m);
         e.tt.set(pos.zobrist(), tpos);
@@ -670,7 +677,7 @@ mod tests {
         let ctrl = Control::new(&pos, Limits::None);
         let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
-        assert_eq!(stack.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
+        assert_eq!(stack.nw::<1>(&pos, b, d, p, cut), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -684,6 +691,7 @@ mod tests {
         d: Depth,
         #[filter(#p > 0)] p: Ply,
         #[filter(#s.mate().is_none())] s: Score,
+        cut: bool,
     ) {
         let tpos = Transposition::new(ScoreBound::Exact(s), d, m);
         e.tt.set(pos.zobrist(), tpos);
@@ -691,7 +699,7 @@ mod tests {
         let ctrl = Control::new(&pos, Limits::None);
         let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
-        assert_eq!(stack.nw::<1>(&pos, b, d, p), Ok(Pv::empty(s)));
+        assert_eq!(stack.nw::<1>(&pos, b, d, p, cut), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -700,13 +708,14 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
         d: Depth,
+        cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
         let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
 
         assert_eq!(
-            stack.ab::<1>(&pos, Score::lower()..Score::upper(), d, Ply::upper()),
+            stack.ab::<1>(&pos, Score::lower()..Score::upper(), d, Ply::upper(), cut),
             Ok(Pv::empty(pos.evaluate().saturate()))
         );
     }
@@ -719,11 +728,12 @@ mod tests {
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
+        cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::Nodes(0));
         let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
-        assert_eq!(stack.ab::<1>(&pos, b, d, p), Err(Interrupt));
+        assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupt));
     }
 
     #[proptest]
@@ -734,12 +744,13 @@ mod tests {
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
+        cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
         let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         thread::sleep(Duration::from_millis(1));
-        assert_eq!(stack.ab::<1>(&pos, b, d, p), Err(Interrupt));
+        assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupt));
     }
 
     #[proptest]
@@ -750,12 +761,13 @@ mod tests {
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
+        cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
         let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         ctrl.abort();
-        assert_eq!(stack.ab::<1>(&pos, b, d, p), Err(Interrupt));
+        assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupt));
     }
 
     #[proptest]
@@ -766,11 +778,16 @@ mod tests {
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
+        cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
         let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
-        assert_eq!(stack.ab::<1>(&pos, b, d, p), Ok(Pv::empty(Score::new(0))));
+
+        assert_eq!(
+            stack.ab::<1>(&pos, b, d, p, cut),
+            Ok(Pv::empty(Score::new(0)))
+        );
     }
 
     #[proptest]
@@ -781,12 +798,16 @@ mod tests {
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
+        cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
         let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
 
-        assert_eq!(stack.ab::<1>(&pos, b, d, p), Ok(Pv::empty(Score::mated(p))));
+        assert_eq!(
+            stack.ab::<1>(&pos, b, d, p, cut),
+            Ok(Pv::empty(Score::mated(p)))
+        );
     }
 
     #[proptest]

@@ -286,24 +286,24 @@ impl<'a> Stack<'a> {
         let (mut head, mut tail) = match moves.last() {
             None => return Ok(transposed.truncate()),
             Some(&(m, _)) => {
-                let mut sme = 0i8;
+                let mut extension = 0i8;
                 if let Some(t) = transposition {
-                    let smb = beta - draft;
-                    let smd = (draft - 1) / 2;
-                    if t.score().lower(ply) >= beta && t.draft() >= smd && smd >= 3 {
-                        sme = 1;
+                    if t.score().lower(ply) >= beta && t.draft() >= draft - 3 && draft >= 6 {
+                        extension = 1;
+                        let s_beta = beta - draft;
+                        let s_draft = (draft - 1) / 2;
                         for (m, _) in moves.iter().rev().skip(1) {
                             let mut next = pos.clone();
                             next.play(*m);
                             self.tt.prefetch(next.zobrist());
                             self.replies[ply.cast::<usize>()] =
                                 Some(self.searcher.continuation.reply(pos, *m));
-                            let pv = -self.nw(&next, -smb + 1, smd + ply, ply + 1, !cut)?;
+                            let pv = -self.nw(&next, -s_beta + 1, s_draft + ply, ply + 1, !cut)?;
                             if pv >= beta {
                                 return Ok(pv.transpose(*m));
-                            } else if pv >= smb {
+                            } else if pv >= s_beta {
                                 cut = true;
-                                sme = -1;
+                                extension = -1;
                                 break;
                             }
                         }
@@ -314,7 +314,7 @@ impl<'a> Stack<'a> {
                 next.play(m);
                 self.tt.prefetch(next.zobrist());
                 self.replies[ply.cast::<usize>()] = Some(self.searcher.continuation.reply(pos, m));
-                let pv = -self.ab(&next, -beta..-alpha, depth + sme, ply + 1, false)?;
+                let pv = -self.ab(&next, -beta..-alpha, depth + extension, ply + 1, false)?;
                 (m, pv)
             }
         };

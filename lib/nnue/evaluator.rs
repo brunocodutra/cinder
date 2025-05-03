@@ -1,5 +1,6 @@
 use crate::chess::{Color, Move, ParsePositionError, Perspective, Piece, Position, Role, Square};
 use crate::nnue::{Accumulator, Feature, Nnue, Value};
+use crate::params::Params;
 use crate::util::{Assume, Integer};
 use derive_more::with_trait::{Debug, Deref, Display};
 use std::{ops::Range, str::FromStr};
@@ -104,24 +105,26 @@ impl Evaluator {
 
     /// Estimates the material gain of a move.
     pub fn gain(&self, m: Move) -> Value {
-        let mut score = 0;
+        let mut gain = 0;
 
         if !m.is_quiet() {
             let pieces = Nnue::pieces((self.occupied().len() - 1) / 4);
 
             if let Some(victim) = self[m.whither()] {
-                score += pieces[victim.role().cast::<usize>()];
+                gain += pieces[victim.role().cast::<usize>()];
             } else if m.is_capture() {
-                score += pieces[Role::Pawn.cast::<usize>()];
+                gain += pieces[Role::Pawn.cast::<usize>()];
             }
 
             if let Some(promotion) = m.promotion() {
-                score += pieces[promotion.cast::<usize>()];
-                score -= pieces[Role::Pawn.cast::<usize>()];
+                gain += pieces[promotion.cast::<usize>()];
+                gain -= pieces[Role::Pawn.cast::<usize>()];
             }
         }
 
-        (score / 128).saturate()
+        let scale: i32 = Params::value_scale().as_int();
+        let score = gain / scale;
+        score.saturate()
     }
 
     /// Whether this move wins the exchange by at least `margin`.
@@ -139,11 +142,12 @@ impl Evaluator {
             return alpha;
         }
 
+        let scale: i32 = Params::value_scale().as_int();
         let pieces = Nnue::pieces((self.occupied().len() - 1) / 4);
 
         score -= match m.promotion() {
-            None => pieces[self[m.whence()].assume().role().cast::<usize>()] / 128,
-            Some(promotion) => pieces[promotion.cast::<usize>()] / 128,
+            None => pieces[self[m.whence()].assume().role().cast::<usize>()] / scale,
+            Some(promotion) => pieces[promotion.cast::<usize>()] / scale,
         };
 
         alpha = alpha.max(score);
@@ -159,7 +163,7 @@ impl Evaluator {
                 break beta;
             };
 
-            score = -(score + pieces[captor.cast::<usize>()] / 128);
+            score = -(score + pieces[captor.cast::<usize>()] / scale);
             beta = beta.min(-score);
 
             if alpha >= beta {
@@ -170,7 +174,7 @@ impl Evaluator {
                 break alpha;
             };
 
-            score = -(score + pieces[captor.cast::<usize>()] / 128);
+            score = -(score + pieces[captor.cast::<usize>()] / scale);
             alpha = alpha.max(score);
 
             if alpha >= beta {
@@ -181,7 +185,8 @@ impl Evaluator {
 
     pub fn evaluate(&self) -> Value {
         let phase = (self.occupied().len() - 1) / 4;
-        let value = self.acc.evaluate(self.turn(), phase) / 128;
+        let scale: i32 = Params::value_scale().as_int();
+        let value = self.acc.evaluate(self.turn(), phase) / scale;
         value.saturate()
     }
 }

@@ -132,7 +132,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                         None | Some("") => continue,
                         Some("quit") => return Ok(false),
                         Some("stop") => { ctrl.abort(); },
-                        Some(cmd) => eprintln!("ignored unsupported command `{cmd}` during search"),
+                        Some(cmd) => eprintln!("Warning: ignored unsupported command `{cmd}` during search"),
                     }
                 }
             }
@@ -335,7 +335,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                     Ok(true) => continue,
                     Err(UciError::Fatal(e)) => return Err(e),
                     Err(UciError::ParseError) => {
-                        eprintln!("warning: ignored unrecognized command `{cmd}`")
+                        eprintln!("Warning: ignored unrecognized command `{cmd}`")
                     }
                 },
             }

@@ -13,9 +13,19 @@ default-run = "cinder"
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
+[features]
+spsa = ["ron", "serde"]
+
 [dependencies]
+anyhow = { version = "1.0.98", default-features = false, features = ["std"] }
 arrayvec = { version = "0.7.6", default-features = false, features = ["std"] }
 byteorder = { version = "1.5.0", default-features = false, features = ["std"] }
+clap = { version = "4.5.37", default-features = false, features = [
+    "derive",
+    "error-context",
+    "help",
+    "std",
+] }
 ctor = { version = "0.4.2", default-features = false, features = ["proc_macro"] }
 derive_more = { version = "2.0.1", default-features = false, features = [
     "add",
@@ -39,7 +49,12 @@ futures = { version = "0.3.31", default-features = false, features = [
 ] }
 nom = { version = "8.0.0", default-features = false, features = ["std"] }
 rand = { version = "0.9.1", default-features = false, features = ["small_rng", "std"] }
+ron = { version = "0.10.1", optional = true, default-features = false }
 ruzstd = { version = "0.8.0", default-features = false, features = ["std"] }
+serde = { version = "1.0.219", optional = true, default-features = false, features = [
+    "derive",
+    "std",
+] }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", default-features = false }

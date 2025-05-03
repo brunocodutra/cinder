@@ -1,6 +1,6 @@
 use crate::chess::{Butterfly, Position};
 use crate::search::{Attention, Limits, Ply, Pv, Statistics};
-use crate::util::Integer;
+use crate::{params::Params, util::Integer};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use std::{mem::MaybeUninit, ops::Range};
@@ -38,9 +38,15 @@ impl Control {
         };
 
         let time_left = clock - inc;
-        let moves_left = 225. / pos.fullmoves().get().min(75) as f64;
+        let moves_left_start = Params::moves_left_start().as_float();
+        let moves_left_end = Params::moves_left_end().as_float();
+        let max_fullmoves = moves_left_start / moves_left_end;
+        let moves_left = moves_left_start / max_fullmoves.min(pos.fullmoves().get() as _);
         let time_per_move = inc + time_left / moves_left;
-        0.5 * time_per_move..clock * 0.5
+
+        let soft_time_fraction = Params::soft_time_fraction().as_float();
+        let hard_time_fraction = Params::hard_time_fraction().as_float();
+        soft_time_fraction * time_per_move..clock * hard_time_fraction
     }
 
     /// Sets up the controller for a new search.
@@ -112,27 +118,34 @@ impl Control {
             }
         };
 
+        let inertia = Params::score_trend_inertia().as_float();
         let _ = self.trend.fetch_update(Relaxed, Relaxed, |bits| {
             let score = pv.score().get() as f64;
             match f64::from_bits(bits) {
                 s if s.is_nan() => Some(score.to_bits()),
-                s if ply == 0 => Some(((s * 7. + score) / 8.).to_bits()),
+                s if ply == 0 => Some(((s * inertia + score) / (inertia + 1.)).to_bits()),
                 _ => None,
             }
         });
 
         let stop = &self.stop[best.whence() as usize][best.whither() as usize];
+        let focus_alpha = Params::pv_focus_alpha().as_float();
+        let focus_beta = Params::pv_focus_beta().as_float();
+        let trend_magnitude = Params::score_trend_magnitude().as_float();
+        let trend_pivot = Params::score_trend_pivot().as_float();
 
         if nodes % 1024 == 0 {
             let time = self.time().as_secs_f64();
             let focus = self.attention.get(root, best) as f64 / nodes.max(1024) as f64;
             let delta = f64::from_bits(self.trend.load(Relaxed)) - pv.score().get() as f64;
-            let scale = (3. - 2.8 * focus) * (1. + 0.5 * delta / (delta.abs() + 50.));
+            let focus_scale = focus_beta - focus_alpha * focus;
+            let trend_scale = 1. + trend_magnitude * delta / (delta.abs() + trend_pivot);
+            let soft_time_scale = focus_scale * trend_scale;
 
             if time >= self.time.end {
                 self.abort.store(true, Relaxed);
                 return ControlFlow::Abort;
-            } else if time >= self.time.start * scale {
+            } else if time >= self.time.start * soft_time_scale {
                 stop.store(true, Relaxed);
                 return ControlFlow::Stop;
             }

@@ -218,8 +218,8 @@ mod tests {
 
     #[proptest]
     fn comparison_coerces(a: Bounded<Asymmetric>, b: i8) {
-        assert_eq!(a == b, a.get() == b.into());
-        assert_eq!(a <= b, a.get() <= b.into());
+        assert_eq!(a == b, a.get() == i16::from(b));
+        assert_eq!(a <= b, a.get() <= i16::from(b));
     }
 
     #[proptest]

@@ -136,9 +136,9 @@ mod tests {
         bits.push(b);
         bits.push(c);
 
-        assert_eq!(bits.slice(36..).get(), a.get().into());
-        assert_eq!(bits.slice(27..36).get(), b.get().into());
-        assert_eq!(bits.slice(..27).get(), c.get().into());
+        assert_eq!(bits.slice(36..).get(), u64::from(a.get()));
+        assert_eq!(bits.slice(27..36).get(), u64::from(b.get()));
+        assert_eq!(bits.slice(..27).get(), u64::from(c.get()));
     }
 
     #[proptest]

@@ -20,8 +20,8 @@ pub struct Param<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i
 impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32>
     Param<VALUE, MIN, MAX, BASE>
 {
-    pub fn grain(&self) -> f64 {
-        0.05 * (MAX - MIN) as f64
+    pub fn range(&self) -> f64 {
+        (MAX - MIN + 1) as f64
     }
 }
 

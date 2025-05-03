@@ -33,6 +33,14 @@ impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32>
 
 static PARAMS: SyncUnsafeCell<Params> = unsafe { MaybeUninit::zeroed().assume_init() };
 
+#[cfg(feature = "spsa")]
+macro_rules! len {
+    ($name:ident,) => { 1 };
+    ($first:ident, $($rest:ident,)*) => {
+        1 + len!($($rest,)*)
+    }
+}
+
 macro_rules! params {
     ($($name: ident: $type: ty,)*) => {
         #[cfg(feature = "spsa")]
@@ -53,6 +61,51 @@ macro_rules! params {
                 unsafe { &PARAMS.get().as_ref_unchecked().$name }
             }
         })*
+
+        #[cfg(feature = "spsa")]
+        impl Params {
+            // The number of parameters.
+            pub const LEN: usize = len!($($name,)*);
+
+            /// Perturb parameters in both positive and negative directions.
+            ///
+            /// # Panic
+            ///
+            /// Panics if the `perturbations`'s length is less than [`Self::LEN`].
+            pub fn perturb<I: IntoIterator<Item = f64>>(&self, perturbations: I) -> (Self, Self) {
+                use crate::util::{Assume, Bounded};
+
+                let mut perturbations = perturbations.into_iter();
+                let (mut left, mut right) = (Self::default(), Self::default());
+
+                $(
+                    let delta = self.$name.range() * perturbations.next().unwrap();
+                    let value: Bounded<$type> = self.$name.convert().assume();
+                    left.$name = (value + delta.round() as i32).convert().assume();
+                    right.$name = (value - delta.round() as i32).convert().assume();
+                )*
+
+                (left, right)
+            }
+
+            /// Update parameters in-place.
+            ///
+            /// # Panic
+            ///
+            /// Panics if the `corrections`'s length is less than [`Self::LEN`].
+            pub fn update<I: IntoIterator<Item = f64>>(&mut self, corrections: I) {
+                use crate::util::{Assume, Bounded};
+
+                let mut corrections = corrections.into_iter();
+
+                $(
+                    let delta = self.$name.range() * corrections.next().unwrap();
+                    let value: Bounded<$type> = self.$name.convert().assume();
+                    self.$name = (value + delta.round() as i32).convert().assume();
+                )*
+
+            }
+        }
     };
 }
 
@@ -95,4 +148,23 @@ params! {
     aspiration_window_start: Param<640, 200, 800, 1>,
     aspiration_window_alpha: Param<256, 200, 800, 1>,
     aspiration_window_beta: Param<0, 0, 800, 1>,
+}
+
+#[cfg(test)]
+#[cfg(feature = "spsa")]
+mod tests {
+    use super::*;
+    use proptest::sample::size_range;
+    use test_strategy::proptest;
+
+    #[proptest]
+    fn perturbing_params_adjusts_by_at_least_grain(
+        p: Params,
+        #[any(size_range(Params::LEN).lift())] d: Vec<f64>,
+    ) {
+        let (mut l, mut r) = (p, p);
+        l.update(d.iter().copied());
+        r.update(d.iter().map(|&d| -d));
+        assert_eq!(p.perturb(d), (l, r));
+    }
 }

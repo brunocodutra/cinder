@@ -132,7 +132,7 @@ impl Control {
         let focus_alpha = Params::pv_focus_alpha().as_float();
         let focus_beta = Params::pv_focus_beta().as_float();
         let trend_magnitude = Params::score_trend_magnitude().as_float();
-        let trend_pivot = Params::score_trend_pivot().as_float();
+        let trend_pivot = Params::score_trend_pivot().as_float() / Params::value_scale().as_float();
 
         if nodes % 1024 == 0 {
             let time = self.time().as_secs_f64();

@@ -1,7 +1,7 @@
 use crate::chess::{Color, Move, Perspective, Square};
 use crate::nnue::Evaluator;
 use crate::search::{Control, Engine, HashSize, Info, Limits, Options, ThreadCount};
-use crate::util::{Assume, Integer};
+use crate::util::{Assume, Integer, parsers::*};
 use derive_more::with_trait::{Display, Error, From};
 use futures::{prelude::*, select_biased as select, stream::FusedStream};
 use nom::error::Error as ParseError;
@@ -12,10 +12,6 @@ use std::{io::Write, time::Instant};
 
 #[cfg(test)]
 use proptest::{prelude::*, strategy::LazyJust};
-
-mod parser;
-
-pub use parser::*;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 struct UciMove(Move);

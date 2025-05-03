@@ -14,7 +14,7 @@ default-run = "cinder"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [features]
-spsa = ["ron", "serde"]
+spsa = ["rand/thread_rng", "ron", "serde"]
 
 [dependencies]
 anyhow = { version = "1.0.98", default-features = false, features = ["std"] }
@@ -84,6 +84,12 @@ bench = false
 [[bin]]
 name = "cinder"
 path = "bin/cinder.rs"
+bench = false
+
+[[bin]]
+name = "spsa"
+path = "bin/spsa.rs"
+required-features = ["spsa"]
 bench = false
 
 [[bench]]

@@ -1,5 +1,5 @@
 use crate::chess::{Color, Piece, Role, Square};
-use crate::util::Integer;
+use crate::util::{Assume, Integer};
 use byteorder::{LittleEndian, ReadBytesExt};
 use ruzstd::decoding::StreamingDecoder;
 use std::cell::SyncUnsafeCell;
@@ -38,8 +38,8 @@ static NNUE: SyncUnsafeCell<Nnue> = unsafe { MaybeUninit::zeroed().assume_init()
 #[inline(never)]
 unsafe fn init() {
     let encoded = include_bytes!("nnue/nn.zst").as_slice();
-    let decoder = StreamingDecoder::new(encoded).expect("failed to initialize zstd decoder");
-    unsafe { Nnue::load(NNUE.get().as_mut_unchecked(), decoder).expect("failed to load the NNUE") }
+    let decoder = StreamingDecoder::new(encoded).assume();
+    unsafe { Nnue::load(NNUE.get().as_mut_unchecked(), decoder).assume() }
 }
 
 impl Nnue {

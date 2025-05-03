@@ -1,9 +1,36 @@
+use anyhow::Error as Failure;
 use cinder::uci::Uci;
+use clap::Parser;
 use futures::{channel::mpsc::unbounded, executor::block_on, sink::unfold as sink};
 use std::io::{prelude::*, stdin, stdout};
 use std::{future::ready, thread};
 
-fn main() {
+#[derive(Debug, Parser)]
+#[clap(name = "Cinder", version, author)]
+#[clap(help_template = "
+{name} v{version} by {author}
+
+{name} is a strong chess engine written from scratch.
+It is released as free software under the terms of the GNU GPLv3 license.
+For more information, visit https://github.com/brunocodutra/cinder#readme.
+")]
+struct Cli {
+    /// Custom hyper-parameters.
+    #[cfg(feature = "spsa")]
+    #[arg(long)]
+    params: Option<cinder::params::Params>,
+}
+
+fn main() -> Result<(), Failure> {
+    #[allow(unused_variables)]
+    let args = Cli::parse();
+
+    #[cfg(feature = "spsa")]
+    if let Some(params) = args.params {
+        use anyhow::Context;
+        params.init().context("failed to initialize parameters")?;
+    }
+
     let (tx, input) = unbounded();
 
     thread::spawn(move || {
@@ -17,5 +44,6 @@ fn main() {
 
     let mut stdout = stdout().lock();
     let output = sink((), |_, line: String| ready(writeln!(stdout, "{line}")));
-    block_on(Uci::new(input, output).run()).unwrap();
+    block_on(Uci::new(input, output).run())?;
+    Ok(())
 }

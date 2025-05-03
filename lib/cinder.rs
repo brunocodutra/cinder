@@ -18,6 +18,8 @@
 pub mod chess;
 /// Neural network for position evaluation.
 pub mod nnue;
+/// Hyper parameters.
+pub mod params;
 /// Minimax searching algorithm.
 pub mod search;
 /// UCI protocol.

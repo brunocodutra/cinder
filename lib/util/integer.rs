@@ -333,7 +333,7 @@ mod tests {
 
     #[proptest]
     fn integer_can_be_converted_to_another_primitive_with_saturation(i: u16) {
-        assert_eq!(i.saturate::<i8>(), i.min(i8::MAX as _) as _);
-        assert_eq!(i.saturate::<u32>(), i.into());
+        assert_eq!(i.saturate::<i8>(), i.min(i8::MAX as _) as i8);
+        assert_eq!(i.saturate::<u32>(), u32::from(i));
     }
 }

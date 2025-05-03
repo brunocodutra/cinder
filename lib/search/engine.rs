@@ -1,13 +1,13 @@
 use crate::chess::{Move, Position};
 use crate::nnue::{Evaluator, Value};
-use crate::search::*;
 use crate::util::{Assume, Integer};
+use crate::{params::Params, search::*};
 use arrayvec::ArrayVec;
 use derive_more::with_trait::{Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
 use std::task::{Context, Poll};
-use std::{num::Saturating, ops::Range, pin::Pin};
+use std::{ops::Range, pin::Pin};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -69,19 +69,29 @@ impl<'a> Stack<'a> {
                 self.killers[ply.cast::<usize>()].insert(best);
             }
 
-            self.searcher.history.update(pos, best, draft.get());
+            let bonus_alpha: i32 = Params::history_bonus_alpha().as_int();
+            let bonus_beta: i32 = Params::history_bonus_beta().as_int();
+            let bonus_scale: i32 = Params::history_bonus_scale().as_int();
+            let bonus = (draft.cast::<i32>() * bonus_alpha + bonus_beta) / bonus_scale;
+
+            let penalty_alpha: i32 = Params::history_penalty_alpha().as_int();
+            let penalty_beta: i32 = Params::history_penalty_beta().as_int();
+            let penalty_scale: i32 = Params::history_penalty_scale().as_int();
+            let penalty = -(draft.cast::<i32>() * penalty_alpha + penalty_beta) / penalty_scale;
+
+            self.searcher.history.update(pos, best, bonus.saturate());
 
             let counter = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
-            counter.update(pos, best, draft.get());
+            counter.update(pos, best, bonus.saturate());
 
             for &(m, _) in moves.iter().rev() {
                 if m == best {
                     break;
                 } else {
-                    self.searcher.history.update(pos, m, -draft.get());
+                    self.searcher.history.update(pos, m, penalty.saturate());
 
                     let counter = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
-                    counter.update(pos, m, -draft.get());
+                    counter.update(pos, m, penalty.saturate());
                 }
             }
         }
@@ -95,8 +105,10 @@ impl<'a> Stack<'a> {
     fn improving(&mut self, ply: Ply) -> i32 {
         let idx = ply.cast::<usize>();
 
-        (idx >= 2 && self.value[idx] > self.value[idx - 2]) as i32
-            + (idx >= 4 && self.value[idx] > self.value[idx - 4]) as i32
+        let a = (idx >= 2 && self.value[idx] > self.value[idx - 2]) as i32;
+        let b = (idx >= 4 && self.value[idx] > self.value[idx - 4]) as i32;
+
+        a + b
     }
 
     /// The mate distance pruning.
@@ -108,44 +120,95 @@ impl<'a> Stack<'a> {
 
     /// Computes the null move pruning reduction.
     fn nmp(&self, surplus: Score, draft: Depth) -> Option<Depth> {
-        match surplus.get() {
+        let alpha: i32 = Params::null_move_reduction_alpha().as_int();
+        let beta: i32 = Params::null_move_reduction_beta().as_int();
+        let scale: i32 = Params::value_scale().as_int();
+
+        match scale * surplus.cast::<i32>() {
             ..0 => None,
-            s @ 0..20 => Some(draft - (s + 10) / 10 - draft / 4),
-            20.. => Some(draft - 3 - draft / 4),
+            s if s >= 3 * alpha - beta => Some(draft - 3 - draft / 4),
+            s => Some(draft - (s + beta) / alpha - draft / 4),
         }
     }
 
     /// Computes fail-high pruning reduction.
     fn fhp(&self, surplus: Score, draft: Depth) -> Option<Depth> {
-        match surplus.get() {
+        let alpha: i32 = Params::fail_high_reduction_alpha().as_int();
+        let beta: i32 = Params::fail_high_reduction_beta().as_int();
+        let scale: i32 = Params::value_scale().as_int();
+
+        match scale * surplus.cast::<i32>() {
             ..0 => None,
-            s @ 0..360 => Some(draft - (s + 60) / 140),
-            360.. => Some(draft - 3),
+            s if s >= 3 * alpha - beta => Some(draft - 3),
+            s => Some(draft - (s + beta) / alpha),
         }
     }
 
     /// Computes the fail-low pruning reduction.
     fn flp(&self, deficit: Score, draft: Depth) -> Option<Depth> {
-        match deficit.get() {
+        let alpha: i32 = Params::fail_low_reduction_alpha().as_int();
+        let beta: i32 = Params::fail_low_reduction_beta().as_int();
+        let scale: i32 = Params::value_scale().as_int();
+
+        match scale * deficit.cast::<i32>() {
             ..0 => None,
-            s @ 0..900 => Some(draft - (s + 180) / 360),
-            900.. => Some(draft - 3),
+            s if s >= 3 * alpha - beta => Some(draft - 3),
+            s => Some(draft - (s + beta) / alpha),
         }
     }
 
-    /// Computes the late move reduction.
-    fn lmr(&self, draft: Depth, idx: usize) -> Depth {
-        (draft.get().max(1).ilog2() as i16 * idx.max(1).ilog2() as i16 / 2).saturate()
+    /// Computes the singular extension margin.
+    fn singular(&self, draft: Depth) -> i32 {
+        let alpha: i32 = Params::singular_extension_margin_alpha().as_int();
+        let beta: i32 = Params::singular_extension_margin_beta().as_int();
+        let scale: i32 = Params::value_scale().as_int();
+
+        (alpha * draft.cast::<i32>() + beta) / scale
     }
 
     /// Computes the futility margin.
-    fn futility(&self, draft: Depth) -> Value {
-        Value::new(80) * draft + 60
+    fn futility(&self, draft: Depth) -> i32 {
+        let alpha: i32 = Params::futility_margin_alpha().as_int();
+        let beta: i32 = Params::futility_margin_beta().as_int();
+        let scale: i32 = Params::value_scale().as_int();
+
+        (alpha * draft.cast::<i32>() + beta) / scale
     }
 
-    /// Computes the static SEE pruning margin.
-    fn ssp(&self, draft: Depth) -> Value {
-        Value::new(75) * draft
+    /// Computes the futility pruning threshold.
+    fn fpt(&self, draft: Depth) -> i32 {
+        let alpha: i32 = Params::futility_pruning_threshold_alpha().as_int();
+        let scale: i32 = Params::value_scale().as_int();
+
+        alpha * draft.cast::<i32>() / scale
+    }
+
+    /// Computes the SEE pruning threshold.
+    fn spt(&self, draft: Depth) -> i32 {
+        let alpha: i32 = Params::see_pruning_threshold_alpha().as_int();
+        let scale: i32 = Params::value_scale().as_int();
+
+        alpha * draft.cast::<i32>() / scale
+    }
+
+    /// Computes the late move reduction.
+    fn lmr(&self, draft: Depth, idx: usize) -> i32 {
+        let alpha: i32 = Params::late_move_reduction_alpha().as_int();
+        let beta: i32 = Params::late_move_reduction_beta().as_int();
+        let scale: i32 = Params::late_move_reduction_scale().as_int();
+
+        let x = idx.max(1).ilog2() as i32;
+        let y = draft.get().max(1).ilog2() as i32;
+        (x * y * alpha + beta) / scale
+    }
+
+    /// Computes the late move pruning threshold.
+    fn lmp(&self, draft: Depth, idx: usize) -> i32 {
+        let alpha: i32 = Params::late_move_pruning_alpha().as_int();
+        let beta: i32 = Params::late_move_pruning_beta().as_int();
+        let scale: i32 = Params::late_move_pruning_scale().as_int();
+
+        scale * idx.cast::<i32>() / (beta + alpha * draft.cast::<i32>().pow(2))
     }
 
     /// The zero-window alpha-beta search.
@@ -260,6 +323,8 @@ impl<'a> Stack<'a> {
             }
         }
 
+        let value_scale: i16 = Params::value_scale().as_int();
+        let killer_bonus: i16 = Params::killer_move_bonus().as_int();
         let killer = self.killers[ply.cast::<usize>()];
         let mut moves: MovesBuf<_> = pos
             .moves()
@@ -275,7 +340,7 @@ impl<'a> Stack<'a> {
                 let mut rating = pos.gain(m) + history.get(pos, m) + counter.get(pos, m);
 
                 if killer.contains(m) {
-                    rating += 128;
+                    rating += killer_bonus / value_scale;
                 }
 
                 (m, rating)
@@ -290,8 +355,8 @@ impl<'a> Stack<'a> {
                 if let Some(t) = transposition {
                     if t.score().lower(ply) >= beta && t.draft() >= draft - 3 && draft >= 6 {
                         extension = 1;
-                        let s_beta = beta - draft;
                         let s_draft = (draft - 1) / 2;
+                        let s_beta = beta - self.singular(draft);
                         for (m, _) in moves.iter().rev().skip(1) {
                             let mut next = pos.clone();
                             next.play(*m);
@@ -326,15 +391,19 @@ impl<'a> Stack<'a> {
                 s => s.max(alpha),
             };
 
-            if idx as i32 > 1 + draft.cast::<i32>().pow(2) * (1 + improving) / 2 {
+            if self.lmp(draft, idx) > improving {
                 break;
             }
 
-            let lmr = self.lmr(draft, idx) + cut as i8 - is_pv as i8 - improving;
-            let margin = alpha - self.value[ply.cast::<usize>()] - self.futility(draft - lmr);
-            if margin > 0 && !pos.winning(m, margin.saturate()) {
-                break;
-            } else if margin <= 0 && !pos.winning(m, -self.ssp(draft - lmr)) {
+            let lmr = Depth::new(cut as _) + self.lmr(draft, idx) - is_pv as i8 - improving;
+            if self.value[ply.cast::<usize>()] + self.futility(draft - lmr) <= alpha {
+                let threshold = self.fpt(draft - lmr);
+                if !pos.winning(m, Value::new(1) + threshold) {
+                    continue;
+                }
+            }
+
+            if !pos.winning(m, Value::new(1) - self.spt(draft - lmr)) {
                 continue;
             }
 
@@ -392,14 +461,16 @@ impl<'a> Stack<'a> {
                 s => s.max(alpha),
             };
 
-            if idx as i32 > 1 + depth.cast::<i32>().pow(2) / 2 {
+            if self.lmp(depth, idx) > 0 {
                 break;
             }
 
-            let lmr = self.lmr(depth, idx) - 1;
-            let margin = alpha - self.value[0] - self.futility(depth - lmr);
-            if margin > 0 && !self.root.winning(m, margin.saturate()) {
-                break;
+            let lmr = Depth::new(0) + self.lmr(depth, idx);
+            if self.value[0] + self.futility(depth - lmr) <= alpha {
+                let threshold = self.fpt(depth - lmr);
+                if !self.root.winning(m, Value::new(1) + threshold) {
+                    continue;
+                }
             }
 
             let mut next = self.root.clone();
@@ -443,6 +514,11 @@ impl<'a> Stack<'a> {
                 stop = true;
             }
 
+            let value_scale: i32 = Params::value_scale().as_int();
+            let aw_start: i32 = Params::aspiration_window_start().as_int();
+            let aw_alpha: i32 = Params::aspiration_window_alpha().as_int();
+            let aw_beta: i32 = Params::aspiration_window_beta().as_int();
+
             loop {
                 let pv = self.pv.clone().truncate();
                 yield Info::new(depth, self.ctrl.time(), self.ctrl.nodes(), pv);
@@ -452,19 +528,19 @@ impl<'a> Stack<'a> {
 
                 depth += 1;
                 let mut draft = depth;
-                let mut delta = Saturating(5i16);
+                let mut delta = aw_start / value_scale;
                 let (mut lower, mut upper) = match depth.get() {
                     ..=4 => (Score::lower(), Score::upper()),
                     _ => (self.pv.score() - delta, self.pv.score() + delta),
                 };
 
                 loop {
+                    delta = (delta * aw_alpha + aw_beta) / value_scale;
                     let partial = match self.root(&mut moves, lower..upper, draft) {
                         Err(_) => break stop = true,
                         Ok(pv) => pv,
                     };
 
-                    delta *= 2;
                     match partial.score() {
                         score if (-lower..Score::upper()).contains(&-score) => {
                             draft = depth;

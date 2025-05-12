@@ -50,7 +50,7 @@ futures = { version = "0.3.31", default-features = false, features = [
 nom = { version = "8.0.0", default-features = false, features = ["std"] }
 rand = { version = "0.9.1", default-features = false, features = ["small_rng", "std"] }
 ron = { version = "0.10.1", optional = true, default-features = false }
-ruzstd = { version = "0.8.0", default-features = false, features = ["std"] }
+ruzstd = { version = "0.8.1", default-features = false, features = ["std"] }
 serde = { version = "1.0.219", optional = true, default-features = false, features = [
     "derive",
     "std",

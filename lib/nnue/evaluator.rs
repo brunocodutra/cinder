@@ -110,8 +110,8 @@ impl Evaluator {
         if !m.is_quiet() {
             let pieces = Nnue::pieces((self.occupied().len() - 1) / 4);
 
-            if let Some(victim) = self[m.whither()] {
-                gain += pieces[victim.role().cast::<usize>()];
+            if let Some(victim) = self.role_on(m.whither()) {
+                gain += pieces[victim.cast::<usize>()];
             } else if m.is_capture() {
                 gain += pieces[Role::Pawn.cast::<usize>()];
             }
@@ -146,7 +146,7 @@ impl Evaluator {
         let pieces = Nnue::pieces((self.occupied().len() - 1) / 4);
 
         score -= match m.promotion() {
-            None => pieces[self[m.whence()].assume().role().cast::<usize>()] / scale,
+            None => pieces[self.role_on(m.whence()).assume().cast::<usize>()] / scale,
             Some(promotion) => pieces[promotion.cast::<usize>()] / scale,
         };
 

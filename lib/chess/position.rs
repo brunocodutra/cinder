@@ -4,7 +4,7 @@ use arrayvec::{ArrayVec, CapacityError};
 use derive_more::with_trait::{Debug, Display, Error, From};
 use std::fmt::{self, Formatter};
 use std::hash::{Hash, Hasher};
-use std::{num::NonZeroU32, ops::Index, str::FromStr};
+use std::{num::NonZeroU32, str::FromStr};
 
 #[cfg(test)]
 use proptest::{prelude::*, sample::*};
@@ -15,30 +15,30 @@ fn collect_moves<const N: usize>(
     wc: Square,
     wt: Bitboard,
     partition: Bitboard,
-    buffer: &mut ArrayVec<MoveSet, N>,
-) -> Result<(), CapacityError<MoveSet>> {
+    buffer: &mut ArrayVec<MovePack, N>,
+) -> Result<(), CapacityError<MovePack>> {
     let captures = wt & partition;
     let regulars = wt & !partition;
 
     if !captures.is_empty() {
-        buffer.try_push(MoveSet::capture(piece, wc, captures))?;
+        buffer.try_push(MovePack::capture(piece, wc, captures))?;
     }
 
     if !regulars.is_empty() {
-        buffer.try_push(MoveSet::regular(piece, wc, regulars))?;
+        buffer.try_push(MovePack::regular(piece, wc, regulars))?;
     }
 
     Ok(())
 }
 
-struct Evasions;
+enum EvasionGenerator {}
 
-impl Evasions {
+impl EvasionGenerator {
     #[inline(always)]
     fn generate<const N: usize>(
         pos: &Position,
-        buffer: &mut ArrayVec<MoveSet, N>,
-    ) -> Result<(), CapacityError<MoveSet>> {
+        buffer: &mut ArrayVec<MovePack, N>,
+    ) -> Result<(), CapacityError<MovePack>> {
         let turn = pos.turn();
         let ours = pos.material(turn);
         let theirs = pos.material(!turn);
@@ -119,14 +119,14 @@ impl Evasions {
     }
 }
 
-struct Moves;
+enum MoveGenerator {}
 
-impl Moves {
+impl MoveGenerator {
     #[inline(always)]
     fn generate<const N: usize>(
         pos: &Position,
-        buffer: &mut ArrayVec<MoveSet, N>,
-    ) -> Result<(), CapacityError<MoveSet>> {
+        buffer: &mut ArrayVec<MovePack, N>,
+    ) -> Result<(), CapacityError<MovePack>> {
         let turn = pos.turn();
         let ours = pos.material(turn);
         let theirs = pos.material(!turn);
@@ -232,7 +232,10 @@ impl Moves {
     }
 }
 
-/// The current position on the board board.
+/// A buffer with sufficient capacity to hold all moves in any [`Position`].
+pub type Moves<T = ()> = ArrayVec<(Move, T), 255>;
+
+/// The current position on the board.
 ///
 /// This type guarantees that it only holds valid positions.
 #[derive(Debug, Clone, Eq)]
@@ -364,6 +367,24 @@ impl Position {
         self.board.king(side).assume()
     }
 
+    /// The [`Color`] of the piece on the given [`Square`], if any.
+    #[inline(always)]
+    pub fn color_on(&self, sq: Square) -> Option<Color> {
+        self.board.color_on(sq)
+    }
+
+    /// The [`Role`] of the piece on the given [`Square`], if any.
+    #[inline(always)]
+    pub fn role_on(&self, sq: Square) -> Option<Role> {
+        self.board.role_on(sq)
+    }
+
+    /// The [`Piece`] on the given [`Square`], if any.
+    #[inline(always)]
+    pub fn piece_on(&self, sq: Square) -> Option<Piece> {
+        self.board.piece_on(sq)
+    }
+
     /// An iterator over all pieces on the board.
     #[inline(always)]
     pub fn iter(&self) -> impl Iterator<Item = (Piece, Square)> + '_ {
@@ -437,7 +458,7 @@ impl Position {
     /// [checkmate]: https://www.chessprogramming.org/Checkmate
     #[inline(always)]
     pub fn is_checkmate(&self) -> bool {
-        self.is_check() && Evasions::generate(self, &mut ArrayVec::<_, 0>::new()).is_ok()
+        self.is_check() && EvasionGenerator::generate(self, &mut ArrayVec::<_, 0>::new()).is_ok()
     }
 
     /// Whether this position is a [stalemate].
@@ -445,7 +466,7 @@ impl Position {
     /// [stalemate]: https://www.chessprogramming.org/Stalemate
     #[inline(always)]
     pub fn is_stalemate(&self) -> bool {
-        !self.is_check() && Moves::generate(self, &mut ArrayVec::<_, 0>::new()).is_ok()
+        !self.is_check() && MoveGenerator::generate(self, &mut ArrayVec::<_, 0>::new()).is_ok()
     }
 
     /// Whether the game is a draw by [repetition].
@@ -507,13 +528,13 @@ impl Position {
 
     /// An iterator over the legal moves that can be played in this position.
     #[inline(always)]
-    pub fn moves(&self) -> impl Iterator<Item = MoveSet> {
+    pub fn moves(&self) -> impl Iterator<Item = MovePack> {
         let mut moves = ArrayVec::<_, 32>::new();
 
         if self.is_check() {
-            Evasions::generate(self, &mut moves).assume()
+            EvasionGenerator::generate(self, &mut moves).assume()
         } else {
-            Moves::generate(self, &mut moves).assume()
+            MoveGenerator::generate(self, &mut moves).assume()
         }
 
         moves.into_iter()
@@ -536,7 +557,7 @@ impl Position {
             let mut attackers = Bitboard::empty();
             let mut occupied = self.occupied().without(m.whence()).without(sq);
             let mut victim = match m.promotion() {
-                None => self.board.role_on(m.whence()).assume(),
+                None => self.role_on(m.whence()).assume(),
                 Some(r) => r,
             };
 
@@ -565,7 +586,7 @@ impl Position {
                     let bb = candidates & self.board.by_role(role);
                     if let Some(wc) = bb.into_iter().next() {
                         let piece = Piece::new(role, turn);
-                        let moves = MoveSet::capture(piece, wc, sq.bitboard());
+                        let moves = MovePack::capture(piece, wc, sq.bitboard());
                         lva = moves.into_iter().next().map(|m| (m, role));
                         occupied ^= wc.bitboard();
                         break;
@@ -602,8 +623,8 @@ impl Position {
         let turn = self.turn();
         let promotion = m.promotion();
         let (wc, wt) = (m.whence(), m.whither());
-        let role = self.board.role_on(wc).assume();
-        let capture = match self.board.role_on(wt) {
+        let role = self.role_on(wc).assume();
+        let capture = match self.role_on(wt) {
             _ if !m.is_capture() => None,
             Some(r) => Some((r, wt)),
             None => Some((Pawn, Square::new(wt.file(), wc.rank()))),
@@ -753,30 +774,6 @@ impl Position {
     }
 }
 
-/// Retrieves the [`Piece`] at a given [`Square`], if any.
-impl Index<Square> for Position {
-    type Output = Option<Piece>;
-
-    #[inline(always)]
-    fn index(&self, sq: Square) -> &Self::Output {
-        match self.board.piece_on(sq) {
-            Some(Piece::WhitePawn) => &Some(Piece::WhitePawn),
-            Some(Piece::WhiteKnight) => &Some(Piece::WhiteKnight),
-            Some(Piece::WhiteBishop) => &Some(Piece::WhiteBishop),
-            Some(Piece::WhiteRook) => &Some(Piece::WhiteRook),
-            Some(Piece::WhiteQueen) => &Some(Piece::WhiteQueen),
-            Some(Piece::WhiteKing) => &Some(Piece::WhiteKing),
-            Some(Piece::BlackPawn) => &Some(Piece::BlackPawn),
-            Some(Piece::BlackKnight) => &Some(Piece::BlackKnight),
-            Some(Piece::BlackBishop) => &Some(Piece::BlackBishop),
-            Some(Piece::BlackRook) => &Some(Piece::BlackRook),
-            Some(Piece::BlackQueen) => &Some(Piece::BlackQueen),
-            Some(Piece::BlackKing) => &Some(Piece::BlackKing),
-            None => &None,
-        }
-    }
-}
-
 impl Display for Position {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Display::fmt(&self.board, f)
@@ -862,7 +859,7 @@ mod tests {
     #[proptest]
     fn occupied_returns_non_empty_squares(pos: Position) {
         for sq in pos.occupied() {
-            assert_ne!(pos[sq], None);
+            assert_ne!(pos.piece_on(sq), None);
         }
     }
 
@@ -873,7 +870,7 @@ mod tests {
 
     #[proptest]
     fn king_returns_square_occupied_by_a_king(pos: Position, c: Color) {
-        assert_eq!(pos[pos.king(c)], Some(Piece::new(Role::King, c)));
+        assert_eq!(pos.piece_on(pos.king(c)), Some(Piece::new(Role::King, c)));
     }
 
     #[proptest]
@@ -939,7 +936,7 @@ mod tests {
                 pos.moves()
                     .filter(|m| m.whither().contains(sq))
                     .flatten()
-                    .map(|m| (pos.board.role_on(m.whence()), m.promotion()))
+                    .map(|m| (pos.role_on(m.whence()), m.promotion()))
                     .min_by_key(|&(r, p)| (r, Reverse(p)))
             );
 
@@ -985,12 +982,12 @@ mod tests {
         assert_ne!(pos, prev);
         assert_ne!(pos.turn(), prev.turn());
 
-        assert_eq!(pos[m.whence()], None);
+        assert_eq!(pos.piece_on(m.whence()), None);
         assert_eq!(
-            pos[m.whither()],
+            pos.piece_on(m.whither()),
             m.promotion()
                 .map(|r| Piece::new(r, prev.turn()))
-                .or_else(|| prev[m.whence()])
+                .or_else(|| prev.piece_on(m.whence()))
         );
 
         assert_eq!(

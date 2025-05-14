@@ -1,8 +1,7 @@
-use crate::chess::{Move, Position};
+use crate::chess::{Move, Moves, Position};
 use crate::nnue::{Evaluator, Value};
 use crate::util::{Assume, Integer};
 use crate::{params::Params, search::*};
-use arrayvec::ArrayVec;
 use derive_more::with_trait::{Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
@@ -12,12 +11,10 @@ use std::{ops::Range, pin::Pin};
 #[cfg(test)]
 use proptest::prelude::*;
 
-type MovesBuf<T = ()> = ArrayVec<(Move, T), 255>;
-
 /// Indicates the search was interrupted .
 #[derive(Debug, Display, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Error)]
 #[display("the search was interrupted")]
-pub struct Interrupt;
+pub struct Interrupted;
 
 #[derive(Debug)]
 struct Stack<'a> {
@@ -219,7 +216,7 @@ impl<'a> Stack<'a> {
         depth: Depth,
         ply: Ply,
         cut: bool,
-    ) -> Result<Pv<N>, Interrupt> {
+    ) -> Result<Pv<N>, Interrupted> {
         self.ab(pos, beta - 1..beta, depth, ply, cut)
     }
 
@@ -231,7 +228,7 @@ impl<'a> Stack<'a> {
         depth: Depth,
         ply: Ply,
         cut: bool,
-    ) -> Result<Pv<N>, Interrupt> {
+    ) -> Result<Pv<N>, Interrupted> {
         if ply.cast::<usize>() < N && depth > ply && bounds.start + 1 < bounds.end {
             self.pvs(pos, bounds, depth, ply, cut)
         } else {
@@ -247,11 +244,11 @@ impl<'a> Stack<'a> {
         mut depth: Depth,
         ply: Ply,
         mut cut: bool,
-    ) -> Result<Pv<N>, Interrupt> {
+    ) -> Result<Pv<N>, Interrupted> {
         (ply > 0).assume();
         self.nodes.update(1);
         if self.ctrl.check(self.root, &self.pv, ply) == ControlFlow::Abort {
-            return Err(Interrupt);
+            return Err(Interrupted);
         }
 
         let (alpha, beta) = match pos.outcome() {
@@ -326,7 +323,7 @@ impl<'a> Stack<'a> {
         let value_scale: i16 = Params::value_scale().as_int();
         let killer_bonus: i16 = Params::killer_move_bonus().as_int();
         let killer = self.killers[ply.cast::<usize>()];
-        let mut moves: MovesBuf<_> = pos
+        let mut moves: Moves<_> = pos
             .moves()
             .filter(|ms| !quiesce || !ms.is_quiet())
             .flatten()
@@ -431,11 +428,11 @@ impl<'a> Stack<'a> {
         moves: &mut [(Move, Value)],
         bounds: Range<Score>,
         depth: Depth,
-    ) -> Result<Pv, Interrupt> {
+    ) -> Result<Pv, Interrupted> {
         let ply = Ply::new(0);
         let (alpha, beta) = (bounds.start, bounds.end);
         if self.ctrl.check(self.root, &self.pv, ply) != ControlFlow::Continue {
-            return Err(Interrupt);
+            return Err(Interrupted);
         }
 
         for (m, rating) in moves.iter_mut() {
@@ -497,7 +494,7 @@ impl<'a> Stack<'a> {
         gen move {
             let pos = self.root;
             let mut depth = Depth::new(0);
-            let mut moves: MovesBuf<_> = pos.moves().flatten().map(|m| (m, pos.gain(m))).collect();
+            let mut moves: Moves<_> = pos.moves().flatten().map(|m| (m, pos.gain(m))).collect();
             self.value[0] = pos.evaluate();
             self.pv = match moves.iter().max_by_key(|(_, rating)| *rating) {
                 None if !pos.is_check() => Pv::empty(Score::new(0)),
@@ -809,7 +806,7 @@ mod tests {
         let ctrl = Control::new(&pos, Limits::Nodes(0));
         let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
-        assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupt));
+        assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupted));
     }
 
     #[proptest]
@@ -826,7 +823,7 @@ mod tests {
         let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         thread::sleep(Duration::from_millis(1));
-        assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupt));
+        assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupted));
     }
 
     #[proptest]
@@ -843,7 +840,7 @@ mod tests {
         let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         ctrl.abort();
-        assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupt));
+        assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupted));
     }
 
     #[proptest]

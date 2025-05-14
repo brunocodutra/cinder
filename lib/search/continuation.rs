@@ -17,8 +17,8 @@ impl Default for Reply {
 impl Reply {
     #[inline(always)]
     fn graviton(&self, pos: &Position, m: Move) -> &Graviton {
-        let piece = pos[m.whence()].assume().role() as usize;
-        &self.0[piece][m.whither() as usize]
+        let role = pos.role_on(m.whence()).assume() as usize;
+        &self.0[role][m.whither() as usize]
     }
 }
 
@@ -50,8 +50,8 @@ impl Default for Continuation {
 impl Continuation {
     #[inline(always)]
     pub fn reply(&self, pos: &Position, m: Move) -> &Reply {
-        let piece = pos[m.whence()].assume() as usize;
-        let victim = pos[m.whither()].map_or(Role::King, |p| p.role()) as usize;
+        let piece = pos.piece_on(m.whence()).assume() as usize;
+        let victim = pos.role_on(m.whither()).unwrap_or(Role::King) as usize;
         &self.0[piece][m.whither() as usize][victim]
     }
 }

@@ -4,7 +4,7 @@ use arrayvec::{ArrayVec, CapacityError};
 use derive_more::with_trait::{Debug, Display, Error, From};
 use std::fmt::{self, Formatter};
 use std::hash::{Hash, Hasher};
-use std::{num::NonZeroU32, ops::Index, str::FromStr};
+use std::{num::NonZeroU32, str::FromStr};
 
 #[cfg(test)]
 use proptest::{prelude::*, sample::*};
@@ -367,6 +367,24 @@ impl Position {
         self.board.king(side).assume()
     }
 
+    /// The [`Color`] of the piece on the given [`Square`], if any.
+    #[inline(always)]
+    pub fn color_on(&self, sq: Square) -> Option<Color> {
+        self.board.color_on(sq)
+    }
+
+    /// The [`Role`] of the piece on the given [`Square`], if any.
+    #[inline(always)]
+    pub fn role_on(&self, sq: Square) -> Option<Role> {
+        self.board.role_on(sq)
+    }
+
+    /// The [`Piece`] on the given [`Square`], if any.
+    #[inline(always)]
+    pub fn piece_on(&self, sq: Square) -> Option<Piece> {
+        self.board.piece_on(sq)
+    }
+
     /// An iterator over all pieces on the board.
     #[inline(always)]
     pub fn iter(&self) -> impl Iterator<Item = (Piece, Square)> + '_ {
@@ -539,7 +557,7 @@ impl Position {
             let mut attackers = Bitboard::empty();
             let mut occupied = self.occupied().without(m.whence()).without(sq);
             let mut victim = match m.promotion() {
-                None => self.board.role_on(m.whence()).assume(),
+                None => self.role_on(m.whence()).assume(),
                 Some(r) => r,
             };
 
@@ -605,8 +623,8 @@ impl Position {
         let turn = self.turn();
         let promotion = m.promotion();
         let (wc, wt) = (m.whence(), m.whither());
-        let role = self.board.role_on(wc).assume();
-        let capture = match self.board.role_on(wt) {
+        let role = self.role_on(wc).assume();
+        let capture = match self.role_on(wt) {
             _ if !m.is_capture() => None,
             Some(r) => Some((r, wt)),
             None => Some((Pawn, Square::new(wt.file(), wc.rank()))),
@@ -756,30 +774,6 @@ impl Position {
     }
 }
 
-/// Retrieves the [`Piece`] at a given [`Square`], if any.
-impl Index<Square> for Position {
-    type Output = Option<Piece>;
-
-    #[inline(always)]
-    fn index(&self, sq: Square) -> &Self::Output {
-        match self.board.piece_on(sq) {
-            Some(Piece::WhitePawn) => &Some(Piece::WhitePawn),
-            Some(Piece::WhiteKnight) => &Some(Piece::WhiteKnight),
-            Some(Piece::WhiteBishop) => &Some(Piece::WhiteBishop),
-            Some(Piece::WhiteRook) => &Some(Piece::WhiteRook),
-            Some(Piece::WhiteQueen) => &Some(Piece::WhiteQueen),
-            Some(Piece::WhiteKing) => &Some(Piece::WhiteKing),
-            Some(Piece::BlackPawn) => &Some(Piece::BlackPawn),
-            Some(Piece::BlackKnight) => &Some(Piece::BlackKnight),
-            Some(Piece::BlackBishop) => &Some(Piece::BlackBishop),
-            Some(Piece::BlackRook) => &Some(Piece::BlackRook),
-            Some(Piece::BlackQueen) => &Some(Piece::BlackQueen),
-            Some(Piece::BlackKing) => &Some(Piece::BlackKing),
-            None => &None,
-        }
-    }
-}
-
 impl Display for Position {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Display::fmt(&self.board, f)
@@ -865,7 +859,7 @@ mod tests {
     #[proptest]
     fn occupied_returns_non_empty_squares(pos: Position) {
         for sq in pos.occupied() {
-            assert_ne!(pos[sq], None);
+            assert_ne!(pos.piece_on(sq), None);
         }
     }
 
@@ -876,7 +870,7 @@ mod tests {
 
     #[proptest]
     fn king_returns_square_occupied_by_a_king(pos: Position, c: Color) {
-        assert_eq!(pos[pos.king(c)], Some(Piece::new(Role::King, c)));
+        assert_eq!(pos.piece_on(pos.king(c)), Some(Piece::new(Role::King, c)));
     }
 
     #[proptest]
@@ -942,7 +936,7 @@ mod tests {
                 pos.moves()
                     .filter(|m| m.whither().contains(sq))
                     .flatten()
-                    .map(|m| (pos.board.role_on(m.whence()), m.promotion()))
+                    .map(|m| (pos.role_on(m.whence()), m.promotion()))
                     .min_by_key(|&(r, p)| (r, Reverse(p)))
             );
 
@@ -988,12 +982,12 @@ mod tests {
         assert_ne!(pos, prev);
         assert_ne!(pos.turn(), prev.turn());
 
-        assert_eq!(pos[m.whence()], None);
+        assert_eq!(pos.piece_on(m.whence()), None);
         assert_eq!(
-            pos[m.whither()],
+            pos.piece_on(m.whither()),
             m.promotion()
                 .map(|r| Piece::new(r, prev.turn()))
-                .or_else(|| prev[m.whence()])
+                .or_else(|| prev.piece_on(m.whence()))
         );
 
         assert_eq!(

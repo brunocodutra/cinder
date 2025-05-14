@@ -15,30 +15,30 @@ fn collect_moves<const N: usize>(
     wc: Square,
     wt: Bitboard,
     partition: Bitboard,
-    buffer: &mut ArrayVec<MoveSet, N>,
-) -> Result<(), CapacityError<MoveSet>> {
+    buffer: &mut ArrayVec<MovePack, N>,
+) -> Result<(), CapacityError<MovePack>> {
     let captures = wt & partition;
     let regulars = wt & !partition;
 
     if !captures.is_empty() {
-        buffer.try_push(MoveSet::capture(piece, wc, captures))?;
+        buffer.try_push(MovePack::capture(piece, wc, captures))?;
     }
 
     if !regulars.is_empty() {
-        buffer.try_push(MoveSet::regular(piece, wc, regulars))?;
+        buffer.try_push(MovePack::regular(piece, wc, regulars))?;
     }
 
     Ok(())
 }
 
-struct Evasions;
+enum EvasionGenerator {}
 
-impl Evasions {
+impl EvasionGenerator {
     #[inline(always)]
     fn generate<const N: usize>(
         pos: &Position,
-        buffer: &mut ArrayVec<MoveSet, N>,
-    ) -> Result<(), CapacityError<MoveSet>> {
+        buffer: &mut ArrayVec<MovePack, N>,
+    ) -> Result<(), CapacityError<MovePack>> {
         let turn = pos.turn();
         let ours = pos.material(turn);
         let theirs = pos.material(!turn);
@@ -119,14 +119,14 @@ impl Evasions {
     }
 }
 
-struct Moves;
+enum MoveGenerator {}
 
-impl Moves {
+impl MoveGenerator {
     #[inline(always)]
     fn generate<const N: usize>(
         pos: &Position,
-        buffer: &mut ArrayVec<MoveSet, N>,
-    ) -> Result<(), CapacityError<MoveSet>> {
+        buffer: &mut ArrayVec<MovePack, N>,
+    ) -> Result<(), CapacityError<MovePack>> {
         let turn = pos.turn();
         let ours = pos.material(turn);
         let theirs = pos.material(!turn);
@@ -232,7 +232,10 @@ impl Moves {
     }
 }
 
-/// The current position on the board board.
+/// A buffer with sufficient capacity to hold all moves in any [`Position`].
+pub type Moves<T = ()> = ArrayVec<(Move, T), 255>;
+
+/// The current position on the board.
 ///
 /// This type guarantees that it only holds valid positions.
 #[derive(Debug, Clone, Eq)]
@@ -437,7 +440,7 @@ impl Position {
     /// [checkmate]: https://www.chessprogramming.org/Checkmate
     #[inline(always)]
     pub fn is_checkmate(&self) -> bool {
-        self.is_check() && Evasions::generate(self, &mut ArrayVec::<_, 0>::new()).is_ok()
+        self.is_check() && EvasionGenerator::generate(self, &mut ArrayVec::<_, 0>::new()).is_ok()
     }
 
     /// Whether this position is a [stalemate].
@@ -445,7 +448,7 @@ impl Position {
     /// [stalemate]: https://www.chessprogramming.org/Stalemate
     #[inline(always)]
     pub fn is_stalemate(&self) -> bool {
-        !self.is_check() && Moves::generate(self, &mut ArrayVec::<_, 0>::new()).is_ok()
+        !self.is_check() && MoveGenerator::generate(self, &mut ArrayVec::<_, 0>::new()).is_ok()
     }
 
     /// Whether the game is a draw by [repetition].
@@ -507,13 +510,13 @@ impl Position {
 
     /// An iterator over the legal moves that can be played in this position.
     #[inline(always)]
-    pub fn moves(&self) -> impl Iterator<Item = MoveSet> {
+    pub fn moves(&self) -> impl Iterator<Item = MovePack> {
         let mut moves = ArrayVec::<_, 32>::new();
 
         if self.is_check() {
-            Evasions::generate(self, &mut moves).assume()
+            EvasionGenerator::generate(self, &mut moves).assume()
         } else {
-            Moves::generate(self, &mut moves).assume()
+            MoveGenerator::generate(self, &mut moves).assume()
         }
 
         moves.into_iter()
@@ -565,7 +568,7 @@ impl Position {
                     let bb = candidates & self.board.by_role(role);
                     if let Some(wc) = bb.into_iter().next() {
                         let piece = Piece::new(role, turn);
-                        let moves = MoveSet::capture(piece, wc, sq.bitboard());
+                        let moves = MovePack::capture(piece, wc, sq.bitboard());
                         lva = moves.into_iter().next().map(|m| (m, role));
                         occupied ^= wc.bitboard();
                         break;

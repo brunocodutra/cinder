@@ -209,7 +209,7 @@ mod tests {
     #[proptest]
     fn play_updates_evaluator(
         #[filter(#e.outcome().is_none())] mut e: Evaluator,
-        #[map(|sq: Selector| sq.select(#e.moves().flatten()))] m: Move,
+        #[map(|sq: Selector| sq.select(#e.moves().unpack()))] m: Move,
     ) {
         let mut pos = e.pos.clone();
         e.play(m);
@@ -308,7 +308,7 @@ mod tests {
     ) {
         let (fen, uci, value) = entry;
         let e: Evaluator = fen.parse()?;
-        let m = e.moves().flatten().find(|m| m.to_string() == uci).unwrap();
+        let m = e.moves().unpack().find(|m| m.to_string() == uci).unwrap();
         assert_eq!(e.see(m, Value::lower()..Value::upper()), value);
 
         assert!(e.winning(m, Value::new(value)));

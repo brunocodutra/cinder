@@ -1,7 +1,7 @@
 use crate::util::{Assume, Integer};
 use crate::{chess::*, search::Depth};
-use arrayvec::{ArrayVec, CapacityError};
-use derive_more::with_trait::{Debug, Display, Error, From};
+use arrayvec::ArrayVec;
+use derive_more::with_trait::{Debug, Deref, DerefMut, Display, Error, From, IntoIterator};
 use std::fmt::{self, Formatter};
 use std::hash::{Hash, Hasher};
 use std::{num::NonZeroU32, str::FromStr};
@@ -9,36 +9,109 @@ use std::{num::NonZeroU32, str::FromStr};
 #[cfg(test)]
 use proptest::{prelude::*, sample::*};
 
-#[inline(always)]
-fn collect_moves<const N: usize>(
-    piece: Piece,
-    wc: Square,
-    wt: Bitboard,
-    partition: Bitboard,
-    buffer: &mut ArrayVec<MovePack, N>,
-) -> Result<(), CapacityError<MovePack>> {
-    let captures = wt & partition;
-    let regulars = wt & !partition;
+/// A buffer with sufficient capacity to hold all [`Move`]s in any [`Position`].
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Deref, DerefMut, IntoIterator)]
+pub struct Moves<T>(
+    #[deref(forward)]
+    #[deref_mut(forward)]
+    #[into_iterator(owned, ref, ref_mut)]
+    ArrayVec<(Move, T), 254>,
+);
 
-    if !captures.is_empty() {
-        buffer.try_push(MovePack::capture(piece, wc, captures))?;
+impl<T> Default for Moves<T> {
+    #[inline(always)]
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl<T> FromIterator<(Move, T)> for Moves<T> {
+    #[inline(always)]
+    fn from_iter<I: IntoIterator<Item = (Move, T)>>(iter: I) -> Self {
+        Moves(FromIterator::from_iter(iter))
+    }
+}
+
+/// A buffer with sufficient capacity to hold all [`MovePack`]s in any [`Position`] .
+#[derive(Debug, Default, Clone, Eq, PartialEq, Hash, Deref, DerefMut, IntoIterator)]
+pub struct PackedMoves(ArrayVec<MovePack, 32>);
+
+impl PackedMoves {
+    #[inline(always)]
+    pub fn unpack(&self) -> impl Iterator<Item = Move> {
+        self.unpack_if(|_| true)
     }
 
-    if !regulars.is_empty() {
-        buffer.try_push(MovePack::regular(piece, wc, regulars))?;
+    #[inline(always)]
+    pub fn unpack_if<F: FnMut(&MovePack) -> bool>(&self, f: F) -> impl Iterator<Item = Move> {
+        self.iter().copied().filter(f).flatten()
     }
+}
 
-    Ok(())
+/// The [`MovePacker`] is out of capacity.
+#[derive(Debug, Display, Clone, Eq, PartialEq, Error, From)]
+struct CapacityError;
+
+trait MovePacker {
+    fn pack(
+        &mut self,
+        piece: Piece,
+        wc: Square,
+        wt: Bitboard,
+        victims: Bitboard,
+    ) -> Result<(), CapacityError>;
+}
+
+struct NoCapacityMovePacker;
+
+impl MovePacker for NoCapacityMovePacker {
+    #[inline(always)]
+    fn pack(
+        &mut self,
+        _: Piece,
+        _: Square,
+        wt: Bitboard,
+        _: Bitboard,
+    ) -> Result<(), CapacityError> {
+        if wt == Bitboard::empty() {
+            Ok(())
+        } else {
+            Err(CapacityError)
+        }
+    }
+}
+
+impl MovePacker for PackedMoves {
+    #[inline(always)]
+    fn pack(
+        &mut self,
+        piece: Piece,
+        wc: Square,
+        wt: Bitboard,
+        victims: Bitboard,
+    ) -> Result<(), CapacityError> {
+        let captures = wt & victims;
+        let regulars = wt & !victims;
+
+        if !captures.is_empty() {
+            let captures = MovePack::capture(piece, wc, captures);
+            self.0.try_push(captures).assume();
+        }
+
+        if !regulars.is_empty() {
+            let regulars = MovePack::regular(piece, wc, regulars);
+            self.0.try_push(regulars).assume();
+        }
+
+        Ok(())
+    }
 }
 
 enum EvasionGenerator {}
 
 impl EvasionGenerator {
     #[inline(always)]
-    fn generate<const N: usize>(
-        pos: &Position,
-        buffer: &mut ArrayVec<MovePack, N>,
-    ) -> Result<(), CapacityError<MovePack>> {
+    fn generate<T: MovePacker>(pos: &Position, packer: &mut T) -> Result<(), CapacityError> {
         let turn = pos.turn();
         let ours = pos.material(turn);
         let theirs = pos.material(!turn);
@@ -68,14 +141,14 @@ impl EvasionGenerator {
                 }
             }
 
-            collect_moves(piece, wc, moves, theirs | ep, buffer)?;
+            packer.pack(piece, wc, moves, theirs | ep)?;
         }
 
         {
             let piece = Piece::new(Role::Knight, turn);
             for wc in candidates & pos.board.by_role(Role::Knight) {
                 let moves = piece.moves(wc, ours, theirs) & (checks | pos.checkers());
-                collect_moves(piece, wc, moves, theirs, buffer)?;
+                packer.pack(piece, wc, moves, theirs)?;
             }
         }
 
@@ -83,7 +156,7 @@ impl EvasionGenerator {
             let piece = Piece::new(Role::Bishop, turn);
             for wc in candidates & pos.board.by_role(Role::Bishop) {
                 let moves = piece.moves(wc, ours, theirs) & (checks | pos.checkers());
-                collect_moves(piece, wc, moves, theirs, buffer)?;
+                packer.pack(piece, wc, moves, theirs)?;
             }
         }
 
@@ -91,7 +164,7 @@ impl EvasionGenerator {
             let piece = Piece::new(Role::Rook, turn);
             for wc in candidates & pos.board.by_role(Role::Rook) {
                 let moves = piece.moves(wc, ours, theirs) & (checks | pos.checkers());
-                collect_moves(piece, wc, moves, theirs, buffer)?;
+                packer.pack(piece, wc, moves, theirs)?;
             }
         }
 
@@ -99,7 +172,7 @@ impl EvasionGenerator {
             let piece = Piece::new(Role::Queen, turn);
             for wc in candidates & pos.board.by_role(Role::Queen) {
                 let moves = piece.moves(wc, ours, theirs) & (checks | pos.checkers());
-                collect_moves(piece, wc, moves, theirs, buffer)?;
+                packer.pack(piece, wc, moves, theirs)?;
             }
         }
 
@@ -112,7 +185,7 @@ impl EvasionGenerator {
                 }
             }
 
-            collect_moves(piece, king, moves, theirs, buffer)?;
+            packer.pack(piece, king, moves, theirs)?;
         }
 
         Ok(())
@@ -123,10 +196,7 @@ enum MoveGenerator {}
 
 impl MoveGenerator {
     #[inline(always)]
-    fn generate<const N: usize>(
-        pos: &Position,
-        buffer: &mut ArrayVec<MovePack, N>,
-    ) -> Result<(), CapacityError<MovePack>> {
+    fn generate<T: MovePacker>(pos: &Position, packer: &mut T) -> Result<(), CapacityError> {
         let turn = pos.turn();
         let ours = pos.material(turn);
         let theirs = pos.material(!turn);
@@ -150,14 +220,14 @@ impl MoveGenerator {
                 }
             }
 
-            collect_moves(piece, wc, moves, theirs | ep, buffer)?;
+            packer.pack(piece, wc, moves, theirs | ep)?;
         }
 
         {
             let piece = Piece::new(Role::Knight, turn);
             for wc in ours & pos.board.by_role(Role::Knight) & !pos.pinned() {
                 let moves = piece.moves(wc, ours, theirs);
-                collect_moves(piece, wc, moves, theirs, buffer)?;
+                packer.pack(piece, wc, moves, theirs)?;
             }
         }
 
@@ -169,7 +239,7 @@ impl MoveGenerator {
                     moves &= Bitboard::line(king, wc);
                 }
 
-                collect_moves(piece, wc, moves, theirs, buffer)?;
+                packer.pack(piece, wc, moves, theirs)?;
             }
         }
 
@@ -181,7 +251,7 @@ impl MoveGenerator {
                     moves &= Bitboard::line(king, wc);
                 }
 
-                collect_moves(piece, wc, moves, theirs, buffer)?;
+                packer.pack(piece, wc, moves, theirs)?;
             }
         }
 
@@ -193,7 +263,7 @@ impl MoveGenerator {
                     moves &= Bitboard::line(king, wc);
                 }
 
-                collect_moves(piece, wc, moves, theirs, buffer)?;
+                packer.pack(piece, wc, moves, theirs)?;
             }
         }
 
@@ -225,15 +295,12 @@ impl MoveGenerator {
                 }
             }
 
-            collect_moves(piece, king, moves, theirs, buffer)?;
+            packer.pack(piece, king, moves, theirs)?;
         }
 
         Ok(())
     }
 }
-
-/// A buffer with sufficient capacity to hold all moves in any [`Position`].
-pub type Moves<T = ()> = ArrayVec<(Move, T), 255>;
 
 /// The current position on the board.
 ///
@@ -260,7 +327,7 @@ impl Arbitrary for Position {
 
                 for _ in 0..moves {
                     if pos.outcome().is_none() {
-                        pos.play(selector.select(pos.moves().flatten()));
+                        pos.play(selector.select(pos.moves().unpack()));
                     } else {
                         break;
                     }
@@ -458,7 +525,7 @@ impl Position {
     /// [checkmate]: https://www.chessprogramming.org/Checkmate
     #[inline(always)]
     pub fn is_checkmate(&self) -> bool {
-        self.is_check() && EvasionGenerator::generate(self, &mut ArrayVec::<_, 0>::new()).is_ok()
+        self.is_check() && EvasionGenerator::generate(self, &mut NoCapacityMovePacker).is_ok()
     }
 
     /// Whether this position is a [stalemate].
@@ -466,7 +533,7 @@ impl Position {
     /// [stalemate]: https://www.chessprogramming.org/Stalemate
     #[inline(always)]
     pub fn is_stalemate(&self) -> bool {
-        !self.is_check() && MoveGenerator::generate(self, &mut ArrayVec::<_, 0>::new()).is_ok()
+        !self.is_check() && MoveGenerator::generate(self, &mut NoCapacityMovePacker).is_ok()
     }
 
     /// Whether the game is a draw by [repetition].
@@ -528,8 +595,8 @@ impl Position {
 
     /// An iterator over the legal moves that can be played in this position.
     #[inline(always)]
-    pub fn moves(&self) -> impl Iterator<Item = MovePack> {
-        let mut moves = ArrayVec::<_, 32>::new();
+    pub fn moves(&self) -> PackedMoves {
+        let mut moves = PackedMoves::default();
 
         if self.is_check() {
             EvasionGenerator::generate(self, &mut moves).assume()
@@ -537,7 +604,7 @@ impl Position {
             MoveGenerator::generate(self, &mut moves).assume()
         }
 
-        moves.into_iter()
+        moves
     }
 
     /// The sequence of captures om a square starting from a move ordered by least valued captor.
@@ -616,7 +683,7 @@ impl Position {
     /// Play a [`Move`].
     #[inline(always)]
     pub fn play(&mut self, m: Move) -> (Role, Option<(Role, Square)>) {
-        debug_assert!(self.moves().flatten().any(|n| m == n));
+        debug_assert!(self.moves().unpack().any(|n| m == n));
 
         use {Role::*, Square::*};
 
@@ -760,10 +827,10 @@ impl Position {
     pub fn perft(&self, depth: Depth) -> usize {
         match depth.get() {
             0 => 1,
-            1 => self.moves().map(|ms| ms.iter().len()).sum(),
+            1 => self.moves().into_iter().map(|ms| ms.iter().len()).sum(),
             _ => self
                 .moves()
-                .flatten()
+                .unpack()
                 .map(|m| {
                     let mut next = self.clone();
                     next.play(m);
@@ -912,7 +979,7 @@ mod tests {
     fn moves_returns_legal_moves_from_this_position(
         #[filter(#pos.outcome().is_none())] pos: Position,
     ) {
-        for m in pos.moves().flatten() {
+        for m in pos.moves().unpack() {
             pos.clone().play(m);
         }
     }
@@ -920,7 +987,7 @@ mod tests {
     #[proptest]
     fn exchanges_iterator_is_sorted_by_captor_of_least_value(
         #[filter(#pos.outcome().is_none())] pos: Position,
-        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
+        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
     ) {
         let sq = m.whither();
         let exchanges = pos.exchanges(m);
@@ -934,8 +1001,7 @@ mod tests {
             assert_eq!(
                 Some((Some(captor), m.promotion())),
                 pos.moves()
-                    .filter(|m| m.whither().contains(sq))
-                    .flatten()
+                    .unpack_if(|m| m.whither().contains(sq))
                     .map(|m| (pos.role_on(m.whence()), m.promotion()))
                     .min_by_key(|&(r, p)| (r, Reverse(p)))
             );
@@ -946,8 +1012,8 @@ mod tests {
 
     #[proptest]
     fn captures_reduce_material(
-        #[filter(#pos.moves().any(|ms| ms.is_capture()))] mut pos: Position,
-        #[map(|s: Selector| s.select(#pos.moves().filter(|ms| ms.is_capture()).flatten()))] m: Move,
+        #[filter(#pos.moves().unpack().any(|m| m.is_capture()))] mut pos: Position,
+        #[map(|s: Selector| s.select(#pos.moves().unpack_if(|ms| ms.is_capture())))] m: Move,
     ) {
         let prev = pos.clone();
         pos.play(m);
@@ -956,9 +1022,8 @@ mod tests {
 
     #[proptest]
     fn promotions_exchange_pawns(
-        #[filter(#pos.moves().any(|ms| ms.is_promotion()))] mut pos: Position,
-        #[map(|s: Selector| s.select(#pos.moves().filter(|ms| ms.is_promotion()).flatten()))]
-        m: Move,
+        #[filter(#pos.moves().unpack().any(|m| m.is_promotion()))] mut pos: Position,
+        #[map(|s: Selector| s.select(#pos.moves().unpack_if(|ms| ms.is_promotion())))] m: Move,
     ) {
         let prev = pos.clone();
         pos.play(m);
@@ -974,7 +1039,7 @@ mod tests {
     #[proptest]
     fn legal_move_updates_position(
         #[filter(#pos.outcome().is_none())] mut pos: Position,
-        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
+        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
     ) {
         let prev = pos.clone();
         pos.play(m);
@@ -1030,7 +1095,7 @@ mod tests {
     #[should_panic]
     fn play_panics_if_move_illegal(
         mut pos: Position,
-        #[filter(!#pos.moves().flatten().any(|m| #m == m))] m: Move,
+        #[filter(!#pos.moves().unpack().any(|m| #m == m))] m: Move,
     ) {
         pos.play(m);
     }

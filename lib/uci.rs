@@ -168,8 +168,10 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                     for s in moves.split_ascii_whitespace() {
                         let take2 = take::<_, _, ParseError<&str>>(2usize);
                         let (_, whence) = take2.map_res(Square::from_str).parse(s).finish()?;
-                        let moves = pos.moves().filter(|ms| ms.whence() == whence);
-                        let Some(m) = moves.flatten().find(|m| UciMove(*m) == *s) else {
+
+                        let moves = pos.moves();
+                        let mut moves_iter = moves.unpack_if(|ms| ms.whence() == whence);
+                        let Some(m) = moves_iter.find(|m| UciMove(*m) == *s) else {
                             return Err(UciError::ParseError);
                         };
 
@@ -412,7 +414,7 @@ mod tests {
         input.push_str("position startpos moves");
 
         for _ in 0..n {
-            let m = selector.select(pos.moves().flatten());
+            let m = selector.select(pos.moves().unpack());
             input.push(' ');
             input.push_str(&m.to_string());
             pos.play(m);
@@ -449,7 +451,7 @@ mod tests {
 
         for _ in 0..n {
             prop_assume!(pos.outcome().is_none());
-            let m = selector.select(pos.moves().flatten());
+            let m = selector.select(pos.moves().unpack());
             input.push(' ');
             input.push_str(&m.to_string());
             pos.play(m);
@@ -485,7 +487,7 @@ mod tests {
 
     #[proptest]
     fn handles_position_with_illegal_move(
-        #[filter(!Position::default().moves().flatten().any(|m| UciMove(m) == *#_m.to_string()))]
+        #[filter(!Position::default().moves().unpack().any(|m| UciMove(m) == *#_m.to_string()))]
         _m: Move,
         #[any(StaticStream::new([format!("position startpos moves {}", #_m)]))] mut uci: MockUci,
     ) {
@@ -592,7 +594,7 @@ mod tests {
     #[proptest]
     fn handles_go_with_no_move(
         #[by_ref]
-        #[filter(#uci.position.moves().next().is_none())]
+        #[filter(#uci.position.moves().is_empty())]
         #[any(StaticStream::new(["go"]))]
         mut uci: MockUci,
     ) {

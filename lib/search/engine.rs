@@ -53,7 +53,7 @@ impl<'a> Stack<'a> {
     fn record(
         &mut self,
         pos: &Position,
-        moves: &[(Move, Value)],
+        moves: &Moves<Value>,
         bounds: Range<Score>,
         depth: Depth,
         ply: Ply,
@@ -325,8 +325,7 @@ impl<'a> Stack<'a> {
         let killer = self.killers[ply.cast::<usize>()];
         let mut moves: Moves<_> = pos
             .moves()
-            .filter(|ms| !quiesce || !ms.is_quiet())
-            .flatten()
+            .unpack_if(|ms| !quiesce || !ms.is_quiet())
             .map(|m| {
                 if Some(m) == transposed.head() {
                     return (m, Value::upper());
@@ -425,7 +424,7 @@ impl<'a> Stack<'a> {
     /// The root of the principal variation search.
     fn root(
         &mut self,
-        moves: &mut [(Move, Value)],
+        moves: &mut Moves<Value>,
         bounds: Range<Score>,
         depth: Depth,
     ) -> Result<Pv, Interrupted> {
@@ -494,7 +493,7 @@ impl<'a> Stack<'a> {
         gen move {
             let pos = self.root;
             let mut depth = Depth::new(0);
-            let mut moves: Moves<_> = pos.moves().flatten().map(|m| (m, pos.gain(m))).collect();
+            let mut moves: Moves<_> = pos.moves().unpack().map(|m| (m, pos.gain(m))).collect();
             self.value[0] = pos.evaluate();
             self.pv = match moves.iter().max_by_key(|(_, rating)| *rating) {
                 None if !pos.is_check() => Pv::empty(Score::new(0)),
@@ -715,7 +714,7 @@ mod tests {
         #[filter(#e.tt.capacity() > 0)]
         e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
+        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
@@ -737,7 +736,7 @@ mod tests {
         #[filter(#e.tt.capacity() > 0)]
         e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
+        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
@@ -759,7 +758,7 @@ mod tests {
         #[filter(#e.tt.capacity() > 0)]
         e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
+        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
@@ -779,7 +778,7 @@ mod tests {
     fn ab_returns_static_evaluation_if_max_ply(
         e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
+        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         d: Depth,
         cut: bool,
     ) {
@@ -797,7 +796,7 @@ mod tests {
     fn ab_aborts_if_maximum_number_of_nodes_visited(
         e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
+        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
@@ -813,7 +812,7 @@ mod tests {
     fn ab_aborts_if_time_is_up(
         e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
+        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
@@ -830,7 +829,7 @@ mod tests {
     fn ab_can_be_aborted_upon_request(
         e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves().flatten()))] m: Move,
+        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         #[filter(#p > 0)] p: Ply,

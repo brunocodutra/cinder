@@ -1,4 +1,4 @@
-use crate::chess::{Move, Position, Role};
+use crate::chess::{Move, Position};
 use crate::search::{Graviton, Stat, Statistics};
 use crate::util::Assume;
 use derive_more::with_trait::Debug;
@@ -38,7 +38,7 @@ impl Statistics for Reply {
 
 #[derive(Debug)]
 #[debug("Continuation")]
-pub struct Continuation([[[Reply; 6]; 64]; 12]);
+pub struct Continuation([[[Reply; 64]; 2]; 12]);
 
 impl Default for Continuation {
     #[inline(always)]
@@ -51,7 +51,6 @@ impl Continuation {
     #[inline(always)]
     pub fn reply(&self, pos: &Position, m: Move) -> &Reply {
         let piece = pos.piece_on(m.whence()).assume() as usize;
-        let victim = pos.role_on(m.whither()).unwrap_or(Role::King) as usize;
-        &self.0[piece][m.whither() as usize][victim]
+        &self.0[piece][m.is_quiet() as usize][m.whither() as usize]
     }
 }

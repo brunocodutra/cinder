@@ -21,7 +21,7 @@ impl History {
     #[inline(always)]
     fn graviton(&self, pos: &Position, m: Move) -> &Graviton {
         let (wc, wt) = (m.whence() as usize, m.whither() as usize);
-        &self.0[pos.turn() as usize][m.is_capture() as usize][wc][wt]
+        &self.0[pos.turn() as usize][m.is_quiet() as usize][wc][wt]
     }
 }
 

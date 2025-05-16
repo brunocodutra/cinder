@@ -389,18 +389,15 @@ impl<'a> Stack<'a> {
 
             if self.lmp(draft, idx) > improving {
                 break;
+            } else if !pos.winning(m, Value::new(1) - self.spt(draft)) {
+                continue;
             }
 
             let lmr = Depth::new(cut as _) + self.lmr(draft, idx) - is_pv as i8 - improving;
             if self.value[ply.cast::<usize>()] + self.futility(draft - lmr) <= alpha {
-                let threshold = self.fpt(draft - lmr);
-                if !pos.winning(m, Value::new(1) + threshold) {
+                if !pos.winning(m, Value::new(1) + self.fpt(draft - lmr)) {
                     continue;
                 }
-            }
-
-            if !pos.winning(m, Value::new(1) - self.spt(draft - lmr)) {
-                continue;
             }
 
             let mut next = pos.clone();
@@ -463,8 +460,7 @@ impl<'a> Stack<'a> {
 
             let lmr = Depth::new(0) + self.lmr(depth, idx);
             if self.value[0] + self.futility(depth - lmr) <= alpha {
-                let threshold = self.fpt(depth - lmr);
-                if !self.root.winning(m, Value::new(1) + threshold) {
+                if !self.root.winning(m, Value::new(1) + self.fpt(depth - lmr)) {
                     continue;
                 }
             }

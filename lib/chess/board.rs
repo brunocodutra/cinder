@@ -59,13 +59,13 @@ impl Default for Board {
 }
 
 impl Board {
-    /// [`Square`]s occupied by a [`Color`].
+    /// [`Square`]s occupied by pieces of a [`Color`].
     #[inline(always)]
-    pub fn by_color(&self, c: Color) -> Bitboard {
+    pub fn material(&self, c: Color) -> Bitboard {
         self.colors[c as usize]
     }
 
-    /// [`Square`]s occupied by a [`Role`].
+    /// [`Square`]s occupied by pieces of a [`Role`].
     #[inline(always)]
     pub fn by_role(&self, r: Role) -> Bitboard {
         self.roles[r as usize]
@@ -74,7 +74,7 @@ impl Board {
     /// [`Square`]s occupied by a [`Piece`].
     #[inline(always)]
     pub fn by_piece(&self, p: Piece) -> Bitboard {
-        self.by_color(p.color()) & self.by_role(p.role())
+        self.material(p.color()) & self.by_role(p.role())
     }
 
     /// [`Square`] occupied by a the king of a [`Color`].
@@ -87,7 +87,7 @@ impl Board {
     /// The [`Color`] of the piece on the given [`Square`], if any.
     #[inline(always)]
     pub fn color_on(&self, sq: Square) -> Option<Color> {
-        Color::iter().find(|&c| self.by_color(c).contains(sq))
+        Color::iter().find(|&c| self.material(c).contains(sq))
     }
 
     /// The [`Role`] of the piece on the given [`Square`], if any.
@@ -305,7 +305,7 @@ mod tests {
 
     #[proptest]
     fn by_color_returns_squares_occupied_by_pieces_of_a_color(b: Board, c: Color) {
-        for sq in b.by_color(c) {
+        for sq in b.material(c) {
             assert_eq!(b.piece_on(sq).map(|p| p.color()), Some(c));
         }
     }

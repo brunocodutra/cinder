@@ -413,10 +413,10 @@ impl Position {
     /// [`Square`]s occupied by pieces of a [`Color`].
     #[inline(always)]
     pub fn material(&self, side: Color) -> Bitboard {
-        self.board.by_color(side)
+        self.board.material(side)
     }
 
-    /// [`Square`]s occupied by a [`Role`].
+    /// [`Square`]s occupied by pieces of a [`Role`].
     #[inline(always)]
     pub fn by_role(&self, role: Role) -> Bitboard {
         self.board.by_role(role)
@@ -877,8 +877,8 @@ impl FromStr for Position {
 
         let board: Board = s.parse()?;
         let king = board.king(board.turn).ok_or(IllegalPosition)?;
-        let ours = board.by_color(board.turn);
-        let theirs = board.by_color(!board.turn);
+        let ours = board.material(board.turn);
+        let theirs = board.material(!board.turn);
         let occupied = ours | theirs;
 
         let mut checkers = Bitboard::empty();

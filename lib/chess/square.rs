@@ -25,7 +25,7 @@ impl Square {
     /// Constructs [`Square`] from a pair of [`File`] and [`Rank`].
     #[inline(always)]
     pub fn new(f: File, r: Rank) -> Self {
-        <Self as Integer>::new(f.get() | (r.get() << 3))
+        Integer::new(f.get() | (r.get() << 3))
     }
 
     /// This square's [`File`].
@@ -57,7 +57,7 @@ impl Mirror for Square {
     /// Horizontally mirrors this square.
     #[inline(always)]
     fn mirror(&self) -> Self {
-        <Self as Integer>::new(self.get() ^ Square::H1.get())
+        Integer::new(self.get() ^ Square::H1.get())
     }
 }
 
@@ -65,7 +65,7 @@ impl Perspective for Square {
     /// Flips this square's [`Rank`].
     #[inline(always)]
     fn flip(&self) -> Self {
-        <Self as Integer>::new(self.get() ^ Square::A8.get())
+        Integer::new(self.get() ^ Square::A8.get())
     }
 }
 
@@ -107,7 +107,7 @@ impl Sub<i8> for Square {
 
     #[inline(always)]
     fn sub(self, rhs: i8) -> Self::Output {
-        <Self as Integer>::new(self.get() - rhs)
+        Integer::new(self.get() - rhs)
     }
 }
 
@@ -116,7 +116,7 @@ impl Add<i8> for Square {
 
     #[inline(always)]
     fn add(self, rhs: i8) -> Self::Output {
-        <Self as Integer>::new(self.get() + rhs)
+        Integer::new(self.get() + rhs)
     }
 }
 

@@ -1,5 +1,5 @@
-use crate::chess::{Bitboard, Perspective};
-use crate::util::Integer;
+use crate::chess::{Bitboard, File, Perspective, Transpose};
+use crate::util::{Assume, Integer};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{ops::Sub, str::FromStr};
@@ -38,6 +38,16 @@ impl Perspective for Rank {
     #[inline(always)]
     fn flip(&self) -> Self {
         Self::new(self.get() ^ Self::MAX)
+    }
+}
+
+impl Transpose for Rank {
+    type Transposition = File;
+
+    /// This rank's corresponding file.
+    #[inline(always)]
+    fn transpose(&self) -> Self::Transposition {
+        self.convert().assume()
     }
 }
 
@@ -96,6 +106,11 @@ mod tests {
     #[proptest]
     fn flipping_rank_returns_its_complement(r: Rank) {
         assert_eq!(r.flip().get(), Rank::MAX - r.get());
+    }
+
+    #[proptest]
+    fn transposing_rank_returns_its_corresponding_file(r: Rank) {
+        assert_eq!(r.transpose().get(), r.get());
     }
 
     #[proptest]

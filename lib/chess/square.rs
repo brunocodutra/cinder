@@ -1,4 +1,4 @@
-use crate::chess::{Bitboard, File, Mirror, ParseFileError, ParseRankError, Perspective, Rank};
+use crate::chess::*;
 use crate::util::{Assume, Binary, Bits, Integer};
 use derive_more::with_trait::{Display, Error, From};
 use std::fmt::{self, Formatter};
@@ -66,6 +66,16 @@ impl Perspective for Square {
     #[inline(always)]
     fn flip(&self) -> Self {
         <Self as Integer>::new(self.get() ^ Square::A8.get())
+    }
+}
+
+impl Transpose for Square {
+    type Transposition = Self;
+
+    /// Diagonally flips this square.
+    #[inline(always)]
+    fn transpose(&self) -> Self::Transposition {
+        Integer::new((self.cast::<u32>().wrapping_mul(0x2080_0000) >> 26) as _)
     }
 }
 
@@ -185,6 +195,14 @@ mod tests {
     #[proptest]
     fn flipping_square_preserves_file_and_flips_rank(sq: Square) {
         assert_eq!(sq.flip(), Square::new(sq.file(), sq.rank().flip()));
+    }
+
+    #[proptest]
+    fn transposing_square_transposes_file_and_rank(sq: Square) {
+        assert_eq!(
+            sq.transpose(),
+            Square::new(sq.rank().transpose(), sq.file().transpose())
+        );
     }
 
     #[proptest]

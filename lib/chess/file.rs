@@ -1,5 +1,5 @@
-use crate::chess::{Bitboard, Mirror};
-use crate::util::Integer;
+use crate::chess::{Bitboard, Mirror, Rank, Transpose};
+use crate::util::{Assume, Integer};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{ops::Sub, str::FromStr};
@@ -38,6 +38,16 @@ impl Mirror for File {
     #[inline(always)]
     fn mirror(&self) -> Self {
         Self::new(self.get() ^ Self::MAX)
+    }
+}
+
+impl Transpose for File {
+    type Transposition = Rank;
+
+    /// This file's corresponding rank.
+    #[inline(always)]
+    fn transpose(&self) -> Self::Transposition {
+        self.convert().assume()
     }
 }
 
@@ -91,6 +101,11 @@ mod tests {
     #[proptest]
     fn mirroring_file_returns_its_complement(f: File) {
         assert_eq!(f.mirror().get(), File::MAX - f.get());
+    }
+
+    #[proptest]
+    fn transposing_file_returns_its_corresponding_rank(f: File) {
+        assert_eq!(f.transpose().get(), f.get());
     }
 
     #[proptest]

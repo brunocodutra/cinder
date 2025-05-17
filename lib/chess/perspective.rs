@@ -14,3 +14,17 @@ pub trait Perspective: Copy {
         }
     }
 }
+
+/// Trait for types that can be horizontally mirrored.
+pub trait Mirror {
+    /// This value's mirror.
+    fn mirror(&self) -> Self;
+}
+
+/// Trait for types that can be diagonally transposed.
+pub trait Transpose {
+    type Transposition;
+
+    /// This value's transposition.
+    fn transpose(&self) -> Self::Transposition;
+}

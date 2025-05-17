@@ -38,6 +38,20 @@ impl Not for Color {
     }
 }
 
+impl From<bool> for Color {
+    #[inline(always)]
+    fn from(b: bool) -> Self {
+        Integer::new(b as _)
+    }
+}
+
+impl From<Color> for bool {
+    #[inline(always)]
+    fn from(c: Color) -> Self {
+        c == Color::Black
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -47,6 +61,11 @@ mod tests {
     #[test]
     fn color_guarantees_zero_value_optimization() {
         assert_eq!(size_of::<Option<Color>>(), size_of::<Color>());
+    }
+
+    #[proptest]
+    fn color_has_an_equivalent_boolean(c: Color) {
+        assert_eq!(Color::from(bool::from(c)), c);
     }
 
     #[proptest]

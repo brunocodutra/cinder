@@ -230,7 +230,7 @@ impl Iterator for MovePackIter {
         if matches!(self.base.promotion(), None | Some(Role::Queen)) {
             let whither = self.whither.next()?;
             let bits = (self.base.0.get() & 0b1111110000001111) | ((whither as u16) << 4);
-            self.base.0 = <NonZeroU16 as Integer>::new(bits);
+            self.base.0 = Integer::new(bits);
         }
 
         Some(self.base)

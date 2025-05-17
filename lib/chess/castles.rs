@@ -43,19 +43,19 @@ impl Castles {
         self.0.get()
     }
 
-    /// Whether the given side has kingside castling rights.
+    /// Whether the given side has king's side castling rights.
     #[inline(always)]
     pub fn has_short(&self, side: Color) -> bool {
         *self & Castles::from(Square::H1.perspective(side)) != Castles::none()
     }
 
-    /// Whether the given side has queenside castling rights.
+    /// Whether the given side has queen's side castling rights.
     #[inline(always)]
     pub fn has_long(&self, side: Color) -> bool {
         *self & Castles::from(Square::A1.perspective(side)) != Castles::none()
     }
 
-    /// The kingside castling square, if side has the rights.
+    /// The king's side castling square, if side has the rights.
     #[inline(always)]
     pub fn short(&self, side: Color) -> Option<Square> {
         if self.has_short(side) {
@@ -65,7 +65,7 @@ impl Castles {
         }
     }
 
-    /// The queenside castling square, if side has the rights.
+    /// The queen's side castling square, if side has the rights.
     #[inline(always)]
     pub fn long(&self, side: Color) -> Option<Square> {
         if self.has_long(side) {

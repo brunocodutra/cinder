@@ -1090,6 +1090,7 @@ mod tests {
     }
 
     #[rustfmt::skip]
+    #[cfg(not(coverage))]
     const PERFT_SUITE: &[(&str, u8, usize)] = &[
         ("1r2k2r/8/8/8/8/8/8/R3K2R b KQk - 0 1", 6, 195629489),
         ("1r2k2r/8/8/8/8/8/8/R3K2R w KQk - 0 1", 6, 198328929),
@@ -1220,6 +1221,7 @@ mod tests {
         ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 6, 119060324),
     ];
 
+    #[cfg(not(coverage))]
     #[proptest(cases = 1)]
     fn perft_counts_all_reachable_positions_up_to_ply(
         #[strategy(select(PERFT_SUITE))] entry: (&'static str, u8, usize),

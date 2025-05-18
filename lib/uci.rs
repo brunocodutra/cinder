@@ -678,6 +678,23 @@ mod tests {
     }
 
     #[proptest]
+    fn handles_perft(
+        #[any(StaticStream::new([format!("perft {}", #_d)]))] mut uci: MockUci,
+        #[strategy(..4u8)] _d: u8,
+    ) {
+        assert_eq!(block_on(uci.run()), Ok(()));
+
+        let output = uci.output.join("\n");
+
+        let time = field("time", int);
+        let nodes = field("nodes", int);
+        let nps = field("nps", int);
+        let info = (tag("info"), time, nodes, nps);
+        let mut pattern = recognize(terminated(info, eof));
+        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
+    }
+
+    #[proptest]
     fn handles_eval(#[any(StaticStream::new(["eval"]))] mut uci: MockUci) {
         let pos = uci.position.clone();
         let value = match pos.turn() {

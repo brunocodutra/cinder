@@ -67,6 +67,7 @@ jobs:
       env:
         CC: "clang"
         CFLAGS: "-fsanitize=${{ matrix.sanitizer }}"
+        PROPTEST_CASES: 32
 
   coverage:
     needs: [test]

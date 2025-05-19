@@ -1,6 +1,6 @@
 use crate::util::Integer;
 use derive_more::with_trait::{Debug, Display, Error, Shl, Shr};
-use std::{cmp::Ordering, str::FromStr};
+use std::{cmp::Ordering, path::PathBuf, str::FromStr};
 
 /// The hash size in bytes.
 #[derive(Debug, Display, Copy, Clone, Eq, Ord, Hash, Shl, Shr)]
@@ -130,6 +130,9 @@ pub struct Options {
 
     /// The number of threads to use while searching.
     pub threads: ThreadCount,
+
+    /// The path to Syzygy tables.
+    pub syzygy: PathBuf,
 }
 
 #[cfg(test)]

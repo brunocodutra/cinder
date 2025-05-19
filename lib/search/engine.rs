@@ -1,5 +1,6 @@
 use crate::chess::{Move, Moves, Position};
 use crate::nnue::{Evaluator, Value};
+use crate::syzygy::{Syzygy, Wdl};
 use crate::util::{Assume, Integer};
 use crate::{params::Params, search::*};
 use derive_more::with_trait::{Display, Error};
@@ -19,6 +20,7 @@ pub struct Interrupted;
 #[derive(Debug)]
 struct Stack<'a> {
     searcher: &'a Searcher,
+    syzygy: &'a Syzygy,
     tt: &'a TranspositionTable,
     ctrl: &'a Control,
     root: &'a Evaluator,
@@ -32,12 +34,14 @@ struct Stack<'a> {
 impl<'a> Stack<'a> {
     fn new(
         searcher: &'a Searcher,
+        syzygy: &'a Syzygy,
         tt: &'a TranspositionTable,
         ctrl: &'a Control,
         root: &'a Evaluator,
     ) -> Self {
         Stack {
             searcher,
+            syzygy,
             tt,
             ctrl,
             root,
@@ -277,12 +281,6 @@ impl<'a> Stack<'a> {
         if let Some(t) = transposition {
             let (lower, upper) = t.score().range(ply).into_inner();
 
-            if lower >= upper || upper <= alpha || lower >= beta {
-                if !is_pv && t.draft() >= draft {
-                    return Ok(transposed.truncate());
-                }
-            }
-
             if let Some(d) = self.fhp(lower - beta, draft) {
                 if !is_pv && t.draft() >= d {
                     return Ok(transposed.truncate());
@@ -299,23 +297,33 @@ impl<'a> Stack<'a> {
         let (lower, upper) = if quiesce {
             (transposed.score(), Score::upper())
         } else {
-            (Score::lower(), Score::upper())
+            match self.syzygy.wdl(pos) {
+                None => (Score::lower(), Score::upper()),
+                Some(wdl) => {
+                    let score = wdl.to_score(ply);
+                    match wdl {
+                        Wdl::Win => (score, Score::upper()),
+                        Wdl::Loss => (Score::lower(), score),
+                        _ => (score, score),
+                    }
+                }
+            }
         };
 
         alpha = alpha.max(lower);
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
-            return Ok(transposed.truncate());
+            return Ok(transposed.clamp(lower, upper).truncate());
         } else if let Some(d) = self.nmp(transposed.score() - beta, draft) {
             if !is_pv && !pos.is_check() && pos.pieces(pos.turn()).len() > 1 {
                 if d <= 0 {
-                    return Ok(transposed.truncate());
+                    return Ok(transposed.clamp(lower, upper).truncate());
                 } else {
                     let mut next = pos.clone();
                     next.pass();
                     self.tt.prefetch(next.zobrist());
                     self.replies[ply.cast::<usize>()] = None;
                     if -self.nw::<0>(&next, -beta + 1, d + ply, ply + 1, !cut)? >= beta {
-                        return Ok(transposed.truncate());
+                        return Ok(transposed.clamp(lower, upper).truncate());
                     }
                 }
             }
@@ -346,7 +354,7 @@ impl<'a> Stack<'a> {
 
         moves.sort_unstable_by_key(|(_, rating)| *rating);
         let (mut head, mut tail) = match moves.last() {
-            None => return Ok(transposed.truncate()),
+            None => return Ok(transposed.clamp(lower, upper).truncate()),
             Some(&(m, _)) => {
                 let mut extension = 0i8;
                 if let Some(t) = transposition {
@@ -362,7 +370,7 @@ impl<'a> Stack<'a> {
                                 Some(self.searcher.continuation.reply(pos, *m));
                             let pv = -self.nw(&next, -s_beta + 1, s_draft + ply, ply + 1, !cut)?;
                             if pv >= beta {
-                                return Ok(pv.transpose(*m));
+                                return Ok(pv.clamp(lower, upper).transpose(*m));
                             } else if pv >= s_beta {
                                 cut = true;
                                 extension = -1;
@@ -489,24 +497,27 @@ impl<'a> Stack<'a> {
     /// An implementation of aspiration windows with iterative deepening.
     fn aw(&mut self) -> impl Iterator<Item = Info> {
         gen move {
+            use Limits::Clock;
             let pos = self.root;
+            let limits = self.ctrl.limits();
             let mut depth = Depth::new(0);
             let mut moves: Moves<_> = pos.moves().unpack().map(|m| (m, pos.gain(m))).collect();
-            self.value[0] = pos.evaluate();
-            self.pv = match moves.iter().max_by_key(|(_, rating)| *rating) {
-                None if !pos.is_check() => Pv::empty(Score::new(0)),
-                None => Pv::empty(Score::mated(Ply::new(0))),
-                Some((m, _)) => match self.tt.get(pos.zobrist()) {
-                    None => Pv::new(self.value[0].saturate(), Line::singular(*m)),
-                    Some(t) => t.transpose(Ply::new(0)).truncate(),
+            let mut stop = matches!((&*moves, limits), (&[], _) | (&[_], Clock(..)));
+
+            match self.syzygy.best(pos, &moves) {
+                Some(best) => (self.pv, stop) = (best.truncate(), true),
+                None => match moves.iter().max_by_key(|(_, rating)| *rating) {
+                    None if !pos.is_check() => self.pv = Pv::empty(Score::new(0)),
+                    None => self.pv = Pv::empty(Score::mated(Ply::new(0))),
+                    Some((m, _)) => {
+                        self.value[0] = pos.evaluate();
+                        match self.tt.get(pos.zobrist()) {
+                            None => self.pv = Pv::new(self.value[0].saturate(), Line::singular(*m)),
+                            Some(t) => self.pv = t.transpose(Ply::new(0)).truncate(),
+                        }
+                    }
                 },
             };
-
-            let mut stop = false;
-            let limits = self.ctrl.limits();
-            if matches!((&*moves, limits), (&[], _) | (&[_], Limits::Clock(..))) {
-                stop = true;
-            }
 
             let value_scale: i32 = Params::value_scale().as_int();
             let aw_start: i32 = Params::aspiration_window_start().as_int();
@@ -604,6 +615,7 @@ impl<'e, 'p, 'c> Stream for Search<'e, 'p, 'c> {
 
         let executor: &mut Executor = unsafe { &mut *(&mut self.engine.executor as *mut _) };
         let searchers: &'static [Searcher] = unsafe { &*(&*self.engine.searchers as *const _) };
+        let syzygy: &'static Syzygy = unsafe { &*(&self.engine.syzygy as *const _) };
         let tt: &'static TranspositionTable = unsafe { &*(&self.engine.tt as *const _) };
         let ctrl: &'static Control = unsafe { &*(self.ctrl as *const _) };
         let root: &'static Evaluator = unsafe { &*(self.position as *const _) };
@@ -611,7 +623,7 @@ impl<'e, 'p, 'c> Stream for Search<'e, 'p, 'c> {
         let (tx, rx) = unbounded();
         let task = executor.execute(move |idx| {
             let searcher = searchers.get(idx).assume();
-            for info in Stack::new(searcher, tt, ctrl, root).aw() {
+            for info in Stack::new(searcher, syzygy, tt, ctrl, root).aw() {
                 if idx == 0 {
                     let depth = info.depth();
                     tx.unbounded_send(info).assume();
@@ -642,6 +654,7 @@ struct Searcher {
 #[derive(Debug)]
 pub struct Engine {
     tt: TranspositionTable,
+    syzygy: Syzygy,
     executor: Executor,
     searchers: Box<[Searcher]>,
 }
@@ -674,6 +687,7 @@ impl Engine {
     pub fn with_options(options: &Options) -> Self {
         Engine {
             tt: TranspositionTable::new(options.hash),
+            syzygy: Syzygy::new(&options.syzygy),
             executor: Executor::new(options.threads),
             searchers: (0..options.threads.get())
                 .map(|_| Searcher::default())
@@ -723,7 +737,7 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(&pos, b, d, p, cut), Ok(Pv::empty(s)));
     }
@@ -745,7 +759,7 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(&pos, b, d, p, cut), Ok(Pv::empty(s)));
     }
@@ -767,7 +781,7 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(&pos, b, d, p, cut), Ok(Pv::empty(s)));
     }
@@ -781,7 +795,7 @@ mod tests {
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
 
         assert_eq!(
@@ -801,7 +815,7 @@ mod tests {
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::Nodes(0));
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupted));
     }
@@ -817,7 +831,7 @@ mod tests {
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         thread::sleep(Duration::from_millis(1));
         assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupted));
@@ -834,7 +848,7 @@ mod tests {
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         ctrl.abort();
         assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupted));
@@ -851,7 +865,7 @@ mod tests {
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
 
         assert_eq!(
@@ -871,7 +885,7 @@ mod tests {
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
 
         assert_eq!(
@@ -886,7 +900,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
     ) {
         let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         let last = stack.aw().last();
         assert_ne!(last.and_then(|pv| pv.head()), None);
     }
@@ -897,7 +911,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
     ) {
         let ctrl = Control::new(&pos, Limits::Depth(Depth::lower()));
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         let last = stack.aw().last();
         assert_ne!(last.and_then(|pv| pv.head()), None);
     }

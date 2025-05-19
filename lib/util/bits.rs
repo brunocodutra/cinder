@@ -1,4 +1,4 @@
-use crate::util::{Integer, Primitive, Unsigned};
+use crate::util::{Integer, Unsigned};
 use derive_more::with_trait::{Debug, *};
 use std::mem::transmute_copy;
 use std::ops::{Bound, Not, RangeBounds};
@@ -34,10 +34,15 @@ use std::ops::RangeInclusive;
 #[repr(transparent)]
 pub struct Bits<T, const W: u32>(#[cfg_attr(test, strategy(T::zero()..=T::ones(W)))] T);
 
-unsafe impl<T: Unsigned + Primitive, const W: u32> Integer for Bits<T, W> {
+/// Workaround to https://github.com/rust-lang/rfcs/pull/3762.
+pub const fn bits<U: Integer<Repr: Unsigned>>(i: u128) -> U {
+    unsafe { transmute_copy(&i) }
+}
+
+unsafe impl<T: Unsigned, const W: u32> Integer for Bits<T, W> {
     type Repr = T;
-    const MIN: Self::Repr = unsafe { transmute_copy(&0u128) };
-    const MAX: Self::Repr = unsafe { transmute_copy(&(u128::MAX >> (u128::BITS - W))) };
+    const MIN: Self::Repr = bits(0);
+    const MAX: Self::Repr = bits(u128::MAX >> (u128::BITS - W));
 }
 
 impl<T: Unsigned, const W: u32> Bits<T, W> {
@@ -46,6 +51,12 @@ impl<T: Unsigned, const W: u32> Bits<T, W> {
         assert!(size_of::<T>() * 8 >= W as usize);
         W
     };
+
+    /// Whether this is a superset of `bits`.
+    #[inline(always)]
+    pub fn contains(&self, bits: &Self) -> bool {
+        *self & *bits == *bits
+    }
 
     /// Returns a slice of bits.
     #[inline(always)]
@@ -99,6 +110,7 @@ impl<T: Unsigned, const W: u32> Not for Bits<T, W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::Primitive;
     use std::fmt::Debug;
     use test_strategy::proptest;
 
@@ -126,6 +138,11 @@ mod tests {
     #[should_panic]
     fn slice_panics_if_index_is_out_of_range(b: Bits<u64, 48>, #[strategy(48u32..)] i: u32) {
         b.slice(i..i);
+    }
+
+    #[proptest]
+    fn always_contains_prefix(b: Bits<u8, 8>, #[strategy(..=8u32)] i: u32) {
+        assert!(b.contains(&b.slice(..i)));
     }
 
     #[proptest]

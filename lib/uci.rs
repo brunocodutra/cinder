@@ -250,15 +250,16 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
             }
 
             (args, "setoption") => {
-                let option = |n| preceded((t(tag("name")), tag_no_case(n), t(tag("value"))), word);
+                let option = |n| preceded((t(tag("name")), tag_no_case(n), t(tag("value"))), rest);
 
-                let options = gather2((
+                let options = gather3((
                     option("hash").map_res(|s| s.parse()),
                     option("threads").map_res(|s| s.parse()),
+                    option("syzygypath").map_res(|s| s.parse()),
                 ));
 
                 let mut setoption = terminated(options, eof);
-                let (_, (hash, threads)) = setoption.parse(args).finish()?;
+                let (_, (hash, threads, syzygy)) = setoption.parse(args).finish()?;
 
                 if let Some(h) = hash {
                     self.options.hash = h;
@@ -266,6 +267,10 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
 
                 if let Some(t) = threads {
                     self.options.threads = t;
+                }
+
+                if let Some(p) = syzygy {
+                    self.options.syzygy = p;
                 }
 
                 self.engine = Engine::with_options(&self.options);
@@ -306,10 +311,13 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                     ThreadCount::upper()
                 );
 
+                let syzygy = "option name SyzygyPath type string default <empty>".to_string();
+
                 self.output.send(name).await.map_err(UciError::Fatal)?;
                 self.output.send(author).await.map_err(UciError::Fatal)?;
                 self.output.send(hash).await.map_err(UciError::Fatal)?;
                 self.output.send(threads).await.map_err(UciError::Fatal)?;
+                self.output.send(syzygy).await.map_err(UciError::Fatal)?;
                 self.output.send(uciok).await.map_err(UciError::Fatal)?;
 
                 Ok(true)
@@ -352,7 +360,7 @@ mod tests {
     use proptest::sample::Selector;
     use rand::seq::SliceRandom;
     use std::task::{Context, Poll};
-    use std::{collections::VecDeque, pin::Pin};
+    use std::{collections::VecDeque, path::PathBuf, pin::Pin};
     use test_strategy::proptest;
 
     #[derive(Debug, Default, Clone, Eq, PartialEq)]
@@ -774,6 +782,20 @@ mod tests {
         let o = uci.options.clone();
         assert_eq!(block_on(uci.run()), Ok(()));
         assert_eq!(uci.options, o);
+        assert_eq!(uci.output.join("\n"), "");
+    }
+
+    #[proptest]
+    fn handles_option_syzygy_path(
+        #[any(StaticStream::new([format!("setoption name SyzygyPath value {}",
+            #p.to_string_lossy().trim())]))]
+        mut uci: MockUci,
+        #[filter(!#p.to_string_lossy().trim().is_empty()
+            && PathBuf::from(#p.to_string_lossy().trim().to_string()) == #p)]
+        p: PathBuf,
+    ) {
+        assert_eq!(block_on(uci.run()), Ok(()));
+        assert_eq!(uci.options.syzygy, p);
         assert_eq!(uci.output.join("\n"), "");
     }
 

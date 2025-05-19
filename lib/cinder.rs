@@ -22,6 +22,8 @@ pub mod nnue;
 pub mod params;
 /// Minimax searching algorithm.
 pub mod search;
+/// Syzygy tablebase probing.
+pub mod syzygy;
 /// UCI protocol.
 pub mod uci;
 /// Assorted utilities.

@@ -54,8 +54,7 @@ impl<const N: usize> Line<N> {
     /// The first [`Move`]s in this [`Line`].
     #[inline(always)]
     pub fn head(&self) -> Option<Move> {
-        const { assert!(N > 0) }
-        self.0[0]
+        if N > 0 { self.0[0] } else { None }
     }
 
     /// An iterator over the [`Move`]s in this [`Line`].

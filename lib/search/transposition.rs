@@ -110,7 +110,7 @@ impl Binary for ScoreBound {
 pub struct Transposition {
     score: ScoreBound,
     draft: Depth,
-    best: Move,
+    best: Option<Move>,
 }
 
 impl Transposition {
@@ -120,7 +120,7 @@ impl Transposition {
 
     /// Constructs a [`Transposition`] given a [`ScoreBound`], the [`Depth`] searched, and the best [`Move`].
     #[inline(always)]
-    pub fn new(score: ScoreBound, draft: Depth, best: Move) -> Self {
+    pub fn new(score: ScoreBound, draft: Depth, best: Option<Move>) -> Self {
         Transposition { score, draft, best }
     }
 
@@ -128,6 +128,12 @@ impl Transposition {
     #[inline(always)]
     pub fn score(&self) -> ScoreBound {
         self.score
+    }
+
+    /// The best move.
+    #[inline(always)]
+    pub fn best(&self) -> Option<Move> {
+        self.best
     }
 
     /// The depth searched.
@@ -139,7 +145,10 @@ impl Transposition {
     /// The principal variation normalized to [`Ply`].
     #[inline(always)]
     pub fn transpose(&self, ply: Ply) -> Pv<1> {
-        Pv::new(self.score().bound(ply), Line::singular(self.best))
+        Pv::new(
+            self.score.bound(ply),
+            self.best.map_or_else(Line::empty, Line::singular),
+        )
     }
 }
 

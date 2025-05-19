@@ -8,7 +8,7 @@ use nom::error::Error as ParseError;
 use nom::{branch::*, bytes::complete::*, combinator::*, sequence::*, *};
 use std::fmt::{self, Debug, Formatter};
 use std::str::{self, FromStr};
-use std::{io::Write, time::Instant};
+use std::{io::Write, path::PathBuf, time::Instant};
 
 #[cfg(test)]
 use proptest::{prelude::*, strategy::LazyJust};
@@ -90,6 +90,12 @@ pub struct Uci<I, O> {
 }
 
 impl<I, O> Uci<I, O> {
+    #[cfg(unix)]
+    const PATH_DELIMITER: char = ':';
+
+    #[cfg(windows)]
+    const PATH_DELIMITER: char = ';';
+
     /// Constructs a new uci server instance.
     pub fn new(input: I, output: O) -> Self {
         Self {
@@ -250,15 +256,17 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
             }
 
             (args, "setoption") => {
-                let option = |n| preceded((t(tag("name")), tag_no_case(n), t(tag("value"))), word);
+                let option = |n| preceded((t(tag("name")), tag_no_case(n), t(tag("value"))), rest);
 
-                let options = gather2((
+                let options = gather3((
                     option("hash").map_res(|s| s.parse()),
                     option("threads").map_res(|s| s.parse()),
+                    option("syzygypath")
+                        .map(|s| s.split(Self::PATH_DELIMITER).map(PathBuf::from).collect()),
                 ));
 
                 let mut setoption = terminated(options, eof);
-                let (_, (hash, threads)) = setoption.parse(args).finish()?;
+                let (_, (hash, threads, syzygy)) = setoption.parse(args).finish()?;
 
                 if let Some(h) = hash {
                     self.options.hash = h;
@@ -266,6 +274,10 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
 
                 if let Some(t) = threads {
                     self.options.threads = t;
+                }
+
+                if let Some(p) = syzygy {
+                    self.options.syzygy = p;
                 }
 
                 self.engine = Engine::with_options(&self.options);
@@ -306,10 +318,13 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                     ThreadCount::upper()
                 );
 
+                let syzygy = "option name SyzygyPath type string default <empty>".to_string();
+
                 self.output.send(name).await.map_err(UciError::Fatal)?;
                 self.output.send(author).await.map_err(UciError::Fatal)?;
                 self.output.send(hash).await.map_err(UciError::Fatal)?;
                 self.output.send(threads).await.map_err(UciError::Fatal)?;
+                self.output.send(syzygy).await.map_err(UciError::Fatal)?;
                 self.output.send(uciok).await.map_err(UciError::Fatal)?;
 
                 Ok(true)
@@ -774,6 +789,23 @@ mod tests {
         let o = uci.options.clone();
         assert_eq!(block_on(uci.run()), Ok(()));
         assert_eq!(uci.options, o);
+        assert_eq!(uci.output.join("\n"), "");
+    }
+
+    #[proptest]
+    fn handles_option_syzygy_path(
+        #[any(StaticStream::new([format!("setoption name SyzygyPath value {}", #s)]))]
+        mut uci: MockUci,
+        #[filter(!#s.trim_ascii().is_empty())] s: String,
+    ) {
+        let paths = s
+            .trim_ascii()
+            .split(MockUci::PATH_DELIMITER)
+            .map(PathBuf::from)
+            .collect();
+
+        assert_eq!(block_on(uci.run()), Ok(()));
+        assert_eq!(uci.options.syzygy, paths);
         assert_eq!(uci.output.join("\n"), "");
     }
 

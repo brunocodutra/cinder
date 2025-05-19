@@ -1,7 +1,7 @@
 use crate::util::Assume;
 use bytemuck::NoUninit;
 use std::fmt::{Binary, Debug, LowerHex, Octal, UpperHex};
-use std::{hash::Hash, hint::unreachable_unchecked, mem::transmute_copy};
+use std::{cmp::Ordering, hash::Hash, hint::unreachable_unchecked, mem::transmute_copy};
 use std::{num::*, ops::*};
 
 /// Trait for types that can be represented by a contiguous range of primitive integers.
@@ -14,10 +14,10 @@ pub unsafe trait Integer: Copy {
     type Repr: Primitive;
 
     /// The minimum repr.
-    const MIN: Self::Repr;
+    const MIN: Self::Repr = <Self::Repr as Integer>::MIN;
 
     /// The maximum repr.
-    const MAX: Self::Repr;
+    const MAX: Self::Repr = <Self::Repr as Integer>::MAX;
 
     /// The minimum value.
     #[inline(always)]
@@ -47,6 +47,17 @@ pub unsafe trait Integer: Copy {
         let repr = unsafe { transmute_copy(&self) };
         (Self::MIN..=Self::MAX).contains(&repr).assume();
         repr
+    }
+
+    /// Returns the sign of `self`.
+    ///
+    /// * `1` if `self > 0`
+    /// * `0` if `self == 0`
+    /// * `-1` if `self < 0`
+    #[track_caller]
+    #[inline(always)]
+    fn signum(self) -> Self::Repr {
+        self.get().cmp(&Self::Repr::zero()).cast()
     }
 
     /// Casts to a [`Primitive`].
@@ -145,6 +156,12 @@ unsafe impl<I: Primitive> Integer for Saturating<I> {
     const MAX: Self::Repr = I::MAX;
 }
 
+unsafe impl Integer for Ordering {
+    type Repr = i8;
+    const MIN: Self::Repr = Ordering::Less as _;
+    const MAX: Self::Repr = Ordering::Greater as _;
+}
+
 macro_rules! impl_integer_for_non_zero {
     ($nz: ty, $repr: ty) => {
         unsafe impl Integer for $nz {
@@ -163,9 +180,7 @@ impl_integer_for_non_zero!(NonZeroU128, u128);
 impl_integer_for_non_zero!(NonZeroUsize, usize);
 
 macro_rules! impl_primitive_for {
-    ($i: ty, $m: ty) => {
-        impl $m for $i {}
-
+    ($i: ty) => {
         impl Primitive for $i {
             const BITS: u32 = <$i>::BITS;
 
@@ -218,19 +233,33 @@ macro_rules! impl_primitive_for {
     };
 }
 
-impl_primitive_for!(i8, Signed);
-impl_primitive_for!(i16, Signed);
-impl_primitive_for!(i32, Signed);
-impl_primitive_for!(i64, Signed);
-impl_primitive_for!(i128, Signed);
-impl_primitive_for!(isize, Signed);
+macro_rules! impl_signed_for {
+    ($i: ty) => {
+        impl_primitive_for!($i);
+        impl Signed for $i {}
+    };
+}
 
-impl_primitive_for!(u8, Unsigned);
-impl_primitive_for!(u16, Unsigned);
-impl_primitive_for!(u32, Unsigned);
-impl_primitive_for!(u64, Unsigned);
-impl_primitive_for!(u128, Unsigned);
-impl_primitive_for!(usize, Unsigned);
+impl_signed_for!(i8);
+impl_signed_for!(i16);
+impl_signed_for!(i32);
+impl_signed_for!(i64);
+impl_signed_for!(i128);
+impl_signed_for!(isize);
+
+macro_rules! impl_unsigned_for {
+    ($i: ty) => {
+        impl_primitive_for!($i);
+        impl Unsigned for $i {}
+    };
+}
+
+impl_unsigned_for!(u8);
+impl_unsigned_for!(u16);
+impl_unsigned_for!(u32);
+impl_unsigned_for!(u64);
+impl_unsigned_for!(u128);
+impl_unsigned_for!(usize);
 
 #[cfg(test)]
 mod tests {

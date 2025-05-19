@@ -27,21 +27,25 @@ id name Cinder 0.1.4
 id author Bruno Dutra
 option name Hash type spin default 16 min 0 max 33554432
 option name Threads type spin default 1 min 1 max 4096
+option name SyzygyPath type string default <empty>
 uciok
-go depth 10
+go depth 8
 info depth 0 time 0 nodes 0 nps 0 score cp 14 pv g1h3
-info depth 1 time 0 nodes 5 nps 125502 score cp 14 pv g1f3
-info depth 2 time 0 nodes 11 nps 246913 score cp 14 pv g1f3
-info depth 3 time 0 nodes 23 nps 435523 score cp 14 pv g1f3 g8f6
-info depth 4 time 0 nodes 107 nps 1181667 score cp 18 pv e2e4 g8f6
-info depth 5 time 0 nodes 243 nps 1430253 score cp 16 pv c2c4 g8f6 d2d4
-info depth 6 time 0 nodes 552 nps 1791050 score cp 16 pv d2d4 e7e6 g1f3 g8f6 c2c4
-info depth 7 time 0 nodes 1081 nps 2071361 score cp 22 pv e2e4 e7e6 g1f3 g8f6
-info depth 8 time 0 nodes 1632 nps 2226897 score cp 27 pv e2e4 d7d5 e4d5 g8f6 d2d4 f6d5
-info depth 9 time 1 nodes 3389 nps 2439786 score cp 20 pv e2e4 c7c5 g1f3 d7d6 d2d4 c5d4 f3d4 g8f6
-info depth 10 time 2 nodes 7493 nps 2584023 score cp 23 pv d2d4 d7d5 c2c4 e7e6 g1f3 f8e7 e2e3 g8f6 b1c3
-bestmove d2d4
+info depth 1 time 0 nodes 5 nps 101791 score cp 14 pv g1f3
+info depth 2 time 0 nodes 11 nps 193798 score cp 14 pv g1f3
+info depth 3 time 0 nodes 24 nps 345721 score cp 14 pv g1f3 g8f6
+info depth 4 time 0 nodes 89 nps 718553 score cp 18 pv e2e4 g8f6
+info depth 5 time 0 nodes 192 nps 880088 score cp 11 pv e2e4 e7e5 b1c3
+info depth 6 time 0 nodes 376 nps 1170245 score cp 11 pv e2e4 e7e5 b1c3 g8f6
+info depth 7 time 0 nodes 946 nps 1412444 score cp 28 pv e2e4 c7c6 g1f3 g8f6
+info depth 8 time 1 nodes 2415 nps 1825505 score cp 24 pv e2e4 e7e6 d2d4 d7d5 e4e5
+bestmove e2e4
 ```
+
+## Acknowledgement
+
+Thanks to [Niklas Fiekas] for [shakmaty-syzygy]. Cinder's implementation of the Syzygy tablebases
+probing algorithm is based off a fork of this excellent Rust port.
 
 ## Contribution
 
@@ -65,3 +69,6 @@ Cinder is distributed under the terms of the GPL-3.0 license, see [LICENSE] for 
 
 [LICENSE]:          https://github.com/brunocodutra/cinder/blob/master/LICENSE
 [CONTRIBUTING]:     https://github.com/brunocodutra/cinder/blob/master/CONTRIBUTING.md
+
+[Niklas Fiekas]:    https://github.com/niklasf
+[shakmaty-syzygy]:  https://github.com/niklasf/shakmaty-syzygy

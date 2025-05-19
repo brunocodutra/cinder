@@ -229,7 +229,7 @@ impl Display for Piece {
     }
 }
 
-/// The reason why parsing the piece.
+/// The reason why parsing [`Piece`] failed.
 #[derive(Debug, Display, Clone, Eq, PartialEq, Error)]
 #[display("failed to parse piece")]
 pub struct ParsePieceError;

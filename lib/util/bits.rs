@@ -57,6 +57,12 @@ impl<T: Unsigned, const W: u32> Bits<T, W> {
         W
     };
 
+    /// Whether this is a superset of `bits`.
+    #[inline(always)]
+    pub fn contains(&self, bits: &Self) -> bool {
+        *self & *bits == *bits
+    }
+
     /// Returns a slice of bits.
     #[inline(always)]
     pub fn slice<R: RangeBounds<u32>>(&self, r: R) -> Self {
@@ -137,6 +143,11 @@ mod tests {
     #[should_panic]
     fn slice_panics_if_index_is_out_of_range(b: Bits<u64, 48>, #[strategy(48u32..)] i: u32) {
         b.slice(i..i);
+    }
+
+    #[proptest]
+    fn always_contains_prefix(b: Bits<u8, 8>, #[strategy(..=8u32)] i: u32) {
+        assert!(b.contains(&b.slice(..i)));
     }
 
     #[proptest]

@@ -1,12 +1,13 @@
 use crate::chess::{Move, Moves, Position};
 use crate::nnue::{Evaluator, Value};
+use crate::syzygy::{Syzygy, Wdl};
 use crate::util::{Assume, Integer, Memory};
 use crate::{params::Params, search::*};
 use derive_more::with_trait::{Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
 use std::task::{Context, Poll};
-use std::{ops::Range, pin::Pin};
+use std::{ops::Range, pin::Pin, time::Duration};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -19,6 +20,7 @@ pub struct Interrupted;
 #[derive(Debug)]
 struct Stack<'a> {
     searcher: &'a Searcher,
+    syzygy: &'a Syzygy,
     tt: &'a Memory<Transposition>,
     ctrl: &'a Control,
     root: &'a Evaluator,
@@ -32,12 +34,14 @@ struct Stack<'a> {
 impl<'a> Stack<'a> {
     fn new(
         searcher: &'a Searcher,
+        syzygy: &'a Syzygy,
         tt: &'a Memory<Transposition>,
         ctrl: &'a Control,
         root: &'a Evaluator,
     ) -> Self {
         Stack {
             searcher,
+            syzygy,
             tt,
             ctrl,
             root,
@@ -94,7 +98,7 @@ impl<'a> Stack<'a> {
         }
 
         let score = ScoreBound::new(bounds, score, ply);
-        let tpos = Transposition::new(score, draft, best);
+        let tpos = Transposition::new(score, draft, Some(best));
         self.tt.set(pos.zobrist(), tpos);
     }
 
@@ -260,7 +264,7 @@ impl<'a> Stack<'a> {
             return Err(Interrupted);
         }
 
-        let (mut alpha, beta) = match pos.outcome() {
+        let (alpha, beta) = match pos.outcome() {
             None => self.mdp(ply, &bounds),
             Some(o) if o.is_draw() => return Ok(Pv::empty(Score::new(0))),
             Some(_) => return Ok(Pv::empty(Score::mated(ply))),
@@ -286,12 +290,6 @@ impl<'a> Stack<'a> {
         if let Some(t) = transposition {
             let (lower, upper) = t.score().range(ply).into_inner();
 
-            if lower >= upper || upper <= alpha || lower >= beta {
-                if !is_pv && t.draft() >= draft {
-                    return Ok(transposed.truncate());
-                }
-            }
-
             if let Some(d) = self.fhp(lower - beta, draft) {
                 if !is_pv && t.draft() >= d {
                     return Ok(transposed.truncate());
@@ -307,11 +305,31 @@ impl<'a> Stack<'a> {
 
         let (lower, upper) = if quiesce {
             (transposed.score(), Score::upper())
-        } else {
+        } else if !is_pv {
             (Score::lower(), Score::upper())
+        } else {
+            match self.syzygy.wdl_after_zeroing(pos) {
+                None => (Score::lower(), Score::upper()),
+                Some(wdl) => {
+                    let score = match wdl {
+                        Wdl::Win => ScoreBound::Lower(wdl.to_score(ply)),
+                        Wdl::Loss => ScoreBound::Upper(wdl.to_score(ply)),
+                        _ => ScoreBound::Exact(wdl.to_score(ply)),
+                    };
+
+                    if score.upper(ply) <= alpha || score.lower(ply) >= beta {
+                        let transposition = Transposition::new(score, draft, None);
+                        self.tt.set(pos.zobrist(), transposition);
+                        return Ok(transposition.transpose(ply).truncate());
+                    }
+
+                    score.range(ply).into_inner()
+                }
+            }
         };
 
-        alpha = alpha.max(lower);
+        let alpha = alpha.max(lower);
+        let transposed = transposed.clamp(lower, upper);
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
         } else if let Some(d) = self.nmp(transposed.score() - beta, draft) {
@@ -508,24 +526,24 @@ impl<'a> Stack<'a> {
     /// An implementation of aspiration windows with iterative deepening.
     fn aw(&mut self) -> impl Iterator<Item = Info> {
         gen move {
-            let pos = self.root;
-            let mut depth = Depth::new(0);
-            let mut moves: Moves<_> = pos.moves().unpack().map(|m| (m, pos.gain(m))).collect();
-            self.value[0] = pos.evaluate();
+            let mut moves =
+                Moves::from_iter(self.root.moves().unpack().map(|m| (m, self.root.gain(m))));
+
+            self.value[0] = self.root.evaluate();
             self.pv = match moves.iter().max_by_key(|(_, rating)| *rating) {
-                None if !pos.is_check() => Pv::empty(Score::new(0)),
+                None if !self.root.is_check() => Pv::empty(Score::new(0)),
                 None => Pv::empty(Score::mated(Ply::new(0))),
-                Some((m, _)) => match self.tt.get(pos.zobrist()) {
-                    None => Pv::new(self.value[0].saturate(), Line::singular(*m)),
-                    Some(t) => t.transpose(Ply::new(0)).truncate(),
+                Some((m, _)) => match self.tt.get(self.root.zobrist()) {
+                    Some(t) if t.best().is_some() => t.transpose(Ply::new(0)).truncate(),
+                    _ => Pv::new(self.value[0].saturate(), Line::singular(*m)),
                 },
             };
 
-            let mut stop = false;
-            let limits = self.ctrl.limits();
-            if matches!((&*moves, limits), (&[], _) | (&[_], Limits::Clock(..))) {
-                stop = true;
-            }
+            let mut depth = Depth::new(0);
+            let mut stop = matches!(
+                (&*moves, self.ctrl.limits()),
+                (&[], _) | (&[_], Limits::Clock(..))
+            );
 
             let value_scale: i32 = Params::value_scale().as_int();
             let aw_start: i32 = Params::aspiration_window_start().as_int();
@@ -581,7 +599,8 @@ pub struct Search<'e, 'c, 'p> {
     engine: &'e mut Engine,
     ctrl: &'c Control,
     position: &'p Evaluator,
-    channel: Option<(UnboundedReceiver<Info>, Task<'e>)>,
+    channel: Option<UnboundedReceiver<Info>>,
+    task: Option<Task<'e>>,
 }
 
 impl<'e, 'c, 'p> Search<'e, 'c, 'p> {
@@ -591,16 +610,16 @@ impl<'e, 'c, 'p> Search<'e, 'c, 'p> {
             ctrl,
             position,
             channel: None,
+            task: None,
         }
     }
 }
 
 impl<'e, 'p, 'c> Drop for Search<'e, 'p, 'c> {
     fn drop(&mut self) {
-        if let Some((channel, task)) = self.channel.take() {
+        if let Some(t) = self.task.take() {
             self.ctrl.abort();
-            drop(task);
-            drop(channel);
+            drop(t);
         }
     }
 }
@@ -609,7 +628,7 @@ impl<'e, 'p, 'c> FusedStream for Search<'e, 'p, 'c> {
     fn is_terminated(&self) -> bool {
         self.channel
             .as_ref()
-            .is_some_and(|(c, _)| c.is_terminated())
+            .is_some_and(FusedStream::is_terminated)
     }
 }
 
@@ -617,20 +636,27 @@ impl<'e, 'p, 'c> Stream for Search<'e, 'p, 'c> {
     type Item = Info;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        if let Some((channel, _)) = &mut self.channel {
-            return channel.poll_next_unpin(cx);
+        if let Some(rx) = &mut self.channel {
+            return rx.poll_next_unpin(cx);
         }
 
         let executor: &mut Executor = unsafe { &mut *(&mut self.engine.executor as *mut _) };
         let searchers: &'static [Searcher] = unsafe { &*(&*self.engine.searchers as *const _) };
+        let syzygy: &'static Syzygy = unsafe { &*(&self.engine.syzygy as *const _) };
         let tt: &'static Memory<Transposition> = unsafe { &*(&self.engine.tt as *const _) };
         let ctrl: &'static Control = unsafe { &*(self.ctrl as *const _) };
         let root: &'static Evaluator = unsafe { &*(self.position as *const _) };
 
         let (tx, rx) = unbounded();
-        let task = executor.execute(move |idx| {
+        self.channel = Some(rx);
+        if let Some(pv) = syzygy.best(root) {
+            let info = Info::new(Depth::new(0), Duration::ZERO, 0, pv.truncate());
+            return Poll::Ready(Some(info));
+        }
+
+        self.task = Some(executor.execute(move |idx| {
             let searcher = searchers.get(idx).assume();
-            for info in Stack::new(searcher, tt, ctrl, root).aw() {
+            for info in Stack::new(searcher, syzygy, tt, ctrl, root).aw() {
                 if idx == 0 {
                     let depth = info.depth();
                     tx.unbounded_send(info).assume();
@@ -644,9 +670,8 @@ impl<'e, 'p, 'c> Stream for Search<'e, 'p, 'c> {
                 tx.close_channel();
                 ctrl.abort();
             }
-        });
+        }));
 
-        self.channel = Some((rx, task));
         self.poll_next(cx)
     }
 }
@@ -661,6 +686,7 @@ struct Searcher {
 #[derive(Debug)]
 pub struct Engine {
     tt: Memory<Transposition>,
+    syzygy: Syzygy,
     executor: Executor,
     searchers: Box<[Searcher]>,
 }
@@ -693,6 +719,7 @@ impl Engine {
     pub fn with_options(options: &Options) -> Self {
         Engine {
             tt: Memory::new(options.hash.get()),
+            syzygy: Syzygy::new(&options.syzygy),
             executor: Executor::new(options.threads),
             searchers: (0..options.threads.get())
                 .map(|_| Searcher::default())
@@ -738,11 +765,11 @@ mod tests {
         #[filter(#s.mate().is_none() && #s >= #b)] s: Score,
         cut: bool,
     ) {
-        let tpos = Transposition::new(ScoreBound::Lower(s), d, m);
+        let tpos = Transposition::new(ScoreBound::Lower(s), d, Some(m));
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(&pos, b, d, p, cut), Ok(Pv::empty(s)));
     }
@@ -760,11 +787,11 @@ mod tests {
         #[filter(#s.mate().is_none() && #s < #b)] s: Score,
         cut: bool,
     ) {
-        let tpos = Transposition::new(ScoreBound::Upper(s), d, m);
+        let tpos = Transposition::new(ScoreBound::Upper(s), d, Some(m));
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(&pos, b, d, p, cut), Ok(Pv::empty(s)));
     }
@@ -782,11 +809,11 @@ mod tests {
         #[filter(#s.mate().is_none())] s: Score,
         cut: bool,
     ) {
-        let tpos = Transposition::new(ScoreBound::Exact(s), d, m);
+        let tpos = Transposition::new(ScoreBound::Exact(s), d, Some(m));
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(&pos, b, d, p, cut), Ok(Pv::empty(s)));
     }
@@ -800,7 +827,7 @@ mod tests {
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
 
         assert_eq!(
@@ -820,7 +847,7 @@ mod tests {
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::Nodes(0));
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupted));
     }
@@ -836,7 +863,7 @@ mod tests {
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         thread::sleep(Duration::from_millis(1));
         assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupted));
@@ -853,7 +880,7 @@ mod tests {
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         ctrl.abort();
         assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupted));
@@ -870,7 +897,7 @@ mod tests {
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
 
         assert_eq!(
@@ -890,7 +917,7 @@ mod tests {
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::None);
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
 
         assert_eq!(
@@ -905,7 +932,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
     ) {
         let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         let last = stack.aw().last();
         assert_ne!(last.and_then(|pv| pv.head()), None);
     }
@@ -916,7 +943,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
     ) {
         let ctrl = Control::new(&pos, Limits::Depth(Depth::lower()));
-        let mut stack = Stack::new(&e.searchers[0], &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         let last = stack.aw().last();
         assert_ne!(last.and_then(|pv| pv.head()), None);
     }

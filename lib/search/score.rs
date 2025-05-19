@@ -75,12 +75,12 @@ impl Binary for Score {
 
     #[inline(always)]
     fn encode(&self) -> Self::Bits {
-        Bits::new((self.get() - Self::lower().get()).cast())
+        Bits::new((self.get() - Self::MIN + 1).cast())
     }
 
     #[inline(always)]
     fn decode(bits: Self::Bits) -> Self {
-        Self::lower() + bits.cast::<i16>()
+        Score::new(bits.cast::<i16>() + Self::MIN - 1)
     }
 }
 
@@ -111,5 +111,10 @@ mod tests {
     #[proptest]
     fn decoding_encoded_score_is_an_identity(s: Score) {
         assert_eq!(Score::decode(s.encode()), s);
+    }
+
+    #[proptest]
+    fn decoding_encoded_optional_score_is_an_identity(s: Option<Score>) {
+        assert_eq!(Option::decode(s.encode()), s);
     }
 }

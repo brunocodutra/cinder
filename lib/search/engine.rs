@@ -251,7 +251,7 @@ impl<'a> Stack<'a> {
             return Err(Interrupted);
         }
 
-        let (alpha, beta) = match pos.outcome() {
+        let (mut alpha, beta) = match pos.outcome() {
             None => self.mdp(ply, &bounds),
             Some(o) if o.is_draw() => return Ok(Pv::empty(Score::new(0))),
             Some(_) => return Ok(Pv::empty(Score::mated(ply))),
@@ -296,13 +296,14 @@ impl<'a> Stack<'a> {
             }
         }
 
-        let alpha = if quiesce {
-            transposed.score().max(alpha)
+        let (lower, upper) = if quiesce {
+            (transposed.score(), Score::upper())
         } else {
-            alpha
+            (Score::lower(), Score::upper())
         };
 
-        if alpha >= beta || ply >= Ply::MAX {
+        alpha = alpha.max(lower);
+        if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
         } else if let Some(d) = self.nmp(transposed.score() - beta, draft) {
             if !is_pv && !pos.is_check() && pos.pieces(pos.turn()).len() > 1 {
@@ -414,6 +415,7 @@ impl<'a> Stack<'a> {
             }
         }
 
+        let tail = tail.clamp(lower, upper);
         self.record(pos, &moves, bounds, depth, ply, head, tail.score());
         Ok(tail.transpose(head))
     }

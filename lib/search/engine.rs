@@ -155,9 +155,18 @@ impl<'a> Stack<'a> {
     }
 
     /// Computes the singular extension margin.
-    fn singular(&self, draft: Depth) -> i32 {
+    fn single(&self, draft: Depth) -> i32 {
         let alpha: i32 = Params::singular_extension_margin_alpha().as_int();
         let beta: i32 = Params::singular_extension_margin_beta().as_int();
+        let scale: i32 = Params::value_scale().as_int();
+
+        (alpha * draft.cast::<i32>() + beta) / scale
+    }
+
+    /// Computes the double extension margin.
+    fn double(&self, draft: Depth) -> i32 {
+        let alpha: i32 = Params::double_extension_margin_alpha().as_int();
+        let beta: i32 = Params::double_extension_margin_beta().as_int();
         let scale: i32 = Params::value_scale().as_int();
 
         (alpha * draft.cast::<i32>() + beta) / scale
@@ -351,9 +360,10 @@ impl<'a> Stack<'a> {
                 let mut extension = 0i8;
                 if let Some(t) = transposition {
                     if t.score().lower(ply) >= beta && t.draft() >= draft - 3 && draft >= 6 {
-                        extension = 1;
+                        extension = 2;
                         let s_draft = (draft - 1) / 2;
-                        let s_beta = beta - self.singular(draft);
+                        let s_beta = beta - self.single(draft);
+                        let d_beta = beta - self.double(draft);
                         for (m, _) in moves.iter().rev().skip(1) {
                             let mut next = pos.clone();
                             next.play(*m);
@@ -367,6 +377,8 @@ impl<'a> Stack<'a> {
                                 cut = true;
                                 extension = -1;
                                 break;
+                            } else if pv >= d_beta {
+                                extension = 1;
                             }
                         }
                     }

@@ -134,6 +134,8 @@ params! {
     fail_low_reduction_beta: Param<10992, 5000, 17000, 1>,
     singular_extension_margin_alpha: Param<10465, 5000, 17000, 100>,
     singular_extension_margin_beta: Param<2680, 0, 4000, 100>,
+    double_extension_margin_alpha: Param<12800, 5000, 17000, 100>,
+    double_extension_margin_beta: Param<5000, 0, 8000, 100>,
     futility_margin_alpha: Param<9815, 5000, 17000, 1>,
     futility_margin_beta: Param<7821, 3000, 12000, 1>,
     futility_pruning_threshold_alpha: Param<682, 0, 4000, 1>,

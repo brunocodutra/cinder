@@ -341,9 +341,15 @@ impl<'a> Stack<'a> {
                     return (m, Value::upper());
                 }
 
-                let history = &self.searcher.history;
-                let counter = self.replies[ply.cast::<usize>() - 1];
-                let mut rating = pos.gain(m) + history.get(pos, m) + counter.get(pos, m);
+                let mut rating = Value::new(0);
+
+                rating += self.searcher.history.get(pos, m);
+                rating += self.replies[ply.cast::<usize>() - 1].get(pos, m);
+
+                let gain = pos.gain(m);
+                if gain > 0 && pos.winning(m, Value::new(1)) {
+                    rating += gain;
+                }
 
                 if killer.contains(m) {
                     rating += killer_bonus / value_scale;

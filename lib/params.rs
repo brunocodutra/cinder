@@ -152,6 +152,8 @@ params! {
     single_extension_margin_delta: Param<961>,
     double_extension_margin_gamma: Param<3846>,
     double_extension_margin_delta: Param<1588>,
+    triple_extension_margin_gamma: Param<4096>,
+    triple_extension_margin_delta: Param<524288>,
     razoring_margin_gamma: Param<320000>,
     razoring_margin_delta: Param<160000>,
     reverse_futility_margin_gamma: Param<65536>,

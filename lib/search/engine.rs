@@ -186,6 +186,13 @@ impl<'a> Stack<'a> {
         (gamma * depth.cast::<i32>() + delta) / Params::BASE
     }
 
+    /// Computes the triple extension margin.
+    fn triple(&self, depth: Depth) -> i32 {
+        let gamma = Params::triple_extension_margin_gamma();
+        let delta = Params::triple_extension_margin_delta();
+        (gamma * depth.cast::<i32>() + delta) / Params::BASE
+    }
+
     /// Computes the razoring margin.
     fn razoring(&self, depth: Depth) -> i32 {
         let gamma = Params::razoring_margin_gamma();
@@ -412,39 +419,42 @@ impl<'a> Stack<'a> {
             rating
         });
 
-        let mut extension = 0i8;
-        if let Some(t) = transposition {
-            if t.score().lower(ply) >= beta && t.depth() >= depth - 3 && depth >= 6 {
-                extension = 2;
-                let s_depth = (depth - 1) / 2;
-                let s_beta = beta - self.single(depth);
-                let d_beta = beta - self.double(depth);
-                for m in moves.sorted().skip(1) {
-                    let pv = -self.next(Some(m)).nw(s_depth - 1, -s_beta + 1, !cut)?;
-                    if pv >= beta {
-                        return Ok(pv.transpose(m));
-                    } else if pv >= s_beta {
-                        cut = true;
-                        extension = -1;
-                        break;
-                    } else if pv >= d_beta {
-                        extension = extension.min(1);
-                    }
-                }
-            }
-        }
-
-        let mut sorted_moves = moves.sorted();
-        let (mut head, mut tail) = match sorted_moves.next() {
+        #[allow(clippy::blocks_in_conditions)]
+        let (mut head, mut tail) = match { moves.sorted().next() } {
             None => return Ok(transposed.truncate()),
             Some(m) => {
+                let mut extension = 0i8;
+                if let Some(t) = transposition {
+                    if t.score().lower(ply) >= beta && t.depth() >= depth - 3 && depth >= 6 {
+                        extension = 2 + m.is_quiet() as i8;
+                        let s_depth = (depth - 1) / 2;
+                        let s_beta = beta - self.single(depth);
+                        let d_beta = beta - self.double(depth);
+                        let t_beta = beta - self.triple(depth);
+                        for m in moves.sorted().skip(1) {
+                            let pv = -self.next(Some(m)).nw(s_depth - 1, -s_beta + 1, !cut)?;
+                            if pv >= beta {
+                                return Ok(pv.transpose(m));
+                            } else if pv >= s_beta {
+                                cut = true;
+                                extension = -1;
+                                break;
+                            } else if pv >= d_beta {
+                                extension = extension.min(1);
+                            } else if pv >= t_beta {
+                                extension = extension.min(2);
+                            }
+                        }
+                    }
+                }
+
                 let mut next = self.next(Some(m));
                 (m, -next.ab(depth + extension - 1, -beta..-alpha, false)?)
             }
         };
 
         let improving = self.improving();
-        for (idx, m) in sorted_moves.enumerate() {
+        for (idx, m) in moves.sorted().skip(1).enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),

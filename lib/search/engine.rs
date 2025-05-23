@@ -330,8 +330,10 @@ impl<'a> Stack<'a> {
             }
         }
 
-        let value_scale: i16 = Params::value_scale().as_int();
-        let killer_bonus: i16 = Params::killer_move_bonus().as_int();
+        let value_scale: i32 = Params::value_scale().as_int();
+        let killer_bonus: i32 = Params::killer_move_bonus().as_int();
+        let gain_alpha: i32 = Params::noisy_gain_rating_alpha().as_int();
+        let gain_beta: i32 = Params::noisy_gain_rating_beta().as_int();
         let killer = self.killers[ply.cast::<usize>()];
         let mut moves: Moves<_> = pos
             .moves()
@@ -342,17 +344,16 @@ impl<'a> Stack<'a> {
                 }
 
                 let mut rating = Value::new(0);
-
                 rating += self.searcher.history.get(pos, m);
                 rating += self.replies[ply.cast::<usize>() - 1].get(pos, m);
 
-                let gain = pos.gain(m);
-                if gain > 0 && pos.winning(m, Value::new(1)) {
-                    rating += gain;
-                }
-
                 if killer.contains(m) {
                     rating += killer_bonus / value_scale;
+                } else if !m.is_quiet() {
+                    let gain = pos.gain(m);
+                    if pos.winning(m, Value::new(1)) {
+                        rating += (gain.cast::<i32>() * gain_alpha + gain_beta) / value_scale;
+                    }
                 }
 
                 (m, rating)

@@ -147,6 +147,8 @@ params! {
     late_move_pruning_alpha: Param<5094, 2000, 9000, 1>,
     late_move_pruning_beta: Param<9783, 5000, 16000, 1>,
     killer_move_bonus: Param<11528, 6000, 19000, 1>,
+    noisy_gain_rating_alpha: Param<1920, 1000, 4000, 10>,
+    noisy_gain_rating_beta: Param<19200, 15000, 30000, 10>,
     aspiration_window_start: Param<6215, 3000, 10000, 10>,
     aspiration_window_alpha: Param<1538, 0, 4000, 10>,
     aspiration_window_beta: Param<1398, 0, 4000, 10>,

@@ -160,8 +160,8 @@ impl<'a> Stack<'a> {
 
     /// Computes the singular extension margin.
     fn single(&self, draft: Depth) -> i32 {
-        let alpha: i32 = Params::singular_extension_margin_alpha().as_int();
-        let beta: i32 = Params::singular_extension_margin_beta().as_int();
+        let alpha: i32 = Params::single_extension_margin_alpha().as_int();
+        let beta: i32 = Params::single_extension_margin_beta().as_int();
         let scale: i32 = Params::value_scale().as_int();
 
         (alpha * draft.cast::<i32>() + beta) / scale
@@ -403,7 +403,7 @@ impl<'a> Stack<'a> {
                                 extension = -1;
                                 break;
                             } else if pv >= d_beta {
-                                extension = 1;
+                                extension = extension.min(1);
                             }
                         }
                     }

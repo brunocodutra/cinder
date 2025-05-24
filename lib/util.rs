@@ -4,6 +4,7 @@ mod binary;
 mod bits;
 mod bounded;
 mod integer;
+mod memory;
 pub mod parsers;
 
 pub use align::*;
@@ -12,3 +13,4 @@ pub use binary::*;
 pub use bits::*;
 pub use bounded::*;
 pub use integer::*;
+pub use memory::*;

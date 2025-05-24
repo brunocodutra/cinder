@@ -1,16 +1,9 @@
-use crate::chess::{Move, Zobrist};
-use crate::search::{Depth, HashSize, Line, Ply, Pv, Score};
+use crate::chess::Move;
+use crate::search::{Depth, Line, Ply, Pv, Score};
 use crate::util::{Assume, Binary, Bits, Integer};
 use derive_more::with_trait::Debug;
-use std::ops::{Index, Range, RangeInclusive};
-use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
-use std::{hint::unreachable_unchecked, mem::size_of};
-
-#[cfg(test)]
-use crate::chess::Position;
-
-#[cfg(test)]
-use proptest::{collection::*, prelude::*};
+use std::hint::unreachable_unchecked;
+use std::ops::{Range, RangeInclusive};
 
 /// Whether the transposed score is exact or a bound.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -172,137 +165,6 @@ impl Binary for Transposition {
     }
 }
 
-type Signature = Bits<u32, { 64 - <Transposition as Binary>::Bits::BITS }>;
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-#[cfg_attr(test, derive(test_strategy::Arbitrary))]
-struct SignedTransposition(Signature, <Transposition as Binary>::Bits);
-
-impl Binary for SignedTransposition {
-    type Bits = Bits<u64, 64>;
-
-    #[inline(always)]
-    fn encode(&self) -> Self::Bits {
-        let mut bits = Bits::default();
-        bits.push(self.1);
-        bits.push(self.0);
-        bits
-    }
-
-    #[inline(always)]
-    fn decode(mut bits: Self::Bits) -> Self {
-        SignedTransposition(bits.pop(), bits.pop())
-    }
-}
-
-/// A cache for [`Transposition`]s.
-#[derive(Debug)]
-#[cfg_attr(test, derive(test_strategy::Arbitrary))]
-#[debug("TranspositionTable({})", self.capacity())]
-pub struct TranspositionTable {
-    #[cfg_attr(test,
-        strategy(hash_map(any::<Position>(), any::<Transposition>(), ..32).prop_map(|ts| {
-            let mut cache: Box<[AtomicU64]> = (0..ts.len().next_power_of_two()).map(|_| AtomicU64::default()).collect();
-
-            for (pos, t) in ts {
-                let key = pos.zobrist();
-                let idx = key.slice(..cache.len().trailing_zeros()).cast::<usize>();
-                let sig = key.slice(cache.len().trailing_zeros()..).pop();
-                *cache[idx].get_mut() = Some(SignedTransposition(sig, t.encode())).encode().get();
-            }
-
-            cache
-        }))
-    )]
-    cache: Box<[AtomicU64]>,
-}
-
-impl TranspositionTable {
-    const WIDTH: usize = size_of::<<Option<SignedTransposition> as Binary>::Bits>();
-
-    /// Constructs a transposition table of at most `size` many bytes.
-    #[inline(always)]
-    pub fn new(size: HashSize) -> Self {
-        let capacity = (1 + size.get() / 2).next_power_of_two() / Self::WIDTH;
-
-        TranspositionTable {
-            cache: (0..capacity).map(|_| AtomicU64::default()).collect(),
-        }
-    }
-
-    /// The actual size of this table in bytes.
-    #[inline(always)]
-    pub fn size(&self) -> HashSize {
-        HashSize::new(self.capacity() * Self::WIDTH)
-    }
-
-    /// The actual size of this table in number of entries.
-    #[inline(always)]
-    pub fn capacity(&self) -> usize {
-        self.cache.len()
-    }
-
-    /// Instructs the CPU to load the slot associated with `key` onto the cache.
-    #[inline(always)]
-    pub fn prefetch(&self, key: Zobrist) {
-        if self.capacity() > 0 {
-            #[cfg(target_arch = "x86_64")]
-            unsafe {
-                use std::arch::x86_64::{_MM_HINT_ET0, _mm_prefetch};
-                _mm_prefetch(self.cache[key].as_ptr() as _, _MM_HINT_ET0);
-            }
-
-            #[cfg(target_arch = "aarch64")]
-            unsafe {
-                use std::arch::aarch64::{_PREFETCH_LOCALITY0, _PREFETCH_WRITE, _prefetch};
-                let ptr = self.cache[key].as_ptr() as _;
-                _prefetch(ptr, _PREFETCH_WRITE, _PREFETCH_LOCALITY0);
-            }
-        }
-    }
-
-    /// Loads the [`Transposition`] from the slot associated with `key`.
-    #[inline(always)]
-    pub fn get(&self, key: Zobrist) -> Option<Transposition> {
-        if self.capacity() == 0 {
-            return None;
-        }
-
-        let sig = self.sign(key);
-        let bits = Bits::new(self.cache[key].load(Relaxed));
-        match Binary::decode(bits) {
-            Some(SignedTransposition(s, t)) if s == sig => Some(Binary::decode(t)),
-            _ => None,
-        }
-    }
-
-    /// Stores a [`Transposition`] in the slot associated with `key`.
-    #[inline(always)]
-    pub fn set(&self, key: Zobrist, tpos: Transposition) {
-        if self.capacity() > 0 {
-            let sig = self.sign(key);
-            let bits = Some(SignedTransposition(sig, tpos.encode())).encode();
-            self.cache[key].store(bits.get(), Relaxed);
-        }
-    }
-
-    /// Returns the [`Signature`] associated with `key`.
-    #[inline(always)]
-    pub fn sign(&self, key: Zobrist) -> Signature {
-        key.slice(self.capacity().trailing_zeros()..).pop()
-    }
-}
-
-impl Index<Zobrist> for [AtomicU64] {
-    type Output = AtomicU64;
-
-    #[inline(always)]
-    fn index(&self, key: Zobrist) -> &Self::Output {
-        let idx: usize = key.slice(..self.len().trailing_zeros()).cast();
-        self.get(idx).assume()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,6 +213,11 @@ mod tests {
     }
 
     #[proptest]
+    fn decoding_encoded_optional_score_bound_is_an_identity(s: Option<ScoreBound>) {
+        assert_eq!(Option::decode(s.encode()), s);
+    }
+
+    #[proptest]
     fn transposed_score_is_within_bounds(t: Transposition, #[filter(#p >= 0)] p: Ply) {
         assert!(t.score().range(p).contains(&t.transpose(p).score()));
     }
@@ -361,89 +228,7 @@ mod tests {
     }
 
     #[proptest]
-    fn decoding_encoded_signed_transposition_is_an_identity(t: SignedTransposition) {
-        assert_eq!(SignedTransposition::decode(t.encode()), t);
-    }
-
-    #[proptest]
-    fn table_input_size_is_an_upper_limit(s: HashSize) {
-        assert!(TranspositionTable::new(s).size() <= s);
-    }
-
-    #[proptest]
-    fn table_size_is_exact_if_input_is_power_of_two(
-        #[strategy(TranspositionTable::WIDTH.trailing_zeros()..=HashSize::MAX.trailing_zeros())]
-        bits: u32,
-    ) {
-        let s = HashSize::new(1 << bits);
-        assert_eq!(TranspositionTable::new(s).size(), s);
-    }
-
-    #[proptest]
-    fn table_capacity_equals_the_size_in_bytes(tt: TranspositionTable) {
-        assert_eq!(tt.size(), tt.cache.len() * TranspositionTable::WIDTH);
-    }
-
-    #[proptest]
-    fn get_does_nothing_if_capacity_is_zero(k: Zobrist) {
-        assert_eq!(TranspositionTable::new(HashSize::new(0)).get(k), None);
-    }
-
-    #[proptest]
-    fn get_returns_none_if_transposition_does_not_exist(tt: TranspositionTable, k: Zobrist) {
-        tt.cache[k].store(0, Relaxed);
-        assert_eq!(tt.get(k), None);
-    }
-
-    #[proptest]
-    fn get_returns_none_if_signature_does_not_match(
-        tt: TranspositionTable,
-        t: Transposition,
-        k: Zobrist,
-    ) {
-        let st = Some(SignedTransposition(!tt.sign(k), t.encode()));
-        tt.cache[k].store(st.encode().get(), Relaxed);
-        assert_eq!(tt.get(k), None);
-    }
-
-    #[proptest]
-    fn get_returns_some_if_transposition_exists(
-        tt: TranspositionTable,
-        t: Transposition,
-        k: Zobrist,
-    ) {
-        let st = Some(SignedTransposition(tt.sign(k), t.encode()));
-        tt.cache[k].store(st.encode().get(), Relaxed);
-        assert_eq!(tt.get(k), Some(t));
-    }
-
-    #[proptest]
-    fn set_does_nothing_if_capacity_is_zero(k: Zobrist, t: Transposition) {
-        TranspositionTable::new(HashSize::new(0)).set(k, t);
-    }
-
-    #[proptest]
-    fn set_replaces_transposition_if_one_exists(
-        #[by_ref] tt: TranspositionTable,
-        s: Signature,
-        t: Transposition,
-        u: Transposition,
-        k: Zobrist,
-    ) {
-        let st = Some(SignedTransposition(s, t.encode()));
-        tt.cache[k].store(st.encode().get(), Relaxed);
-        tt.set(k, u);
-        assert_eq!(tt.get(k), Some(u));
-    }
-
-    #[proptest]
-    fn set_stores_transposition_if_none_exists(
-        tt: TranspositionTable,
-        t: Transposition,
-        k: Zobrist,
-    ) {
-        tt.cache[k].store(None::<SignedTransposition>.encode().get(), Relaxed);
-        tt.set(k, t);
-        assert_eq!(tt.get(k), Some(t));
+    fn decoding_encoded_optional_transposition_is_an_identity(t: Option<Transposition>) {
+        assert_eq!(Option::decode(t.encode()), t);
     }
 }

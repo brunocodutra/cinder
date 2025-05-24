@@ -1,10 +1,10 @@
-use crate::util::{Assume, Bits, Unsigned};
-use std::fmt::Debug;
+use crate::util::{Assume, Bits, Integer, Unsigned};
+use bytemuck::NoUninit;
 
 /// Trait for types that can be encoded to binary.
 pub trait Binary: Sized {
     /// A fixed width collection of bits.
-    type Bits;
+    type Bits: Integer<Repr: Unsigned> + NoUninit;
 
     /// Encodes `Self` to its binary representation.
     fn encode(&self) -> Self::Bits;
@@ -27,7 +27,7 @@ impl<T: Unsigned, const W: u32> Binary for Bits<T, W> {
     }
 }
 
-impl<T: Binary<Bits: Default + Debug + Eq + PartialEq>> Binary for Option<T> {
+impl<T: Binary<Bits: Default + Eq>> Binary for Option<T> {
     type Bits = T::Bits;
 
     #[inline(always)]
@@ -51,6 +51,31 @@ impl<T: Binary<Bits: Default + Debug + Eq + PartialEq>> Binary for Option<T> {
         }
     }
 }
+
+macro_rules! impl_binary_for {
+    ($i: ty) => {
+        impl Binary for $i {
+            type Bits = Bits<$i, { <$i>::BITS }>;
+
+            #[inline(always)]
+            fn encode(&self) -> Self::Bits {
+                Bits::new(*self)
+            }
+
+            #[inline(always)]
+            fn decode(bits: Self::Bits) -> Self {
+                bits.get()
+            }
+        }
+    };
+}
+
+impl_binary_for!(u8);
+impl_binary_for!(u16);
+impl_binary_for!(u32);
+impl_binary_for!(u64);
+impl_binary_for!(u128);
+impl_binary_for!(usize);
 
 #[cfg(test)]
 mod tests {

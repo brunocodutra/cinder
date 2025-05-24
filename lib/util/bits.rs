@@ -1,4 +1,5 @@
-use crate::util::{Integer, Primitive, Unsigned};
+use crate::util::{Integer, Unsigned};
+use bytemuck::NoUninit;
 use derive_more::with_trait::{Debug, *};
 use std::mem::transmute_copy;
 use std::ops::{Bound, Not, RangeBounds};
@@ -32,12 +33,21 @@ use std::ops::RangeInclusive;
 #[debug("Bits({_0:b})")]
 #[display("{_0:b}")]
 #[repr(transparent)]
-pub struct Bits<T, const W: u32>(#[cfg_attr(test, strategy(T::zero()..=T::ones(W)))] T);
+pub struct Bits<T: Unsigned + 'static, const W: u32>(
+    #[cfg_attr(test, strategy(T::zero()..=T::ones(W)))] T,
+);
 
-unsafe impl<T: Unsigned + Primitive, const W: u32> Integer for Bits<T, W> {
+/// Workaround to https://github.com/rust-lang/rfcs/pull/3762.
+pub const fn bits<U: Integer<Repr: Unsigned>>(i: u128) -> U {
+    unsafe { transmute_copy(&i) }
+}
+
+unsafe impl<T: Unsigned + 'static, const W: u32> NoUninit for Bits<T, W> {}
+
+unsafe impl<T: Unsigned + 'static, const W: u32> Integer for Bits<T, W> {
     type Repr = T;
-    const MIN: Self::Repr = unsafe { transmute_copy(&0u128) };
-    const MAX: Self::Repr = unsafe { transmute_copy(&(u128::MAX >> (u128::BITS - W))) };
+    const MIN: Self::Repr = bits(0);
+    const MAX: Self::Repr = bits(u128::MAX >> (u128::BITS - W));
 }
 
 impl<T: Unsigned, const W: u32> Bits<T, W> {
@@ -99,6 +109,7 @@ impl<T: Unsigned, const W: u32> Not for Bits<T, W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::Primitive;
     use std::fmt::Debug;
     use test_strategy::proptest;
 

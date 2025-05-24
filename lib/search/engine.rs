@@ -1,6 +1,6 @@
 use crate::chess::{Move, Moves, Position};
 use crate::nnue::{Evaluator, Value};
-use crate::util::{Assume, Integer};
+use crate::util::{Assume, Integer, Memory};
 use crate::{params::Params, search::*};
 use derive_more::with_trait::{Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
@@ -19,7 +19,7 @@ pub struct Interrupted;
 #[derive(Debug)]
 struct Stack<'a> {
     searcher: &'a Searcher,
-    tt: &'a TranspositionTable,
+    tt: &'a Memory<Transposition>,
     ctrl: &'a Control,
     root: &'a Evaluator,
     nodes: Option<&'a Counter>,
@@ -32,7 +32,7 @@ struct Stack<'a> {
 impl<'a> Stack<'a> {
     fn new(
         searcher: &'a Searcher,
-        tt: &'a TranspositionTable,
+        tt: &'a Memory<Transposition>,
         ctrl: &'a Control,
         root: &'a Evaluator,
     ) -> Self {
@@ -623,7 +623,7 @@ impl<'e, 'p, 'c> Stream for Search<'e, 'p, 'c> {
 
         let executor: &mut Executor = unsafe { &mut *(&mut self.engine.executor as *mut _) };
         let searchers: &'static [Searcher] = unsafe { &*(&*self.engine.searchers as *const _) };
-        let tt: &'static TranspositionTable = unsafe { &*(&self.engine.tt as *const _) };
+        let tt: &'static Memory<Transposition> = unsafe { &*(&self.engine.tt as *const _) };
         let ctrl: &'static Control = unsafe { &*(self.ctrl as *const _) };
         let root: &'static Evaluator = unsafe { &*(self.position as *const _) };
 
@@ -660,7 +660,7 @@ struct Searcher {
 /// A chess engine.
 #[derive(Debug)]
 pub struct Engine {
-    tt: TranspositionTable,
+    tt: Memory<Transposition>,
     executor: Executor,
     searchers: Box<[Searcher]>,
 }
@@ -692,7 +692,7 @@ impl Engine {
     /// Initializes the engine with the given [`Options`].
     pub fn with_options(options: &Options) -> Self {
         Engine {
-            tt: TranspositionTable::new(options.hash),
+            tt: Memory::new(options.hash.get()),
             executor: Executor::new(options.threads),
             searchers: (0..options.threads.get())
                 .map(|_| Searcher::default())
@@ -722,7 +722,7 @@ mod tests {
     fn hash_is_an_upper_limit_for_table_size(o: Options) {
         let e = Engine::with_options(&o);
         prop_assume!(e.tt.capacity() > 1);
-        assert!(e.tt.size() <= o.hash);
+        assert!(e.tt.size() <= o.hash.get());
     }
 
     #[proptest]

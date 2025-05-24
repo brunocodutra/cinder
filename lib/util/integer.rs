@@ -1,5 +1,8 @@
 use crate::util::Assume;
-use std::{hint::unreachable_unchecked, mem::transmute_copy, num::*, ops::*};
+use bytemuck::NoUninit;
+use std::fmt::{Binary, Debug, LowerHex, Octal, UpperHex};
+use std::{hash::Hash, hint::unreachable_unchecked, mem::transmute_copy};
+use std::{num::*, ops::*};
 
 /// Trait for types that can be represented by a contiguous range of primitive integers.
 ///
@@ -32,11 +35,13 @@ pub unsafe trait Integer: Copy {
     #[track_caller]
     #[inline(always)]
     fn new(i: Self::Repr) -> Self {
+        const { assert!(size_of::<Self>() == size_of::<Self::Repr>()) }
         (Self::MIN..=Self::MAX).contains(&i).assume();
         unsafe { transmute_copy(&i) }
     }
 
     /// Casts to [`Integer::Repr`].
+    #[track_caller]
     #[inline(always)]
     fn get(self) -> Self::Repr {
         let repr = unsafe { transmute_copy(&self) };
@@ -47,18 +52,21 @@ pub unsafe trait Integer: Copy {
     /// Casts to a [`Primitive`].
     ///
     /// This is equivalent to the operator `as`.
+    #[track_caller]
     #[inline(always)]
     fn cast<I: Primitive>(self) -> I {
         self.get().cast()
     }
 
     /// Converts to another [`Integer`] if possible without data loss.
+    #[track_caller]
     #[inline(always)]
     fn convert<I: Integer>(self) -> Option<I> {
         self.get().convert()
     }
 
     /// Converts to another [`Integer`] with saturation.
+    #[track_caller]
     #[inline(always)]
     fn saturate<I: Integer>(self) -> I {
         let min = I::MIN.convert().unwrap_or(Self::MIN);
@@ -67,6 +75,7 @@ pub unsafe trait Integer: Copy {
     }
 
     /// An iterator over all values in the range [`Integer::MIN`]..=[`Integer::MAX`].
+    #[track_caller]
     #[inline(always)]
     fn iter() -> impl ExactSizeIterator<Item = Self> + DoubleEndedIterator
     where
@@ -79,11 +88,18 @@ pub unsafe trait Integer: Copy {
 /// Trait for primitive integer types.
 pub trait Primitive:
     Integer<Repr = Self>
+    + NoUninit
+    + Debug
+    + Binary
+    + Octal
+    + LowerHex
+    + UpperHex
     + Default
     + Eq
     + PartialEq
     + Ord
     + PartialOrd
+    + Hash
     + Add<Output = Self>
     + AddAssign
     + Sub<Output = Self>
@@ -168,6 +184,7 @@ macro_rules! impl_primitive_for {
             const MIN: Self::Repr = <$i>::MIN;
             const MAX: Self::Repr = <$i>::MAX;
 
+            #[track_caller]
             #[inline(always)]
             fn cast<I: Primitive>(self) -> I {
                 if I::BITS <= Self::BITS {
@@ -183,6 +200,7 @@ macro_rules! impl_primitive_for {
                 }
             }
 
+            #[track_caller]
             #[inline(always)]
             fn convert<I: Integer>(self) -> Option<I> {
                 let i = self.cast();

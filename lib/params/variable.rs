@@ -29,7 +29,6 @@ unsafe impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32> I
     for Param<VALUE, MIN, MAX, BASE>
 {
     type Repr = i32;
-
     const MIN: Self::Repr = MIN;
     const MAX: Self::Repr = MAX;
 }
@@ -38,6 +37,7 @@ impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32> Default
     for Param<VALUE, MIN, MAX, BASE>
 {
     fn default() -> Self {
+        const { assert!(MIN <= VALUE && VALUE <= MAX) }
         Self { value: VALUE }
     }
 }
@@ -66,9 +66,8 @@ impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32> TryFrom<
 }
 
 impl Params {
-    pub fn init(self) -> Result<(), SpannedError> {
-        unsafe { *PARAMS.get().as_mut_unchecked() = self };
-        Ok(())
+    pub fn init(self) {
+        unsafe { *PARAMS.get().as_mut_unchecked() = self }
     }
 }
 
@@ -90,7 +89,7 @@ impl FromStr for Params {
 #[ctor::ctor]
 #[inline(never)]
 unsafe fn init() {
-    unsafe { *PARAMS.get().as_mut_unchecked() = Default::default() }
+    Params::init(Default::default());
 }
 
 #[cfg(test)]

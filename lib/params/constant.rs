@@ -7,6 +7,7 @@ impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32>
 {
     #[inline(always)]
     pub fn get(&self) -> i32 {
+        const { assert!(MIN <= VALUE && VALUE <= MAX) }
         VALUE
     }
 }

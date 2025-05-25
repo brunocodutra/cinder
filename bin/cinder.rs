@@ -27,8 +27,7 @@ fn main() -> Result<(), Failure> {
 
     #[cfg(feature = "spsa")]
     if let Some(params) = args.params {
-        use anyhow::Context;
-        params.init().context("failed to initialize parameters")?;
+        params.init();
     }
 
     let (tx, input) = unbounded();

@@ -32,9 +32,9 @@ pub struct Control {
 impl Control {
     #[inline(always)]
     fn time_to_search(pos: &Position, limits: &Limits) -> Range<f64> {
-        let (clock, inc) = match *limits {
-            Limits::Clock(clock, inc) => (clock.as_secs_f64(), inc.as_secs_f64()),
-            _ => return f64::INFINITY..limits.time().as_secs_f64(),
+        let (clock, inc) = match limits.clock {
+            Some((clock, inc)) => (clock.as_secs_f64(), inc.as_secs_f64()),
+            None => return f64::INFINITY..limits.max_time().as_secs_f64(),
         };
 
         let time_left = clock - inc;
@@ -53,7 +53,7 @@ impl Control {
     #[inline(always)]
     pub fn new(pos: &Position, limits: Limits) -> Control {
         Control {
-            nodes: AtomicU64::new(limits.nodes()),
+            nodes: AtomicU64::new(limits.max_nodes()),
             attention: Attention::default(),
             time: Self::time_to_search(pos, &limits),
             timestamp: Instant::now(),
@@ -81,7 +81,7 @@ impl Control {
     /// The nodes counted so far.
     #[inline(always)]
     pub fn nodes(&self) -> u64 {
-        self.limits.nodes() - self.nodes.load(Ordering::Relaxed)
+        self.limits.max_nodes() - self.nodes.load(Ordering::Relaxed)
     }
 
     /// The PV [`Attention`] statistics.
@@ -111,7 +111,7 @@ impl Control {
 
         let checked_dec = |i: u64| i.checked_sub(1);
         let nodes = match self.nodes.fetch_update(Relaxed, Relaxed, checked_dec) {
-            Ok(count) => self.limits.nodes() - count,
+            Ok(count) => self.limits.max_nodes() - count,
             Err(_) => {
                 self.abort.store(true, Relaxed);
                 return ControlFlow::Abort;
@@ -186,7 +186,7 @@ mod tests {
         #[filter(#pv.head().is_some())] pv: Pv,
         #[filter(#ply >= 0)] ply: Ply,
     ) {
-        let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
+        let ctrl = Control::new(&pos, Limits::time(Duration::ZERO));
         assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
         assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
         assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
@@ -198,7 +198,7 @@ mod tests {
         #[filter(#pv.head().is_some())] pv: Pv,
         #[filter(#ply >= 0)] ply: Ply,
     ) {
-        let mut ctrl = Control::new(&pos, Limits::Clock(Duration::MAX, Duration::ZERO));
+        let mut ctrl = Control::new(&pos, Limits::clock(Duration::MAX, Duration::ZERO));
         ctrl.time.start = 0.;
         assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Stop);
         assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Stop);
@@ -212,7 +212,7 @@ mod tests {
         #[filter(#pv.head().is_some())] pv: Pv,
         #[filter(#ply >= 0)] ply: Ply,
     ) {
-        let ctrl = Control::new(&pos, Limits::Nodes(n));
+        let ctrl = Control::new(&pos, Limits::nodes(n));
         assert_eq!(ctrl.nodes(), 0);
         assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Continue);
         assert_eq!(ctrl.nodes(), 1);
@@ -224,7 +224,7 @@ mod tests {
         #[filter(#pv.head().is_some())] pv: Pv,
         #[filter(#ply >= 0)] ply: Ply,
     ) {
-        let ctrl = Control::new(&pos, Limits::Nodes(0));
+        let ctrl = Control::new(&pos, Limits::nodes(0));
         assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
         assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
         assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
@@ -236,7 +236,7 @@ mod tests {
         #[filter(#pv.head().is_some())] pv: Pv,
         #[filter(#ply >= 0)] ply: Ply,
     ) {
-        let ctrl = Control::new(&pos, Limits::None);
+        let ctrl = Control::new(&pos, Limits::none());
         ctrl.abort();
         assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
         assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
@@ -245,13 +245,13 @@ mod tests {
 
     #[proptest]
     fn suspends_limits_while_empty_pv(pos: Position, s: Score, #[filter(#ply >= 0)] ply: Ply) {
-        let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
+        let ctrl = Control::new(&pos, Limits::time(Duration::ZERO));
         assert_eq!(ctrl.check(&pos, &Pv::empty(s), ply), ControlFlow::Continue);
 
-        let ctrl = Control::new(&pos, Limits::Clock(Duration::ZERO, Duration::ZERO));
+        let ctrl = Control::new(&pos, Limits::clock(Duration::ZERO, Duration::ZERO));
         assert_eq!(ctrl.check(&pos, &Pv::empty(s), ply), ControlFlow::Continue);
 
-        let ctrl = Control::new(&pos, Limits::Nodes(0));
+        let ctrl = Control::new(&pos, Limits::nodes(0));
         assert_eq!(ctrl.check(&pos, &Pv::empty(s), ply), ControlFlow::Continue);
     }
 }

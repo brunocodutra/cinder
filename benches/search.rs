@@ -43,7 +43,7 @@ fn crit(c: &mut Criterion) {
         c.benchmark_group("ttd")
             .sampling_mode(SamplingMode::Flat)
             .bench_function(o.threads.to_string(), |b| {
-                b.iter_custom(|i| bench(i, o, &depth.into()))
+                b.iter_custom(|i| bench(i, o, &Limits::depth(depth)))
             });
     }
 
@@ -53,7 +53,7 @@ fn crit(c: &mut Criterion) {
             .sampling_mode(SamplingMode::Flat)
             .throughput(Throughput::Elements(nodes))
             .bench_function(o.threads.to_string(), |b| {
-                b.iter_custom(|i| bench(i, o, &nodes.into()))
+                b.iter_custom(|i| bench(i, o, &Limits::nodes(nodes)))
             });
     }
 }

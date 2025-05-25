@@ -204,20 +204,32 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                 let inf = t(tag("infinite"));
 
                 let params = (wtime, winc, btime, binc, time, nodes, depth, mate, mtg, inf);
-                let limits = gather(params).map(|(wt, wi, bt, bi, t, n, d, _, _, _)| {
-                    if let (Color::White, Some(clock)) = (turn, wt) {
-                        Limits::Clock(clock, wi.unwrap_or_default())
-                    } else if let (Color::Black, Some(clock)) = (turn, bt) {
-                        Limits::Clock(clock, bi.unwrap_or_default())
-                    } else if let Some(movetime) = t {
-                        Limits::Time(movetime)
-                    } else if let Some(nodes) = n {
-                        Limits::Nodes(nodes.saturate())
-                    } else if let Some(depth) = d {
-                        Limits::Depth(depth.saturate())
-                    } else {
-                        Limits::None
+                let limits = gather(params).map(|(wt, wi, bt, bi, t, n, d, _, _, inf)| {
+                    let mut limits = Limits::none();
+
+                    if inf.is_none() {
+                        if let (Color::White, Some(clock)) = (turn, wt) {
+                            limits = limits.with_clock(clock, wi.unwrap_or_default());
+                        }
+
+                        if let (Color::Black, Some(clock)) = (turn, bt) {
+                            limits = limits.with_clock(clock, bi.unwrap_or_default());
+                        }
+
+                        if let Some(movetime) = t {
+                            limits = limits.with_time(movetime);
+                        }
+
+                        if let Some(nodes) = n {
+                            limits = limits.with_nodes(nodes.saturate())
+                        }
+
+                        if let Some(depth) = d {
+                            limits = limits.with_depth(depth.saturate())
+                        }
                     }
+
+                    limits
                 });
 
                 let mut go = terminated(opt(limits), eof).map(|l| l.unwrap_or_default());

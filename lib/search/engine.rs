@@ -549,11 +549,9 @@ impl<'a> Stack<'a> {
                 },
             };
 
+            let clock = self.ctrl.limits().clock;
+            let mut stop = matches!((&*moves, &clock), (&[], _) | (&[_], Some(_)));
             let mut depth = Depth::new(0);
-            let mut stop = matches!(
-                (&*moves, self.ctrl.limits()),
-                (&[], _) | (&[_], Limits::Clock(..))
-            );
 
             let value_scale: i32 = Params::value_scale().as_int();
             let aw_start: i32 = Params::aspiration_window_start().as_int();
@@ -670,7 +668,7 @@ impl<'e, 'p, 'c> Stream for Search<'e, 'p, 'c> {
                 if idx == 0 {
                     let depth = info.depth();
                     tx.unbounded_send(info).assume();
-                    if depth >= ctrl.limits().depth() {
+                    if depth >= ctrl.limits().max_depth() {
                         break;
                     }
                 }
@@ -778,7 +776,7 @@ mod tests {
         let tpos = Transposition::new(ScoreBound::Lower(s), d, Some(m));
         e.tt.set(pos.zobrist(), tpos);
 
-        let ctrl = Control::new(&pos, Limits::None);
+        let ctrl = Control::new(&pos, Limits::none());
         let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(&pos, b, d, p, cut), Ok(Pv::empty(s)));
@@ -800,7 +798,7 @@ mod tests {
         let tpos = Transposition::new(ScoreBound::Upper(s), d, Some(m));
         e.tt.set(pos.zobrist(), tpos);
 
-        let ctrl = Control::new(&pos, Limits::None);
+        let ctrl = Control::new(&pos, Limits::none());
         let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(&pos, b, d, p, cut), Ok(Pv::empty(s)));
@@ -822,7 +820,7 @@ mod tests {
         let tpos = Transposition::new(ScoreBound::Exact(s), d, Some(m));
         e.tt.set(pos.zobrist(), tpos);
 
-        let ctrl = Control::new(&pos, Limits::None);
+        let ctrl = Control::new(&pos, Limits::none());
         let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(&pos, b, d, p, cut), Ok(Pv::empty(s)));
@@ -836,7 +834,7 @@ mod tests {
         d: Depth,
         cut: bool,
     ) {
-        let ctrl = Control::new(&pos, Limits::None);
+        let ctrl = Control::new(&pos, Limits::none());
         let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
 
@@ -856,7 +854,7 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
         cut: bool,
     ) {
-        let ctrl = Control::new(&pos, Limits::Nodes(0));
+        let ctrl = Control::new(&pos, Limits::nodes(0));
         let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupted));
@@ -872,7 +870,7 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
         cut: bool,
     ) {
-        let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
+        let ctrl = Control::new(&pos, Limits::time(Duration::ZERO));
         let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         thread::sleep(Duration::from_millis(1));
@@ -889,7 +887,7 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
         cut: bool,
     ) {
-        let ctrl = Control::new(&pos, Limits::None);
+        let ctrl = Control::new(&pos, Limits::none());
         let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
         ctrl.abort();
@@ -906,7 +904,7 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
         cut: bool,
     ) {
-        let ctrl = Control::new(&pos, Limits::None);
+        let ctrl = Control::new(&pos, Limits::none());
         let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
 
@@ -926,7 +924,7 @@ mod tests {
         #[filter(#p > 0)] p: Ply,
         cut: bool,
     ) {
-        let ctrl = Control::new(&pos, Limits::None);
+        let ctrl = Control::new(&pos, Limits::none());
         let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         stack.pv = stack.pv.transpose(m);
 
@@ -941,7 +939,7 @@ mod tests {
         e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
     ) {
-        let ctrl = Control::new(&pos, Limits::Time(Duration::ZERO));
+        let ctrl = Control::new(&pos, Limits::time(Duration::ZERO));
         let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         let last = stack.aw().last();
         assert_ne!(last.and_then(|pv| pv.head()), None);
@@ -952,7 +950,7 @@ mod tests {
         e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
     ) {
-        let ctrl = Control::new(&pos, Limits::Depth(Depth::lower()));
+        let ctrl = Control::new(&pos, Limits::depth(Depth::lower()));
         let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
         let last = stack.aw().last();
         assert_ne!(last.and_then(|pv| pv.head()), None);
@@ -964,7 +962,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         d: Depth,
     ) {
-        let ctrl = Control::new(&pos, Limits::Depth(d));
+        let ctrl = Control::new(&pos, Limits::depth(d));
         let infos = block_on_stream(e.search(&pos, &ctrl));
         assert!(infos.map(|i| (i.depth(), i.score())).is_sorted());
     }

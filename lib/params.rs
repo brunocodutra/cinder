@@ -16,8 +16,6 @@ pub use variable::*;
 impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32>
     Param<VALUE, MIN, MAX, BASE>
 {
-    const _VALID: () = const { assert!(MIN <= VALUE && VALUE <= MAX) };
-
     /// The parameter value as floating point.
     #[inline(always)]
     pub fn as_float(&self) -> f64 {
@@ -162,10 +160,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
-    fn perturbing_params_adjusts_by_at_least_grain(
-        p: Params,
-        #[any(size_range(Params::LEN).lift())] d: Vec<f64>,
-    ) {
+    fn perturbing_updates_params(p: Params, #[any(size_range(Params::LEN).lift())] d: Vec<f64>) {
         let (mut l, mut r) = (p, p);
         l.update(d.iter().copied());
         r.update(d.iter().map(|&d| -d));

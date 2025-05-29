@@ -1,7 +1,7 @@
 use crate::chess::{Move, Moves, Position};
 use crate::nnue::{Evaluator, Value};
 use crate::syzygy::{Syzygy, Wdl};
-use crate::util::{Assume, Integer, Memory};
+use crate::util::{Assume, Bounded, Integer, Memory};
 use crate::{params::Params, search::*};
 use derive_more::with_trait::{Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
@@ -54,10 +54,10 @@ impl<'a> Stack<'a> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn record(
+    fn record<T>(
         &mut self,
         pos: &Position,
-        moves: &Moves<Value>,
+        moves: &Moves<T>,
         bounds: Range<Score>,
         depth: Depth,
         ply: Ply,
@@ -353,16 +353,16 @@ impl<'a> Stack<'a> {
         let gain_alpha: i32 = Params::noisy_gain_rating_alpha().as_int();
         let gain_beta: i32 = Params::noisy_gain_rating_beta().as_int();
         let killer = self.killers[ply.cast::<usize>()];
-        let mut moves: Moves<_> = pos
+        let mut moves: Moves<Bounded<i16>> = pos
             .moves()
             .unpack_if(|ms| !quiesce || !ms.is_quiet())
             .map(|m| {
                 if Some(m) == transposed.head() {
-                    return (m, Value::upper());
+                    return (m, Bounded::upper());
                 }
 
-                let mut rating = Value::new(0);
-                rating += self.searcher.history.get(pos, m);
+                let mut rating = Bounded::new(0);
+                rating += self.searcher.history.get(pos, m).cast::<i32>();
                 rating += self.replies[ply.cast::<usize>() - 1].get(pos, m);
 
                 if killer.contains(m) {
@@ -460,7 +460,7 @@ impl<'a> Stack<'a> {
     /// The root of the principal variation search.
     fn root(
         &mut self,
-        moves: &mut Moves<Value>,
+        moves: &mut Moves<Bounded<i16>>,
         bounds: Range<Score>,
         depth: Depth,
     ) -> Result<Pv, Interrupted> {
@@ -472,9 +472,11 @@ impl<'a> Stack<'a> {
 
         for (m, rating) in moves.iter_mut() {
             if Some(*m) == self.pv.head() {
-                *rating = Value::upper();
+                *rating = Bounded::upper();
             } else {
-                *rating = self.root.gain(*m) + self.searcher.history.get(self.root, *m);
+                *rating = Bounded::new(0);
+                *rating += self.root.gain(*m);
+                *rating += self.searcher.history.get(self.root, *m);
             }
         }
 
@@ -526,8 +528,12 @@ impl<'a> Stack<'a> {
     /// An implementation of aspiration windows with iterative deepening.
     fn aw(&mut self) -> impl Iterator<Item = Info> {
         gen move {
-            let mut moves =
-                Moves::from_iter(self.root.moves().unpack().map(|m| (m, self.root.gain(m))));
+            let mut moves = Moves::<Bounded<i16>>::from_iter(self.root.moves().unpack().map(|m| {
+                let mut rating = Bounded::new(0);
+                rating += self.root.gain(m);
+                rating += self.searcher.history.get(self.root, m);
+                (m, rating)
+            }));
 
             self.value[0] = self.root.evaluate();
             self.pv = match moves.iter().max_by_key(|(_, rating)| *rating) {

@@ -603,36 +603,44 @@ impl<'a> Stack<'a> {
 
 /// A handle to an ongoing search.
 #[derive(Debug)]
-pub struct Search<'e, 'c, 'p> {
+pub struct Search<'e, 'p> {
     engine: &'e mut Engine,
-    ctrl: &'c Control,
     position: &'p Evaluator,
+    ctrl: Control,
     channel: Option<UnboundedReceiver<Info>>,
     task: Option<Task<'e>>,
 }
 
-impl<'e, 'c, 'p> Search<'e, 'c, 'p> {
-    fn new(engine: &'e mut Engine, ctrl: &'c Control, position: &'p Evaluator) -> Self {
+impl<'e, 'p> Search<'e, 'p> {
+    fn new(engine: &'e mut Engine, limits: Limits, position: &'p Evaluator) -> Self {
         Search {
             engine,
-            ctrl,
             position,
+            ctrl: Control::new(position, limits),
             channel: None,
             task: None,
         }
     }
+
+    /// Aborts the search.
+    ///
+    /// Returns true if the search had not already been aborted.
+    #[inline(always)]
+    pub fn abort(&self) {
+        self.ctrl.abort();
+    }
 }
 
-impl<'e, 'p, 'c> Drop for Search<'e, 'p, 'c> {
+impl<'e, 'p> Drop for Search<'e, 'p> {
     fn drop(&mut self) {
         if let Some(t) = self.task.take() {
-            self.ctrl.abort();
+            self.abort();
             drop(t);
         }
     }
 }
 
-impl<'e, 'p, 'c> FusedStream for Search<'e, 'p, 'c> {
+impl<'e, 'p> FusedStream for Search<'e, 'p> {
     fn is_terminated(&self) -> bool {
         self.channel
             .as_ref()
@@ -640,7 +648,7 @@ impl<'e, 'p, 'c> FusedStream for Search<'e, 'p, 'c> {
     }
 }
 
-impl<'e, 'p, 'c> Stream for Search<'e, 'p, 'c> {
+impl<'e, 'p> Stream for Search<'e, 'p> {
     type Item = Info;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -652,7 +660,7 @@ impl<'e, 'p, 'c> Stream for Search<'e, 'p, 'c> {
         let searchers: &'static [Searcher] = unsafe { &*(&*self.engine.searchers as *const _) };
         let syzygy: &'static Syzygy = unsafe { &*(&self.engine.syzygy as *const _) };
         let tt: &'static Memory<Transposition> = unsafe { &*(&self.engine.tt as *const _) };
-        let ctrl: &'static Control = unsafe { &*(self.ctrl as *const _) };
+        let ctrl: &'static Control = unsafe { &*(&self.ctrl as *const _) };
         let root: &'static Evaluator = unsafe { &*(self.position as *const _) };
 
         let (tx, rx) = unbounded();
@@ -736,12 +744,8 @@ impl Engine {
     }
 
     /// Initiates a [`Search`].
-    pub fn search<'e, 'p, 'c>(
-        &'e mut self,
-        pos: &'p Evaluator,
-        ctrl: &'c Control,
-    ) -> Search<'e, 'c, 'p> {
-        Search::new(self, ctrl, pos)
+    pub fn search<'e, 'p>(&'e mut self, pos: &'p Evaluator, limits: Limits) -> Search<'e, 'p> {
+        Search::new(self, limits, pos)
     }
 }
 
@@ -962,8 +966,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         d: Depth,
     ) {
-        let ctrl = Control::new(&pos, Limits::depth(d));
-        let infos = block_on_stream(e.search(&pos, &ctrl));
+        let infos = block_on_stream(e.search(&pos, Limits::depth(d)));
         assert!(infos.map(|i| (i.depth(), i.score())).is_sorted());
     }
 }

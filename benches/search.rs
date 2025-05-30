@@ -1,7 +1,7 @@
 #![feature(custom_test_frameworks)]
 #![test_runner(criterion::runner)]
 
-use cinder::search::{Control, Depth, Engine, Limits, Options};
+use cinder::search::{Depth, Engine, Limits, Options};
 use cinder::{nnue::Evaluator, util::Integer};
 use criterion::{Criterion, SamplingMode, Throughput};
 use criterion_macro::criterion;
@@ -15,8 +15,7 @@ fn bench(reps: u64, options: &Options, limits: &Limits) -> Duration {
 
     for _ in 0..reps {
         let mut engine = Engine::with_options(options);
-        let ctrl = Control::new(&position, limits.clone());
-        let search = engine.search(&position, &ctrl);
+        let search = engine.search(&position, limits.clone());
 
         let timer = Instant::now();
         block_on_stream(search).for_each(drop);

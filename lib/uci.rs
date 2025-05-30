@@ -1,6 +1,6 @@
 use crate::chess::{Color, Move, Perspective, Square};
 use crate::nnue::Evaluator;
-use crate::search::{Control, Engine, HashSize, Info, Limits, Options, ThreadCount};
+use crate::search::{Engine, HashSize, Info, Limits, Options, ThreadCount};
 use crate::util::{Assume, Integer, parsers::*};
 use derive_more::with_trait::{Display, Error, From};
 use futures::{prelude::*, select_biased as select, stream::FusedStream};
@@ -110,8 +110,7 @@ impl<I, O> Uci<I, O> {
 
 impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
     async fn go(&mut self, limits: Limits) -> Result<bool, UciError<O::Error>> {
-        let ctrl = Control::new(&self.position, limits);
-        let mut search = self.engine.search(&self.position, &ctrl);
+        let mut search = self.engine.search(&self.position, limits);
         let mut best = UciBestMove(None);
 
         loop {
@@ -133,7 +132,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                     match line.as_deref().map(str::trim_ascii) {
                         None | Some("") => continue,
                         Some("quit") => return Ok(false),
-                        Some("stop") => { ctrl.abort(); },
+                        Some("stop") => { search.abort(); },
                         Some(cmd) => eprintln!("Warning: ignored unsupported command `{cmd}` during search"),
                     }
                 }

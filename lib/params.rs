@@ -134,6 +134,8 @@ params! {
     single_extension_margin_beta: Param<3002, 1000, 5000, 100>,
     double_extension_margin_alpha: Param<12020, 6000, 19000, 100>,
     double_extension_margin_beta: Param<4963, 2000, 8000, 100>,
+    reverse_futility_margin_alpha: Param<2048, 0, 4000, 1>,
+    reverse_futility_margin_beta: Param<1000, 0, 4000, 1>,
     futility_margin_alpha: Param<6597, 3000, 10000, 1>,
     futility_margin_beta: Param<8361, 4000, 13000, 1>,
     futility_pruning_threshold_alpha: Param<1042, 0, 4000, 1>,

@@ -131,6 +131,7 @@ impl<'a> Stack<'a> {
 
         match scale * surplus.cast::<i32>() {
             ..0 => None,
+            s if s < alpha - beta => None,
             s if s >= 3 * alpha - beta => Some(draft - 3 - draft / 4),
             s => Some(draft - (s + beta) / alpha - draft / 4),
         }
@@ -178,6 +179,19 @@ impl<'a> Stack<'a> {
         let scale: i32 = Params::value_scale().as_int();
 
         (alpha * draft.cast::<i32>() + beta) / scale
+    }
+
+    /// Computes the reverse futility margin.
+    fn rfp(&self, draft: Depth) -> i32 {
+        let alpha: i32 = Params::reverse_futility_margin_alpha().as_int();
+        let beta: i32 = Params::reverse_futility_margin_beta().as_int();
+        let scale: i32 = Params::value_scale().as_int();
+
+        if draft <= 6 {
+            (alpha * draft.cast::<i32>() + beta) / scale
+        } else {
+            i32::MAX
+        }
     }
 
     /// Computes the futility margin.
@@ -336,17 +350,21 @@ impl<'a> Stack<'a> {
         let transposed = transposed.clamp(lower, upper);
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
-        } else if let Some(d) = self.nmp(transposed.score() - beta, draft) {
-            if !is_pv && !pos.is_check() && pos.pieces(pos.turn()).len() > 1 {
-                if d <= 0 {
-                    return Ok(transposed.truncate());
-                } else {
-                    let mut next = pos.clone();
-                    next.pass();
-                    self.tt.prefetch(next.zobrist());
-                    self.replies[ply.cast::<usize>()] = None;
-                    if -self.nw::<0>(&next, -beta + 1, d + ply, ply + 1, !cut)? >= beta {
+        } else if !is_pv && !pos.is_check() {
+            if transposed.score() - self.rfp(draft) >= beta {
+                return Ok(transposed.truncate());
+            } else if let Some(d) = self.nmp(transposed.score() - beta, draft) {
+                if pos.pieces(pos.turn()).len() > 1 {
+                    if d <= 0 {
                         return Ok(transposed.truncate());
+                    } else {
+                        let mut next = pos.clone();
+                        next.pass();
+                        self.tt.prefetch(next.zobrist());
+                        self.replies[ply.cast::<usize>()] = None;
+                        if -self.nw::<0>(&next, -beta + 1, d + ply, ply + 1, !cut)? >= beta {
+                            return Ok(transposed.truncate());
+                        }
                     }
                 }
             }

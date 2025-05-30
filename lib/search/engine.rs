@@ -103,7 +103,11 @@ impl<'a> Stack<'a> {
     }
 
     /// A measure for how much the position is improving.
-    fn improving(&mut self, ply: Ply) -> i32 {
+    fn improving(&mut self, pos: &Position, ply: Ply) -> i32 {
+        if pos.is_check() {
+            return 0;
+        }
+
         let idx = ply.cast::<usize>();
 
         let a = (idx >= 2 && self.value[idx] > self.value[idx - 2]) as i32;
@@ -418,7 +422,7 @@ impl<'a> Stack<'a> {
             }
         };
 
-        let improving = self.improving(ply);
+        let improving = self.improving(pos, ply);
         for (idx, &(m, _)) in moves.iter().rev().skip(1).enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,

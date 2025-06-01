@@ -121,16 +121,16 @@ impl Binary for Move {
     }
 }
 
-/// A collection of [`Move`]s originating from a given [`Square`].
+/// A set of [`Move`]s originating from a given [`Square`].
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, filter(!#whither.contains(#base.whence())))]
-pub struct MovePack {
+pub struct MoveSet {
     base: Move,
     whither: Bitboard,
 }
 
-impl MovePack {
+impl MoveSet {
     /// A pack of regular moves.
     #[inline(always)]
     pub fn regular(piece: Piece, whence: Square, whither: Bitboard) -> Self {
@@ -141,7 +141,7 @@ impl MovePack {
             Move::regular(whence, whence.flip(), None)
         };
 
-        MovePack { base, whither }
+        MoveSet { base, whither }
     }
 
     /// A pack of capture moves.
@@ -184,39 +184,39 @@ impl MovePack {
 
     /// An iterator over the [`Move`]s in this bitboard.
     #[inline(always)]
-    pub fn iter(&self) -> MovePackIter {
-        MovePackIter::new(*self)
+    pub fn iter(&self) -> MoveSetIter {
+        MoveSetIter::new(*self)
     }
 }
 
-impl IntoIterator for MovePack {
+impl IntoIterator for MoveSet {
     type Item = Move;
-    type IntoIter = MovePackIter;
+    type IntoIter = MoveSetIter;
 
     #[inline(always)]
     fn into_iter(self) -> Self::IntoIter {
-        MovePackIter::new(self)
+        MoveSetIter::new(self)
     }
 }
 
-/// An iterator over the [`Move`]s in a [`MovePack`].
+/// An iterator over the [`Move`]s in a [`MoveSet`].
 #[derive(Debug)]
-pub struct MovePackIter {
+pub struct MoveSetIter {
     base: Move,
     whither: Squares,
 }
 
-impl MovePackIter {
+impl MoveSetIter {
     #[inline(always)]
-    fn new(set: MovePack) -> Self {
-        MovePackIter {
+    fn new(set: MoveSet) -> Self {
+        MoveSetIter {
             base: set.base,
             whither: set.whither.iter(),
         }
     }
 }
 
-impl Iterator for MovePackIter {
+impl Iterator for MoveSetIter {
     type Item = Move;
 
     #[inline(always)]
@@ -242,7 +242,7 @@ impl Iterator for MovePackIter {
     }
 }
 
-impl ExactSizeIterator for MovePackIter {
+impl ExactSizeIterator for MoveSetIter {
     #[inline(always)]
     fn len(&self) -> usize {
         match self.base.promotion() {
@@ -312,13 +312,13 @@ mod tests {
     }
 
     #[proptest]
-    fn can_iterate_moves_in_set(ml: MovePack) {
+    fn can_iterate_moves_in_set(ml: MoveSet) {
         let v = Vec::from_iter(ml);
         assert_eq!(ml.iter().len(), v.len());
     }
 
     #[proptest]
-    fn all_moves_in_set_are_of_the_same_type(ml: MovePack) {
+    fn all_moves_in_set_are_of_the_same_type(ml: MoveSet) {
         for m in ml {
             assert_eq!(m.is_promotion(), ml.is_promotion());
             assert_eq!(m.is_capture(), ml.is_capture());
@@ -327,7 +327,7 @@ mod tests {
     }
 
     #[proptest]
-    fn all_moves_in_set_are_of_the_same_source_square(ml: MovePack) {
+    fn all_moves_in_set_are_of_the_same_source_square(ml: MoveSet) {
         for m in ml {
             assert_eq!(m.whence(), ml.whence());
         }

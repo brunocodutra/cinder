@@ -42,7 +42,9 @@ impl Display for UciSearchInfo {
             Some(p) => write!(f, " score mate {}", (p + p.get().signum()) / 2)?,
         }
 
-        write!(f, " pv {}", self.0.moves())?;
+        if self.0.head().is_some() {
+            write!(f, " pv {}", self.0.moves())?;
+        }
 
         Ok(())
     }
@@ -120,10 +122,8 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                         None => break,
                         Some(i) => {
                             best = UciBestMove(i.head());
-                            if i.head().is_some() {
-                                let info = UciSearchInfo(i).to_string();
-                                self.output.send(info).await.map_err(UciError::Fatal)?;
-                            }
+                            let info = UciSearchInfo(i).to_string();
+                            self.output.send(info).await.map_err(UciError::Fatal)?;
                         }
                     }
                 },
@@ -413,7 +413,7 @@ mod tests {
         let nps = field("nps", int);
         let score = field("score", (t(alt([tag("cp"), tag("mate")])), int));
         let pv = field("pv", separated_list1(tag(" "), word));
-        let info = (tag("info"), depth, time, nodes, nps, score, pv);
+        let info = (tag("info"), depth, time, nodes, nps, score, opt(pv));
         recognize(separated_list1(line_ending, info)).parse(input)
     }
 
@@ -629,7 +629,7 @@ mod tests {
         let output = uci.output.join("\n");
 
         let bestmove = field("bestmove", tag("0000"));
-        let mut pattern = recognize(terminated(bestmove, eof));
+        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 

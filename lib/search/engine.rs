@@ -1,4 +1,4 @@
-use crate::chess::{Move, Moves, Position};
+use crate::chess::{Move, Position};
 use crate::nnue::{Evaluator, Value};
 use crate::syzygy::{Syzygy, Wdl};
 use crate::util::{Assume, Bounded, Integer, Memory};
@@ -49,15 +49,19 @@ impl<'a> Stack<'a> {
             replies: [Default::default(); Ply::MAX as usize + 1],
             killers: [Default::default(); Ply::MAX as usize + 1],
             value: [Default::default(); Ply::MAX as usize + 1],
-            pv: Pv::empty(Score::lower()),
+            pv: if root.is_check() {
+                Pv::empty(Score::mated(Ply::new(0)))
+            } else {
+                Pv::empty(Score::new(0))
+            },
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn record<T>(
+    fn record(
         &mut self,
         pos: &Position,
-        moves: &Moves<T>,
+        moves: &Moves,
         bounds: Range<Score>,
         depth: Depth,
         ply: Ply,
@@ -85,7 +89,7 @@ impl<'a> Stack<'a> {
             let counter = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
             counter.update(pos, best, bonus.saturate());
 
-            for &(m, _) in moves.iter().rev() {
+            for m in moves.iter() {
                 if m == best {
                     break;
                 } else {
@@ -370,67 +374,66 @@ impl<'a> Stack<'a> {
             }
         }
 
+        let mut moves = Moves::from_iter(pos.moves().unpack_if(|ms| !quiesce || !ms.is_quiet()));
+
         let value_scale: i32 = Params::value_scale().as_int();
         let killer_bonus: i32 = Params::killer_move_bonus().as_int();
         let gain_alpha: i32 = Params::noisy_gain_rating_alpha().as_int();
         let gain_beta: i32 = Params::noisy_gain_rating_beta().as_int();
         let killer = self.killers[ply.cast::<usize>()];
-        let mut moves: Moves<Bounded<i16>> = pos
-            .moves()
-            .unpack_if(|ms| !quiesce || !ms.is_quiet())
-            .map(|m| {
-                if Some(m) == transposed.head() {
-                    return (m, Bounded::upper());
+
+        moves.sort(|m| {
+            if Some(m) == transposed.head() {
+                return Bounded::upper();
+            }
+
+            let mut rating = Bounded::new(0);
+            rating += self.searcher.history.get(pos, m).cast::<i32>();
+            rating += self.replies[ply.cast::<usize>() - 1].get(pos, m);
+
+            if killer.contains(m) {
+                rating += killer_bonus / value_scale;
+            } else if !m.is_quiet() {
+                let gain = pos.gain(m);
+                if pos.winning(m, Value::new(1)) {
+                    rating += (gain.cast::<i32>() * gain_alpha + gain_beta) / value_scale;
                 }
+            }
 
-                let mut rating = Bounded::new(0);
-                rating += self.searcher.history.get(pos, m).cast::<i32>();
-                rating += self.replies[ply.cast::<usize>() - 1].get(pos, m);
+            rating
+        });
 
-                if killer.contains(m) {
-                    rating += killer_bonus / value_scale;
-                } else if !m.is_quiet() {
-                    let gain = pos.gain(m);
-                    if pos.winning(m, Value::new(1)) {
-                        rating += (gain.cast::<i32>() * gain_alpha + gain_beta) / value_scale;
+        let mut extension = 0i8;
+        if let Some(t) = transposition {
+            if t.score().lower(ply) >= beta && t.draft() >= draft - 3 && draft >= 6 {
+                extension = 2;
+                let s_draft = (draft - 1) / 2;
+                let s_beta = beta - self.single(draft);
+                let d_beta = beta - self.double(draft);
+                for m in moves.sorted().skip(1) {
+                    let mut next = pos.clone();
+                    next.play(m);
+                    self.tt.prefetch(next.zobrist());
+                    self.replies[ply.cast::<usize>()] =
+                        Some(self.searcher.continuation.reply(pos, m));
+                    let pv = -self.nw(&next, -s_beta + 1, s_draft + ply, ply + 1, !cut)?;
+                    if pv >= beta {
+                        return Ok(pv.transpose(m));
+                    } else if pv >= s_beta {
+                        cut = true;
+                        extension = -1;
+                        break;
+                    } else if pv >= d_beta {
+                        extension = extension.min(1);
                     }
                 }
+            }
+        }
 
-                (m, rating)
-            })
-            .collect();
-
-        moves.sort_unstable_by_key(|(_, rating)| *rating);
-        let (mut head, mut tail) = match moves.last() {
+        let mut sorted_moves = moves.sorted();
+        let (mut head, mut tail) = match sorted_moves.next() {
             None => return Ok(transposed.truncate()),
-            Some(&(m, _)) => {
-                let mut extension = 0i8;
-                if let Some(t) = transposition {
-                    if t.score().lower(ply) >= beta && t.draft() >= draft - 3 && draft >= 6 {
-                        extension = 2;
-                        let s_draft = (draft - 1) / 2;
-                        let s_beta = beta - self.single(draft);
-                        let d_beta = beta - self.double(draft);
-                        for (m, _) in moves.iter().rev().skip(1) {
-                            let mut next = pos.clone();
-                            next.play(*m);
-                            self.tt.prefetch(next.zobrist());
-                            self.replies[ply.cast::<usize>()] =
-                                Some(self.searcher.continuation.reply(pos, *m));
-                            let pv = -self.nw(&next, -s_beta + 1, s_draft + ply, ply + 1, !cut)?;
-                            if pv >= beta {
-                                return Ok(pv.transpose(*m));
-                            } else if pv >= s_beta {
-                                cut = true;
-                                extension = -1;
-                                break;
-                            } else if pv >= d_beta {
-                                extension = extension.min(1);
-                            }
-                        }
-                    }
-                }
-
+            Some(m) => {
                 let mut next = pos.clone();
                 next.play(m);
                 self.tt.prefetch(next.zobrist());
@@ -441,7 +444,7 @@ impl<'a> Stack<'a> {
         };
 
         let improving = self.improving(pos, ply);
-        for (idx, &(m, _)) in moves.iter().rev().skip(1).enumerate() {
+        for (idx, m) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
@@ -482,7 +485,7 @@ impl<'a> Stack<'a> {
     /// The root of the principal variation search.
     fn root(
         &mut self,
-        moves: &mut Moves<Bounded<i16>>,
+        moves: &mut Moves,
         bounds: Range<Score>,
         depth: Depth,
     ) -> Result<Pv, Interrupted> {
@@ -492,18 +495,19 @@ impl<'a> Stack<'a> {
             return Err(Interrupted);
         }
 
-        for (m, rating) in moves.iter_mut() {
-            if Some(*m) == self.pv.head() {
-                *rating = Bounded::upper();
+        moves.sort(|m| {
+            if Some(m) == self.pv.head() {
+                Bounded::upper()
             } else {
-                *rating = Bounded::new(0);
-                *rating += self.root.gain(*m);
-                *rating += self.searcher.history.get(self.root, *m);
+                let mut rating = Bounded::new(0);
+                rating += self.searcher.history.get(self.root, m);
+                rating += self.root.gain(m);
+                rating
             }
-        }
+        });
 
-        moves.sort_unstable_by_key(|(_, rating)| *rating);
-        let &(mut head, _) = moves.last().assume();
+        let mut sorted_moves = moves.sorted();
+        let mut head = sorted_moves.next().assume();
         let mut next = self.root.clone();
         next.play(head);
         self.tt.prefetch(next.zobrist());
@@ -511,7 +515,7 @@ impl<'a> Stack<'a> {
         self.replies[0] = Some(self.searcher.continuation.reply(self.root, head));
         let mut tail = -self.ab(&next, -beta..-alpha, depth, ply + 1, false)?;
 
-        for (idx, &(m, _)) in moves.iter().rev().skip(1).enumerate() {
+        for (idx, m) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
@@ -550,26 +554,23 @@ impl<'a> Stack<'a> {
     /// An implementation of aspiration windows with iterative deepening.
     fn aw(&mut self) -> impl Iterator<Item = Info> {
         gen move {
-            let mut moves = Moves::<Bounded<i16>>::from_iter(self.root.moves().unpack().map(|m| {
-                let mut rating = Bounded::new(0);
-                rating += self.root.gain(m);
-                rating += self.searcher.history.get(self.root, m);
-                (m, rating)
-            }));
+            let clock = self.ctrl.limits().clock;
+            let mut moves = Moves::from_iter(self.root.moves().unpack());
+            let mut stop = matches!((moves.len(), &clock), (0, _) | (1, Some(_)));
+            let mut depth = Depth::new(0);
 
             self.value[0] = self.root.evaluate();
-            self.pv = match moves.iter().max_by_key(|(_, rating)| *rating) {
-                None if !self.root.is_check() => Pv::empty(Score::new(0)),
-                None => Pv::empty(Score::mated(Ply::new(0))),
-                Some((m, _)) => match self.tt.get(self.root.zobrist()) {
-                    Some(t) if t.best().is_some() => t.transpose(Ply::new(0)).truncate(),
-                    _ => Pv::new(self.value[0].saturate(), Line::singular(*m)),
-                },
-            };
+            if let Some(t) = self.tt.get(self.root.zobrist()) {
+                if t.best().is_some_and(|m| moves.iter().any(|n| m == n)) {
+                    self.pv = t.transpose(Ply::new(0)).truncate();
+                }
+            }
 
-            let clock = self.ctrl.limits().clock;
-            let mut stop = matches!((&*moves, &clock), (&[], _) | (&[_], Some(_)));
-            let mut depth = Depth::new(0);
+            if self.pv.head().is_none() {
+                if let Some(m) = moves.iter().next() {
+                    self.pv = Pv::new(self.value[0].saturate(), Line::singular(m));
+                }
+            }
 
             let value_scale: i32 = Params::value_scale().as_int();
             let aw_start: i32 = Params::aspiration_window_start().as_int();

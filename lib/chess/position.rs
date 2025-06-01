@@ -9,41 +9,18 @@ use std::{num::NonZeroU32, str::FromStr};
 #[cfg(test)]
 use proptest::{prelude::*, sample::*};
 
-/// A buffer with sufficient capacity to hold all [`Move`]s in any [`Position`].
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Deref, DerefMut, IntoIterator)]
-pub struct Moves<T>(
-    #[deref(forward)]
-    #[deref_mut(forward)]
-    #[into_iterator(owned, ref, ref_mut)]
-    ArrayVec<(Move, T), 254>,
-);
-
-impl<T> Default for Moves<T> {
-    #[inline(always)]
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
-
-impl<T> FromIterator<(Move, T)> for Moves<T> {
-    #[inline(always)]
-    fn from_iter<I: IntoIterator<Item = (Move, T)>>(iter: I) -> Self {
-        Moves(FromIterator::from_iter(iter))
-    }
-}
-
-/// A buffer with sufficient capacity to hold all [`MovePack`]s in any [`Position`] .
+/// A container with sufficient capacity to hold all [`Move`]s in any [`Position`].
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash, Deref, DerefMut, IntoIterator)]
-pub struct PackedMoves(ArrayVec<MovePack, 32>);
+pub struct MovePack(ArrayVec<MoveSet, 32>);
 
-impl PackedMoves {
+impl MovePack {
     #[inline(always)]
     pub fn unpack(&self) -> impl Iterator<Item = Move> {
         self.unpack_if(|_| true)
     }
 
     #[inline(always)]
-    pub fn unpack_if<F: FnMut(&MovePack) -> bool>(&self, f: F) -> impl Iterator<Item = Move> {
+    pub fn unpack_if<F: FnMut(&MoveSet) -> bool>(&self, f: F) -> impl Iterator<Item = Move> {
         self.iter().copied().filter(f).flatten()
     }
 }
@@ -81,7 +58,7 @@ impl MovePacker for NoCapacityMovePacker {
     }
 }
 
-impl MovePacker for PackedMoves {
+impl MovePacker for MovePack {
     #[inline(always)]
     fn pack(
         &mut self,
@@ -94,12 +71,12 @@ impl MovePacker for PackedMoves {
         let regulars = wt & !victims;
 
         if !captures.is_empty() {
-            let captures = MovePack::capture(piece, wc, captures);
+            let captures = MoveSet::capture(piece, wc, captures);
             self.0.try_push(captures).assume();
         }
 
         if !regulars.is_empty() {
-            let regulars = MovePack::regular(piece, wc, regulars);
+            let regulars = MoveSet::regular(piece, wc, regulars);
             self.0.try_push(regulars).assume();
         }
 
@@ -466,7 +443,7 @@ impl Position {
 
     /// An iterator over all pieces on the board.
     #[inline(always)]
-    pub fn iter(&self) -> impl Iterator<Item = (Piece, Square)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (Piece, Square)> {
         self.board.iter()
     }
 
@@ -605,10 +582,10 @@ impl Position {
         }
     }
 
-    /// An iterator over the legal moves that can be played in this position.
+    /// The legal moves that can be played in this position.
     #[inline(always)]
-    pub fn moves(&self) -> PackedMoves {
-        let mut moves = PackedMoves::default();
+    pub fn moves(&self) -> MovePack {
+        let mut moves = MovePack::default();
 
         if self.is_check() {
             EvasionGenerator::generate(self, &mut moves).assume()
@@ -665,7 +642,7 @@ impl Position {
                     let bb = candidates & self.by_role(role);
                     if let Some(wc) = bb.into_iter().next() {
                         let piece = Piece::new(role, turn);
-                        let moves = MovePack::capture(piece, wc, sq.bitboard());
+                        let moves = MoveSet::capture(piece, wc, sq.bitboard());
                         lva = moves.into_iter().next().map(|m| (m, role));
                         occupied ^= wc.bitboard();
                         break;

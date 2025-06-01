@@ -11,6 +11,7 @@
     new_zeroed_alloc,
     ptr_as_ref_unchecked,
     round_char_boundary,
+    slice_swap_unchecked,
     sync_unsafe_cell
 )]
 

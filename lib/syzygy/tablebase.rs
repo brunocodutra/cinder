@@ -1,4 +1,4 @@
-use crate::chess::{Castles, MovePack, PackedMoves, Position};
+use crate::chess::{Castles, MovePack, MoveSet, Position};
 use crate::syzygy::{Dtz, DtzTable, Material, NormalizedMaterial, TableDescriptor, Wdl, WdlTable};
 use crate::util::{Integer, Memory};
 use derive_more::with_trait::Debug;
@@ -178,12 +178,12 @@ pub struct ProbeResult<'a> {
     kind: ProbeResultKind,
     tb: &'a Tablebase,
     pos: &'a Position,
-    moves: PackedMoves,
+    moves: MovePack,
     wdl: Wdl,
 }
 
 impl<'a> ProbeResult<'a> {
-    fn zeroing(tb: &'a Tablebase, pos: &'a Position, moves: PackedMoves, wdl: Wdl) -> Self {
+    fn zeroing(tb: &'a Tablebase, pos: &'a Position, moves: MovePack, wdl: Wdl) -> Self {
         Self {
             kind: ProbeResultKind::Zeroing,
             tb,
@@ -193,12 +193,7 @@ impl<'a> ProbeResult<'a> {
         }
     }
 
-    fn maybe_not_zeroing(
-        tb: &'a Tablebase,
-        pos: &'a Position,
-        moves: PackedMoves,
-        wdl: Wdl,
-    ) -> Self {
+    fn maybe_not_zeroing(tb: &'a Tablebase, pos: &'a Position, moves: MovePack, wdl: Wdl) -> Self {
         Self {
             kind: ProbeResultKind::MaybeNotZeroing,
             tb,
@@ -227,7 +222,7 @@ impl<'a> ProbeResult<'a> {
             return Some(self.wdl.into());
         }
 
-        let is_pawn_push = |ms: &MovePack| {
+        let is_pawn_push = |ms: &MoveSet| {
             let turn = self.pos.turn();
             !ms.is_capture() && self.pos.pawns(turn).contains(ms.whence())
         };
@@ -253,7 +248,7 @@ impl<'a> ProbeResult<'a> {
         };
 
         // Otherwise, do a 1-ply search to find the best DTZ.
-        let is_not_zeroing = |ms: &MovePack| ms.is_quiet() && !is_pawn_push(ms);
+        let is_not_zeroing = |ms: &MoveSet| ms.is_quiet() && !is_pawn_push(ms);
         for m in self.moves.unpack_if(is_not_zeroing) {
             let mut next = self.pos.clone();
             next.play(m);

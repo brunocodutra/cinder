@@ -3,7 +3,7 @@ use crate::search::{Attention, Limits, Ply, Pv, Statistics};
 use crate::{params::Params, util::Integer};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-use std::{mem::MaybeUninit, ops::Range};
+use std::{array::from_fn, ops::Range};
 
 /// Controls the search flow.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -59,7 +59,7 @@ impl Control {
             timestamp: Instant::now(),
             trend: AtomicU64::new(f64::NAN.to_bits()),
             abort: AtomicBool::new(false),
-            stop: unsafe { MaybeUninit::zeroed().assume_init() },
+            stop: from_fn(|_| from_fn(|_| AtomicBool::new(false))),
             limits,
         }
     }

@@ -2,7 +2,7 @@ use crate::chess::{Bitboard, Color, Magic, Perspective, Rank, Role, Square};
 use crate::util::{Assume, Integer};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
-use std::{cell::SyncUnsafeCell, mem::MaybeUninit, ops::Shl, str::FromStr};
+use std::{cell::SyncUnsafeCell, ops::Shl, str::FromStr};
 
 /// A chess [piece][`Role`] of a certain [`Color`].
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -27,7 +27,7 @@ impl Piece {
     #[inline(always)]
     fn forks(wc: Square, color: Color) -> Bitboard {
         pub static FORKS: SyncUnsafeCell<[[Bitboard; 64]; 2]> =
-            unsafe { MaybeUninit::zeroed().assume_init() };
+            SyncUnsafeCell::new([[Bitboard::empty(); 64]; 2]);
 
         #[cold]
         #[ctor::ctor]
@@ -50,7 +50,7 @@ impl Piece {
     #[inline(always)]
     fn jumps(wc: Square) -> Bitboard {
         pub static JUMPS: SyncUnsafeCell<[Bitboard; 64]> =
-            unsafe { MaybeUninit::zeroed().assume_init() };
+            SyncUnsafeCell::new([Bitboard::empty(); 64]);
 
         #[cold]
         #[ctor::ctor]
@@ -72,7 +72,7 @@ impl Piece {
     #[inline(always)]
     fn steps(wc: Square) -> Bitboard {
         pub static SLIDES: SyncUnsafeCell<[Bitboard; 64]> =
-            unsafe { MaybeUninit::zeroed().assume_init() };
+            SyncUnsafeCell::new([Bitboard::empty(); 64]);
 
         #[cold]
         #[ctor::ctor]
@@ -94,7 +94,7 @@ impl Piece {
     #[inline(always)]
     fn slides(idx: usize) -> Bitboard {
         pub static BITBOARDS: SyncUnsafeCell<[Bitboard; 88772]> =
-            unsafe { MaybeUninit::zeroed().assume_init() };
+            SyncUnsafeCell::new([Bitboard::empty(); 88772]);
 
         #[cold]
         #[ctor::ctor]

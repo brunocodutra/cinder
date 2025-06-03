@@ -1,5 +1,5 @@
 use crate::util::{Integer, Primitive};
-use std::{cell::SyncUnsafeCell, mem::MaybeUninit};
+use std::cell::SyncUnsafeCell;
 
 #[cfg(not(feature = "spsa"))]
 mod constant;
@@ -29,7 +29,7 @@ impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32>
     }
 }
 
-static PARAMS: SyncUnsafeCell<Params> = unsafe { MaybeUninit::zeroed().assume_init() };
+static PARAMS: SyncUnsafeCell<Params> = SyncUnsafeCell::new(Params::new());
 
 #[cfg(feature = "spsa")]
 macro_rules! len {
@@ -50,6 +50,14 @@ macro_rules! params {
         #[cfg_attr(feature = "spsa", serde(deny_unknown_fields))]
         pub struct Params {
             $(#[cfg_attr(feature = "spsa", serde(default))] $name: $type,)*
+        }
+
+        impl Params {
+            const fn new() -> Self {
+                Params {
+                    $($name: <$type>::new(),)*
+                }
+            }
         }
 
         $(impl Params {

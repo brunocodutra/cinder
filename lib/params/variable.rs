@@ -20,6 +20,11 @@ pub struct Param<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i
 impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32>
     Param<VALUE, MIN, MAX, BASE>
 {
+    pub const fn new() -> Self {
+        const { assert!(MIN <= VALUE && VALUE <= MAX) }
+        Self { value: VALUE }
+    }
+
     pub fn range(&self) -> f64 {
         (MAX - MIN + 1) as f64
     }
@@ -37,8 +42,7 @@ impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32> Default
     for Param<VALUE, MIN, MAX, BASE>
 {
     fn default() -> Self {
-        const { assert!(MIN <= VALUE && VALUE <= MAX) }
-        Self { value: VALUE }
+        Self::new()
     }
 }
 

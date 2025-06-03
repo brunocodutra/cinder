@@ -1,8 +1,8 @@
 use crate::chess::{Color, Perspective, Piece, Role, Square};
-use crate::util::{Bits, Integer};
+use crate::util::{Bits, Integer, bits};
 use derive_more::with_trait::{Debug, *};
 use std::fmt::{self, Formatter};
-use std::{cell::SyncUnsafeCell, mem::MaybeUninit, str::FromStr};
+use std::{cell::SyncUnsafeCell, str::FromStr};
 
 /// The castling rights in a chess [`Position`][`crate::chess::Position`].
 #[derive(
@@ -27,14 +27,14 @@ pub struct Castles(Bits<u8, 4>);
 impl Castles {
     /// No castling rights.
     #[inline(always)]
-    pub fn none() -> Self {
-        Castles(Bits::new(0b0000))
+    pub const fn none() -> Self {
+        Castles(bits(0b0000))
     }
 
     /// All castling rights.
     #[inline(always)]
-    pub fn all() -> Self {
-        Castles(Bits::new(0b1111))
+    pub const fn all() -> Self {
+        Castles(bits(0b1111))
     }
 
     /// A unique number the represents this castling rights configuration.
@@ -87,7 +87,7 @@ impl From<Square> for Castles {
     #[inline(always)]
     fn from(sq: Square) -> Self {
         pub static CASTLES: SyncUnsafeCell<[Castles; 64]> =
-            unsafe { MaybeUninit::zeroed().assume_init() };
+            SyncUnsafeCell::new([Castles::none(); 64]);
 
         #[cold]
         #[ctor::ctor]

@@ -11,3 +11,12 @@ impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32>
         VALUE
     }
 }
+
+impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32>
+    Param<VALUE, MIN, MAX, BASE>
+{
+    #[inline(always)]
+    pub const fn new() -> Self {
+        Self {}
+    }
+}

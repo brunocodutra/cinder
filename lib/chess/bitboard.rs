@@ -1,8 +1,8 @@
 use crate::chess::{File, Perspective, Rank, Square};
 use crate::util::{Assume, Integer};
 use derive_more::with_trait::{Debug, *};
+use std::cell::SyncUnsafeCell;
 use std::fmt::{self, Formatter, Write};
-use std::{cell::SyncUnsafeCell, mem::MaybeUninit};
 
 /// The [butterfly board].
 ///
@@ -54,32 +54,32 @@ impl Debug for Bitboard {
 impl Bitboard {
     /// An empty board.
     #[inline(always)]
-    pub fn empty() -> Self {
-        Bitboard(0)
+    pub const fn empty() -> Self {
+        Bitboard::new(0)
     }
 
     /// A full board.
     #[inline(always)]
-    pub fn full() -> Self {
-        Bitboard(0xFFFFFFFFFFFFFFFF)
+    pub const fn full() -> Self {
+        Bitboard::new(0xFFFFFFFFFFFFFFFF)
     }
 
     /// Border squares.
     #[inline(always)]
-    pub fn border() -> Self {
-        Bitboard(0xFF818181818181FF)
+    pub const fn border() -> Self {
+        Bitboard::new(0xFF818181818181FF)
     }
 
     /// Light squares.
     #[inline(always)]
-    pub fn light() -> Self {
-        Bitboard(0x55AA55AA55AA55AA)
+    pub const fn light() -> Self {
+        Bitboard::new(0x55AA55AA55AA55AA)
     }
 
     /// Dark squares.
     #[inline(always)]
-    pub fn dark() -> Self {
-        Bitboard(0xAA55AA55AA55AA55)
+    pub const fn dark() -> Self {
+        Bitboard::new(0xAA55AA55AA55AA55)
     }
 
     /// Fills out squares on a bitboard.
@@ -129,7 +129,7 @@ impl Bitboard {
     #[inline(always)]
     pub fn line(whence: Square, whither: Square) -> Self {
         pub static LINES: SyncUnsafeCell<Butterfly<Bitboard>> =
-            unsafe { MaybeUninit::zeroed().assume_init() };
+            SyncUnsafeCell::new([[Bitboard::empty(); 64]; 64]);
 
         #[cold]
         #[ctor::ctor]
@@ -172,7 +172,7 @@ impl Bitboard {
     #[inline(always)]
     pub fn segment(whence: Square, whither: Square) -> Self {
         pub static SEGMENTS: SyncUnsafeCell<Butterfly<Bitboard>> =
-            unsafe { MaybeUninit::zeroed().assume_init() };
+            SyncUnsafeCell::new([[Bitboard::empty(); 64]; 64]);
 
         #[cold]
         #[ctor::ctor]

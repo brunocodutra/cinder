@@ -1,6 +1,6 @@
 use crate::chess::{Color, Move, Perspective, Square};
 use crate::nnue::Evaluator;
-use crate::search::{Engine, HashSize, Info, Limits, Options, ThreadCount};
+use crate::search::{Engine, HashSize, Info, Limits, Mate, Options, ThreadCount};
 use crate::util::{Assume, Integer, parsers::*};
 use derive_more::with_trait::{Display, Error, From};
 use futures::{prelude::*, select_biased as select, stream::FusedStream};
@@ -38,8 +38,9 @@ impl Display for UciSearchInfo {
         write!(f, " nps {}", self.0.nps() as u64)?;
 
         match self.0.score().mate() {
-            None => write!(f, " score cp {}", self.0.score())?,
-            Some(p) => write!(f, " score mate {}", (p + p.get().signum()) / 2)?,
+            Mate::None => write!(f, " score cp {}", self.0.score())?,
+            Mate::Mating(p) => write!(f, " score mate {}", (p + 1) / 2)?,
+            Mate::Mated(p) => write!(f, " score mate -{}", (p + 1) / 2)?,
         }
 
         if self.0.head().is_some() {

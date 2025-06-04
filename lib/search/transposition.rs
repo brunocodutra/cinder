@@ -19,15 +19,14 @@ impl ScoreBound {
     #[track_caller]
     #[inline(always)]
     pub fn new(bounds: Range<Score>, score: Score, ply: Ply) -> Self {
-        (ply >= 0).assume();
         (bounds.start < bounds.end).assume();
 
         if score >= bounds.end {
-            ScoreBound::Lower(score.normalize(-ply))
+            ScoreBound::Lower(score.relative_to_root(ply))
         } else if score <= bounds.start {
-            ScoreBound::Upper(score.normalize(-ply))
+            ScoreBound::Upper(score.relative_to_root(ply))
         } else {
-            ScoreBound::Exact(score.normalize(-ply))
+            ScoreBound::Exact(score.relative_to_root(ply))
         }
     }
 
@@ -35,10 +34,10 @@ impl ScoreBound {
     #[track_caller]
     #[inline(always)]
     pub fn bound(&self, ply: Ply) -> Score {
-        (ply >= 0).assume();
-
         match *self {
-            ScoreBound::Lower(s) | ScoreBound::Upper(s) | ScoreBound::Exact(s) => s.normalize(ply),
+            ScoreBound::Lower(s) | ScoreBound::Upper(s) | ScoreBound::Exact(s) => {
+                s.relative_to_ply(ply)
+            }
         }
     }
 
@@ -46,8 +45,6 @@ impl ScoreBound {
     #[track_caller]
     #[inline(always)]
     pub fn lower(&self, ply: Ply) -> Score {
-        (ply >= 0).assume();
-
         match *self {
             ScoreBound::Upper(_) => Score::mated(ply),
             _ => self.bound(ply),
@@ -58,8 +55,6 @@ impl ScoreBound {
     #[track_caller]
     #[inline(always)]
     pub fn upper(&self, ply: Ply) -> Score {
-        (ply >= 0).assume();
-
         match *self {
             ScoreBound::Lower(_) => Score::mating(ply),
             _ => self.bound(ply),
@@ -227,7 +222,7 @@ mod tests {
     }
 
     #[proptest]
-    fn transposed_score_is_within_bounds(t: Transposition, #[filter(#p >= 0)] p: Ply) {
+    fn transposed_score_is_within_bounds(t: Transposition, p: Ply) {
         assert!(t.score().range(p).contains(&t.transpose(p).score()));
     }
 

@@ -28,7 +28,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
-    fn flipping_value_produces_its_negative(v: Value) {
+    fn flipping_value_returns_its_negative(v: Value) {
         assert_eq!(v.flip(), -v);
     }
 }

@@ -7,7 +7,7 @@ pub struct PlyRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as I
 
 unsafe impl Integer for PlyRepr {
     type Repr = i8;
-    const MIN: Self::Repr = -Self::MAX;
+    const MIN: Self::Repr = 0;
     const MAX: Self::Repr = 95;
 }
 

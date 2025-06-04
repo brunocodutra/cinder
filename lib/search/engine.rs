@@ -793,7 +793,7 @@ mod tests {
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
-        #[filter(#s.mate().is_none() && #s >= #b)] s: Score,
+        #[filter(#s.mate() == Mate::None && #s >= #b)] s: Score,
         cut: bool,
     ) {
         let tpos = Transposition::new(ScoreBound::Lower(s), d, Some(m));
@@ -815,7 +815,7 @@ mod tests {
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
-        #[filter(#s.mate().is_none() && #s < #b)] s: Score,
+        #[filter(#s.mate() == Mate::None && #s < #b)] s: Score,
         cut: bool,
     ) {
         let tpos = Transposition::new(ScoreBound::Upper(s), d, Some(m));
@@ -837,7 +837,7 @@ mod tests {
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
         d: Depth,
         #[filter(#p > 0)] p: Ply,
-        #[filter(#s.mate().is_none())] s: Score,
+        #[filter(#s.mate() == Mate::None)] s: Score,
         cut: bool,
     ) {
         let tpos = Transposition::new(ScoreBound::Exact(s), d, Some(m));

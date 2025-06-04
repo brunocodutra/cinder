@@ -2,6 +2,27 @@ use crate::nnue::Value;
 use crate::util::{Binary, Bits, Bounded, Integer};
 use crate::{chess::Perspective, search::Ply, util::Assume};
 
+/// Number of [plies][`Ply`] to mate.
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
+#[cfg_attr(test, derive(test_strategy::Arbitrary))]
+pub enum Mate {
+    #[default]
+    None,
+    Mating(Ply),
+    Mated(Ply),
+}
+
+impl Mate {
+    #[inline(always)]
+    pub fn plies(&self) -> Option<Ply> {
+        match *self {
+            Mate::None => None,
+            Mate::Mating(ply) => Some(ply),
+            Mate::Mated(ply) => Some(ply),
+        }
+    }
+}
+
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
@@ -23,22 +44,32 @@ impl Score {
     };
 
     /// Returns number of plies to mate, if one is in the horizon.
-    ///
-    /// Negative number of plies means the opponent is mating.
     #[inline(always)]
-    pub fn mate(&self) -> Option<Ply> {
+    pub fn mate(&self) -> Mate {
         if *self < Value::MIN {
-            Some((Score::lower() - *self).saturate())
+            Mate::Mated((*self - Score::lower()).saturate())
         } else if *self > Value::MAX {
-            Some((Score::upper() - *self).saturate())
+            Mate::Mating((Score::upper() - *self).saturate())
         } else {
-            None
+            Mate::None
         }
     }
 
-    /// Normalizes mate scores relative to `ply`.
+    /// Normalizes mate scores from `ply` relative to the root node.
     #[inline(always)]
-    pub fn normalize(&self, ply: Ply) -> Self {
+    pub fn relative_to_root(&self, ply: Ply) -> Self {
+        if *self < Value::MIN {
+            *self - ply
+        } else if *self > Value::MAX {
+            *self + ply
+        } else {
+            *self
+        }
+    }
+
+    /// Normalizes mate scores from the root node relative to `ply`.
+    #[inline(always)]
+    pub fn relative_to_ply(&self, ply: Ply) -> Self {
         if *self < Value::MIN {
             Value::lower().convert::<Score>().assume().min(*self + ply)
         } else if *self > Value::MAX {
@@ -51,15 +82,13 @@ impl Score {
     /// Mating score at `ply`
     #[inline(always)]
     pub fn mating(ply: Ply) -> Self {
-        (ply >= 0).assume();
-        Self::upper().normalize(ply)
+        Self::upper().relative_to_ply(ply)
     }
 
     /// Mated score at `ply`
     #[inline(always)]
     pub fn mated(ply: Ply) -> Self {
-        (ply >= 0).assume();
-        Self::lower().normalize(ply)
+        Self::lower().relative_to_ply(ply)
     }
 }
 
@@ -90,21 +119,33 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
-    fn normalize_ignores_non_mate_scores(#[filter(#s.mate().is_none())] s: Score, p: Ply) {
-        assert_eq!(s.normalize(p), s);
+    fn relative_to_root_ignores_non_mate_scores(
+        #[filter(#s.mate() == Mate::None)] s: Score,
+        p: Ply,
+    ) {
+        assert_eq!(s.relative_to_root(p), s);
+    }
+
+    #[proptest]
+    fn relative_to_ply_ignores_non_mate_scores(
+        #[filter(#s.mate() == Mate::None)] s: Score,
+        p: Ply,
+    ) {
+        assert_eq!(s.relative_to_ply(p), s);
     }
 
     #[proptest]
     fn mate_returns_plies_to_mate(p: Ply) {
-        if p > 0 {
-            assert_eq!(Score::upper().normalize(p).mate(), Some(p));
-        } else {
-            assert_eq!(Score::lower().normalize(-p).mate(), Some(p));
-        }
+        assert_eq!(Score::mating(p).mate(), Mate::Mating(p));
     }
 
     #[proptest]
-    fn flipping_score_produces_its_negative(s: Score) {
+    fn mate_returns_plies_to_mated(p: Ply) {
+        assert_eq!(Score::mated(p).mate(), Mate::Mated(p));
+    }
+
+    #[proptest]
+    fn flipping_score_returns_its_negative(s: Score) {
         assert_eq!(s.flip(), -s);
     }
 

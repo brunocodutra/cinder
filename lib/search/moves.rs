@@ -129,7 +129,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
-    fn sorting_same_moves_produces_same_sequence(mut ms: Moves) {
+    fn sorting_same_moves_returns_same_sequence(mut ms: Moves) {
         assert_eq!(Vec::from_iter(ms.sorted()), Vec::from_iter(ms.sorted()));
     }
 

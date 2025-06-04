@@ -181,11 +181,7 @@ mod tests {
     }
 
     #[proptest]
-    fn aborts_if_time_is_up(
-        pos: Position,
-        #[filter(#pv.head().is_some())] pv: Pv,
-        #[filter(#ply >= 0)] ply: Ply,
-    ) {
+    fn aborts_if_time_is_up(pos: Position, #[filter(#pv.head().is_some())] pv: Pv, ply: Ply) {
         let ctrl = Control::new(&pos, Limits::time(Duration::ZERO));
         assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
         assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
@@ -196,7 +192,7 @@ mod tests {
     fn stops_if_searched_for_sufficient_time(
         pos: Position,
         #[filter(#pv.head().is_some())] pv: Pv,
-        #[filter(#ply >= 0)] ply: Ply,
+        ply: Ply,
     ) {
         let mut ctrl = Control::new(&pos, Limits::clock(Duration::MAX, Duration::ZERO));
         ctrl.time.start = 0.;
@@ -210,7 +206,7 @@ mod tests {
         pos: Position,
         n: u64,
         #[filter(#pv.head().is_some())] pv: Pv,
-        #[filter(#ply >= 0)] ply: Ply,
+        ply: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::nodes(n));
         assert_eq!(ctrl.nodes(), 0);
@@ -222,7 +218,7 @@ mod tests {
     fn aborts_if_node_count_is_reached(
         pos: Position,
         #[filter(#pv.head().is_some())] pv: Pv,
-        #[filter(#ply >= 0)] ply: Ply,
+        ply: Ply,
     ) {
         let ctrl = Control::new(&pos, Limits::nodes(0));
         assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
@@ -231,11 +227,7 @@ mod tests {
     }
 
     #[proptest]
-    fn aborts_upon_request(
-        pos: Position,
-        #[filter(#pv.head().is_some())] pv: Pv,
-        #[filter(#ply >= 0)] ply: Ply,
-    ) {
+    fn aborts_upon_request(pos: Position, #[filter(#pv.head().is_some())] pv: Pv, ply: Ply) {
         let ctrl = Control::new(&pos, Limits::none());
         ctrl.abort();
         assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
@@ -244,7 +236,7 @@ mod tests {
     }
 
     #[proptest]
-    fn suspends_limits_while_empty_pv(pos: Position, s: Score, #[filter(#ply >= 0)] ply: Ply) {
+    fn suspends_limits_while_empty_pv(pos: Position, s: Score, ply: Ply) {
         let ctrl = Control::new(&pos, Limits::time(Duration::ZERO));
         assert_eq!(ctrl.check(&pos, &Pv::empty(s), ply), ControlFlow::Continue);
 

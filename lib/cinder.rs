@@ -6,6 +6,7 @@
 )]
 #![feature(
     array_chunks,
+    array_repeat,
     coverage_attribute,
     gen_blocks,
     new_zeroed_alloc,

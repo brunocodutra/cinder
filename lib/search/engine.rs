@@ -23,11 +23,11 @@ struct Stack<'a> {
     syzygy: &'a Syzygy,
     tt: &'a Memory<Transposition>,
     ctrl: &'a Control,
-    root: &'a Evaluator,
     nodes: Option<&'a Counter>,
     replies: [Option<&'a Reply>; Ply::MAX as usize + 1],
     killers: [Killers; Ply::MAX as usize + 1],
     value: [Value; Ply::MAX as usize + 1],
+    root: Evaluator,
     pv: Pv,
 }
 
@@ -37,19 +37,19 @@ impl<'a> Stack<'a> {
         syzygy: &'a Syzygy,
         tt: &'a Memory<Transposition>,
         ctrl: &'a Control,
-        root: &'a Evaluator,
+        pos: &'a Position,
     ) -> Self {
         Stack {
             searcher,
             syzygy,
             tt,
             ctrl,
-            root,
             nodes: None,
             replies: [Default::default(); Ply::MAX as usize + 1],
             killers: [Default::default(); Ply::MAX as usize + 1],
             value: [Default::default(); Ply::MAX as usize + 1],
-            pv: if root.is_check() {
+            root: Evaluator::new(pos.clone()),
+            pv: if pos.is_check() {
                 Pv::empty(Score::mated(Ply::new(0)))
             } else {
                 Pv::empty(Score::new(0))
@@ -282,7 +282,7 @@ impl<'a> Stack<'a> {
     ) -> Result<Pv<N>, Interrupted> {
         (ply > 0).assume();
         self.nodes.update(1);
-        if self.ctrl.check(self.root, &self.pv, ply) == ControlFlow::Abort {
+        if self.ctrl.check(&self.root, &self.pv, ply) == ControlFlow::Abort {
             return Err(Interrupted);
         }
 
@@ -491,7 +491,7 @@ impl<'a> Stack<'a> {
     ) -> Result<Pv, Interrupted> {
         let ply = Ply::new(0);
         let (alpha, beta) = (bounds.start, bounds.end);
-        if self.ctrl.check(self.root, &self.pv, ply) != ControlFlow::Continue {
+        if self.ctrl.check(&self.root, &self.pv, ply) != ControlFlow::Continue {
             return Err(Interrupted);
         }
 
@@ -500,7 +500,7 @@ impl<'a> Stack<'a> {
                 Bounded::upper()
             } else {
                 let mut rating = Bounded::new(0);
-                rating += self.searcher.history.get(self.root, m);
+                rating += self.searcher.history.get(&self.root, m);
                 rating += self.root.gain(m);
                 rating
             }
@@ -512,7 +512,7 @@ impl<'a> Stack<'a> {
         next.play(head);
         self.tt.prefetch(next.zobrist());
         self.nodes = Some(self.ctrl.attention().nodes(head));
-        self.replies[0] = Some(self.searcher.continuation.reply(self.root, head));
+        self.replies[0] = Some(self.searcher.continuation.reply(&self.root, head));
         let mut tail = -self.ab(&next, -beta..-alpha, depth, ply + 1, false)?;
 
         for (idx, m) in sorted_moves.enumerate() {
@@ -536,7 +536,7 @@ impl<'a> Stack<'a> {
             next.play(m);
             self.tt.prefetch(next.zobrist());
             self.nodes = Some(self.ctrl.attention().nodes(m));
-            self.replies[0] = Some(self.searcher.continuation.reply(self.root, m));
+            self.replies[0] = Some(self.searcher.continuation.reply(&self.root, m));
             let pv = match -self.nw(&next, -alpha, depth - lmr, ply + 1, false)? {
                 pv if pv <= alpha || (pv >= beta && lmr <= 0) => pv,
                 _ => -self.ab(&next, -beta..-alpha, depth, ply + 1, false)?,
@@ -547,7 +547,7 @@ impl<'a> Stack<'a> {
             }
         }
 
-        self.record(self.root, moves, bounds, depth, ply, head, tail.score());
+        self.record(&self.root, moves, bounds, depth, ply, head, tail.score());
         Ok(tail.transpose(head))
     }
 
@@ -624,14 +624,14 @@ impl<'a> Stack<'a> {
 #[derive(Debug)]
 pub struct Search<'e, 'p> {
     engine: &'e mut Engine,
-    position: &'p Evaluator,
+    position: &'p Position,
     ctrl: Control,
     channel: Option<UnboundedReceiver<Info>>,
     task: Option<Task<'e>>,
 }
 
 impl<'e, 'p> Search<'e, 'p> {
-    fn new(engine: &'e mut Engine, limits: Limits, position: &'p Evaluator) -> Self {
+    fn new(engine: &'e mut Engine, limits: Limits, position: &'p Position) -> Self {
         Search {
             engine,
             position,
@@ -680,18 +680,18 @@ impl<'e, 'p> Stream for Search<'e, 'p> {
         let syzygy: &'static Syzygy = unsafe { &*(&self.engine.syzygy as *const _) };
         let tt: &'static Memory<Transposition> = unsafe { &*(&self.engine.tt as *const _) };
         let ctrl: &'static Control = unsafe { &*(&self.ctrl as *const _) };
-        let root: &'static Evaluator = unsafe { &*(self.position as *const _) };
+        let position: &'static Position = unsafe { &*(self.position as *const _) };
 
         let (tx, rx) = unbounded();
         self.channel = Some(rx);
-        if let Some(pv) = syzygy.best(root) {
+        if let Some(pv) = syzygy.best(position) {
             let info = Info::new(Depth::new(0), Duration::ZERO, 0, pv.truncate());
             return Poll::Ready(Some(info));
         }
 
         self.task = Some(executor.execute(move |idx| {
             let searcher = searchers.get(idx).assume();
-            for info in Stack::new(searcher, syzygy, tt, ctrl, root).aw() {
+            for info in Stack::new(searcher, syzygy, tt, ctrl, position).aw() {
                 if idx == 0 {
                     let depth = info.depth();
                     tx.unbounded_send(info).assume();

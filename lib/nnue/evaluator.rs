@@ -1,21 +1,67 @@
 use crate::chess::{Color, Move, ParsePositionError, Perspective, Piece, Position, Role, Square};
 use crate::nnue::{Accumulator, Feature, Nnue, Value};
-use crate::params::Params;
 use crate::util::{Assume, Integer};
-use derive_more::with_trait::{Debug, Deref, Display};
+use crate::{params::Params, search::Ply};
+use derive_more::with_trait::Debug;
+use std::array::repeat;
+use std::hash::{Hash, Hasher};
+use std::mem::{MaybeUninit, replace, transmute};
+use std::ops::{Deref, Index};
 use std::{ops::Range, str::FromStr};
 
 #[cfg(test)]
 use proptest::prelude::*;
 
-/// An incrementally evaluated [`Position`].
-#[derive(Debug, Display, Clone, Eq, PartialEq, Hash, Deref)]
-#[debug("Evaluator({self})")]
-#[display("{pos}")]
+/// A [`Position`] evaluation stack.
+#[derive(Debug)]
+#[debug("Evaluator")]
 pub struct Evaluator {
-    #[deref]
-    pos: Position,
-    acc: Accumulator,
+    ply: Ply,
+    positions: [Position; Ply::MAX as usize + 1],
+    accumulators: [Accumulator; Ply::MAX as usize + 1],
+    // move[i] leads to pos[i + 1]
+    moves: [Option<Move>; Ply::MAX as usize],
+}
+
+impl Default for Evaluator {
+    #[inline(always)]
+    fn default() -> Self {
+        Self::new(Position::default())
+    }
+}
+
+impl Eq for Evaluator {}
+
+impl PartialEq for Evaluator {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.deref() == other.deref()
+    }
+}
+
+impl Hash for Evaluator {
+    #[inline(always)]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.deref().hash(state);
+    }
+}
+
+impl Deref for Evaluator {
+    type Target = Position;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.index(self.ply)
+    }
+}
+
+impl Index<Ply> for Evaluator {
+    type Output = Position;
+
+    #[inline(always)]
+    fn index(&self, ply: Ply) -> &Self::Output {
+        &self.positions[ply.cast::<usize>()]
+    }
 }
 
 #[cfg(test)]
@@ -25,12 +71,6 @@ impl Arbitrary for Evaluator {
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         any::<Position>().prop_map(Evaluator::new).boxed()
-    }
-}
-
-impl Default for Evaluator {
-    fn default() -> Self {
-        Self::new(Position::default())
     }
 }
 
@@ -47,60 +87,76 @@ impl Evaluator {
             }
         }
 
-        Evaluator { pos, acc }
+        Evaluator {
+            ply: Ply::new(0),
+            positions: repeat(pos),
+            accumulators: repeat(acc),
+            moves: [None; Ply::MAX as usize],
+        }
     }
 
-    /// Play a [null-move].
-    ///
-    /// [null-move]: https://www.chessprogramming.org/Null_Move
-    pub fn pass(&mut self) {
-        self.pos.pass();
+    /// Pushes a [`Position`] into the evaluator stack.
+    pub fn push(&mut self, m: Option<Move>) {
+        debug_assert!(self.ply < Ply::MAX);
+
+        self.ply += 1;
+        self.moves[self.ply.cast::<usize>() - 1] = m;
+        self.positions[self.ply.cast::<usize>()] =
+            self.positions[self.ply.cast::<usize>() - 1].clone();
+
+        match self.moves[self.ply.cast::<usize>() - 1] {
+            Some(m) => self.positions[self.ply.cast::<usize>()].play(m),
+            None => self.positions[self.ply.cast::<usize>()].pass(),
+        }
+
+        // let turn = self.turn();
+        // let promotion = m.promotion();
+        // let (wc, wt) = (m.whence(), m.whither());
+        // let (role, capture) = self.positions.play(m);
+        // let mut sides = [Some(!turn), Some(turn)];
+
+        // if role == Role::King
+        //     && Feature::new(turn, wc, Piece::lower(), Square::lower())
+        //         != Feature::new(turn, wt, Piece::lower(), Square::lower())
+        // {
+        //     sides[1] = None;
+        //     self.accumulators.refresh(turn);
+        //     for (p, s) in self.positions.iter() {
+        //         let add = Feature::new(turn, wt, p, s);
+        //         self.accumulators
+        //             .update(turn, [None, None], [Some(add), None]);
+        //     }
+        // }
+
+        // for side in sides.into_iter().flatten() {
+        //     let ksq = self.king(side);
+        //     let old = Piece::new(role, turn);
+        //     let new = Piece::new(promotion.unwrap_or(role), turn);
+        //     let mut sub = [Some(Feature::new(side, ksq, old, wc)), None];
+        //     let mut add = [Some(Feature::new(side, ksq, new, wt)), None];
+
+        //     if let Some((r, sq)) = capture {
+        //         let victim = Piece::new(r, !turn);
+        //         sub[1] = Some(Feature::new(side, ksq, victim, sq));
+        //     } else if role == Role::King && (wt - wc).abs() == 2 {
+        //         let rook = Piece::new(Role::Rook, turn);
+        //         let (wc, wt) = if wt > wc {
+        //             (Square::H1.perspective(turn), Square::F1.perspective(turn))
+        //         } else {
+        //             (Square::A1.perspective(turn), Square::D1.perspective(turn))
+        //         };
+
+        //         sub[1] = Some(Feature::new(side, ksq, rook, wc));
+        //         add[1] = Some(Feature::new(side, ksq, rook, wt));
+        //     }
+
+        //     self.accumulators.update(side, sub, add);
+        // }
     }
 
-    /// Play a [`Move`].
-    pub fn play(&mut self, m: Move) {
-        let turn = self.turn();
-        let promotion = m.promotion();
-        let (wc, wt) = (m.whence(), m.whither());
-        let (role, capture) = self.pos.play(m);
-        let mut sides = [Some(!turn), Some(turn)];
-
-        if role == Role::King
-            && Feature::new(turn, wc, Piece::lower(), Square::lower())
-                != Feature::new(turn, wt, Piece::lower(), Square::lower())
-        {
-            sides[1] = None;
-            self.acc.refresh(turn);
-            for (p, s) in self.pos.iter() {
-                let add = Feature::new(turn, wt, p, s);
-                self.acc.update(turn, [None, None], [Some(add), None]);
-            }
-        }
-
-        for side in sides.into_iter().flatten() {
-            let ksq = self.king(side);
-            let old = Piece::new(role, turn);
-            let new = Piece::new(promotion.unwrap_or(role), turn);
-            let mut sub = [Some(Feature::new(side, ksq, old, wc)), None];
-            let mut add = [Some(Feature::new(side, ksq, new, wt)), None];
-
-            if let Some((r, sq)) = capture {
-                let victim = Piece::new(r, !turn);
-                sub[1] = Some(Feature::new(side, ksq, victim, sq));
-            } else if role == Role::King && (wt - wc).abs() == 2 {
-                let rook = Piece::new(Role::Rook, turn);
-                let (wc, wt) = if wt > wc {
-                    (Square::H1.perspective(turn), Square::F1.perspective(turn))
-                } else {
-                    (Square::A1.perspective(turn), Square::D1.perspective(turn))
-                };
-
-                sub[1] = Some(Feature::new(side, ksq, rook, wc));
-                add[1] = Some(Feature::new(side, ksq, rook, wt));
-            }
-
-            self.acc.update(side, sub, add);
-        }
+    /// Pops a [`Position`] from the evaluator stack.
+    pub fn pop(&mut self) {
+        self.ply -= 1;
     }
 
     /// Estimates the material gain of a move.
@@ -184,9 +240,12 @@ impl Evaluator {
     }
 
     pub fn evaluate(&self) -> Value {
+        let mut ply = self.ply;
+        // while self.accumulators[ply.cast::<usize>()].is_none() && self.m
+
         let phase = (self.occupied().len() - 1) / 4;
         let scale: i32 = Params::value_scale().as_int();
-        let value = self.acc.evaluate(self.turn(), phase) / scale;
+        let value = self.accumulators.evaluate(self.turn(), phase) / scale;
         value.saturate()
     }
 }
@@ -211,7 +270,7 @@ mod tests {
         #[filter(#e.outcome().is_none())] mut e: Evaluator,
         #[map(|sq: Selector| sq.select(#e.moves().unpack()))] m: Move,
     ) {
-        let mut pos = e.pos.clone();
+        let mut pos = e.positions.clone();
         e.play(m);
         pos.play(m);
         assert_eq!(e, Evaluator::new(pos));
@@ -219,7 +278,7 @@ mod tests {
 
     #[proptest]
     fn pass_updates_evaluator(#[filter(!#e.is_check())] mut e: Evaluator) {
-        let mut pos = e.pos.clone();
+        let mut pos = e.positions.clone();
         e.pass();
         pos.pass();
         assert_eq!(e, Evaluator::new(pos));

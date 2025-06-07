@@ -1,6 +1,6 @@
 use crate::nnue::Value;
 use crate::util::{Binary, Bits, Bounded, Integer};
-use crate::{chess::Perspective, search::Ply, util::Assume};
+use crate::{chess::Flip, search::Ply, util::Assume};
 
 /// Number of [plies][`Ply`] to mate.
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
@@ -92,10 +92,10 @@ impl Score {
     }
 }
 
-impl Perspective for Score {
+impl Flip for Score {
     #[inline(always)]
-    fn flip(&self) -> Self {
-        -*self
+    fn flip(self) -> Self {
+        -self
     }
 }
 

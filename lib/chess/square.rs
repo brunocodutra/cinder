@@ -56,15 +56,15 @@ unsafe impl Integer for Square {
 impl Mirror for Square {
     /// Horizontally mirrors this square.
     #[inline(always)]
-    fn mirror(&self) -> Self {
+    fn mirror(self) -> Self {
         Integer::new(self.get() ^ Square::H1.get())
     }
 }
 
-impl Perspective for Square {
+impl Flip for Square {
     /// Flips this square's [`Rank`].
     #[inline(always)]
-    fn flip(&self) -> Self {
+    fn flip(self) -> Self {
         Integer::new(self.get() ^ Square::A8.get())
     }
 }
@@ -74,7 +74,7 @@ impl Transpose for Square {
 
     /// Diagonally flips this square.
     #[inline(always)]
-    fn transpose(&self) -> Self::Transposition {
+    fn transpose(self) -> Self::Transposition {
         Integer::new((self.cast::<u32>().wrapping_mul(0x2080_0000) >> 26) as _)
     }
 }

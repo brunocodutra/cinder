@@ -1,4 +1,4 @@
-use crate::chess::{Color, Perspective};
+use crate::chess::{Color, Flip};
 use crate::nnue::{Feature, Nnue};
 use crate::util::{AlignTo64, Assume};
 use derive_more::with_trait::Debug;

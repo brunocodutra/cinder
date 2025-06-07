@@ -36,7 +36,7 @@ unsafe impl Integer for File {
 impl Mirror for File {
     /// Horizontally mirrors this file.
     #[inline(always)]
-    fn mirror(&self) -> Self {
+    fn mirror(self) -> Self {
         Self::new(self.get() ^ Self::MAX)
     }
 }
@@ -46,7 +46,7 @@ impl Transpose for File {
 
     /// This file's corresponding rank.
     #[inline(always)]
-    fn transpose(&self) -> Self::Transposition {
+    fn transpose(self) -> Self::Transposition {
         self.convert().assume()
     }
 }

@@ -1,4 +1,4 @@
-use crate::{chess::Perspective, util::Integer};
+use crate::{chess::Flip, util::Integer};
 use derive_more::with_trait::Display;
 use std::ops::Not;
 
@@ -19,9 +19,9 @@ unsafe impl Integer for Color {
     const MAX: Self::Repr = Color::Black as _;
 }
 
-impl Perspective for Color {
+impl Flip for Color {
     #[inline(always)]
-    fn flip(&self) -> Self {
+    fn flip(self) -> Self {
         self.not()
     }
 }

@@ -1,4 +1,4 @@
-use crate::chess::{Bitboard, Color, Magic, Perspective, Rank, Role, Square};
+use crate::chess::{Bitboard, Color, Flip, Magic, Perspective, Rank, Role, Square};
 use crate::util::{Assume, Integer};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
@@ -202,10 +202,10 @@ unsafe impl Integer for Piece {
     const MAX: Self::Repr = Piece::BlackKing as _;
 }
 
-impl Perspective for Piece {
+impl Flip for Piece {
     /// Mirrors this piece's [`Color`].
     #[inline(always)]
-    fn flip(&self) -> Self {
+    fn flip(self) -> Self {
         Integer::new(self.get() ^ Piece::BlackPawn.get())
     }
 }

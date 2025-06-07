@@ -1,4 +1,4 @@
-use crate::chess::{Bitboard, File, Perspective, Transpose};
+use crate::chess::{Bitboard, File, Flip, Transpose};
 use crate::util::{Assume, Integer};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
@@ -33,10 +33,10 @@ unsafe impl Integer for Rank {
     const MAX: Self::Repr = Rank::Eighth as _;
 }
 
-impl Perspective for Rank {
+impl Flip for Rank {
     /// This rank from the opponent's perspective.
     #[inline(always)]
-    fn flip(&self) -> Self {
+    fn flip(self) -> Self {
         Self::new(self.get() ^ Self::MAX)
     }
 }
@@ -46,7 +46,7 @@ impl Transpose for Rank {
 
     /// This rank's corresponding file.
     #[inline(always)]
-    fn transpose(&self) -> Self::Transposition {
+    fn transpose(self) -> Self::Transposition {
         self.convert().assume()
     }
 }

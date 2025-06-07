@@ -1,4 +1,4 @@
-use crate::chess::Perspective;
+use crate::chess::Flip;
 use crate::util::{Bounded, Integer};
 
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -15,10 +15,10 @@ unsafe impl Integer for ValueRepr {
 /// A position's static evaluation.
 pub type Value = Bounded<ValueRepr>;
 
-impl Perspective for Value {
+impl Flip for Value {
     #[inline(always)]
-    fn flip(&self) -> Self {
-        -*self
+    fn flip(self) -> Self {
+        -self
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::chess::{Bitboard, Perspective, Piece, Rank, Role, Square, Squares};
+use crate::chess::{Bitboard, Flip, Perspective, Piece, Rank, Role, Square, Squares};
 use crate::util::{Assume, Binary, Bits, Integer};
 use std::fmt::{self, Debug, Display, Formatter, Write};
 use std::{num::NonZeroU16, ops::RangeBounds};

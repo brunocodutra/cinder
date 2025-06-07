@@ -1,4 +1,4 @@
-use crate::chess::{Color, Perspective, Piece, Role};
+use crate::chess::{Color, Flip, Perspective, Piece, Role};
 use crate::util::Integer;
 use derive_more::with_trait::{Debug, Deref, Display, Error};
 use std::fmt::{self, Formatter, Write};
@@ -67,9 +67,9 @@ impl Material {
     }
 }
 
-impl Perspective for Material {
+impl Flip for Material {
     #[inline(always)]
-    fn flip(&self) -> Self {
+    fn flip(self) -> Self {
         Material([self.0[1], self.0[0]])
     }
 }

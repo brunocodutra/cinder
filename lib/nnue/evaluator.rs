@@ -65,10 +65,7 @@ impl Evaluator {
         let (role, capture) = self.pos.play(m);
         let mut sides = [Some(!turn), Some(turn)];
 
-        if role == Role::King
-            && Feature::new(turn, wc, Piece::lower(), Square::lower())
-                != Feature::new(turn, wt, Piece::lower(), Square::lower())
-        {
+        if role == Role::King && Feature::bucket(turn, wc) != Feature::bucket(turn, wt) {
             sides[1] = None;
             self.acc.refresh(turn);
             for (p, s) in self.pos.iter() {

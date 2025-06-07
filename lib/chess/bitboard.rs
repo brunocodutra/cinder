@@ -1,4 +1,4 @@
-use crate::chess::{File, Perspective, Rank, Square};
+use crate::chess::{File, Flip, Rank, Square};
 use crate::util::{Assume, Integer};
 use derive_more::with_trait::{Debug, *};
 use std::cell::SyncUnsafeCell;
@@ -257,10 +257,10 @@ impl Bitboard {
     }
 }
 
-impl Perspective for Bitboard {
+impl Flip for Bitboard {
     /// Flips all squares in the set.
     #[inline(always)]
-    fn flip(&self) -> Self {
+    fn flip(self) -> Self {
         Self(self.0.swap_bytes())
     }
 }

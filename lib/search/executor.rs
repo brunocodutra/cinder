@@ -102,7 +102,7 @@ impl Executor {
     /// Executes `f` on every thread.
     #[must_use]
     #[inline(always)]
-    pub fn execute<F: Fn(usize) + Send + Sync + 'static>(&mut self, f: F) -> Task {
+    pub fn execute<F: Fn(usize) + Send + Sync + 'static>(&mut self, f: F) -> Task<'_> {
         unsafe { *self.shared.job.get().as_mut_unchecked() = Some(Box::new(f)) };
         self.shared.barrier.wait();
         Task { executor: self }

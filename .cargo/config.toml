@@ -1,8 +1,11 @@
-[build]
-rustflags = ["-Ctarget-cpu=native"]
-
 [unstable]
 profile-rustflags = true
+
+[env]
+RUST_MIN_STACK = "8388608" # runtime only
+
+[build]
+rustflags = ["-Ctarget-cpu=native"]
 
 [profile.release]
 rustflags = ["-Zlocation-detail=none"]

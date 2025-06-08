@@ -1,39 +1,16 @@
 use crate::nnue::Feature;
 use crate::util::{AlignTo64, Assume, Integer};
-use derive_more::with_trait::{Deref, DerefMut};
+use derive_more::with_trait::{Debug, Deref, DerefMut};
 use std::ops::{Add, AddAssign, Sub, SubAssign};
-
-#[cfg(test)]
-use proptest::{prelude::*, sample::Index};
-
-#[cfg(test)]
-use std::ops::Range;
 
 /// A linear feature transformer.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Deref, DerefMut)]
+#[cfg_attr(test, derive(test_strategy::Arbitrary))]
+#[cfg_attr(test, arbitrary(bound(T, T: From<i8>)))]
+#[debug("Linear<{N}>")]
 pub struct Linear<T, const N: usize> {
+    #[cfg_attr(test, map(|vs: [[i8; N]; Feature::LEN]| AlignTo64(vs.map(|v| v.map(T::from)))))]
     pub(super) weight: AlignTo64<[[T; N]; Feature::LEN]>,
-}
-
-#[cfg(test)]
-impl<const N: usize> Arbitrary for Box<Linear<i16, N>> {
-    type Parameters = Range<i16>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(Range { start, end }: Self::Parameters) -> Self::Strategy {
-        (any::<Index>())
-            .prop_map(move |rng| {
-                let mut transformer = unsafe { Self::new_zeroed().assume_init() };
-
-                for v in &mut transformer.weight.iter_mut().flatten() {
-                    *v = rng.index((end - start) as _) as i16 + start
-                }
-
-                transformer
-            })
-            .no_shrink()
-            .boxed()
-    }
 }
 
 impl<T, const N: usize> Linear<T, N>
@@ -98,32 +75,14 @@ where
 
 /// An affine feature transformer.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Deref)]
+#[cfg_attr(test, derive(test_strategy::Arbitrary))]
+#[cfg_attr(test, arbitrary(bound(T, T: From<i8>)))]
+#[debug("Affine<{N}>")]
 pub struct Affine<T, const N: usize> {
+    #[cfg_attr(test, map(|vs: [i8; N]| AlignTo64(vs.map(T::from))))]
     pub(super) bias: AlignTo64<[T; N]>,
     #[deref]
     pub(super) weight: Linear<T, N>,
-}
-
-#[cfg(test)]
-impl<const N: usize> Arbitrary for Box<Affine<i16, N>> {
-    type Parameters = Range<i16>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(range @ Range { start, end }: Self::Parameters) -> Self::Strategy {
-        (any_with::<Box<Linear<i16, N>>>(range), any::<Index>())
-            .prop_map(move |(linear, rng)| {
-                let mut transformer = unsafe { Self::new_zeroed().assume_init() };
-
-                transformer.weight = *linear;
-                for v in transformer.bias.iter_mut() {
-                    *v = rng.index((end - start) as _) as i16 + start
-                }
-
-                transformer
-            })
-            .no_shrink()
-            .boxed()
-    }
 }
 
 impl<T, const N: usize> Affine<T, N>
@@ -141,16 +100,17 @@ where
 mod tests {
     use super::*;
     use proptest::array::uniform3;
+    use std::fmt::Debug;
     use test_strategy::proptest;
 
     #[proptest]
-    fn fresh_accumulator_equals_bias(#[any(-128i16..128)] t: Box<Affine<i16, 2>>) {
+    fn fresh_accumulator_equals_bias(t: Affine<i16, 2>) {
         assert_eq!(t.fresh(), *t.bias);
     }
 
     #[proptest]
     fn add_updates_accumulator(
-        #[any(-128i16..128)] t: Box<Affine<i16, 3>>,
+        t: Affine<i16, 3>,
         a1: Feature,
         #[strategy(uniform3(-128..128i16))] prev: [i16; 3],
     ) {
@@ -163,7 +123,7 @@ mod tests {
 
     #[proptest]
     fn add_sub_updates_accumulator(
-        #[any(-128..128i16)] t: Box<Affine<i16, 3>>,
+        t: Affine<i16, 3>,
         a1: Feature,
         s1: Feature,
         #[strategy(uniform3(-128..128i16))] prev: [i16; 3],
@@ -179,14 +139,14 @@ mod tests {
             [
                 prev[0] + a1[0] - s1[0],
                 prev[1] + a1[1] - s1[1],
-                prev[2] + a1[2] - s1[1],
+                prev[2] + a1[2] - s1[2],
             ]
         );
     }
 
     #[proptest]
     fn add_sub_sub_updates_accumulator(
-        #[any(-128..128i16)] t: Box<Affine<i16, 3>>,
+        t: Affine<i16, 3>,
         a1: Feature,
         s1: Feature,
         s2: Feature,
@@ -204,14 +164,14 @@ mod tests {
             [
                 prev[0] + a1[0] - s1[0] - s2[0],
                 prev[1] + a1[1] - s1[1] - s2[1],
-                prev[2] + a1[2] - s1[1] - s2[1],
+                prev[2] + a1[2] - s1[2] - s2[2],
             ]
         );
     }
 
     #[proptest]
     fn add_add_sub_sub_updates_accumulator(
-        #[any(-128..128i16)] t: Box<Affine<i16, 3>>,
+        t: Affine<i16, 3>,
         a1: Feature,
         a2: Feature,
         s1: Feature,
@@ -231,7 +191,7 @@ mod tests {
             [
                 prev[0] + a1[0] - s1[0] + a2[0] - s2[0],
                 prev[1] + a1[1] - s1[1] + a2[1] - s2[1],
-                prev[2] + a1[2] - s1[1] + a2[2] - s2[1],
+                prev[2] + a1[2] - s1[2] + a2[2] - s2[2],
             ]
         );
     }

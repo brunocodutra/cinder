@@ -1,21 +1,72 @@
-use crate::chess::{Color, Move, ParsePositionError, Perspective, Piece, Position, Role, Square};
-use crate::nnue::{Accumulator, Feature, Nnue, Value};
-use crate::params::Params;
+use crate::nnue::{Feature, Material, Nnue, Positional, Value};
 use crate::util::{Assume, Integer};
-use derive_more::with_trait::{Debug, Deref, Display};
-use std::{ops::Range, str::FromStr};
+use crate::{chess::*, params::Params, search::Ply};
+use derive_more::with_trait::Debug;
+use std::hash::{Hash, Hasher};
+use std::ops::{Deref, Index, Range};
+use std::{array, hint::unreachable_unchecked, str::FromStr};
 
 #[cfg(test)]
-use proptest::prelude::*;
+use proptest::{prelude::*, sample::*};
 
-/// An incrementally evaluated [`Position`].
-#[derive(Debug, Display, Clone, Eq, PartialEq, Hash, Deref)]
-#[debug("Evaluator({self})")]
-#[display("{pos}")]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+enum Pending {
+    Update,
+    Refresh,
+}
+
+/// A [`Position`] evaluation stack.
+#[derive(Debug, Clone)]
+#[debug("Evaluator({})", self.deref())]
 pub struct Evaluator {
-    #[deref]
-    pos: Position,
-    acc: Accumulator,
+    ply: Ply,
+    positions: [Position; Ply::MAX as usize + 1],
+    positional: [[Positional; 2]; Ply::MAX as usize + 1],
+    material: [[Material; 2]; Ply::MAX as usize + 1],
+    pending: [[Option<Pending>; 2]; Ply::MAX as usize + 1],
+    // move[i] leads to pos[i + 1]
+    moves: [Option<Move>; Ply::MAX as usize],
+}
+
+impl Default for Evaluator {
+    #[inline(always)]
+    fn default() -> Self {
+        Self::new(Position::default())
+    }
+}
+
+impl Eq for Evaluator {}
+
+impl PartialEq for Evaluator {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.deref() == other.deref()
+    }
+}
+
+impl Hash for Evaluator {
+    #[inline(always)]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.deref().hash(state);
+    }
+}
+
+impl Deref for Evaluator {
+    type Target = Position;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.index(self.ply)
+    }
+}
+
+impl Index<Ply> for Evaluator {
+    type Output = Position;
+
+    #[inline(always)]
+    fn index(&self, ply: Ply) -> &Self::Output {
+        &self.positions[ply.cast::<usize>()]
+    }
 }
 
 #[cfg(test)]
@@ -24,80 +75,117 @@ impl Arbitrary for Evaluator {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        any::<Position>().prop_map(Evaluator::new).boxed()
-    }
-}
+        (any::<Ply>(), any::<Selector>(), any::<Position>())
+            .prop_map(|(plies, selector, pos)| {
+                let mut pos = Evaluator::new(pos);
 
-impl Default for Evaluator {
-    fn default() -> Self {
-        Self::new(Position::default())
+                for _ in 0..plies.cast::<usize>() {
+                    if pos.outcome().is_none() {
+                        pos.push(selector.try_select(pos.moves().unpack()));
+                    } else {
+                        break;
+                    }
+                }
+
+                pos
+            })
+            .no_shrink()
+            .boxed()
     }
 }
 
 impl Evaluator {
     /// Constructs the evaluator from a [`Position`].
     pub fn new(pos: Position) -> Self {
-        let mut acc = Accumulator::default();
+        let mut evaluator = Evaluator {
+            ply: Ply::new(0),
+            positions: array::from_fn(|_| Default::default()),
+            positional: array::from_fn(|_| array::from_fn(|_| Default::default())),
+            material: array::from_fn(|_| array::from_fn(|_| Default::default())),
+            pending: [[None; 2]; Ply::MAX as usize + 1],
+            moves: [None; Ply::MAX as usize],
+        };
 
+        evaluator.positions[0] = pos;
         for side in Color::iter() {
-            let ksq = pos.king(side);
-            for (p, s) in pos.iter() {
-                let add = Feature::new(side, ksq, p, s);
-                acc.update(side, [None, None], [Some(add), None]);
-            }
+            evaluator.refresh(side, evaluator.ply());
         }
 
-        Evaluator { pos, acc }
+        evaluator
     }
 
-    /// Play a [null-move].
-    ///
-    /// [null-move]: https://www.chessprogramming.org/Null_Move
-    pub fn pass(&mut self) {
-        self.pos.pass();
-    }
+    /// Pushes a [`Position`] into the evaluator stack.
+    pub fn push(&mut self, m: Option<Move>) {
+        (self.ply < Ply::MAX).assume();
 
-    /// Play a [`Move`].
-    pub fn play(&mut self, m: Move) {
         let turn = self.turn();
-        let promotion = m.promotion();
-        let (wc, wt) = (m.whence(), m.whither());
-        let (role, capture) = self.pos.play(m);
-        let mut sides = [Some(!turn), Some(turn)];
+        let idx = self.ply.cast::<usize>();
 
-        if role == Role::King && Feature::bucket(turn, wc) != Feature::bucket(turn, wt) {
-            sides[1] = None;
-            self.acc.refresh(turn);
-            for (p, s) in self.pos.iter() {
-                let add = Feature::new(turn, wt, p, s);
-                self.acc.update(turn, [None, None], [Some(add), None]);
+        self.ply += 1;
+        self.moves[idx] = m;
+        self.pending[idx + 1] = [Some(Pending::Update); 2];
+        self.positions[idx + 1] = self.positions[idx].clone();
+
+        match self.moves[idx] {
+            None => self.positions[idx + 1].pass(),
+            Some(m) => {
+                self.positions[idx + 1].play(m);
+                let (wc, wt) = (m.whence(), m.whither());
+                let role = self.positions[idx].role_on(m.whence()).assume();
+                if role == Role::King && Feature::bucket(turn, wc) != Feature::bucket(turn, wt) {
+                    self.pending[idx + 1][turn.cast::<usize>()] = Some(Pending::Refresh)
+                }
+            }
+        }
+    }
+
+    /// Pops a [`Position`] from the evaluator stack.
+    pub fn pop(&mut self) {
+        (self.ply > 0).assume();
+        self.ply -= 1;
+    }
+
+    pub fn evaluate(&mut self) -> Value {
+        for side in Color::iter() {
+            let mut idx = self.ply.cast::<usize>();
+            if self.pending[idx][side.cast::<usize>()].is_none() {
+                continue;
+            }
+
+            (self.ply > 0).assume();
+            while self.pending[idx][side.cast::<usize>()] == Some(Pending::Update) {
+                idx -= 1;
+            }
+
+            match self.pending[idx][side.cast::<usize>()] {
+                Some(Pending::Update) => unsafe { unreachable_unchecked() },
+                Some(Pending::Refresh) => self.refresh(side, self.ply),
+                None => {
+                    for i in idx + 1..=self.ply.cast::<usize>() {
+                        self.update(side, i.convert().assume());
+                    }
+                }
             }
         }
 
-        for side in sides.into_iter().flatten() {
-            let ksq = self.king(side);
-            let old = Piece::new(role, turn);
-            let new = Piece::new(promotion.unwrap_or(role), turn);
-            let mut sub = [Some(Feature::new(side, ksq, old, wc)), None];
-            let mut add = [Some(Feature::new(side, ksq, new, wt)), None];
+        let phase = (self.occupied().len() - 1) / 4;
+        (phase < Material::LEN).assume();
+        let hl = Nnue::hidden(phase);
 
-            if let Some((r, sq)) = capture {
-                let victim = Piece::new(r, !turn);
-                sub[1] = Some(Feature::new(side, ksq, victim, sq));
-            } else if role == Role::King && (wt - wc).abs() == 2 {
-                let rook = Piece::new(Role::Rook, turn);
-                let (wc, wt) = if wt > wc {
-                    (Square::H1.perspective(turn), Square::F1.perspective(turn))
-                } else {
-                    (Square::A1.perspective(turn), Square::D1.perspective(turn))
-                };
+        let idx = self.ply.cast::<usize>();
+        debug_assert_eq!(self.pending[idx], [None; 2]);
 
-                sub[1] = Some(Feature::new(side, ksq, rook, wc));
-                add[1] = Some(Feature::new(side, ksq, rook, wt));
-            }
+        let us = self.turn() as usize;
+        let them = self.turn().flip() as usize;
+        let material = self.material[idx][us][phase] - self.material[idx][them][phase];
+        let positional = hl.forward(&self.positional[idx][us], &self.positional[idx][them]);
+        let value = (material + 2 * positional) / Params::value_scale().as_int::<i32>();
+        value.saturate()
+    }
 
-            self.acc.update(side, sub, add);
-        }
+    /// The current [`Ply`].
+    pub fn ply(&self) -> Ply {
+        self.ply
     }
 
     /// Estimates the material gain of a move.
@@ -180,11 +268,77 @@ impl Evaluator {
         }
     }
 
-    pub fn evaluate(&self) -> Value {
-        let phase = (self.occupied().len() - 1) / 4;
-        let scale: i32 = Params::value_scale().as_int();
-        let value = self.acc.evaluate(self.turn(), phase) / scale;
-        value.saturate()
+    fn refresh(&mut self, side: Color, ply: Ply) {
+        let idx = ply.cast::<usize>();
+        self.pending[idx][side.cast::<usize>()] = None;
+        Nnue::material().refresh(&mut self.material[idx][side.cast::<usize>()]);
+        Nnue::positional().refresh(&mut self.positional[idx][side.cast::<usize>()]);
+
+        let ksq = self.positions[idx].king(side);
+        for (p, s) in self.positions[idx].iter() {
+            let sub = [None; 2];
+            let add = [Some(Feature::new(side, ksq, p, s)), None];
+            let accumulator = &mut self.material[idx][side.cast::<usize>()];
+            Nnue::material().accumulate_in_place(accumulator, sub, add);
+            let accumulator = &mut self.positional[idx][side.cast::<usize>()];
+            Nnue::positional().accumulate_in_place(accumulator, sub, add);
+        }
+    }
+
+    fn update(&mut self, side: Color, ply: Ply) {
+        (ply > 0).assume();
+
+        let idx = ply.cast::<usize>();
+        self.pending[idx][side.cast::<usize>()] = None;
+
+        let mut sub = [None; 2];
+        let mut add = [None; 2];
+
+        if let Some(m) = self.moves[idx - 1] {
+            let pos = &self.positions[idx];
+            let prev = &self.positions[idx - 1];
+            let (wc, wt) = (m.whence(), m.whither());
+            let promotion = m.promotion();
+            let role = prev.role_on(wc).assume();
+            let turn = prev.turn();
+
+            let ksq = pos.king(side);
+            let old = Piece::new(role, turn);
+            let new = Piece::new(promotion.unwrap_or(role), turn);
+            sub[0] = Some(Feature::new(side, ksq, old, wc));
+            add[0] = Some(Feature::new(side, ksq, new, wt));
+
+            let capture = match prev.role_on(wt) {
+                _ if !m.is_capture() => None,
+                Some(r) => Some((r, wt)),
+                None => Some((Role::Pawn, Square::new(wt.file(), wc.rank()))),
+            };
+
+            if let Some((r, sq)) = capture {
+                let victim = Piece::new(r, !turn);
+                sub[1] = Some(Feature::new(side, ksq, victim, sq));
+            } else if role == Role::King && (wt - wc).abs() == 2 {
+                let rook = Piece::new(Role::Rook, turn);
+                let (wc, wt) = if wt > wc {
+                    (Square::H1.perspective(turn), Square::F1.perspective(turn))
+                } else {
+                    (Square::A1.perspective(turn), Square::D1.perspective(turn))
+                };
+
+                sub[1] = Some(Feature::new(side, ksq, rook, wc));
+                add[1] = Some(Feature::new(side, ksq, rook, wt));
+            }
+        }
+
+        let (left, right) = self.material.split_at_mut(idx);
+        let src = &left[left.len() - 1][side.cast::<usize>()];
+        let dst = &mut right[0][side.cast::<usize>()];
+        Nnue::material().accumulate(src, dst, sub, add);
+
+        let (left, right) = self.positional.split_at_mut(idx);
+        let src = &left[left.len() - 1][side.cast::<usize>()];
+        let dst = &mut right[0][side.cast::<usize>()];
+        Nnue::positional().accumulate(src, dst, sub, add);
     }
 }
 
@@ -204,22 +358,36 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
-    fn play_updates_evaluator(
-        #[filter(#e.outcome().is_none())] mut e: Evaluator,
-        #[map(|sq: Selector| sq.select(#e.moves().unpack()))] m: Move,
+    fn accumulators_are_updated_lazily(
+        mut e: Evaluator,
+        #[strategy(..16usize)] mut n: usize,
+        selector: Selector,
     ) {
-        let mut pos = e.pos.clone();
-        e.play(m);
-        pos.play(m);
-        assert_eq!(e, Evaluator::new(pos));
-    }
+        let mut i = e.ply();
+        let mut pos = e.deref().clone();
+        while n > 0 && e.ply() < Ply::MAX && e.outcome().is_none() {
+            n -= 1;
+            if n % 5 == 1 && i > 0 {
+                e.pop();
+                pos = e.deref().clone();
+                i -= 1;
+            } else if n % 3 == 1 && !pos.is_check() {
+                e.push(None);
+                pos.pass();
+                i += 1;
+            } else {
+                let m = selector.select(pos.moves().unpack());
+                e.push(Some(m));
+                pos.play(m);
+                i += 1;
+            }
+        }
 
-    #[proptest]
-    fn pass_updates_evaluator(#[filter(!#e.is_check())] mut e: Evaluator) {
-        let mut pos = e.pos.clone();
-        e.pass();
-        pos.pass();
-        assert_eq!(e, Evaluator::new(pos));
+        let mut f = Evaluator::new(pos);
+
+        assert_eq!(e, f);
+        assert_eq!(e.ply(), f.ply() + i);
+        assert_eq!(e.evaluate(), f.evaluate());
     }
 
     #[proptest]

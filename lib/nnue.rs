@@ -25,10 +25,10 @@ pub use value::*;
 /// [NNUE]: https://www.chessprogramming.org/NNUE
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 struct Nnue {
-    positional: Affine<i16, { Accumulator::POSITIONAL }>,
-    material: Linear<i32, { Accumulator::MATERIAL }>,
-    hidden: [Hidden<{ Accumulator::POSITIONAL }>; Accumulator::MATERIAL],
-    pieces: [[i32; Role::MAX as usize + 1]; Accumulator::MATERIAL],
+    positional: Affine<i16, { Positional::LEN }>,
+    material: Linear<i32, { Material::LEN }>,
+    hidden: [Hidden<{ Positional::LEN }>; Material::LEN],
+    pieces: [[i32; Role::MAX as usize + 1]; Material::LEN],
 }
 
 static NNUE: SyncUnsafeCell<Nnue> = unsafe { MaybeUninit::zeroed().assume_init() };
@@ -48,31 +48,28 @@ impl Nnue {
         reader.read_i16_into::<LittleEndian>(&mut *self.positional.bias)?;
         reader.read_i16_into::<LittleEndian>(unsafe {
             transmute::<
-                &mut [[_; Accumulator::POSITIONAL]; Feature::LEN],
-                &mut [_; Feature::LEN * Accumulator::POSITIONAL],
+                &mut [[_; Positional::LEN]; Feature::LEN],
+                &mut [_; Positional::LEN * Feature::LEN],
             >(&mut *self.positional.weight)
         })?;
 
         reader.read_i32_into::<LittleEndian>(unsafe {
             transmute::<
-                &mut [[_; Accumulator::MATERIAL]; Feature::LEN],
-                &mut [_; Feature::LEN * Accumulator::MATERIAL],
+                &mut [[_; Material::LEN]; Feature::LEN],
+                &mut [_; Material::LEN * Feature::LEN],
             >(&mut *self.material.weight)
         })?;
 
         for Hidden { bias, weight } in &mut self.hidden {
             *bias = reader.read_i32::<LittleEndian>()?;
             reader.read_i8_into(unsafe {
-                transmute::<
-                    &mut [[_; Accumulator::POSITIONAL]; 2],
-                    &mut [_; Accumulator::POSITIONAL * 2],
-                >(weight)
+                transmute::<&mut [[_; Positional::LEN]; 2], &mut [_; Positional::LEN * 2]>(weight)
             })?;
         }
 
         debug_assert!(reader.read_u8().is_err());
 
-        for phase in 0..Accumulator::MATERIAL {
+        for phase in 0..Material::LEN {
             for role in Role::iter() {
                 let mut deltas = [0i32, 0i32];
 
@@ -94,17 +91,17 @@ impl Nnue {
     }
 
     #[inline(always)]
-    fn positional() -> &'static Affine<i16, { Accumulator::POSITIONAL }> {
+    fn positional() -> &'static Affine<i16, { Positional::LEN }> {
         unsafe { &NNUE.get().as_ref_unchecked().positional }
     }
 
     #[inline(always)]
-    fn material() -> &'static Linear<i32, { Accumulator::MATERIAL }> {
+    fn material() -> &'static Linear<i32, { Material::LEN }> {
         unsafe { &NNUE.get().as_ref_unchecked().material }
     }
 
     #[inline(always)]
-    fn hidden(phase: usize) -> &'static Hidden<{ Accumulator::POSITIONAL }> {
+    fn hidden(phase: usize) -> &'static Hidden<{ Positional::LEN }> {
         unsafe { NNUE.get().as_ref_unchecked().hidden.get_unchecked(phase) }
     }
 
@@ -121,7 +118,7 @@ mod tests {
 
     #[test]
     fn feature_transformer_does_not_overflow() {
-        (0..Accumulator::POSITIONAL).for_each(|i| {
+        (0..Positional::LEN).for_each(|i| {
             let bias = Nnue::positional().bias[i] as i32;
             let mut features = ArrayVec::<_, { Feature::LEN }>::from_iter(
                 Nnue::positional().weight.iter().map(|a| a[i] as i32),

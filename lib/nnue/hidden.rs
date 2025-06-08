@@ -179,7 +179,7 @@ impl<const N: usize> Hidden<N> {
 impl<const N: usize> Hidden<N> {
     /// Transforms the accumulator.
     #[inline(always)]
-    pub fn forward(&self, us: &[i16; N], them: &[i16; N]) -> i32 {
+    pub fn forward(&self, us: &AlignTo64<[i16; N]>, them: &AlignTo64<[i16; N]>) -> i32 {
         #[cfg(target_feature = "avx2")]
         unsafe {
             self.avx2(us, them)

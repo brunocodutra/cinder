@@ -1,5 +1,4 @@
-use crate::chess::{Color, Move, Perspective, Square};
-use crate::nnue::Evaluator;
+use crate::chess::{Color, Move, Position, Square};
 use crate::search::{Engine, HashSize, Info, Limits, Mate, Options, ThreadCount};
 use crate::util::{Assume, Integer, parsers::*};
 use derive_more::with_trait::{Display, Error, From};
@@ -89,7 +88,7 @@ pub struct Uci<I, O> {
     #[cfg_attr(test, strategy(LazyJust::new(move || Engine::with_options(&#options))))]
     engine: Engine,
     options: Options,
-    position: Evaluator,
+    position: Position,
 }
 
 impl<I, O> Uci<I, O> {
@@ -104,9 +103,9 @@ impl<I, O> Uci<I, O> {
         Self {
             input,
             output,
-            engine: Engine::default(),
-            options: Options::default(),
-            position: Evaluator::default(),
+            engine: Default::default(),
+            options: Default::default(),
+            position: Default::default(),
         }
     }
 }
@@ -163,8 +162,8 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
         match cmd.parse(input).finish()? {
             (args, "position") => {
                 let word6 = (word, t(word), t(word), t(word), t(word), word);
-                let fen = field("fen", t(recognize(word6))).map_res(Evaluator::from_str);
-                let startpos = t(tag("startpos")).map(|_| Evaluator::default());
+                let fen = field("fen", t(recognize(word6))).map_res(Position::from_str);
+                let startpos = t(tag("startpos")).map(|_| Default::default());
                 let moves = opt(field("moves", rest));
 
                 let mut position = terminated((alt((startpos, fen)), moves), eof);
@@ -256,17 +255,6 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                 Ok(true)
             }
 
-            ("", "eval") => {
-                let pos = &self.position;
-                let turn = self.position.turn();
-                let value = pos.evaluate().perspective(turn);
-                let info = format!("info value {value:+}");
-
-                self.output.send(info).await.map_err(UciError::Fatal)?;
-
-                Ok(true)
-            }
-
             (args, "setoption") => {
                 let option = |n| preceded((t(tag("name")), tag_no_case(n), t(tag("value"))), rest);
 
@@ -306,7 +294,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
 
             ("", "ucinewgame") => {
                 self.engine = Engine::with_options(&self.options);
-                self.position = Evaluator::default();
+                self.position = Default::default();
 
                 Ok(true)
             }
@@ -423,7 +411,7 @@ mod tests {
         #[any(StaticStream::new(["position startpos"]))] mut uci: MockUci,
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert_eq!(uci.position, Evaluator::default());
+        assert_eq!(uci.position, Default::default());
         assert_eq!(uci.output.join("\n"), "");
     }
 
@@ -436,7 +424,7 @@ mod tests {
         selector: Selector,
     ) {
         let mut input = String::new();
-        let mut pos = Evaluator::default();
+        let mut pos = Position::default();
 
         input.push_str("position startpos moves");
 
@@ -456,7 +444,7 @@ mod tests {
     #[proptest]
     fn handles_position_with_fen(
         #[any(StaticStream::new([format!("position fen {}", #pos)]))] mut uci: MockUci,
-        pos: Evaluator,
+        pos: Position,
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
         assert_eq!(uci.position.to_string(), pos.to_string());
@@ -468,7 +456,7 @@ mod tests {
         #[by_ref]
         #[filter(#uci.position.outcome().is_none())]
         mut uci: MockUci,
-        mut pos: Evaluator,
+        mut pos: Position,
         #[strategy(..=4usize)] n: usize,
         selector: Selector,
     ) {
@@ -493,7 +481,7 @@ mod tests {
     #[proptest]
     fn ignores_position_with_invalid_fen(
         #[any(StaticStream::new([format!("position fen {}", #_s)]))] mut uci: MockUci,
-        #[filter(#_s.parse::<Evaluator>().is_err())] _s: String,
+        #[filter(#_s.parse::<Position>().is_err())] _s: String,
     ) {
         let pos = uci.position.clone();
         assert_eq!(block_on(uci.run()), Ok(()));
@@ -724,24 +712,6 @@ mod tests {
     }
 
     #[proptest]
-    fn handles_eval(#[any(StaticStream::new(["eval"]))] mut uci: MockUci) {
-        let pos = uci.position.clone();
-        let value = match pos.turn() {
-            Color::White => pos.evaluate(),
-            Color::Black => -pos.evaluate(),
-        };
-
-        assert_eq!(block_on(uci.run()), Ok(()));
-
-        let output = uci.output.join("\n");
-
-        let value = format!("{value:+}");
-        let info = (tag("info"), field("value", tag(&*value)));
-        let mut pattern = recognize(terminated(info, eof));
-        assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
-    }
-
-    #[proptest]
     fn handles_uci(#[any(StaticStream::new(["uci"]))] mut uci: MockUci) {
         assert_eq!(block_on(uci.run()), Ok(()));
         assert!(uci.output.concat().ends_with("uciok"));
@@ -750,7 +720,7 @@ mod tests {
     #[proptest]
     fn handles_new_game(#[any(StaticStream::new(["ucinewgame"]))] mut uci: MockUci) {
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert_eq!(uci.position, Evaluator::default());
+        assert_eq!(uci.position, Default::default());
         assert_eq!(uci.output.join("\n"), "");
     }
 

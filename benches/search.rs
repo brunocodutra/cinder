@@ -2,7 +2,7 @@
 #![test_runner(criterion::runner)]
 
 use cinder::search::{Depth, Engine, Limits, Options};
-use cinder::{nnue::Evaluator, util::Integer};
+use cinder::util::Integer;
 use criterion::{Criterion, SamplingMode, Throughput};
 use criterion_macro::criterion;
 use futures::executor::block_on_stream;
@@ -10,12 +10,12 @@ use std::thread::available_parallelism;
 use std::time::{Duration, Instant};
 
 fn bench(reps: u64, options: &Options, limits: &Limits) -> Duration {
-    let position = Evaluator::default();
+    let pos = Default::default();
     let mut time = Duration::ZERO;
 
     for _ in 0..reps {
         let mut engine = Engine::with_options(options);
-        let search = engine.search(&position, limits.clone());
+        let search = engine.search(&pos, limits.clone());
 
         let timer = Instant::now();
         block_on_stream(search).for_each(drop);

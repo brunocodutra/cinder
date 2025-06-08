@@ -671,7 +671,7 @@ impl Position {
 
     /// Play a [`Move`].
     #[inline(always)]
-    pub fn play(&mut self, m: Move) -> (Role, Option<(Role, Square)>) {
+    pub fn play(&mut self, m: Move) {
         debug_assert!(self.moves().unpack().any(|n| m == n));
 
         use {Role::*, Square::*};
@@ -768,8 +768,6 @@ impl Position {
                 }
             }
         }
-
-        (role, capture)
     }
 
     /// Play a [null-move].
@@ -987,6 +985,8 @@ mod tests {
             prop_assume!(pos.pinned().is_empty());
             prop_assume!(pos.checkers().is_empty());
 
+            assert_eq!(pos.role_on(m.whither()).unwrap_or(Role::Pawn), victim);
+
             assert_eq!(
                 Some((Some(captor), m.promotion())),
                 pos.moves()
@@ -995,7 +995,7 @@ mod tests {
                     .min_by_key(|&(r, p)| (r, Reverse(p)))
             );
 
-            assert!(matches!(pos.play(m), (c, Some((v, _))) if c == captor && v == victim));
+            pos.play(m);
         }
     }
 

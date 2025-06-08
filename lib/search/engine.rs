@@ -3,7 +3,7 @@ use crate::nnue::{Evaluator, Value};
 use crate::syzygy::{Syzygy, Wdl};
 use crate::util::{Assume, Bounded, Integer, Memory};
 use crate::{params::Params, search::*};
-use derive_more::with_trait::{Display, Error};
+use derive_more::with_trait::{Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
 use std::task::{Context, Poll};
@@ -17,17 +17,29 @@ use proptest::prelude::*;
 #[display("the search was interrupted")]
 pub struct Interrupted;
 
+#[derive(Debug, Deref, DerefMut)]
+struct StackGuard<'e, 'a> {
+    stack: &'e mut Stack<'a>,
+}
+
+impl<'e, 'a> Drop for StackGuard<'e, 'a> {
+    #[inline(always)]
+    fn drop(&mut self) {
+        self.stack.evaluator.pop();
+    }
+}
+
 #[derive(Debug)]
 struct Stack<'a> {
     searcher: &'a Searcher,
     syzygy: &'a Syzygy,
     tt: &'a Memory<Transposition>,
     ctrl: &'a Control,
-    root: &'a Evaluator,
     nodes: Option<&'a Counter>,
     replies: [Option<&'a Reply>; Ply::MAX as usize + 1],
     killers: [Killers; Ply::MAX as usize + 1],
     value: [Value; Ply::MAX as usize + 1],
+    evaluator: Evaluator,
     pv: Pv,
 }
 
@@ -37,38 +49,39 @@ impl<'a> Stack<'a> {
         syzygy: &'a Syzygy,
         tt: &'a Memory<Transposition>,
         ctrl: &'a Control,
-        root: &'a Evaluator,
+        evaluator: Evaluator,
     ) -> Self {
         Stack {
             searcher,
             syzygy,
             tt,
             ctrl,
-            root,
             nodes: None,
             replies: [Default::default(); Ply::MAX as usize + 1],
             killers: [Default::default(); Ply::MAX as usize + 1],
             value: [Default::default(); Ply::MAX as usize + 1],
-            pv: if root.is_check() {
+            pv: if evaluator.is_check() {
                 Pv::empty(Score::mated(Ply::new(0)))
             } else {
                 Pv::empty(Score::new(0))
             },
+            evaluator,
         }
     }
 
     #[allow(clippy::too_many_arguments)]
     fn record(
         &mut self,
-        pos: &Position,
-        moves: &Moves,
-        bounds: Range<Score>,
         depth: Depth,
-        ply: Ply,
+        bounds: Range<Score>,
         best: Move,
         score: Score,
+        moves: &Moves,
     ) {
+        let ply = self.evaluator.ply();
+        let pos = &self.evaluator[ply];
         let draft = depth - ply;
+
         if score >= bounds.end {
             if best.is_quiet() {
                 self.killers[ply.cast::<usize>()].insert(best);
@@ -86,8 +99,8 @@ impl<'a> Stack<'a> {
 
             self.searcher.history.update(pos, best, bonus.saturate());
 
-            let counter = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
-            counter.update(pos, best, bonus.saturate());
+            let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
+            reply.update(pos, best, bonus.saturate());
 
             for m in moves.iter() {
                 if m == best {
@@ -95,8 +108,8 @@ impl<'a> Stack<'a> {
                 } else {
                     self.searcher.history.update(pos, m, penalty.saturate());
 
-                    let counter = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
-                    counter.update(pos, m, penalty.saturate());
+                    let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
+                    reply.update(pos, m, penalty.saturate());
                 }
             }
         }
@@ -107,12 +120,12 @@ impl<'a> Stack<'a> {
     }
 
     /// A measure for how much the position is improving.
-    fn improving(&mut self, pos: &Position, ply: Ply) -> i32 {
-        if pos.is_check() {
+    fn improving(&self) -> i32 {
+        if self.evaluator.is_check() {
             return 0;
         }
 
-        let idx = ply.cast::<usize>();
+        let idx = self.evaluator.ply().cast::<usize>();
 
         let a = (idx >= 2 && self.value[idx] > self.value[idx - 2]) as i32;
         let b = (idx >= 4 && self.value[idx] > self.value[idx - 4]) as i32;
@@ -121,7 +134,8 @@ impl<'a> Stack<'a> {
     }
 
     /// The mate distance pruning.
-    fn mdp(&self, ply: Ply, bounds: &Range<Score>) -> (Score, Score) {
+    fn mdp(&self, bounds: &Range<Score>) -> (Score, Score) {
+        let ply = self.evaluator.ply();
         let lower = Score::mated(ply);
         let upper = Score::mating(ply + 1); // One can't mate in 0 plies!
         (bounds.start.max(lower), bounds.end.min(upper))
@@ -243,51 +257,57 @@ impl<'a> Stack<'a> {
         scale * idx.cast::<i32>() / (beta + alpha * draft.cast::<i32>().pow(2))
     }
 
+    #[must_use]
+    fn next(&mut self, m: Option<Move>) -> StackGuard<'_, 'a> {
+        self.replies[self.evaluator.ply().cast::<usize>()] =
+            m.map(|m| self.searcher.continuation.reply(&self.evaluator, m));
+
+        self.evaluator.push(m);
+        self.tt.prefetch(self.evaluator.zobrist());
+
+        StackGuard { stack: self }
+    }
+
     /// The zero-window alpha-beta search.
     fn nw<const N: usize>(
         &mut self,
-        pos: &Evaluator,
-        beta: Score,
         depth: Depth,
-        ply: Ply,
+        beta: Score,
         cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
-        self.ab(pos, beta - 1..beta, depth, ply, cut)
+        self.ab(depth, beta - 1..beta, cut)
     }
 
     /// The alpha-beta search.
     fn ab<const N: usize>(
         &mut self,
-        pos: &Evaluator,
-        bounds: Range<Score>,
         depth: Depth,
-        ply: Ply,
+        bounds: Range<Score>,
         cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
+        let ply = self.evaluator.ply();
         if ply.cast::<usize>() < N && depth > ply && bounds.start + 1 < bounds.end {
-            self.pvs(pos, bounds, depth, ply, cut)
+            self.pvs(depth, bounds, cut)
         } else {
-            Ok(self.pvs::<0>(pos, bounds, depth, ply, cut)?.truncate())
+            Ok(self.pvs::<0>(depth, bounds, cut)?.truncate())
         }
     }
 
     /// The principal variation search.
     fn pvs<const N: usize>(
         &mut self,
-        pos: &Evaluator,
-        bounds: Range<Score>,
         mut depth: Depth,
-        ply: Ply,
+        bounds: Range<Score>,
         mut cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
-        (ply > 0).assume();
         self.nodes.update(1);
-        if self.ctrl.check(self.root, &self.pv, ply) == ControlFlow::Abort {
+        if self.ctrl.check(&self.evaluator, &self.pv) == ControlFlow::Abort {
             return Err(Interrupted);
         }
 
-        let (alpha, beta) = match pos.outcome() {
-            None => self.mdp(ply, &bounds),
+        let ply = self.evaluator.ply();
+        let (alpha, beta) = match self.evaluator.outcome() {
+            None => self.mdp(&bounds),
             Some(o) if o.is_draw() => return Ok(Pv::empty(Score::new(0))),
             Some(_) => return Ok(Pv::empty(Score::mated(ply))),
         };
@@ -296,14 +316,14 @@ impl<'a> Stack<'a> {
             return Ok(Pv::empty(alpha));
         }
 
-        self.value[ply.cast::<usize>()] = pos.evaluate();
-        let transposition = self.tt.get(pos.zobrist());
+        self.value[ply.cast::<usize>()] = self.evaluator.evaluate();
+        let transposition = self.tt.get(self.evaluator.zobrist());
         let transposed = match transposition {
             None => Pv::empty(self.value[ply.cast::<usize>()].saturate()),
             Some(t) => t.transpose(ply),
         };
 
-        depth += pos.is_check() as i8;
+        depth += self.evaluator.is_check() as i8;
         depth -= transposition.is_none() as i8;
 
         let draft = depth - ply;
@@ -330,7 +350,7 @@ impl<'a> Stack<'a> {
         } else if !is_pv {
             (Score::lower(), Score::upper())
         } else {
-            match self.syzygy.wdl_after_zeroing(pos) {
+            match self.syzygy.wdl_after_zeroing(&self.evaluator) {
                 None => (Score::lower(), Score::upper()),
                 Some(wdl) => {
                     let score = match wdl {
@@ -341,7 +361,7 @@ impl<'a> Stack<'a> {
 
                     if score.upper(ply) <= alpha || score.lower(ply) >= beta {
                         let transposition = Transposition::new(score, draft, None);
-                        self.tt.set(pos.zobrist(), transposition);
+                        self.tt.set(self.evaluator.zobrist(), transposition);
                         return Ok(transposition.transpose(ply).truncate());
                     }
 
@@ -354,27 +374,20 @@ impl<'a> Stack<'a> {
         let transposed = transposed.clamp(lower, upper);
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
-        } else if !is_pv && !pos.is_check() {
+        } else if !is_pv && !self.evaluator.is_check() {
             if transposed.score() - self.rfp(draft) >= beta {
                 return Ok(transposed.truncate());
             } else if let Some(d) = self.nmp(transposed.score() - beta, draft) {
-                if pos.pieces(pos.turn()).len() > 1 {
-                    if d <= 0 {
+                if self.evaluator.pieces(self.evaluator.turn()).len() > 1 {
+                    if d <= 0 || -self.next(None).nw::<0>(d + ply, -beta + 1, !cut)? >= beta {
                         return Ok(transposed.truncate());
-                    } else {
-                        let mut next = pos.clone();
-                        next.pass();
-                        self.tt.prefetch(next.zobrist());
-                        self.replies[ply.cast::<usize>()] = None;
-                        if -self.nw::<0>(&next, -beta + 1, d + ply, ply + 1, !cut)? >= beta {
-                            return Ok(transposed.truncate());
-                        }
                     }
                 }
             }
         }
 
-        let mut moves = Moves::from_iter(pos.moves().unpack_if(|ms| !quiesce || !ms.is_quiet()));
+        let move_pack = self.evaluator.moves();
+        let mut moves = Moves::from_iter(move_pack.unpack_if(|ms| !quiesce || !ms.is_quiet()));
 
         let value_scale: i32 = Params::value_scale().as_int();
         let killer_bonus: i32 = Params::killer_move_bonus().as_int();
@@ -388,14 +401,16 @@ impl<'a> Stack<'a> {
             }
 
             let mut rating = Bounded::new(0);
-            rating += self.searcher.history.get(pos, m).cast::<i32>();
-            rating += self.replies[ply.cast::<usize>() - 1].get(pos, m);
+            rating += self.searcher.history.get(&self.evaluator, m).cast::<i32>();
+
+            let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
+            rating += reply.get(&self.evaluator, m);
 
             if killer.contains(m) {
                 rating += killer_bonus / value_scale;
             } else if !m.is_quiet() {
-                let gain = pos.gain(m);
-                if pos.winning(m, Value::new(1)) {
+                let gain = self.evaluator.gain(m);
+                if self.evaluator.winning(m, Value::new(1)) {
                     rating += (gain.cast::<i32>() * gain_alpha + gain_beta) / value_scale;
                 }
             }
@@ -411,12 +426,7 @@ impl<'a> Stack<'a> {
                 let s_beta = beta - self.single(draft);
                 let d_beta = beta - self.double(draft);
                 for m in moves.sorted().skip(1) {
-                    let mut next = pos.clone();
-                    next.play(m);
-                    self.tt.prefetch(next.zobrist());
-                    self.replies[ply.cast::<usize>()] =
-                        Some(self.searcher.continuation.reply(pos, m));
-                    let pv = -self.nw(&next, -s_beta + 1, s_draft + ply, ply + 1, !cut)?;
+                    let pv = -self.next(Some(m)).nw(s_draft + ply, -s_beta + 1, !cut)?;
                     if pv >= beta {
                         return Ok(pv.transpose(m));
                     } else if pv >= s_beta {
@@ -434,16 +444,12 @@ impl<'a> Stack<'a> {
         let (mut head, mut tail) = match sorted_moves.next() {
             None => return Ok(transposed.truncate()),
             Some(m) => {
-                let mut next = pos.clone();
-                next.play(m);
-                self.tt.prefetch(next.zobrist());
-                self.replies[ply.cast::<usize>()] = Some(self.searcher.continuation.reply(pos, m));
-                let pv = -self.ab(&next, -beta..-alpha, depth + extension, ply + 1, false)?;
-                (m, pv)
+                let mut next = self.next(Some(m));
+                (m, -next.ab(depth + extension, -beta..-alpha, false)?)
             }
         };
 
-        let improving = self.improving(pos, ply);
+        let improving = self.improving();
         for (idx, m) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -452,24 +458,22 @@ impl<'a> Stack<'a> {
 
             if self.lmp(draft, idx) > improving {
                 break;
-            } else if !pos.winning(m, Value::new(1) - self.spt(draft)) {
+            } else if !self.evaluator.winning(m, Value::new(1) - self.spt(draft)) {
                 continue;
             }
 
             let lmr = Depth::new(cut as _) + self.lmr(draft, idx) - is_pv as i8 - improving;
             if self.value[ply.cast::<usize>()] + self.futility(draft - lmr) <= alpha {
-                if !pos.winning(m, Value::new(1) + self.fpt(draft - lmr)) {
+                let margin = Value::new(1) + self.fpt(draft - lmr);
+                if !self.evaluator.winning(m, margin) {
                     continue;
                 }
             }
 
-            let mut next = pos.clone();
-            next.play(m);
-            self.tt.prefetch(next.zobrist());
-            self.replies[ply.cast::<usize>()] = Some(self.searcher.continuation.reply(pos, m));
-            let pv = match -self.nw(&next, -alpha, depth - lmr, ply + 1, !cut || lmr > 0)? {
+            let mut next = self.next(Some(m));
+            let pv = match -next.nw(depth - lmr, -alpha, !cut || lmr > 0)? {
                 pv if pv <= alpha || (pv >= beta && lmr <= 0) => pv,
-                _ => -self.ab(&next, -beta..-alpha, depth, ply + 1, false)?,
+                _ => -next.ab(depth, -beta..-alpha, false)?,
             };
 
             if pv > tail {
@@ -478,7 +482,7 @@ impl<'a> Stack<'a> {
         }
 
         let tail = tail.clamp(lower, upper);
-        self.record(pos, &moves, bounds, depth, ply, head, tail.score());
+        self.record(depth, bounds, head, tail.score(), &moves);
         Ok(tail.transpose(head))
     }
 
@@ -489,9 +493,8 @@ impl<'a> Stack<'a> {
         bounds: Range<Score>,
         depth: Depth,
     ) -> Result<Pv, Interrupted> {
-        let ply = Ply::new(0);
         let (alpha, beta) = (bounds.start, bounds.end);
-        if self.ctrl.check(self.root, &self.pv, ply) != ControlFlow::Continue {
+        if self.ctrl.check(&self.evaluator, &self.pv) != ControlFlow::Continue {
             return Err(Interrupted);
         }
 
@@ -500,20 +503,18 @@ impl<'a> Stack<'a> {
                 Bounded::upper()
             } else {
                 let mut rating = Bounded::new(0);
-                rating += self.searcher.history.get(self.root, m);
-                rating += self.root.gain(m);
+                rating += self.searcher.history.get(&self.evaluator, m);
+                rating += self.evaluator.gain(m);
                 rating
             }
         });
 
         let mut sorted_moves = moves.sorted();
         let mut head = sorted_moves.next().assume();
-        let mut next = self.root.clone();
-        next.play(head);
-        self.tt.prefetch(next.zobrist());
-        self.nodes = Some(self.ctrl.attention().nodes(head));
-        self.replies[0] = Some(self.searcher.continuation.reply(self.root, head));
-        let mut tail = -self.ab(&next, -beta..-alpha, depth, ply + 1, false)?;
+        let mut next = self.next(Some(head));
+        next.nodes = Some(next.ctrl.attention().nodes(head));
+        let mut tail = -next.ab(depth, -beta..-alpha, false)?;
+        drop(next);
 
         for (idx, m) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
@@ -527,19 +528,17 @@ impl<'a> Stack<'a> {
 
             let lmr = Depth::new(0) + self.lmr(depth, idx);
             if self.value[0] + self.futility(depth - lmr) <= alpha {
-                if !self.root.winning(m, Value::new(1) + self.fpt(depth - lmr)) {
+                let margin = Value::new(1) + self.fpt(depth - lmr);
+                if !self.evaluator.winning(m, margin) {
                     continue;
                 }
             }
 
-            let mut next = self.root.clone();
-            next.play(m);
-            self.tt.prefetch(next.zobrist());
-            self.nodes = Some(self.ctrl.attention().nodes(m));
-            self.replies[0] = Some(self.searcher.continuation.reply(self.root, m));
-            let pv = match -self.nw(&next, -alpha, depth - lmr, ply + 1, false)? {
+            let mut next = self.next(Some(m));
+            next.nodes = Some(next.ctrl.attention().nodes(m));
+            let pv = match -next.nw(depth - lmr, -alpha, false)? {
                 pv if pv <= alpha || (pv >= beta && lmr <= 0) => pv,
-                _ => -self.ab(&next, -beta..-alpha, depth, ply + 1, false)?,
+                _ => -next.ab(depth, -beta..-alpha, false)?,
             };
 
             if pv > tail {
@@ -547,7 +546,7 @@ impl<'a> Stack<'a> {
             }
         }
 
-        self.record(self.root, moves, bounds, depth, ply, head, tail.score());
+        self.record(depth, bounds, head, tail.score(), moves);
         Ok(tail.transpose(head))
     }
 
@@ -555,12 +554,12 @@ impl<'a> Stack<'a> {
     fn aw(&mut self) -> impl Iterator<Item = Info> {
         gen move {
             let clock = self.ctrl.limits().clock;
-            let mut moves = Moves::from_iter(self.root.moves().unpack());
+            let mut moves = Moves::from_iter(self.evaluator.moves().unpack());
             let mut stop = matches!((moves.len(), &clock), (0, _) | (1, Some(_)));
             let mut depth = Depth::new(0);
 
-            self.value[0] = self.root.evaluate();
-            if let Some(t) = self.tt.get(self.root.zobrist()) {
+            self.value[0] = self.evaluator.evaluate();
+            if let Some(t) = self.tt.get(self.evaluator.zobrist()) {
                 if t.best().is_some_and(|m| moves.iter().any(|n| m == n)) {
                     self.pv = t.transpose(Ply::new(0)).truncate();
                 }
@@ -624,14 +623,14 @@ impl<'a> Stack<'a> {
 #[derive(Debug)]
 pub struct Search<'e, 'p> {
     engine: &'e mut Engine,
-    position: &'p Evaluator,
+    position: &'p Position,
     ctrl: Control,
     channel: Option<UnboundedReceiver<Info>>,
     task: Option<Task<'e>>,
 }
 
 impl<'e, 'p> Search<'e, 'p> {
-    fn new(engine: &'e mut Engine, limits: Limits, position: &'p Evaluator) -> Self {
+    fn new(engine: &'e mut Engine, position: &'p Position, limits: Limits) -> Self {
         Search {
             engine,
             position,
@@ -680,18 +679,19 @@ impl<'e, 'p> Stream for Search<'e, 'p> {
         let syzygy: &'static Syzygy = unsafe { &*(&self.engine.syzygy as *const _) };
         let tt: &'static Memory<Transposition> = unsafe { &*(&self.engine.tt as *const _) };
         let ctrl: &'static Control = unsafe { &*(&self.ctrl as *const _) };
-        let root: &'static Evaluator = unsafe { &*(self.position as *const _) };
+        let position: &'static Position = unsafe { &*(self.position as *const _) };
 
         let (tx, rx) = unbounded();
         self.channel = Some(rx);
-        if let Some(pv) = syzygy.best(root) {
+        if let Some(pv) = syzygy.best(position) {
             let info = Info::new(Depth::new(0), Duration::ZERO, 0, pv.truncate());
             return Poll::Ready(Some(info));
         }
 
         self.task = Some(executor.execute(move |idx| {
             let searcher = searchers.get(idx).assume();
-            for info in Stack::new(searcher, syzygy, tt, ctrl, root).aw() {
+            let evaluator = Evaluator::new(position.clone());
+            for info in Stack::new(searcher, syzygy, tt, ctrl, evaluator).aw() {
                 if idx == 0 {
                     let depth = info.depth();
                     tx.unbounded_send(info).assume();
@@ -763,8 +763,8 @@ impl Engine {
     }
 
     /// Initiates a [`Search`].
-    pub fn search<'e, 'p>(&'e mut self, pos: &'p Evaluator, limits: Limits) -> Search<'e, 'p> {
-        Search::new(self, limits, pos)
+    pub fn search<'e, 'p>(&'e mut self, pos: &'p Position, limits: Limits) -> Search<'e, 'p> {
+        Search::new(self, pos, limits)
     }
 }
 
@@ -792,7 +792,6 @@ mod tests {
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
         d: Depth,
-        #[filter(#p > 0)] p: Ply,
         #[filter(#s.mate() == Mate::None && #s >= #b)] s: Score,
         cut: bool,
     ) {
@@ -800,9 +799,9 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::none());
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
         stack.pv = stack.pv.transpose(m);
-        assert_eq!(stack.nw::<1>(&pos, b, d, p, cut), Ok(Pv::empty(s)));
+        assert_eq!(stack.nw::<1>(d, b, cut), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -814,7 +813,6 @@ mod tests {
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
         d: Depth,
-        #[filter(#p > 0)] p: Ply,
         #[filter(#s.mate() == Mate::None && #s < #b)] s: Score,
         cut: bool,
     ) {
@@ -822,9 +820,9 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::none());
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
         stack.pv = stack.pv.transpose(m);
-        assert_eq!(stack.nw::<1>(&pos, b, d, p, cut), Ok(Pv::empty(s)));
+        assert_eq!(stack.nw::<1>(d, b, cut), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -836,7 +834,6 @@ mod tests {
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
         d: Depth,
-        #[filter(#p > 0)] p: Ply,
         #[filter(#s.mate() == Mate::None)] s: Score,
         cut: bool,
     ) {
@@ -844,27 +841,9 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::none());
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
         stack.pv = stack.pv.transpose(m);
-        assert_eq!(stack.nw::<1>(&pos, b, d, p, cut), Ok(Pv::empty(s)));
-    }
-
-    #[proptest]
-    fn ab_returns_static_evaluation_if_max_ply(
-        e: Engine,
-        #[filter(#pos.outcome().is_none())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
-        d: Depth,
-        cut: bool,
-    ) {
-        let ctrl = Control::new(&pos, Limits::none());
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
-        stack.pv = stack.pv.transpose(m);
-
-        assert_eq!(
-            stack.ab::<1>(&pos, Score::lower()..Score::upper(), d, Ply::upper(), cut),
-            Ok(Pv::empty(pos.evaluate().saturate()))
-        );
+        assert_eq!(stack.nw::<1>(d, b, cut), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -874,13 +853,12 @@ mod tests {
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
-        #[filter(#p > 0)] p: Ply,
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::nodes(0));
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
         stack.pv = stack.pv.transpose(m);
-        assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupted));
+        assert_eq!(stack.ab::<1>(d, b, cut), Err(Interrupted));
     }
 
     #[proptest]
@@ -890,14 +868,13 @@ mod tests {
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
-        #[filter(#p > 0)] p: Ply,
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::time(Duration::ZERO));
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
         stack.pv = stack.pv.transpose(m);
         thread::sleep(Duration::from_millis(1));
-        assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupted));
+        assert_eq!(stack.ab::<1>(d, b, cut), Err(Interrupted));
     }
 
     #[proptest]
@@ -907,63 +884,50 @@ mod tests {
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
-        #[filter(#p > 0)] p: Ply,
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::none());
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
         stack.pv = stack.pv.transpose(m);
         ctrl.abort();
-        assert_eq!(stack.ab::<1>(&pos, b, d, p, cut), Err(Interrupted));
+        assert_eq!(stack.ab::<1>(d, b, cut), Err(Interrupted));
     }
 
     #[proptest]
     fn ab_returns_drawn_score_if_game_ends_in_a_draw(
-        #[by_ref] e: Engine,
+        e: Engine,
         #[filter(#pos.outcome().is_some_and(|o| o.is_draw()))] pos: Evaluator,
-        m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
-        #[filter(#p > 0)] p: Ply,
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::none());
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
-        stack.pv = stack.pv.transpose(m);
-
-        assert_eq!(
-            stack.ab::<1>(&pos, b, d, p, cut),
-            Ok(Pv::empty(Score::new(0)))
-        );
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        assert_eq!(stack.ab::<1>(d, b, cut), Ok(Pv::empty(Score::new(0))));
     }
 
     #[proptest]
     fn ab_returns_lost_score_if_game_ends_in_checkmate(
         e: Engine,
         #[filter(#pos.outcome().is_some_and(|o| o.is_decisive()))] pos: Evaluator,
-        m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
-        #[filter(#p > 0)] p: Ply,
         cut: bool,
     ) {
+        let ply = pos.ply();
         let ctrl = Control::new(&pos, Limits::none());
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
-        stack.pv = stack.pv.transpose(m);
-
-        assert_eq!(
-            stack.ab::<1>(&pos, b, d, p, cut),
-            Ok(Pv::empty(Score::mated(p)))
-        );
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        assert_eq!(stack.ab::<1>(d, b, cut), Ok(Pv::empty(Score::mated(ply))));
     }
 
     #[proptest]
     fn aw_extends_time_to_find_some_pv(
         e: Engine,
-        #[filter(#pos.outcome().is_none())] pos: Evaluator,
+        #[filter(#pos.outcome().is_none())] pos: Position,
     ) {
-        let ctrl = Control::new(&pos, Limits::time(Duration::ZERO));
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
+        let evaluator = Evaluator::new(pos);
+        let ctrl = Control::new(&evaluator, Limits::time(Duration::ZERO));
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, evaluator);
         let last = stack.aw().last();
         assert_ne!(last.and_then(|pv| pv.head()), None);
     }
@@ -971,10 +935,11 @@ mod tests {
     #[proptest]
     fn aw_extends_depth_to_find_some_pv(
         e: Engine,
-        #[filter(#pos.outcome().is_none())] pos: Evaluator,
+        #[filter(#pos.outcome().is_none())] pos: Position,
     ) {
-        let ctrl = Control::new(&pos, Limits::depth(Depth::lower()));
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, &pos);
+        let evaluator = Evaluator::new(pos);
+        let ctrl = Control::new(&evaluator, Limits::depth(Depth::lower()));
+        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, evaluator);
         let last = stack.aw().last();
         assert_ne!(last.and_then(|pv| pv.head()), None);
     }
@@ -982,7 +947,7 @@ mod tests {
     #[proptest]
     fn search_returns_pvs_that_improve_monotonically(
         mut e: Engine,
-        #[filter(#pos.outcome().is_none())] pos: Evaluator,
+        #[filter(#pos.outcome().is_none())] pos: Position,
         d: Depth,
     ) {
         let infos = block_on_stream(e.search(&pos, Limits::depth(d)));

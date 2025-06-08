@@ -1,4 +1,5 @@
 use crate::chess::{Butterfly, Position};
+use crate::nnue::Evaluator;
 use crate::search::{Attention, Limits, Ply, Pv, Statistics};
 use crate::{params::Params, util::Integer};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -98,7 +99,7 @@ impl Control {
 
     /// Whether the search should expand a node.
     #[inline(always)]
-    pub fn check(&self, root: &Position, pv: &Pv, ply: Ply) -> ControlFlow {
+    pub fn check(&self, evaluator: &Evaluator, pv: &Pv) -> ControlFlow {
         use Ordering::Relaxed;
 
         if self.abort.load(Relaxed) {
@@ -118,6 +119,7 @@ impl Control {
             }
         };
 
+        let ply = evaluator.ply();
         let inertia = Params::score_trend_inertia().as_float();
         let _ = self.trend.fetch_update(Relaxed, Relaxed, |bits| {
             let score = pv.score().get() as f64;
@@ -135,6 +137,7 @@ impl Control {
         let trend_pivot = Params::score_trend_pivot().as_float() / Params::value_scale().as_float();
 
         if nodes % 1024 == 0 {
+            let root = &evaluator[Ply::new(0)];
             let time = self.time().as_secs_f64();
             let focus = self.attention.get(root, best) as f64 / nodes.max(1024) as f64;
             let delta = f64::from_bits(self.trend.load(Relaxed)) - pv.score().get() as f64;
@@ -167,7 +170,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
-    fn measures_time_elapsed(pos: Position, l: Limits) {
+    fn measures_time_elapsed(pos: Evaluator, l: Limits) {
         let ctrl = Control::new(&pos, l);
         let duration = Duration::from_millis(1);
         thread::sleep(duration);
@@ -175,75 +178,65 @@ mod tests {
     }
 
     #[proptest]
-    fn time_elapsed_is_always_positive(pos: Position, l: Limits) {
+    fn time_elapsed_is_always_positive(pos: Evaluator, l: Limits) {
         let ctrl = Control::new(&pos, l);
         assert!(ctrl.time() > Duration::ZERO);
     }
 
     #[proptest]
-    fn aborts_if_time_is_up(pos: Position, #[filter(#pv.head().is_some())] pv: Pv, ply: Ply) {
+    fn aborts_if_time_is_up(pos: Evaluator, #[filter(#pv.head().is_some())] pv: Pv) {
         let ctrl = Control::new(&pos, Limits::time(Duration::ZERO));
-        assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
-        assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
-        assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, &pv), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, &pv), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, &pv), ControlFlow::Abort);
     }
 
     #[proptest]
     fn stops_if_searched_for_sufficient_time(
-        pos: Position,
+        pos: Evaluator,
         #[filter(#pv.head().is_some())] pv: Pv,
-        ply: Ply,
     ) {
         let mut ctrl = Control::new(&pos, Limits::clock(Duration::MAX, Duration::ZERO));
         ctrl.time.start = 0.;
-        assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Stop);
-        assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Stop);
-        assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Stop);
+        assert_eq!(ctrl.check(&pos, &pv), ControlFlow::Stop);
+        assert_eq!(ctrl.check(&pos, &pv), ControlFlow::Stop);
+        assert_eq!(ctrl.check(&pos, &pv), ControlFlow::Stop);
     }
 
     #[proptest]
-    fn counts_nodes_searched(
-        pos: Position,
-        n: u64,
-        #[filter(#pv.head().is_some())] pv: Pv,
-        ply: Ply,
-    ) {
+    fn counts_nodes_searched(pos: Evaluator, n: u64, #[filter(#pv.head().is_some())] pv: Pv) {
         let ctrl = Control::new(&pos, Limits::nodes(n));
         assert_eq!(ctrl.nodes(), 0);
-        assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Continue);
+        assert_eq!(ctrl.check(&pos, &pv), ControlFlow::Continue);
         assert_eq!(ctrl.nodes(), 1);
     }
 
     #[proptest]
-    fn aborts_if_node_count_is_reached(
-        pos: Position,
-        #[filter(#pv.head().is_some())] pv: Pv,
-        ply: Ply,
-    ) {
+    fn aborts_if_node_count_is_reached(pos: Evaluator, #[filter(#pv.head().is_some())] pv: Pv) {
         let ctrl = Control::new(&pos, Limits::nodes(0));
-        assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
-        assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
-        assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, &pv), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, &pv), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, &pv), ControlFlow::Abort);
     }
 
     #[proptest]
-    fn aborts_upon_request(pos: Position, #[filter(#pv.head().is_some())] pv: Pv, ply: Ply) {
+    fn aborts_upon_request(pos: Evaluator, #[filter(#pv.head().is_some())] pv: Pv) {
         let ctrl = Control::new(&pos, Limits::none());
         ctrl.abort();
-        assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
-        assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
-        assert_eq!(ctrl.check(&pos, &pv, ply), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, &pv), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, &pv), ControlFlow::Abort);
+        assert_eq!(ctrl.check(&pos, &pv), ControlFlow::Abort);
     }
 
     #[proptest]
-    fn suspends_limits_while_empty_pv(pos: Position, s: Score, ply: Ply) {
+    fn suspends_limits_while_empty_pv(pos: Evaluator, s: Score) {
         let ctrl = Control::new(&pos, Limits::time(Duration::ZERO));
-        assert_eq!(ctrl.check(&pos, &Pv::empty(s), ply), ControlFlow::Continue);
+        assert_eq!(ctrl.check(&pos, &Pv::empty(s)), ControlFlow::Continue);
 
         let ctrl = Control::new(&pos, Limits::clock(Duration::ZERO, Duration::ZERO));
-        assert_eq!(ctrl.check(&pos, &Pv::empty(s), ply), ControlFlow::Continue);
+        assert_eq!(ctrl.check(&pos, &Pv::empty(s)), ControlFlow::Continue);
 
         let ctrl = Control::new(&pos, Limits::nodes(0));
-        assert_eq!(ctrl.check(&pos, &Pv::empty(s), ply), ControlFlow::Continue);
+        assert_eq!(ctrl.check(&pos, &Pv::empty(s)), ControlFlow::Continue);
     }
 }

@@ -795,7 +795,7 @@ mod tests {
         #[filter(#s.mate() == Mate::None && #s >= #b)] s: Score,
         cut: bool,
     ) {
-        let tpos = Transposition::new(ScoreBound::Lower(s), d, Some(m));
+        let tpos = Transposition::new(ScoreBound::Lower(s), Depth::upper(), Some(m));
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::none());
@@ -816,7 +816,7 @@ mod tests {
         #[filter(#s.mate() == Mate::None && #s < #b)] s: Score,
         cut: bool,
     ) {
-        let tpos = Transposition::new(ScoreBound::Upper(s), d, Some(m));
+        let tpos = Transposition::new(ScoreBound::Upper(s), Depth::upper(), Some(m));
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::none());
@@ -837,7 +837,7 @@ mod tests {
         #[filter(#s.mate() == Mate::None)] s: Score,
         cut: bool,
     ) {
-        let tpos = Transposition::new(ScoreBound::Exact(s), d, Some(m));
+        let tpos = Transposition::new(ScoreBound::Exact(s), Depth::upper(), Some(m));
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::none());

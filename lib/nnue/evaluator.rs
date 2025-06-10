@@ -4,16 +4,10 @@ use crate::{chess::*, params::Params, search::Ply};
 use derive_more::with_trait::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, Index, Range};
-use std::{array, hint::unreachable_unchecked, str::FromStr};
+use std::{array, str::FromStr};
 
 #[cfg(test)]
 use proptest::{prelude::*, sample::*};
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-enum Pending {
-    Update,
-    Refresh,
-}
 
 /// A [`Position`] evaluation stack.
 #[derive(Debug, Clone)]
@@ -23,7 +17,6 @@ pub struct Evaluator {
     positions: [Position; Ply::MAX as usize + 1],
     positional: [[Positional; 2]; Ply::MAX as usize + 1],
     material: [[Material; 2]; Ply::MAX as usize + 1],
-    pending: [[Option<Pending>; 2]; Ply::MAX as usize + 1],
     // move[i] leads to pos[i + 1]
     moves: [Option<Move>; Ply::MAX as usize],
 }
@@ -102,7 +95,6 @@ impl Evaluator {
             positions: array::from_fn(|_| Default::default()),
             positional: array::from_fn(|_| array::from_fn(|_| Default::default())),
             material: array::from_fn(|_| array::from_fn(|_| Default::default())),
-            pending: [[None; 2]; Ply::MAX as usize + 1],
             moves: [None; Ply::MAX as usize],
         };
 
@@ -114,6 +106,11 @@ impl Evaluator {
         evaluator
     }
 
+    /// The current [`Ply`].
+    pub fn ply(&self) -> Ply {
+        self.ply
+    }
+
     /// Pushes a [`Position`] into the evaluator stack.
     pub fn push(&mut self, m: Option<Move>) {
         (self.ply < Ply::MAX).assume();
@@ -123,19 +120,64 @@ impl Evaluator {
 
         self.ply += 1;
         self.moves[idx] = m;
-        self.pending[idx + 1] = [Some(Pending::Update); 2];
         self.positions[idx + 1] = self.positions[idx].clone();
 
         match self.moves[idx] {
             None => self.positions[idx + 1].pass(),
-            Some(m) => {
-                self.positions[idx + 1].play(m);
+            Some(m) => self.positions[idx + 1].play(m),
+        }
+
+        for side in Color::iter() {
+            let mut sub = [None; 2];
+            let mut add = [None; 2];
+
+            if let Some(m) = self.moves[idx] {
                 let (wc, wt) = (m.whence(), m.whither());
-                let role = self.positions[idx].role_on(m.whence()).assume();
-                if role == Role::King && Feature::bucket(turn, wc) != Feature::bucket(turn, wt) {
-                    self.pending[idx + 1][turn.cast::<usize>()] = Some(Pending::Refresh)
+                let role = self.positions[idx].role_on(wc).assume();
+                if Piece::new(role, turn) == Piece::new(Role::King, side)
+                    && Feature::bucket(side, wc) != Feature::bucket(side, wt)
+                {
+                    self.refresh(turn, self.ply);
+                    continue;
+                }
+
+                let ksq = self.king(side);
+                let old = Piece::new(role, turn);
+                let new = Piece::new(m.promotion().unwrap_or(role), turn);
+                sub[0] = Some(Feature::new(side, ksq, old, wc));
+                add[0] = Some(Feature::new(side, ksq, new, wt));
+
+                let capture = match self.positions[idx].role_on(wt) {
+                    _ if !m.is_capture() => None,
+                    Some(r) => Some((r, wt)),
+                    None => Some((Role::Pawn, Square::new(wt.file(), wc.rank()))),
+                };
+
+                if let Some((r, sq)) = capture {
+                    let victim = Piece::new(r, !turn);
+                    sub[1] = Some(Feature::new(side, ksq, victim, sq));
+                } else if role == Role::King && (wt - wc).abs() == 2 {
+                    let rook = Piece::new(Role::Rook, turn);
+                    let (wc, wt) = if wt > wc {
+                        (Square::H1.perspective(turn), Square::F1.perspective(turn))
+                    } else {
+                        (Square::A1.perspective(turn), Square::D1.perspective(turn))
+                    };
+
+                    sub[1] = Some(Feature::new(side, ksq, rook, wc));
+                    add[1] = Some(Feature::new(side, ksq, rook, wt));
                 }
             }
+
+            let (left, right) = self.material.split_at_mut(idx + 1);
+            let src = &left[left.len() - 1][side.cast::<usize>()];
+            let dst = &mut right[0][side.cast::<usize>()];
+            Nnue::material().accumulate(src, dst, sub, add);
+
+            let (left, right) = self.positional.split_at_mut(idx + 1);
+            let src = &left[left.len() - 1][side.cast::<usize>()];
+            let dst = &mut right[0][side.cast::<usize>()];
+            Nnue::positional().accumulate(src, dst, sub, add);
         }
     }
 
@@ -145,47 +187,19 @@ impl Evaluator {
         self.ply -= 1;
     }
 
+    /// The value of the [`Position`] at current ply.
     pub fn evaluate(&mut self) -> Value {
-        for side in Color::iter() {
-            let mut idx = self.ply.cast::<usize>();
-            if self.pending[idx][side.cast::<usize>()].is_none() {
-                continue;
-            }
-
-            (self.ply > 0).assume();
-            while self.pending[idx][side.cast::<usize>()] == Some(Pending::Update) {
-                idx -= 1;
-            }
-
-            match self.pending[idx][side.cast::<usize>()] {
-                Some(Pending::Update) => unsafe { unreachable_unchecked() },
-                Some(Pending::Refresh) => self.refresh(side, self.ply),
-                None => {
-                    for i in idx + 1..=self.ply.cast::<usize>() {
-                        self.update(side, i.convert().assume());
-                    }
-                }
-            }
-        }
-
         let phase = (self.occupied().len() - 1) / 4;
         (phase < Material::LEN).assume();
+
         let hl = Nnue::hidden(phase);
-
-        let idx = self.ply.cast::<usize>();
-        debug_assert_eq!(self.pending[idx], [None; 2]);
-
         let us = self.turn() as usize;
         let them = self.turn().flip() as usize;
+        let idx = self.ply.cast::<usize>();
         let material = self.material[idx][us][phase] - self.material[idx][them][phase];
         let positional = hl.forward(&self.positional[idx][us], &self.positional[idx][them]);
         let value = (material + 2 * positional) / Params::value_scale().as_int::<i32>();
         value.saturate()
-    }
-
-    /// The current [`Ply`].
-    pub fn ply(&self) -> Ply {
-        self.ply
     }
 
     /// Estimates the material gain of a move.
@@ -270,75 +284,18 @@ impl Evaluator {
 
     fn refresh(&mut self, side: Color, ply: Ply) {
         let idx = ply.cast::<usize>();
-        self.pending[idx][side.cast::<usize>()] = None;
+
         Nnue::material().refresh(&mut self.material[idx][side.cast::<usize>()]);
         Nnue::positional().refresh(&mut self.positional[idx][side.cast::<usize>()]);
 
         let ksq = self.positions[idx].king(side);
         for (p, s) in self.positions[idx].iter() {
-            let sub = [None; 2];
             let add = [Some(Feature::new(side, ksq, p, s)), None];
             let accumulator = &mut self.material[idx][side.cast::<usize>()];
-            Nnue::material().accumulate_in_place(accumulator, sub, add);
+            Nnue::material().accumulate_in_place(accumulator, [None; 2], add);
             let accumulator = &mut self.positional[idx][side.cast::<usize>()];
-            Nnue::positional().accumulate_in_place(accumulator, sub, add);
+            Nnue::positional().accumulate_in_place(accumulator, [None; 2], add);
         }
-    }
-
-    fn update(&mut self, side: Color, ply: Ply) {
-        (ply > 0).assume();
-
-        let idx = ply.cast::<usize>();
-        self.pending[idx][side.cast::<usize>()] = None;
-
-        let mut sub = [None; 2];
-        let mut add = [None; 2];
-
-        if let Some(m) = self.moves[idx - 1] {
-            let pos = &self.positions[idx];
-            let prev = &self.positions[idx - 1];
-            let (wc, wt) = (m.whence(), m.whither());
-            let promotion = m.promotion();
-            let role = prev.role_on(wc).assume();
-            let turn = prev.turn();
-
-            let ksq = pos.king(side);
-            let old = Piece::new(role, turn);
-            let new = Piece::new(promotion.unwrap_or(role), turn);
-            sub[0] = Some(Feature::new(side, ksq, old, wc));
-            add[0] = Some(Feature::new(side, ksq, new, wt));
-
-            let capture = match prev.role_on(wt) {
-                _ if !m.is_capture() => None,
-                Some(r) => Some((r, wt)),
-                None => Some((Role::Pawn, Square::new(wt.file(), wc.rank()))),
-            };
-
-            if let Some((r, sq)) = capture {
-                let victim = Piece::new(r, !turn);
-                sub[1] = Some(Feature::new(side, ksq, victim, sq));
-            } else if role == Role::King && (wt - wc).abs() == 2 {
-                let rook = Piece::new(Role::Rook, turn);
-                let (wc, wt) = if wt > wc {
-                    (Square::H1.perspective(turn), Square::F1.perspective(turn))
-                } else {
-                    (Square::A1.perspective(turn), Square::D1.perspective(turn))
-                };
-
-                sub[1] = Some(Feature::new(side, ksq, rook, wc));
-                add[1] = Some(Feature::new(side, ksq, rook, wt));
-            }
-        }
-
-        let (left, right) = self.material.split_at_mut(idx);
-        let src = &left[left.len() - 1][side.cast::<usize>()];
-        let dst = &mut right[0][side.cast::<usize>()];
-        Nnue::material().accumulate(src, dst, sub, add);
-
-        let (left, right) = self.positional.split_at_mut(idx);
-        let src = &left[left.len() - 1][side.cast::<usize>()];
-        let dst = &mut right[0][side.cast::<usize>()];
-        Nnue::positional().accumulate(src, dst, sub, add);
     }
 }
 

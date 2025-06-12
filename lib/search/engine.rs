@@ -199,6 +199,19 @@ impl<'a> Stack<'a> {
         (alpha * draft.cast::<i32>() + beta) / scale
     }
 
+    /// Computes the razoring margin.
+    fn razoring(&self, draft: Depth) -> i32 {
+        let alpha: i32 = Params::razoring_margin_alpha().as_int();
+        let beta: i32 = Params::razoring_margin_beta().as_int();
+        let scale: i32 = Params::value_scale().as_int();
+
+        if draft <= 4 {
+            (alpha * draft.cast::<i32>() + beta) / scale
+        } else {
+            i32::MAX
+        }
+    }
+
     /// Computes the reverse futility margin.
     fn rfp(&self, draft: Depth) -> i32 {
         let alpha: i32 = Params::reverse_futility_margin_alpha().as_int();
@@ -374,7 +387,14 @@ impl<'a> Stack<'a> {
         let transposed = transposed.clamp(lower, upper);
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
-        } else if !is_pv && !self.evaluator.is_check() {
+        } else if !is_pv && !quiesce && !self.evaluator.is_check() {
+            if self.value[ply.cast::<usize>()] + self.razoring(draft) <= alpha {
+                let pv = self.nw(Depth::new(0), beta, cut)?;
+                if pv <= alpha {
+                    return Ok(pv);
+                }
+            }
+
             if transposed.score() - self.rfp(draft) >= beta {
                 return Ok(transposed.truncate());
             } else if let Some(d) = self.nmp(transposed.score() - beta, draft) {

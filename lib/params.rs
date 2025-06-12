@@ -142,6 +142,8 @@ params! {
     single_extension_margin_beta: Param<3002, 1000, 5000, 100>,
     double_extension_margin_alpha: Param<12020, 6000, 19000, 100>,
     double_extension_margin_beta: Param<4963, 2000, 8000, 100>,
+    razoring_margin_alpha: Param<10000, 5000, 15000, 1>,
+    razoring_margin_beta: Param<5000, 2000, 8000, 1>,
     reverse_futility_margin_alpha: Param<2048, 0, 4000, 1>,
     reverse_futility_margin_beta: Param<1000, 0, 4000, 1>,
     futility_margin_alpha: Param<6597, 3000, 10000, 1>,

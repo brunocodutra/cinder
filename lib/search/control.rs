@@ -39,14 +39,14 @@ impl Control {
         };
 
         let time_left = clock - inc;
-        let moves_left_start = Params::moves_left_start().as_float();
-        let moves_left_end = Params::moves_left_end().as_float();
+        let moves_left_start = Params::moves_left_start() as f64 / Params::BASE as f64;
+        let moves_left_end = Params::moves_left_end() as f64 / Params::BASE as f64;
         let max_fullmoves = moves_left_start / moves_left_end;
         let moves_left = moves_left_start / max_fullmoves.min(pos.fullmoves().get() as _);
         let time_per_move = inc + time_left / moves_left;
 
-        let soft_time_fraction = Params::soft_time_fraction().as_float();
-        let hard_time_fraction = Params::hard_time_fraction().as_float();
+        let soft_time_fraction = Params::soft_time_fraction() as f64 / Params::BASE as f64;
+        let hard_time_fraction = Params::hard_time_fraction() as f64 / Params::BASE as f64;
         soft_time_fraction * time_per_move..clock * hard_time_fraction
     }
 
@@ -120,7 +120,7 @@ impl Control {
         };
 
         let ply = evaluator.ply();
-        let inertia = Params::score_trend_inertia().as_float();
+        let inertia = Params::score_trend_inertia() as f64 / Params::BASE as f64;
         let _ = self.trend.fetch_update(Relaxed, Relaxed, |bits| {
             let score = pv.score().get() as f64;
             match f64::from_bits(bits) {
@@ -131,17 +131,17 @@ impl Control {
         });
 
         let stop = &self.stop[best.whence() as usize][best.whither() as usize];
-        let focus_alpha = Params::pv_focus_alpha().as_float();
-        let focus_beta = Params::pv_focus_beta().as_float();
-        let trend_magnitude = Params::score_trend_magnitude().as_float();
-        let trend_pivot = Params::score_trend_pivot().as_float() / Params::value_scale().as_float();
+        let focus_gamma = Params::pv_focus_gamma() as f64 / Params::BASE as f64;
+        let focus_delta = Params::pv_focus_delta() as f64 / Params::BASE as f64;
+        let trend_magnitude = Params::score_trend_magnitude() as f64 / Params::BASE as f64;
+        let trend_pivot = Params::score_trend_pivot() as f64 / Params::BASE as f64;
 
         if nodes % 1024 == 0 {
             let root = &evaluator[Ply::new(0)];
             let time = self.time().as_secs_f64();
             let focus = self.attention.get(root, best) as f64 / nodes.max(1024) as f64;
             let delta = f64::from_bits(self.trend.load(Relaxed)) - pv.score().get() as f64;
-            let focus_scale = focus_beta - focus_alpha * focus;
+            let focus_scale = focus_delta - focus_gamma * focus;
             let trend_scale = 1. + trend_magnitude * delta / (delta.abs() + trend_pivot);
             let soft_time_scale = focus_scale * trend_scale;
 

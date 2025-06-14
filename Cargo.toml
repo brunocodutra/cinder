@@ -65,7 +65,7 @@ criterion = { version = "0.6.0" }
 criterion-macro = { version = "0.4.0" }
 proptest = { version = "1.7.0" }
 rand = { version = "0.9.1" }
-reqwest = { version = "0.12.19", features = ["blocking"] }
+reqwest = { version = "0.12.20", features = ["blocking"] }
 tempfile = "3.20.0"
 test-strategy = { version = "0.4.1" }
 

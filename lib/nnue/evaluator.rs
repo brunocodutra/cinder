@@ -198,7 +198,8 @@ impl Evaluator {
         let idx = self.ply.cast::<usize>();
         let material = self.material[idx][us][phase] - self.material[idx][them][phase];
         let positional = hl.forward(&self.positional[idx][us], &self.positional[idx][them]);
-        let value = (material + 2 * positional) / Params::value_scale().as_int::<i32>();
+        let scale = Params::value_scale() / Params::BASE;
+        let value = (material + 2 * positional) / scale;
         value.saturate()
     }
 
@@ -221,7 +222,7 @@ impl Evaluator {
             }
         }
 
-        let scale: i32 = Params::value_scale().as_int();
+        let scale = Params::value_scale() / Params::BASE;
         let score = gain / scale;
         score.saturate()
     }
@@ -241,7 +242,7 @@ impl Evaluator {
             return alpha;
         }
 
-        let scale: i32 = Params::value_scale().as_int();
+        let scale = Params::value_scale() / Params::BASE;
         let pieces = Nnue::pieces((self.occupied().len() - 1) / 4);
 
         score -= match m.promotion() {

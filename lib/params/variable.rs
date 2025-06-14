@@ -12,14 +12,12 @@ use std::str::FromStr;
 #[cfg_attr(feature = "spsa", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "spsa", serde(try_from = "i32", into = "i32"))]
 #[repr(transparent)]
-pub struct Param<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32> {
+pub struct Param<const VALUE: i32, const MIN: i32, const MAX: i32> {
     #[cfg_attr(test, strategy(MIN..=MAX))]
     value: i32,
 }
 
-impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32>
-    Param<VALUE, MIN, MAX, BASE>
-{
+impl<const VALUE: i32, const MIN: i32, const MAX: i32> Param<VALUE, MIN, MAX> {
     pub const fn new() -> Self {
         const { assert!(MIN <= VALUE && VALUE <= MAX) }
         Self { value: VALUE }
@@ -30,26 +28,20 @@ impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32>
     }
 }
 
-unsafe impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32> Integer
-    for Param<VALUE, MIN, MAX, BASE>
-{
+unsafe impl<const VALUE: i32, const MIN: i32, const MAX: i32> Integer for Param<VALUE, MIN, MAX> {
     type Repr = i32;
     const MIN: Self::Repr = MIN;
     const MAX: Self::Repr = MAX;
 }
 
-impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32> Default
-    for Param<VALUE, MIN, MAX, BASE>
-{
+impl<const VALUE: i32, const MIN: i32, const MAX: i32> Default for Param<VALUE, MIN, MAX> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32>
-    From<Param<VALUE, MIN, MAX, BASE>> for i32
-{
-    fn from(param: Param<VALUE, MIN, MAX, BASE>) -> Self {
+impl<const VALUE: i32, const MIN: i32, const MAX: i32> From<Param<VALUE, MIN, MAX>> for i32 {
+    fn from(param: Param<VALUE, MIN, MAX>) -> Self {
         param.get()
     }
 }
@@ -59,9 +51,7 @@ impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32>
 #[display("expected integer in the range `{MIN}..={MAX}`")]
 pub struct ParameterOutOfRange<const MIN: i32, const MAX: i32>;
 
-impl<const VALUE: i32, const MIN: i32, const MAX: i32, const BASE: i32> TryFrom<i32>
-    for Param<VALUE, MIN, MAX, BASE>
-{
+impl<const VALUE: i32, const MIN: i32, const MAX: i32> TryFrom<i32> for Param<VALUE, MIN, MAX> {
     type Error = ParameterOutOfRange<MIN, MAX>;
 
     fn try_from(int: i32) -> Result<Self, Self::Error> {

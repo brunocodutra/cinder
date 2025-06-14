@@ -229,6 +229,13 @@ impl<'a> Stack<'a> {
         gamma * depth.cast::<i32>() / Params::BASE
     }
 
+    /// Computes the late move pruning threshold.
+    fn lmp(&self, depth: Depth, idx: usize) -> i32 {
+        let gamma = Params::late_move_pruning_gamma();
+        let delta = Params::late_move_pruning_delta();
+        Params::BASE * idx.cast::<i32>() / (delta + gamma * depth.cast::<i32>().pow(2))
+    }
+
     /// Computes the late move reduction.
     fn lmr(&self, depth: Depth, idx: usize) -> i32 {
         let gamma = Params::late_move_reduction_gamma();
@@ -236,14 +243,7 @@ impl<'a> Stack<'a> {
 
         let x = idx.max(1).ilog2() as i32;
         let y = depth.get().max(1).ilog2() as i32;
-        (gamma * x * y + delta) / Params::BASE
-    }
-
-    /// Computes the late move pruning threshold.
-    fn lmp(&self, depth: Depth, idx: usize) -> i32 {
-        let gamma = Params::late_move_pruning_gamma();
-        let delta = Params::late_move_pruning_delta();
-        Params::BASE * idx.cast::<i32>() / (delta + gamma * depth.cast::<i32>().pow(2))
+        gamma * x * y + delta
     }
 
     #[must_use]
@@ -456,17 +456,30 @@ impl<'a> Stack<'a> {
                 continue;
             }
 
-            let lmr = Depth::new(cut as _) + self.lmr(depth, idx) - is_pv as i8 - improving;
-            if self.value[ply.cast::<usize>()] + self.futility(depth - lmr) <= alpha {
-                let margin = Value::new(1) + self.fpt(depth - lmr);
+            let mut lmr = self.lmr(depth, idx);
+            let lmr_depth = depth - lmr / Params::BASE;
+            if self.value[ply.cast::<usize>()] + self.futility(lmr_depth) <= alpha {
+                let margin = Value::new(1) + self.fpt(lmr_depth);
                 if !self.evaluator.winning(m, margin) {
                     continue;
                 }
             }
 
+            let rating = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
             let mut next = self.next(Some(m));
-            let pv = match -next.nw(depth - lmr - 1, -alpha, !cut || lmr > 0)? {
-                pv if pv <= alpha || (pv >= beta && lmr <= 0) => pv,
+
+            lmr -= is_pv as i32 * Params::late_move_reduction_pv();
+            lmr -= killer.contains(m) as i32 * Params::late_move_reduction_killer();
+            lmr -= next.evaluator.is_check() as i32 * Params::late_move_reduction_check();
+            lmr -= rating * Params::late_move_reduction_history() / 128;
+            lmr -= improving * Params::late_move_reduction_improving();
+            lmr += cut as i32 * Params::late_move_reduction_cut();
+            lmr += transposed.head().is_some_and(|m| !m.is_quiet()) as i32
+                * Params::late_move_reduction_tt_noisy();
+
+            let reduction = Ord::max(lmr / Params::BASE, 0);
+            let pv = match -next.nw(depth - reduction - 1, -alpha, !cut)? {
+                pv if pv <= alpha || (pv >= beta && reduction <= 0) => pv,
                 _ => -next.ab(depth - 1, -beta..-alpha, false)?,
             };
 
@@ -520,9 +533,9 @@ impl<'a> Stack<'a> {
                 break;
             }
 
-            let lmr = Depth::new(0) + self.lmr(depth, idx);
-            if self.value[0] + self.futility(depth - lmr) <= alpha {
-                let margin = Value::new(1) + self.fpt(depth - lmr);
+            let lmr_depth = depth - self.lmr(depth, idx) / Params::BASE;
+            if self.value[0] + self.futility(lmr_depth) <= alpha {
+                let margin = Value::new(1) + self.fpt(lmr_depth);
                 if !self.evaluator.winning(m, margin) {
                     continue;
                 }
@@ -530,8 +543,8 @@ impl<'a> Stack<'a> {
 
             let mut next = self.next(Some(m));
             next.nodes = Some(next.ctrl.attention().nodes(m));
-            let pv = match -next.nw(depth - lmr - 1, -alpha, false)? {
-                pv if pv <= alpha || (pv >= beta && lmr <= 0) => pv,
+            let pv = match -next.nw(lmr_depth - 1, -alpha, false)? {
+                pv if pv <= alpha || (pv >= beta && lmr_depth >= depth) => pv,
                 _ => -next.ab(depth - 1, -beta..-alpha, false)?,
             };
 

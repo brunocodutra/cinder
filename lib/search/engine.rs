@@ -80,7 +80,6 @@ impl<'a> Stack<'a> {
     ) {
         let ply = self.evaluator.ply();
         let pos = &self.evaluator[ply];
-        let draft = depth - ply;
 
         if score >= bounds.end {
             if best.is_quiet() {
@@ -89,11 +88,11 @@ impl<'a> Stack<'a> {
 
             let bonus_gamma = Params::history_bonus_gamma();
             let bonus_delta = Params::history_bonus_delta();
-            let bonus = (draft.cast::<i32>() * bonus_gamma + bonus_delta) / Params::BASE;
+            let bonus = (depth.cast::<i32>() * bonus_gamma + bonus_delta) / Params::BASE;
 
             let penalty_gamma = Params::history_penalty_gamma();
             let penalty_delta = Params::history_penalty_delta();
-            let penalty = -(draft.cast::<i32>() * penalty_gamma + penalty_delta) / Params::BASE;
+            let penalty = -(depth.cast::<i32>() * penalty_gamma + penalty_delta) / Params::BASE;
 
             self.searcher.history.update(pos, best, bonus.saturate());
 
@@ -113,7 +112,7 @@ impl<'a> Stack<'a> {
         }
 
         let score = ScoreBound::new(bounds, score, ply);
-        let tpos = Transposition::new(score, draft, Some(best));
+        let tpos = Transposition::new(score, depth, Some(best));
         self.tt.set(pos.zobrist(), tpos);
     }
 
@@ -140,111 +139,111 @@ impl<'a> Stack<'a> {
     }
 
     /// Computes the null move pruning reduction.
-    fn nmp(&self, surplus: Score, draft: Depth) -> Option<Depth> {
+    fn nmp(&self, surplus: Score, depth: Depth) -> Option<Depth> {
         let gamma = Params::null_move_reduction_gamma();
         let delta = Params::null_move_reduction_delta();
         match Params::BASE * surplus.cast::<i32>() {
             ..0 => None,
             s if s < gamma - delta => None,
-            s if s >= 3 * gamma - delta => Some(draft - 3 - draft / 4),
-            s => Some(draft - (s + delta) / gamma - draft / 4),
+            s if s >= 3 * gamma - delta => Some(depth - 3 - depth / 4),
+            s => Some(depth - (s + delta) / gamma - depth / 4),
         }
     }
 
     /// Computes fail-high pruning reduction.
-    fn fhp(&self, surplus: Score, draft: Depth) -> Option<Depth> {
+    fn fhp(&self, surplus: Score, depth: Depth) -> Option<Depth> {
         let gamma = Params::fail_high_reduction_gamma();
         let delta = Params::fail_high_reduction_delta();
         match Params::BASE * surplus.cast::<i32>() {
             ..0 => None,
-            s if s >= 3 * gamma - delta => Some(draft - 3),
-            s => Some(draft - (s + delta) / gamma),
+            s if s >= 3 * gamma - delta => Some(depth - 3),
+            s => Some(depth - (s + delta) / gamma),
         }
     }
 
     /// Computes the fail-low pruning reduction.
-    fn flp(&self, deficit: Score, draft: Depth) -> Option<Depth> {
+    fn flp(&self, deficit: Score, depth: Depth) -> Option<Depth> {
         let gamma = Params::fail_low_reduction_gamma();
         let delta = Params::fail_low_reduction_delta();
         match Params::BASE * deficit.cast::<i32>() {
             ..0 => None,
-            s if s >= 3 * gamma - delta => Some(draft - 3),
-            s => Some(draft - (s + delta) / gamma),
+            s if s >= 3 * gamma - delta => Some(depth - 3),
+            s => Some(depth - (s + delta) / gamma),
         }
     }
 
     /// Computes the singular extension margin.
-    fn single(&self, draft: Depth) -> i32 {
+    fn single(&self, depth: Depth) -> i32 {
         let gamma = Params::single_extension_margin_gamma();
         let delta = Params::single_extension_margin_delta();
-        (gamma * draft.cast::<i32>() + delta) / Params::BASE
+        (gamma * depth.cast::<i32>() + delta) / Params::BASE
     }
 
     /// Computes the double extension margin.
-    fn double(&self, draft: Depth) -> i32 {
+    fn double(&self, depth: Depth) -> i32 {
         let gamma = Params::double_extension_margin_gamma();
         let delta = Params::double_extension_margin_delta();
-        (gamma * draft.cast::<i32>() + delta) / Params::BASE
+        (gamma * depth.cast::<i32>() + delta) / Params::BASE
     }
 
     /// Computes the razoring margin.
-    fn razoring(&self, draft: Depth) -> i32 {
+    fn razoring(&self, depth: Depth) -> i32 {
         let gamma = Params::razoring_margin_gamma();
         let delta = Params::razoring_margin_delta();
 
-        if draft <= 4 {
-            (gamma * draft.cast::<i32>() + delta) / Params::BASE
+        if depth <= 4 {
+            (gamma * depth.cast::<i32>() + delta) / Params::BASE
         } else {
             i32::MAX
         }
     }
 
     /// Computes the reverse futility margin.
-    fn rfp(&self, draft: Depth) -> i32 {
+    fn rfp(&self, depth: Depth) -> i32 {
         let gamma = Params::reverse_futility_margin_gamma();
         let delta = Params::reverse_futility_margin_delta();
 
-        if draft <= 6 {
-            (gamma * draft.cast::<i32>() + delta) / Params::BASE
+        if depth <= 6 {
+            (gamma * depth.cast::<i32>() + delta) / Params::BASE
         } else {
             i32::MAX
         }
     }
 
     /// Computes the futility margin.
-    fn futility(&self, draft: Depth) -> i32 {
+    fn futility(&self, depth: Depth) -> i32 {
         let gamma = Params::futility_margin_gamma();
         let delta = Params::futility_margin_delta();
-        (gamma * draft.cast::<i32>() + delta) / Params::BASE
+        (gamma * depth.cast::<i32>() + delta) / Params::BASE
     }
 
     /// Computes the futility pruning threshold.
-    fn fpt(&self, draft: Depth) -> i32 {
+    fn fpt(&self, depth: Depth) -> i32 {
         let gamma = Params::futility_pruning_threshold_gamma();
-        gamma * draft.cast::<i32>() / Params::BASE
+        gamma * depth.cast::<i32>() / Params::BASE
     }
 
     /// Computes the SEE pruning threshold.
-    fn spt(&self, draft: Depth) -> i32 {
+    fn spt(&self, depth: Depth) -> i32 {
         let gamma = Params::see_pruning_threshold_gamma();
-        gamma * draft.cast::<i32>() / Params::BASE
+        gamma * depth.cast::<i32>() / Params::BASE
     }
 
     /// Computes the late move reduction.
-    fn lmr(&self, draft: Depth, idx: usize) -> i32 {
+    fn lmr(&self, depth: Depth, idx: usize) -> i32 {
         let gamma = Params::late_move_reduction_gamma();
         let delta = Params::late_move_reduction_delta();
 
         let x = idx.max(1).ilog2() as i32;
-        let y = draft.get().max(1).ilog2() as i32;
+        let y = depth.get().max(1).ilog2() as i32;
         (gamma * x * y + delta) / Params::BASE
     }
 
     /// Computes the late move pruning threshold.
-    fn lmp(&self, draft: Depth, idx: usize) -> i32 {
+    fn lmp(&self, depth: Depth, idx: usize) -> i32 {
         let gamma = Params::late_move_pruning_gamma();
         let delta = Params::late_move_pruning_delta();
-        Params::BASE * idx.cast::<i32>() / (delta + gamma * draft.cast::<i32>().pow(2))
+        Params::BASE * idx.cast::<i32>() / (delta + gamma * depth.cast::<i32>().pow(2))
     }
 
     #[must_use]
@@ -275,8 +274,7 @@ impl<'a> Stack<'a> {
         bounds: Range<Score>,
         cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
-        let ply = self.evaluator.ply();
-        if ply.cast::<usize>() < N && depth > ply && bounds.start + 1 < bounds.end {
+        if self.evaluator.ply().cast::<usize>() < N && depth > 0 && bounds.start + 1 < bounds.end {
             self.pvs(depth, bounds, cut)
         } else {
             Ok(self.pvs::<0>(depth, bounds, cut)?.truncate())
@@ -313,29 +311,29 @@ impl<'a> Stack<'a> {
             Some(t) => t.transpose(ply),
         };
 
-        depth += self.evaluator.is_check() as i8;
-        depth -= transposition.is_none() as i8;
+        if depth > 0 {
+            depth += self.evaluator.is_check() as i8;
+            depth -= transposition.is_none() as i8;
+        }
 
-        let draft = depth - ply;
-        let quiesce = draft <= 0;
         let is_pv = alpha + 1 < beta;
         if let Some(t) = transposition {
             let (lower, upper) = t.score().range(ply).into_inner();
 
-            if let Some(d) = self.fhp(lower - beta, draft) {
-                if !is_pv && t.draft() >= d {
+            if let Some(d) = self.fhp(lower - beta, depth) {
+                if !is_pv && t.depth() >= d {
                     return Ok(transposed.truncate());
                 }
             }
 
-            if let Some(d) = self.flp(alpha - upper, draft) {
-                if !is_pv && t.draft() >= d {
+            if let Some(d) = self.flp(alpha - upper, depth) {
+                if !is_pv && t.depth() >= d {
                     return Ok(transposed.truncate());
                 }
             }
         }
 
-        let (lower, upper) = if quiesce {
+        let (lower, upper) = if depth <= 0 {
             (transposed.score(), Score::upper())
         } else if !is_pv {
             (Score::lower(), Score::upper())
@@ -350,7 +348,7 @@ impl<'a> Stack<'a> {
                     };
 
                     if score.upper(ply) <= alpha || score.lower(ply) >= beta {
-                        let transposition = Transposition::new(score, draft, None);
+                        let transposition = Transposition::new(score, depth, None);
                         self.tt.set(self.evaluator.zobrist(), transposition);
                         return Ok(transposition.transpose(ply).truncate());
                     }
@@ -364,19 +362,19 @@ impl<'a> Stack<'a> {
         let transposed = transposed.clamp(lower, upper);
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
-        } else if !is_pv && !quiesce && !self.evaluator.is_check() {
-            if self.value[ply.cast::<usize>()] + self.razoring(draft) <= alpha {
+        } else if !is_pv && !self.evaluator.is_check() && depth > 0 {
+            if self.value[ply.cast::<usize>()] + self.razoring(depth) <= alpha {
                 let pv = self.nw(Depth::new(0), beta, cut)?;
                 if pv <= alpha {
                     return Ok(pv);
                 }
             }
 
-            if transposed.score() - self.rfp(draft) >= beta {
+            if transposed.score() - self.rfp(depth) >= beta {
                 return Ok(transposed.truncate());
-            } else if let Some(d) = self.nmp(transposed.score() - beta, draft) {
+            } else if let Some(d) = self.nmp(transposed.score() - beta, depth) {
                 if self.evaluator.pieces(self.evaluator.turn()).len() > 1 {
-                    if d <= 0 || -self.next(None).nw::<0>(d + ply, -beta + 1, !cut)? >= beta {
+                    if d <= 0 || -self.next(None).nw::<0>(d - 1, -beta + 1, !cut)? >= beta {
                         return Ok(transposed.truncate());
                     }
                 }
@@ -384,7 +382,7 @@ impl<'a> Stack<'a> {
         }
 
         let move_pack = self.evaluator.moves();
-        let mut moves = Moves::from_iter(move_pack.unpack_if(|ms| !quiesce || !ms.is_quiet()));
+        let mut moves = Moves::from_iter(move_pack.unpack_if(|ms| depth > 0 || !ms.is_quiet()));
 
         let killer_bonus = Params::killer_move_bonus();
         let gain_gamma = Params::noisy_gain_rating_gamma();
@@ -416,13 +414,13 @@ impl<'a> Stack<'a> {
 
         let mut extension = 0i8;
         if let Some(t) = transposition {
-            if t.score().lower(ply) >= beta && t.draft() >= draft - 3 && draft >= 6 {
+            if t.score().lower(ply) >= beta && t.depth() >= depth - 3 && depth >= 6 {
                 extension = 2;
-                let s_draft = (draft - 1) / 2;
-                let s_beta = beta - self.single(draft);
-                let d_beta = beta - self.double(draft);
+                let s_depth = (depth - 1) / 2;
+                let s_beta = beta - self.single(depth);
+                let d_beta = beta - self.double(depth);
                 for m in moves.sorted().skip(1) {
-                    let pv = -self.next(Some(m)).nw(s_draft + ply, -s_beta + 1, !cut)?;
+                    let pv = -self.next(Some(m)).nw(s_depth - 1, -s_beta + 1, !cut)?;
                     if pv >= beta {
                         return Ok(pv.transpose(m));
                     } else if pv >= s_beta {
@@ -441,7 +439,7 @@ impl<'a> Stack<'a> {
             None => return Ok(transposed.truncate()),
             Some(m) => {
                 let mut next = self.next(Some(m));
-                (m, -next.ab(depth + extension, -beta..-alpha, false)?)
+                (m, -next.ab(depth + extension - 1, -beta..-alpha, false)?)
             }
         };
 
@@ -452,24 +450,24 @@ impl<'a> Stack<'a> {
                 s => s.max(alpha),
             };
 
-            if self.lmp(draft, idx) > improving {
+            if self.lmp(depth, idx) > improving {
                 break;
-            } else if !self.evaluator.winning(m, Value::new(1) - self.spt(draft)) {
+            } else if !self.evaluator.winning(m, Value::new(1) - self.spt(depth)) {
                 continue;
             }
 
-            let lmr = Depth::new(cut as _) + self.lmr(draft, idx) - is_pv as i8 - improving;
-            if self.value[ply.cast::<usize>()] + self.futility(draft - lmr) <= alpha {
-                let margin = Value::new(1) + self.fpt(draft - lmr);
+            let lmr = Depth::new(cut as _) + self.lmr(depth, idx) - is_pv as i8 - improving;
+            if self.value[ply.cast::<usize>()] + self.futility(depth - lmr) <= alpha {
+                let margin = Value::new(1) + self.fpt(depth - lmr);
                 if !self.evaluator.winning(m, margin) {
                     continue;
                 }
             }
 
             let mut next = self.next(Some(m));
-            let pv = match -next.nw(depth - lmr, -alpha, !cut || lmr > 0)? {
+            let pv = match -next.nw(depth - lmr - 1, -alpha, !cut || lmr > 0)? {
                 pv if pv <= alpha || (pv >= beta && lmr <= 0) => pv,
-                _ => -next.ab(depth, -beta..-alpha, false)?,
+                _ => -next.ab(depth - 1, -beta..-alpha, false)?,
             };
 
             if pv > tail {
@@ -486,8 +484,8 @@ impl<'a> Stack<'a> {
     fn root(
         &mut self,
         moves: &mut Moves,
-        bounds: Range<Score>,
         depth: Depth,
+        bounds: Range<Score>,
     ) -> Result<Pv, Interrupted> {
         let (alpha, beta) = (bounds.start, bounds.end);
         if self.ctrl.check(&self.evaluator, &self.pv) != ControlFlow::Continue {
@@ -509,7 +507,7 @@ impl<'a> Stack<'a> {
         let mut head = sorted_moves.next().assume();
         let mut next = self.next(Some(head));
         next.nodes = Some(next.ctrl.attention().nodes(head));
-        let mut tail = -next.ab(depth, -beta..-alpha, false)?;
+        let mut tail = -next.ab(depth - 1, -beta..-alpha, false)?;
         drop(next);
 
         for (idx, m) in sorted_moves.enumerate() {
@@ -532,9 +530,9 @@ impl<'a> Stack<'a> {
 
             let mut next = self.next(Some(m));
             next.nodes = Some(next.ctrl.attention().nodes(m));
-            let pv = match -next.nw(depth - lmr, -alpha, false)? {
+            let pv = match -next.nw(depth - lmr - 1, -alpha, false)? {
                 pv if pv <= alpha || (pv >= beta && lmr <= 0) => pv,
-                _ => -next.ab(depth, -beta..-alpha, false)?,
+                _ => -next.ab(depth - 1, -beta..-alpha, false)?,
             };
 
             if pv > tail {
@@ -579,7 +577,7 @@ impl<'a> Stack<'a> {
                 }
 
                 depth += 1;
-                let mut draft = depth;
+                let mut reduction = 0;
                 let mut window = aw_start / Params::BASE;
                 let (mut lower, mut upper) = match depth.get() {
                     ..=4 => (Score::lower(), Score::upper()),
@@ -588,22 +586,22 @@ impl<'a> Stack<'a> {
 
                 loop {
                     window = (window * aw_gamma + aw_delta) / Params::BASE;
-                    let partial = match self.root(&mut moves, lower..upper, draft) {
+                    let partial = match self.root(&mut moves, depth - reduction, lower..upper) {
                         Err(_) => break stop = true,
                         Ok(pv) => pv,
                     };
 
                     match partial.score() {
                         score if (-lower..Score::upper()).contains(&-score) => {
-                            draft = depth;
                             upper = lower / 2 + upper / 2;
                             lower = score - window;
+                            reduction = 0;
                         }
 
                         score if (upper..Score::upper()).contains(&score) => {
-                            draft = Depth::new(1).max(draft - 1);
                             upper = score + window;
                             self.pv = partial;
+                            reduction += 1;
                         }
 
                         _ => break self.pv = partial,

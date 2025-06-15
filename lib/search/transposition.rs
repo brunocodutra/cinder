@@ -104,7 +104,7 @@ impl Binary for ScoreBound {
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Transposition {
     score: ScoreBound,
-    draft: Depth,
+    depth: Depth,
     best: Option<Move>,
 }
 
@@ -115,8 +115,8 @@ impl Transposition {
 
     /// Constructs a [`Transposition`] given a [`ScoreBound`], the [`Depth`] searched, and the best [`Move`].
     #[inline(always)]
-    pub fn new(score: ScoreBound, draft: Depth, best: Option<Move>) -> Self {
-        Transposition { score, draft, best }
+    pub fn new(score: ScoreBound, depth: Depth, best: Option<Move>) -> Self {
+        Transposition { score, depth, best }
     }
 
     /// The score bound.
@@ -133,8 +133,8 @@ impl Transposition {
 
     /// The depth searched.
     #[inline(always)]
-    pub fn draft(&self) -> Depth {
-        self.draft
+    pub fn depth(&self) -> Depth {
+        self.depth
     }
 
     /// The principal variation normalized to [`Ply`].
@@ -154,7 +154,7 @@ impl Binary for Transposition {
     fn encode(&self) -> Self::Bits {
         let mut bits = Bits::default();
         bits.push(self.score.encode());
-        bits.push(self.draft.encode());
+        bits.push(self.depth.encode());
         bits.push(self.best.encode());
         bits
     }
@@ -163,7 +163,7 @@ impl Binary for Transposition {
     fn decode(mut bits: Self::Bits) -> Self {
         Transposition {
             best: Binary::decode(bits.pop()),
-            draft: Binary::decode(bits.pop()),
+            depth: Binary::decode(bits.pop()),
             score: Binary::decode(bits.pop()),
         }
     }

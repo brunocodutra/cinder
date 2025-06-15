@@ -60,11 +60,11 @@ struct MatchRunner {
 
     /// Path to the opening book file.
     #[clap(long)]
-    opening: PathBuf,
+    opening: Option<PathBuf>,
 
     /// Path to syzygy table base files.
     #[clap(long)]
-    syzygy: PathBuf,
+    syzygy: Option<PathBuf>,
 
     /// Path to the engine.
     #[clap(long)]
@@ -83,16 +83,22 @@ impl MatchRunner {
     fn run(&self, left: &Params, right: &Params) -> Result<GameResult, Failure> {
         let pairs = self.pairs;
         let concurrency = self.concurrency;
-        let openings = self.opening.display();
-        let syzygy = self.syzygy.display();
         let engine = self.engine.display();
         let tc = self.tc.as_str();
+
+        let openings = self.opening.as_ref().map_or_else(String::new, |p| {
+            format!("-openings file={} order=random", p.display())
+        });
+
+        let tb = self
+            .syzygy
+            .as_ref()
+            .map_or_else(String::new, |p| format!("-tb {}", p.display()));
 
         let args = format!(
             "-games 2 -rounds {pairs} -concurrency {concurrency} -use-affinity -recover
             -report penta=false -ratinginterval 0 -autosaveinterval 0
-            -openings file={openings} order=random
-            -tb {syzygy} -draw movenumber=40 movecount=8 score=10
+            {openings} {tb} -draw movenumber=40 movecount=8 score=10
             -engine name=left cmd={engine} args=--params={left}
             -engine name=right cmd={engine} args=--params={right}
             -each tc={tc}"
@@ -149,14 +155,22 @@ impl Display for DurationFormatter {
 #[derive(Debug, Args, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SpsaTuner {
+    /// The total number of iterations to run.
+    #[clap(long)]
+    iters: u32,
+
     #[clap(flatten)]
     config: SpsaConfig,
+
     #[clap(flatten)]
     runner: MatchRunner,
+
     #[clap(skip)]
     params: Params,
+
     #[clap(skip)]
     step: u32,
+
     #[clap(skip)]
     period: Duration,
 }
@@ -167,9 +181,9 @@ impl SpsaTuner {
         Ok(result.losses as f64 - result.wins as f64)
     }
 
-    fn step(&mut self, iterations: u32) -> Result<(), Failure> {
+    fn step(&mut self) -> Result<(), Failure> {
         let games_per_step = 2. * self.runner.pairs_per_match() as f64;
-        let n = games_per_step * iterations as f64;
+        let n = games_per_step * self.iters as f64;
         let k = games_per_step * self.step as f64;
         let a = n * self.config.ratio;
 
@@ -193,12 +207,16 @@ impl SpsaTuner {
         Ok(())
     }
 
-    fn run<P: AsRef<Path>>(&mut self, iterations: u32, filename: P) -> Result<(), Failure> {
+    fn run<P: AsRef<Path>>(&mut self, filename: P) -> Result<(), Failure> {
+        let content = serialize(self, PrettyConfig::default())?;
+        let mut file = File::create(&filename)?;
+        write!(file, "{content}")?;
+
         let mut stdout = stdout().lock();
-        while self.step < iterations {
+        while self.step < self.iters {
             self.step += 1;
             let timer = Instant::now();
-            self.step(iterations)?;
+            self.step()?;
             let elapsed = timer.elapsed();
             self.period = (self.period.saturating_mul(self.step - 1) + elapsed) / self.step;
 
@@ -207,9 +225,9 @@ impl SpsaTuner {
             write!(file, "{content}")?;
 
             let period = DurationFormatter(self.period);
-            let remaining = DurationFormatter(self.period.saturating_mul(iterations - self.step));
+            let remaining = DurationFormatter(self.period.saturating_mul(self.iters - self.step));
 
-            write!(stdout, "steps completed: {}/{iterations}, ", self.step)?;
+            write!(stdout, "steps completed: {}/{}, ", self.step, self.iters)?;
             write!(stdout, "average time per step: {period}, ")?;
             writeln!(stdout, "estimated time remaining: {remaining}")?;
         }
@@ -224,10 +242,6 @@ impl SpsaTuner {
 /// A Simultaneous Perturbation Stochastic Approximation hyper-parameter tuner.
 #[derive(Debug, Parser)]
 struct Cli {
-    /// The total number of iterations to run.
-    #[clap(long)]
-    iterations: u32,
-
     /// The checkpoint file.
     #[clap(long, default_value = "spsa.ron")]
     checkpoint: PathBuf,
@@ -257,5 +271,5 @@ fn main() -> Result<(), Failure> {
         }
     };
 
-    spsa.run(args.iterations, args.checkpoint)
+    spsa.run(args.checkpoint)
 }

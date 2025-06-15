@@ -1,8 +1,8 @@
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
-pub struct Param<const VALUE: i32, const MIN: i32, const MAX: i32> {}
+pub struct Param<const V: i32, const K: i32 = 1> {}
 
-impl<const VALUE: i32, const MIN: i32, const MAX: i32> Param<VALUE, MIN, MAX> {
+impl<const V: i32, const K: i32> Param<V, K> {
     #[inline(always)]
     pub const fn new() -> Self {
         Self {}
@@ -10,7 +10,6 @@ impl<const VALUE: i32, const MIN: i32, const MAX: i32> Param<VALUE, MIN, MAX> {
 
     #[inline(always)]
     pub const fn get(&self) -> i32 {
-        const { assert!(MIN <= VALUE && VALUE <= MAX) }
-        VALUE
+        V
     }
 }

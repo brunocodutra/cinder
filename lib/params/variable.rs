@@ -1,89 +1,85 @@
-use crate::params::{PARAMS, Params};
-use crate::util::Integer;
+use crate::params::Params;
 use derive_more::with_trait::{Display, Error};
-use ron::de::{SpannedError, from_str as deserialize};
-use ron::ser::to_writer as serialize;
 use serde::{Deserialize, Serialize};
-use std::fmt::{self, Debug, Formatter};
-use std::str::FromStr;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[cfg(test)]
+use proptest::prelude::*;
+
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(feature = "spsa", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "spsa", serde(try_from = "i32", into = "i32"))]
+#[cfg_attr(feature = "spsa", serde(into = "f64"))]
+#[cfg_attr(feature = "spsa", serde(try_from = "f64"))]
 #[repr(transparent)]
-pub struct Param<const VALUE: i32, const MIN: i32, const MAX: i32> {
-    #[cfg_attr(test, strategy(MIN..=MAX))]
-    value: i32,
+pub struct Param<const V: i32, const K: i32 = 1> {
+    #[cfg_attr(test, strategy((Self::min()..=Self::max()).prop_map(|i| i as f64)))]
+    value: f64,
 }
 
-impl<const VALUE: i32, const MIN: i32, const MAX: i32> Param<VALUE, MIN, MAX> {
+impl<const V: i32, const K: i32> Param<V, K> {
     pub const fn new() -> Self {
-        const { assert!(MIN <= VALUE && VALUE <= MAX) }
-        Self { value: VALUE }
+        Self { value: V as f64 }
     }
 
-    pub fn range(&self) -> f64 {
-        (MAX - MIN + 1) as f64
+    pub fn min() -> i32 {
+        Ord::max(V - Ord::max(V, Params::BASE) * K / 2, 0)
+    }
+
+    pub fn max() -> i32 {
+        Self::min() + Ord::max(V, Params::BASE) * K
+    }
+
+    pub fn get(&self) -> i32 {
+        self.value as i32
+    }
+
+    pub fn perturb<I: IntoIterator<Item = f64>>(&self, perturbations: I) -> (Self, Self) {
+        let mut perturbations = perturbations.into_iter();
+        let (mut left, mut right) = (Self::default(), Self::default());
+        let (min, max) = (Self::min() as f64, Self::max() as f64);
+        let delta = (max - min) * perturbations.next().unwrap();
+        left.value = (self.value + delta).clamp(min, max);
+        right.value = (self.value - delta).clamp(min, max);
+
+        (left, right)
+    }
+
+    pub fn update<I: IntoIterator<Item = f64>>(&mut self, corrections: I) {
+        let mut corrections = corrections.into_iter();
+        let (min, max) = (Self::min() as f64, Self::max() as f64);
+        let delta = (max - min) * corrections.next().unwrap();
+        self.value = (self.value + delta).clamp(min, max);
     }
 }
 
-unsafe impl<const VALUE: i32, const MIN: i32, const MAX: i32> Integer for Param<VALUE, MIN, MAX> {
-    type Repr = i32;
-    const MIN: Self::Repr = MIN;
-    const MAX: Self::Repr = MAX;
-}
-
-impl<const VALUE: i32, const MIN: i32, const MAX: i32> Default for Param<VALUE, MIN, MAX> {
+impl<const V: i32, const K: i32> Default for Param<V, K> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const VALUE: i32, const MIN: i32, const MAX: i32> From<Param<VALUE, MIN, MAX>> for i32 {
-    fn from(param: Param<VALUE, MIN, MAX>) -> Self {
-        param.get()
+impl<const V: i32, const K: i32> From<Param<V, K>> for f64 {
+    fn from(param: Param<V, K>) -> Self {
+        param.value
     }
 }
 
 /// The reason why constructing [`Param`] from a floating point failed.
 #[derive(Debug, Display, Clone, Eq, PartialEq, Error)]
-#[display("expected integer in the range `{MIN}..={MAX}`")]
-pub struct ParameterOutOfRange<const MIN: i32, const MAX: i32>;
+#[display("parameter out of range")]
+pub struct ParameterOutOfRange;
 
-impl<const VALUE: i32, const MIN: i32, const MAX: i32> TryFrom<i32> for Param<VALUE, MIN, MAX> {
-    type Error = ParameterOutOfRange<MIN, MAX>;
+impl<const V: i32, const K: i32> TryFrom<f64> for Param<V, K> {
+    type Error = ParameterOutOfRange;
 
-    fn try_from(int: i32) -> Result<Self, Self::Error> {
-        int.convert().ok_or(ParameterOutOfRange)
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        let param = Param { value };
+        if !(Self::min()..=Self::max()).contains(&param.get()) {
+            return Err(ParameterOutOfRange);
+        }
+
+        Ok(param)
     }
-}
-
-impl Params {
-    pub fn init(self) {
-        unsafe { *PARAMS.get().as_mut_unchecked() = self }
-    }
-}
-
-impl Display for Params {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        serialize(f, self).map_err(|_| fmt::Error)
-    }
-}
-
-impl FromStr for Params {
-    type Err = SpannedError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        deserialize(s)
-    }
-}
-
-#[cold]
-#[ctor::ctor]
-#[inline(never)]
-unsafe fn init() {
-    Params::init(Default::default());
 }
 
 #[cfg(test)]
@@ -91,8 +87,29 @@ mod tests {
     use super::*;
     use test_strategy::proptest;
 
+    type MockParam = Param<1000>;
+
     #[proptest]
-    fn parsing_printed_params_is_an_identity(p: Params) {
-        assert_eq!(p.to_string().parse(), Ok(p));
+    fn param_value_is_always_within_bounds(p: MockParam) {
+        assert!((MockParam::min()..=MockParam::max()).contains(&p.get()));
+    }
+
+    #[proptest]
+    fn param_has_an_equivalent_array_of_values(p: MockParam) {
+        assert_eq!(Param::try_from(<f64>::from(p)), Ok(p));
+    }
+
+    #[proptest]
+    fn converting_param_from_array_succeeds_if_all_values_in_range(
+        #[strategy(MockParam::min() as f64..=MockParam::max() as f64)] vs: f64,
+    ) {
+        assert_ne!(MockParam::try_from(vs), Err(ParameterOutOfRange));
+    }
+
+    #[proptest]
+    fn converting_param_from_array_fails_if_any_value_out_of_range(
+        #[strategy(MockParam::max() as f64 + 1.0..)] vs: f64,
+    ) {
+        assert_eq!(MockParam::try_from(vs), Err(ParameterOutOfRange));
     }
 }

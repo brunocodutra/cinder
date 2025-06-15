@@ -381,6 +381,12 @@ impl Position {
         self.board.castles
     }
 
+    /// Game [`Phase`].
+    #[inline(always)]
+    pub fn phase(&self) -> Phase {
+        Phase::new((self.occupied().len() - 1) as u8 / 4)
+    }
+
     /// [`Square`]s occupied.
     #[inline(always)]
     pub fn occupied(&self) -> Bitboard {

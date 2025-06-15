@@ -189,14 +189,13 @@ impl Evaluator {
 
     /// The value of the [`Position`] at current ply.
     pub fn evaluate(&mut self) -> Value {
-        let phase = (self.occupied().len() - 1) / 4;
-        (phase < Material::LEN).assume();
-
+        let phase = self.phase();
         let hl = Nnue::hidden(phase);
         let us = self.turn() as usize;
         let them = self.turn().flip() as usize;
         let idx = self.ply.cast::<usize>();
-        let material = self.material[idx][us][phase] - self.material[idx][them][phase];
+        let material = self.material[idx][us][phase.cast::<usize>()]
+            - self.material[idx][them][phase.cast::<usize>()];
         let positional = hl.forward(&self.positional[idx][us], &self.positional[idx][them]);
         let scale = Params::value_scale() / Params::BASE;
         let value = (material + 2 * positional) / scale;
@@ -205,10 +204,11 @@ impl Evaluator {
 
     /// Estimates the material gain of a move.
     pub fn gain(&self, m: Move) -> Value {
+        let phase = self.phase();
         let mut gain = 0;
 
         if !m.is_quiet() {
-            let pieces = Nnue::pieces((self.occupied().len() - 1) / 4);
+            let pieces = Nnue::pieces(phase);
 
             if let Some(victim) = self.role_on(m.whither()) {
                 gain += pieces[victim.cast::<usize>()];
@@ -242,8 +242,9 @@ impl Evaluator {
             return alpha;
         }
 
+        let phase = self.phase();
+        let pieces = Nnue::pieces(phase);
         let scale = Params::value_scale() / Params::BASE;
-        let pieces = Nnue::pieces((self.occupied().len() - 1) / 4);
 
         score -= match m.promotion() {
             None => pieces[self.role_on(m.whence()).assume().cast::<usize>()] / scale,

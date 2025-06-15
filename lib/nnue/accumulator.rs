@@ -1,4 +1,5 @@
-use crate::util::AlignTo64;
+use crate::chess::Phase;
+use crate::util::{AlignTo64, Integer};
 use derive_more::with_trait::{Debug, Deref, DerefMut};
 
 /// The material accumulator.
@@ -11,7 +12,7 @@ pub struct Material(
 );
 
 impl Material {
-    pub const LEN: usize = 8;
+    pub const LEN: usize = Phase::MAX as usize + 1;
 }
 
 impl Default for Material {

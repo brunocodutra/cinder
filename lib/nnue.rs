@@ -1,4 +1,4 @@
-use crate::chess::{Color, Piece, Role, Square};
+use crate::chess::{Color, Phase, Piece, Role, Square};
 use crate::util::{Assume, Integer};
 use byteorder::{LittleEndian, ReadBytesExt};
 use ruzstd::decoding::StreamingDecoder;
@@ -69,20 +69,20 @@ impl Nnue {
 
         debug_assert!(reader.read_u8().is_err());
 
-        for phase in 0..Material::LEN {
+        for phase in Phase::iter() {
             for role in Role::iter() {
                 let mut deltas = [0i32, 0i32];
 
                 for sq in Square::iter() {
-                    for (delta, side) in deltas.iter_mut().zip(Color::iter()) {
+                    for (d, side) in deltas.iter_mut().zip(Color::iter()) {
                         for ksq in Square::iter() {
                             let feat = Feature::new(side, ksq, Piece::new(role, Color::White), sq);
-                            *delta += self.material.weight[feat.cast::<usize>()][phase];
+                            *d += self.material.weight[feat.cast::<usize>()][phase.cast::<usize>()];
                         }
                     }
                 }
 
-                self.pieces[phase][role.cast::<usize>()] =
+                self.pieces[phase.cast::<usize>()][role.cast::<usize>()] =
                     (deltas[0] - deltas[1]) / (Square::MAX as i32 + 1).pow(2);
             }
         }
@@ -101,13 +101,15 @@ impl Nnue {
     }
 
     #[inline(always)]
-    fn hidden(phase: usize) -> &'static Hidden<{ Positional::LEN }> {
-        unsafe { NNUE.get().as_ref_unchecked().hidden.get_unchecked(phase) }
+    fn hidden(phase: Phase) -> &'static Hidden<{ Positional::LEN }> {
+        let idx = phase.cast::<usize>();
+        unsafe { NNUE.get().as_ref_unchecked().hidden.get_unchecked(idx) }
     }
 
     #[inline(always)]
-    fn pieces(phase: usize) -> &'static [i32; Role::MAX as usize + 1] {
-        unsafe { NNUE.get().as_ref_unchecked().pieces.get_unchecked(phase) }
+    fn pieces(phase: Phase) -> &'static [i32; Role::MAX as usize + 1] {
+        let idx = phase.cast::<usize>();
+        unsafe { NNUE.get().as_ref_unchecked().pieces.get_unchecked(idx) }
     }
 }
 

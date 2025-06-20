@@ -5,7 +5,7 @@ use derive_more::with_trait::Debug;
 use std::mem::MaybeUninit;
 
 #[derive(Debug)]
-pub struct Reply([[Graviton; 64]; 6]);
+pub struct Reply([[[Graviton; 64]; 2]; 6]);
 
 impl Default for Reply {
     #[inline(always)]
@@ -18,7 +18,7 @@ impl Reply {
     #[inline(always)]
     fn graviton(&self, pos: &Position, m: Move) -> &Graviton {
         let role = pos.role_on(m.whence()).assume() as usize;
-        &self.0[role][m.whither() as usize]
+        &self.0[role][m.is_quiet() as usize][m.whither() as usize]
     }
 }
 

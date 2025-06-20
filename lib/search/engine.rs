@@ -86,16 +86,10 @@ impl<'a> Stack<'a> {
                 self.killers[ply.cast::<usize>()].insert(best);
             }
 
-            let bonus_gamma = Params::history_bonus_gamma();
-            let bonus_delta = Params::history_bonus_delta();
-            let bonus = (depth.cast::<i32>() * bonus_gamma + bonus_delta) / Params::BASE;
+            let bonus = self.history_bonus(best, depth).saturate();
+            self.searcher.history.update(pos, best, bonus);
 
-            let penalty_gamma = Params::history_penalty_gamma();
-            let penalty_delta = Params::history_penalty_delta();
-            let penalty = -(depth.cast::<i32>() * penalty_gamma + penalty_delta) / Params::BASE;
-
-            self.searcher.history.update(pos, best, bonus.saturate());
-
+            let bonus = self.continuation_bonus(best, depth);
             let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
             reply.update(pos, best, bonus.saturate());
 
@@ -103,8 +97,10 @@ impl<'a> Stack<'a> {
                 if m == best {
                     break;
                 } else {
-                    self.searcher.history.update(pos, m, penalty.saturate());
+                    let penalty = self.history_penalty(m, depth).saturate();
+                    self.searcher.history.update(pos, m, penalty);
 
+                    let penalty = self.continuation_penalty(m, depth);
                     let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
                     reply.update(pos, m, penalty.saturate());
                 }
@@ -114,6 +110,60 @@ impl<'a> Stack<'a> {
         let score = ScoreBound::new(bounds, score, ply);
         let tpos = Transposition::new(score, depth, Some(best));
         self.tt.set(pos.zobrist(), tpos);
+    }
+
+    fn history_bonus(&self, m: Move, depth: Depth) -> i32 {
+        let params = [
+            Params::noisy_history_bonus_gamma(),
+            Params::noisy_history_bonus_delta(),
+            Params::quiet_history_bonus_gamma(),
+            Params::quiet_history_bonus_delta(),
+        ];
+
+        let offset = 2 * m.is_quiet() as usize;
+        let (gamma, delta) = (params[offset], params[offset + 1]);
+        (gamma * depth.cast::<i32>() + delta) / Params::BASE
+    }
+
+    fn continuation_bonus(&self, m: Move, depth: Depth) -> i32 {
+        let params = [
+            Params::noisy_continuation_bonus_gamma(),
+            Params::noisy_continuation_bonus_delta(),
+            Params::quiet_continuation_bonus_gamma(),
+            Params::quiet_continuation_bonus_delta(),
+        ];
+
+        let offset = 2 * m.is_quiet() as usize;
+        let (gamma, delta) = (params[offset], params[offset + 1]);
+        Params::continuation_scale_1() * ((gamma * depth.cast::<i32>() + delta) / Params::BASE)
+            / Params::BASE
+    }
+
+    fn history_penalty(&self, m: Move, depth: Depth) -> i32 {
+        let params = [
+            Params::noisy_history_penalty_gamma(),
+            Params::noisy_history_penalty_delta(),
+            Params::quiet_history_penalty_gamma(),
+            Params::quiet_history_penalty_delta(),
+        ];
+
+        let offset = 2 * m.is_quiet() as usize;
+        let (gamma, delta) = (params[offset], params[offset + 1]);
+        -(gamma * depth.cast::<i32>() + delta) / Params::BASE
+    }
+
+    fn continuation_penalty(&self, m: Move, depth: Depth) -> i32 {
+        let params = [
+            Params::noisy_continuation_penalty_gamma(),
+            Params::noisy_continuation_penalty_delta(),
+            Params::quiet_continuation_penalty_gamma(),
+            Params::quiet_continuation_penalty_delta(),
+        ];
+
+        let offset = 2 * m.is_quiet() as usize;
+        let (gamma, delta) = (params[offset], params[offset + 1]);
+        -Params::continuation_scale_1() * ((gamma * depth.cast::<i32>() + delta) / Params::BASE)
+            / Params::BASE
     }
 
     /// A measure for how much the position is improving.
@@ -390,10 +440,6 @@ impl<'a> Stack<'a> {
 
         let move_pack = self.evaluator.moves();
         let mut moves = Moves::from_iter(move_pack.unpack_if(|ms| depth > 0 || !ms.is_quiet()));
-
-        let killer_bonus = Params::killer_move_bonus();
-        let gain_gamma = Params::noisy_gain_rating_gamma();
-        let gain_delta = Params::noisy_gain_rating_delta();
         let killer = self.killers[ply.cast::<usize>()];
 
         moves.sort(|m| {
@@ -405,14 +451,17 @@ impl<'a> Stack<'a> {
             rating += self.searcher.history.get(&self.evaluator, m).cast::<i32>();
 
             let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
-            rating += reply.get(&self.evaluator, m);
+            rating += Params::continuation_rating_scale_1() * reply.get(&self.evaluator, m) as i32
+                / Params::BASE;
 
             if killer.contains(m) {
-                rating += killer_bonus / Params::BASE;
+                rating += Params::killer_move_bonus() / Params::BASE;
             } else if !m.is_quiet() {
                 let gain = self.evaluator.gain(m);
                 if self.evaluator.winning(m, Value::new(1)) {
-                    rating += (gain.cast::<i32>() * gain_gamma + gain_delta) / Params::BASE;
+                    let gamma = Params::noisy_gain_rating_gamma();
+                    let delta = Params::noisy_gain_rating_delta();
+                    rating += (gamma * gain.cast::<i32>() + delta) / Params::BASE;
                 }
             }
 

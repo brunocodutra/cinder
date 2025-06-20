@@ -86,12 +86,20 @@ impl<'a> Stack<'a> {
                 self.killers[ply.cast::<usize>()].insert(best);
             }
 
+            let continuation_scale = [
+                Params::continuation_scale_1(),
+                Params::continuation_scale_2(),
+            ];
+
             let bonus = self.history_bonus(best, depth).saturate();
             self.searcher.history.update(pos, best, bonus);
 
             let bonus = self.continuation_bonus(best, depth);
-            let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
-            reply.update(pos, best, bonus.saturate());
+            for (i, scale) in continuation_scale.into_iter().enumerate() {
+                let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(i + 1));
+                let bonus = scale * bonus / Params::BASE;
+                reply.update(pos, best, bonus.saturate());
+            }
 
             for m in moves.iter() {
                 if m == best {
@@ -101,8 +109,11 @@ impl<'a> Stack<'a> {
                     self.searcher.history.update(pos, m, penalty);
 
                     let penalty = self.continuation_penalty(m, depth);
-                    let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
-                    reply.update(pos, m, penalty.saturate());
+                    for (i, scale) in continuation_scale.into_iter().enumerate() {
+                        let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(i + 1));
+                        let penalty = scale * penalty / Params::BASE;
+                        reply.update(pos, m, penalty.saturate());
+                    }
                 }
             }
         }
@@ -135,8 +146,7 @@ impl<'a> Stack<'a> {
 
         let offset = 2 * m.is_quiet() as usize;
         let (gamma, delta) = (params[offset], params[offset + 1]);
-        Params::continuation_scale_1() * ((gamma * depth.cast::<i32>() + delta) / Params::BASE)
-            / Params::BASE
+        (gamma * depth.cast::<i32>() + delta) / Params::BASE
     }
 
     fn history_penalty(&self, m: Move, depth: Depth) -> i32 {
@@ -162,8 +172,7 @@ impl<'a> Stack<'a> {
 
         let offset = 2 * m.is_quiet() as usize;
         let (gamma, delta) = (params[offset], params[offset + 1]);
-        -Params::continuation_scale_1() * ((gamma * depth.cast::<i32>() + delta) / Params::BASE)
-            / Params::BASE
+        -(gamma * depth.cast::<i32>() + delta) / Params::BASE
     }
 
     /// A measure for how much the position is improving.
@@ -447,12 +456,18 @@ impl<'a> Stack<'a> {
                 return Bounded::upper();
             }
 
+            let continuation_scale = [
+                Params::continuation_rating_scale_1(),
+                Params::continuation_rating_scale_2(),
+            ];
+
             let mut rating = Bounded::new(0);
             rating += self.searcher.history.get(&self.evaluator, m).cast::<i32>();
 
-            let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
-            rating += Params::continuation_rating_scale_1() * reply.get(&self.evaluator, m) as i32
-                / Params::BASE;
+            for (i, scale) in continuation_scale.into_iter().enumerate() {
+                let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(i + 1));
+                rating += scale * reply.get(&self.evaluator, m) as i32 / Params::BASE;
+            }
 
             if killer.contains(m) {
                 rating += Params::killer_move_bonus() / Params::BASE;

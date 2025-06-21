@@ -286,7 +286,7 @@ impl MoveGenerator {
 #[debug("Position({self})")]
 pub struct Position {
     board: Board,
-    zobrist: Zobrist,
+    zobrists: Zobrists,
     checkers: Bitboard,
     pinned: Bitboard,
     history: [[Option<NonZeroU32>; 32]; 2],
@@ -323,7 +323,7 @@ impl Default for Position {
         let board = Board::default();
 
         Self {
-            zobrist: board.zobrist(),
+            zobrists: board.zobrists(),
             checkers: Default::default(),
             pinned: Default::default(),
             history: Default::default(),
@@ -453,12 +453,10 @@ impl Position {
         self.board.iter()
     }
 
-    /// This position's [zobrist hash].
-    ///
-    /// [zobrist hash]: https://www.chessprogramming.org/Zobrist_Hashing
+    /// This position's [zobrist hashes](`Zobrists`)
     #[inline(always)]
     pub fn zobrist(&self) -> Zobrist {
-        self.zobrist
+        self.zobrists.hash
     }
 
     /// [`Square`]s occupied by pieces giving check.
@@ -507,49 +505,37 @@ impl Position {
         false
     }
 
-    /// Whether this position is a [check].
-    ///
-    /// [check]: https://www.chessprogramming.org/Check
+    /// Whether this position is a check.
     #[inline(always)]
     pub fn is_check(&self) -> bool {
         !self.checkers().is_empty()
     }
 
-    /// Whether this position is a [checkmate].
-    ///
-    /// [checkmate]: https://www.chessprogramming.org/Checkmate
+    /// Whether this position is a checkmate.
     #[inline(always)]
     pub fn is_checkmate(&self) -> bool {
         self.is_check() && EvasionGenerator::generate(self, &mut NoCapacityMovePacker).is_ok()
     }
 
-    /// Whether this position is a [stalemate].
-    ///
-    /// [stalemate]: https://www.chessprogramming.org/Stalemate
+    /// Whether this position is a stalemate.
     #[inline(always)]
     pub fn is_stalemate(&self) -> bool {
         !self.is_check() && MoveGenerator::generate(self, &mut NoCapacityMovePacker).is_ok()
     }
 
-    /// Whether the game is a draw by [repetition].
-    ///
-    /// [repetition]: https://en.wikipedia.org/wiki/Threefold_repetition
+    /// Whether the game is a draw by repetition.
     #[inline(always)]
     pub fn is_draw_by_repetition(&self) -> bool {
         self.repetitions() > 0
     }
 
-    /// Whether the game is a draw by the [50-move rule].
-    ///
-    /// [50-move rule]: https://en.wikipedia.org/wiki/Fifty-move_rule
+    /// Whether the game is a draw by the 50-move rule.
     #[inline(always)]
     pub fn is_draw_by_50_move_rule(&self) -> bool {
         self.halfmoves() >= 100
     }
 
-    /// Whether this position has [insufficient material].
-    ///
-    /// [insufficient material]: https://www.chessprogramming.org/Material#InsufficientMaterial
+    /// Whether this position has insufficient material.
     #[inline(always)]
     pub fn is_material_insufficient(&self) -> bool {
         use {Piece::*, Role::*};
@@ -707,31 +693,34 @@ impl Position {
         }
 
         self.board.turn = !self.board.turn;
-        self.zobrist ^= ZobristNumbers::turn();
+        self.zobrists.hash ^= ZobristNumbers::turn();
 
         if let Some(ep) = self.board.en_passant.take() {
-            self.zobrist ^= ZobristNumbers::en_passant(ep.file());
+            self.zobrists.hash ^= ZobristNumbers::en_passant(ep.file());
         }
 
         if let Some((victim, target)) = capture {
-            self.board.toggle(Piece::new(victim, !turn), target);
-            self.zobrist ^= ZobristNumbers::psq(!turn, victim, target);
+            let piece = Piece::new(victim, !turn);
+            self.board.toggle(piece, target);
+            self.zobrists.toggle(piece, target);
         }
 
-        self.board.toggle(Piece::new(role, turn), wc);
-        self.board.toggle(Piece::new(role, turn), wt);
-
-        self.zobrist ^= ZobristNumbers::psq(turn, role, wc);
-        self.zobrist ^= ZobristNumbers::psq(turn, role, wt);
+        let piece = Piece::new(role, turn);
+        self.board.toggle(piece, wc);
+        self.board.toggle(piece, wt);
+        self.zobrists.toggle(piece, wc);
+        self.zobrists.toggle(piece, wt);
 
         if let Some(promotion) = promotion {
-            self.board.toggle(Piece::new(Pawn, turn), wt);
-            self.board.toggle(Piece::new(promotion, turn), wt);
-            self.zobrist ^= ZobristNumbers::psq(turn, Pawn, wt);
-            self.zobrist ^= ZobristNumbers::psq(turn, promotion, wt);
+            let old = Piece::new(Pawn, turn);
+            let new = Piece::new(promotion, turn);
+            self.board.toggle(old, wt);
+            self.board.toggle(new, wt);
+            self.zobrists.toggle(old, wt);
+            self.zobrists.toggle(new, wt);
         } else if role == Pawn && (wt - wc).abs() == 16 {
             self.board.en_passant = Some(Square::new(wc.file(), Rank::Third.perspective(turn)));
-            self.zobrist ^= ZobristNumbers::en_passant(wc.file());
+            self.zobrists.hash ^= ZobristNumbers::en_passant(wc.file());
         } else if role == King && (wt - wc).abs() == 2 {
             let (wc, wt) = if wt > wc {
                 (H1.perspective(turn), F1.perspective(turn))
@@ -739,17 +728,18 @@ impl Position {
                 (A1.perspective(turn), D1.perspective(turn))
             };
 
-            self.board.toggle(Piece::new(Rook, turn), wc);
-            self.board.toggle(Piece::new(Rook, turn), wt);
-            self.zobrist ^= ZobristNumbers::psq(turn, Rook, wc);
-            self.zobrist ^= ZobristNumbers::psq(turn, Rook, wt);
+            let rook = Piece::new(Rook, turn);
+            self.board.toggle(rook, wc);
+            self.board.toggle(rook, wt);
+            self.zobrists.toggle(rook, wc);
+            self.zobrists.toggle(rook, wt);
         }
 
         let disrupted = Castles::from(wc) | Castles::from(wt);
         if self.castles() & disrupted != Castles::none() {
-            self.zobrist ^= ZobristNumbers::castling(self.castles());
+            self.zobrists.hash ^= ZobristNumbers::castling(self.castles());
             self.board.castles &= !disrupted;
-            self.zobrist ^= ZobristNumbers::castling(self.castles());
+            self.zobrists.hash ^= ZobristNumbers::castling(self.castles());
         }
 
         let king = self.king(!turn);
@@ -776,9 +766,7 @@ impl Position {
         }
     }
 
-    /// Play a [null-move].
-    ///
-    /// [null-move]: https://www.chessprogramming.org/Null_Move
+    /// Play a null-move.
     #[inline(always)]
     pub fn pass(&mut self) {
         debug_assert!(!self.is_check());
@@ -791,12 +779,12 @@ impl Position {
         self.board.halfmoves += 1;
         let entries = self.history[turn as usize].len();
         self.history[turn as usize].copy_within(..entries - 1, 1);
-        self.history[turn as usize][0] = NonZeroU32::new(self.zobrist.cast());
+        self.history[turn as usize][0] = NonZeroU32::new(self.zobrist().cast());
 
         self.board.turn = !self.board.turn;
-        self.zobrist ^= ZobristNumbers::turn();
+        self.zobrists.hash ^= ZobristNumbers::turn();
         if let Some(ep) = self.board.en_passant.take() {
-            self.zobrist ^= ZobristNumbers::en_passant(ep.file());
+            self.zobrists.hash ^= ZobristNumbers::en_passant(ep.file());
         }
 
         let king = self.king(!turn);
@@ -885,7 +873,7 @@ impl FromStr for Position {
         Ok(Position {
             checkers,
             pinned,
-            zobrist: board.zobrist(),
+            zobrists: board.zobrists(),
             history: Default::default(),
             board,
         })
@@ -939,8 +927,8 @@ mod tests {
     }
 
     #[proptest]
-    fn zobrist_hashes_the_board(pos: Position) {
-        assert_eq!(pos.zobrist(), pos.board.zobrist());
+    fn zobrist_hashes_are_updated_incrementally(pos: Position) {
+        assert_eq!(pos.zobrists, pos.board.zobrists());
     }
 
     #[proptest]

@@ -1,8 +1,6 @@
 use crate::chess::Move;
 
-/// A set of [killer moves].
-///
-/// [killer moves]: https://www.chessprogramming.org/Killer_Move
+/// A set of killer moves.
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Killers(Option<Move>, Option<Move>);

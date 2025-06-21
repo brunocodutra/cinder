@@ -20,9 +20,7 @@ pub use hidden::*;
 pub use transformer::*;
 pub use value::*;
 
-/// An [Efficiently Updatable Neural Network][NNUE].
-///
-/// [NNUE]: https://www.chessprogramming.org/NNUE
+/// An Efficiently Updatable Neural Network.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 struct Nnue {
     positional: Affine<i16, { Positional::LEN }>,

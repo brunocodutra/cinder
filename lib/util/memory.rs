@@ -301,13 +301,7 @@ mod tests {
     }
 
     #[proptest]
-    fn set_replaces_value_if_one_exists(
-        #[by_ref] m: MockMemory,
-        k: Key,
-        u: Alignment,
-        l: Key,
-        v: Alignment,
-    ) {
+    fn set_replaces_value_if_one_exists(m: MockMemory, k: Key, u: Alignment, l: Key, v: Alignment) {
         let latch = Some(Latch::close(l, v));
         m.data[k].store(latch.encode(), Ordering::Relaxed);
         m.set(k, u);

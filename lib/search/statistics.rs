@@ -1,10 +1,7 @@
 use crate::chess::{Move, Position};
-use crate::util::{Assume, Primitive};
+use crate::util::{Assume, Integer, Primitive};
 use derive_more::with_trait::Debug;
-use std::sync::atomic::{AtomicI8, AtomicUsize, Ordering::Relaxed};
-
-#[cfg(test)]
-use proptest::prelude::*;
+use std::ptr::NonNull;
 
 /// A trait for types that record statistics about [`Move`]s.
 pub trait Statistics {
@@ -12,22 +9,22 @@ pub trait Statistics {
     type Stat: Stat;
 
     /// Returns the accumulated [`Self::Stat`]s about a [`Move`] in a [`Position`].
-    fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value;
+    fn get(&mut self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value;
 
     /// Updates [`Self::Stat`]s for a [`Move`] in a [`Position`].
-    fn update(&self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value);
+    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value);
 }
 
-impl<T: Statistics> Statistics for &T {
+impl<T: Statistics> Statistics for &mut T {
     type Stat = T::Stat;
 
     #[inline(always)]
-    fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
+    fn get(&mut self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
         (*self).get(pos, m)
     }
 
     #[inline(always)]
-    fn update(&self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
+    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
         (*self).update(pos, m, delta)
     }
 }
@@ -36,16 +33,30 @@ impl<T: Statistics> Statistics for Option<T> {
     type Stat = T::Stat;
 
     #[inline(always)]
-    fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
-        self.as_ref()
+    fn get(&mut self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
+        self.as_mut()
             .map_or_else(Default::default, |g| g.get(pos, m))
     }
 
     #[inline(always)]
-    fn update(&self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
+    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
         if let Some(g) = self {
             g.update(pos, m, delta);
         }
+    }
+}
+
+impl<T: Statistics> Statistics for NonNull<T> {
+    type Stat = T::Stat;
+
+    #[inline(always)]
+    fn get(&mut self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
+        self.assume().get(pos, m)
+    }
+
+    #[inline(always)]
+    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
+        self.assume().update(pos, m, delta)
     }
 }
 
@@ -55,22 +66,22 @@ pub trait Stat {
     type Value: Primitive;
 
     /// Returns the current [`Self::Value`].
-    fn get(&self) -> Self::Value;
+    fn get(&mut self) -> Self::Value;
 
     /// Updates and returns the current [`Self::Value`].
-    fn update(&self, delta: Self::Value);
+    fn update(&mut self, delta: Self::Value);
 }
 
-impl<T: Stat> Stat for &T {
+impl<T: Stat> Stat for &mut T {
     type Value = T::Value;
 
     #[inline(always)]
-    fn get(&self) -> Self::Value {
+    fn get(&mut self) -> Self::Value {
         (*self).get()
     }
 
     #[inline(always)]
-    fn update(&self, delta: Self::Value) {
+    fn update(&mut self, delta: Self::Value) {
         (*self).update(delta);
     }
 }
@@ -79,59 +90,41 @@ impl<T: Stat> Stat for Option<T> {
     type Value = T::Value;
 
     #[inline(always)]
-    fn get(&self) -> Self::Value {
-        self.as_ref().map_or_else(Default::default, Stat::get)
+    fn get(&mut self) -> Self::Value {
+        self.as_mut().map_or_else(Default::default, Stat::get)
     }
 
     #[inline(always)]
-    fn update(&self, delta: Self::Value) {
+    fn update(&mut self, delta: Self::Value) {
         if let Some(s) = self {
             s.update(delta);
         }
     }
 }
 
-/// A linear counter.
-#[derive(Debug, Default)]
+/// A saturating accumulator that implements the "gravity" formula.
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct Counter(#[cfg_attr(test, strategy(any::<usize>().prop_map_into()))] AtomicUsize);
+pub struct Graviton(i8);
 
-impl Stat for Counter {
-    type Value = usize;
-
-    #[inline(always)]
-    fn get(&self) -> Self::Value {
-        self.0.load(Relaxed)
-    }
-
-    #[inline(always)]
-    fn update(&self, delta: Self::Value) {
-        self.0.fetch_add(delta, Relaxed);
-    }
+unsafe impl Integer for Graviton {
+    type Repr = i8;
+    const MIN: Self::Repr = -Self::MAX;
+    const MAX: Self::Repr = 127;
 }
-
-/// A saturating counter.
-#[derive(Debug, Default)]
-#[cfg_attr(test, derive(test_strategy::Arbitrary))]
-#[repr(transparent)]
-pub struct Graviton(#[cfg_attr(test, strategy(any::<i8>().prop_map_into()))] AtomicI8);
 
 impl Stat for Graviton {
     type Value = i8;
 
     #[inline(always)]
-    fn get(&self) -> Self::Value {
-        self.0.load(Relaxed)
+    fn get(&mut self) -> Self::Value {
+        self.0
     }
 
     #[inline(always)]
-    fn update(&self, delta: Self::Value) {
-        let delta = delta.max(-i8::MAX);
-        let result = self.0.fetch_update(Relaxed, Relaxed, |h| {
-            Some((delta as i16 - delta.abs() as i16 * h as i16 / 127 + h as i16) as i8)
-        });
-
-        result.assume();
+    fn update(&mut self, delta: Self::Value) {
+        let delta = delta.clamp(Self::MIN, Self::MAX) as i16;
+        self.0 = (delta - delta.abs() * self.0 as i16 / Self::MAX as i16 + self.0 as i16) as i8
     }
 }

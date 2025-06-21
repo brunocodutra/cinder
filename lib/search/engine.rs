@@ -7,7 +7,7 @@ use derive_more::with_trait::{Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
 use std::task::{Context, Poll};
-use std::{ops::Range, pin::Pin, time::Duration};
+use std::{cell::SyncUnsafeCell, ops::Range, pin::Pin, ptr::NonNull, time::Duration};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -31,12 +31,12 @@ impl<'e, 'a> Drop for StackGuard<'e, 'a> {
 
 #[derive(Debug)]
 struct Stack<'a> {
-    searcher: &'a Searcher,
+    searcher: &'a mut Searcher,
     syzygy: &'a Syzygy,
     tt: &'a Memory<Transposition>,
     ctrl: &'a Control,
-    nodes: Option<&'a Counter>,
-    replies: [Option<&'a Reply>; Ply::MAX as usize + 1],
+    nodes: Option<&'a Nodes>,
+    replies: [Option<NonNull<Reply>>; Ply::MAX as usize + 1],
     killers: [Killers; Ply::MAX as usize + 1],
     value: [Value; Ply::MAX as usize + 1],
     evaluator: Evaluator,
@@ -45,7 +45,7 @@ struct Stack<'a> {
 
 impl<'a> Stack<'a> {
     fn new(
-        searcher: &'a Searcher,
+        searcher: &'a mut Searcher,
         syzygy: &'a Syzygy,
         tt: &'a Memory<Transposition>,
         ctrl: &'a Control,
@@ -57,7 +57,7 @@ impl<'a> Stack<'a> {
             tt,
             ctrl,
             nodes: None,
-            replies: [Default::default(); Ply::MAX as usize + 1],
+            replies: [const { None }; Ply::MAX as usize + 1],
             killers: [Default::default(); Ply::MAX as usize + 1],
             value: [Default::default(); Ply::MAX as usize + 1],
             pv: if evaluator.is_check() {
@@ -90,7 +90,7 @@ impl<'a> Stack<'a> {
             self.searcher.history.update(pos, best, bonus);
 
             let bonus = self.continuation_bonus(best, depth);
-            let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
+            let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
             reply.update(pos, best, bonus.saturate());
 
             for m in moves.iter() {
@@ -101,7 +101,7 @@ impl<'a> Stack<'a> {
                     self.searcher.history.update(pos, m, penalty);
 
                     let penalty = self.continuation_penalty(m, depth);
-                    let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
+                    let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
                     reply.update(pos, m, penalty.saturate());
                 }
             }
@@ -303,8 +303,10 @@ impl<'a> Stack<'a> {
 
     #[must_use]
     fn next(&mut self, m: Option<Move>) -> StackGuard<'_, 'a> {
-        self.replies[self.evaluator.ply().cast::<usize>()] =
-            m.map(|m| self.searcher.continuation.reply(&self.evaluator, m));
+        self.replies[self.evaluator.ply().cast::<usize>()] = m.map(|m| {
+            let reply = self.searcher.continuation.reply(&self.evaluator, m);
+            NonNull::from_mut(reply)
+        });
 
         self.evaluator.push(m);
         self.tt.prefetch(self.evaluator.zobrist());
@@ -343,12 +345,12 @@ impl<'a> Stack<'a> {
         bounds: Range<Score>,
         mut cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
-        self.nodes.update(1);
-        if self.ctrl.check(&self.evaluator, &self.pv) == ControlFlow::Abort {
+        let ply = self.evaluator.ply();
+        self.nodes.assume().increment();
+        if self.ctrl.check(&self.pv, ply) == ControlFlow::Abort {
             return Err(Interrupted);
         }
 
-        let ply = self.evaluator.ply();
         let (alpha, beta) = match self.evaluator.outcome() {
             None => self.mdp(&bounds),
             Some(o) if o.is_draw() => return Ok(Pv::empty(Score::new(0))),
@@ -449,7 +451,7 @@ impl<'a> Stack<'a> {
             rating += Params::history_rating()
                 * self.searcher.history.get(&self.evaluator, m).cast::<i32>();
 
-            let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
+            let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
             rating += Params::continuation_rating() * reply.get(&self.evaluator, m).cast::<i32>();
 
             if killer.contains(m) {
@@ -522,7 +524,7 @@ impl<'a> Stack<'a> {
                 }
             }
 
-            let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
+            let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
             let continuation = reply.get(&self.evaluator, m).cast::<i32>();
             let history = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
             let mut next = self.next(Some(m));
@@ -561,7 +563,7 @@ impl<'a> Stack<'a> {
         bounds: Range<Score>,
     ) -> Result<Pv, Interrupted> {
         let (alpha, beta) = (bounds.start, bounds.end);
-        if self.ctrl.check(&self.evaluator, &self.pv) != ControlFlow::Continue {
+        if self.ctrl.check(&self.pv, self.evaluator.ply()) != ControlFlow::Continue {
             return Err(Interrupted);
         }
 
@@ -741,11 +743,12 @@ impl<'e, 'p> Stream for Search<'e, 'p> {
         }
 
         let executor: &mut Executor = unsafe { &mut *(&mut self.engine.executor as *mut _) };
-        let searchers: &'static [Searcher] = unsafe { &*(&*self.engine.searchers as *const _) };
         let syzygy: &'static Syzygy = unsafe { &*(&self.engine.syzygy as *const _) };
         let tt: &'static Memory<Transposition> = unsafe { &*(&self.engine.tt as *const _) };
         let ctrl: &'static Control = unsafe { &*(&self.ctrl as *const _) };
         let position: &'static Position = unsafe { &*(self.position as *const _) };
+        let searchers: &'static [SyncUnsafeCell<Searcher>] =
+            unsafe { &*(&*self.engine.searchers as *const _ as *const [SyncUnsafeCell<Searcher>]) };
 
         let (tx, rx) = unbounded();
         self.channel = Some(rx);
@@ -755,8 +758,8 @@ impl<'e, 'p> Stream for Search<'e, 'p> {
         }
 
         self.task = Some(executor.execute(move |idx| {
-            let searcher = searchers.get(idx).assume();
             let evaluator = Evaluator::new(position.clone());
+            let searcher = unsafe { &mut *searchers.get(idx).assume().get() };
             for info in Stack::new(searcher, syzygy, tt, ctrl, evaluator).aw() {
                 if idx == 0 {
                     let depth = info.depth();
@@ -853,7 +856,7 @@ mod tests {
     fn nw_returns_transposition_if_beta_too_low(
         #[by_ref]
         #[filter(#e.tt.capacity() > 0)]
-        e: Engine,
+        mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
@@ -865,7 +868,8 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::none());
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        let mut stack = Stack::new(&mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        stack.nodes = Some(ctrl.attention().nodes(m));
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(d, b, cut), Ok(Pv::empty(s)));
     }
@@ -874,7 +878,7 @@ mod tests {
     fn nw_returns_transposition_if_beta_too_high(
         #[by_ref]
         #[filter(#e.tt.capacity() > 0)]
-        e: Engine,
+        mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
@@ -886,7 +890,8 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::none());
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        let mut stack = Stack::new(&mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        stack.nodes = Some(ctrl.attention().nodes(m));
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(d, b, cut), Ok(Pv::empty(s)));
     }
@@ -895,7 +900,7 @@ mod tests {
     fn nw_returns_transposition_if_exact(
         #[by_ref]
         #[filter(#e.tt.capacity() > 0)]
-        e: Engine,
+        mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter((Value::lower()..Value::upper()).contains(&#b))] b: Score,
@@ -907,37 +912,40 @@ mod tests {
         e.tt.set(pos.zobrist(), tpos);
 
         let ctrl = Control::new(&pos, Limits::none());
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        let mut stack = Stack::new(&mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        stack.nodes = Some(ctrl.attention().nodes(m));
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(d, b, cut), Ok(Pv::empty(s)));
     }
 
     #[proptest]
     fn ab_aborts_if_maximum_number_of_nodes_visited(
-        e: Engine,
+        mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
+        m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::nodes(0));
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        let mut stack = Stack::new(&mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        stack.nodes = Some(ctrl.attention().nodes(m));
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.ab::<1>(d, b, cut), Err(Interrupted));
     }
 
     #[proptest]
     fn ab_aborts_if_time_is_up(
-        e: Engine,
+        mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
+        m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::time(Duration::ZERO));
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        let mut stack = Stack::new(&mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        stack.nodes = Some(ctrl.attention().nodes(m));
         stack.pv = stack.pv.transpose(m);
         thread::sleep(Duration::from_millis(1));
         assert_eq!(stack.ab::<1>(d, b, cut), Err(Interrupted));
@@ -945,15 +953,16 @@ mod tests {
 
     #[proptest]
     fn ab_can_be_aborted_upon_request(
-        e: Engine,
+        mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
+        m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::none());
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        let mut stack = Stack::new(&mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        stack.nodes = Some(ctrl.attention().nodes(m));
         stack.pv = stack.pv.transpose(m);
         ctrl.abort();
         assert_eq!(stack.ab::<1>(d, b, cut), Err(Interrupted));
@@ -961,51 +970,55 @@ mod tests {
 
     #[proptest]
     fn ab_returns_drawn_score_if_game_ends_in_a_draw(
-        e: Engine,
+        mut e: Engine,
         #[filter(#pos.outcome().is_some_and(|o| o.is_draw()))] pos: Evaluator,
+        m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         cut: bool,
     ) {
         let ctrl = Control::new(&pos, Limits::none());
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        let mut stack = Stack::new(&mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        stack.nodes = Some(ctrl.attention().nodes(m));
         assert_eq!(stack.ab::<1>(d, b, cut), Ok(Pv::empty(Score::new(0))));
     }
 
     #[proptest]
     fn ab_returns_lost_score_if_game_ends_in_checkmate(
-        e: Engine,
+        mut e: Engine,
         #[filter(#pos.outcome().is_some_and(|o| o.is_decisive()))] pos: Evaluator,
+        m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         cut: bool,
     ) {
         let ply = pos.ply();
         let ctrl = Control::new(&pos, Limits::none());
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        let mut stack = Stack::new(&mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
+        stack.nodes = Some(ctrl.attention().nodes(m));
         assert_eq!(stack.ab::<1>(d, b, cut), Ok(Pv::empty(Score::mated(ply))));
     }
 
     #[proptest]
     fn aw_extends_time_to_find_some_pv(
-        e: Engine,
+        mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Position,
     ) {
         let evaluator = Evaluator::new(pos);
         let ctrl = Control::new(&evaluator, Limits::time(Duration::ZERO));
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, evaluator);
+        let mut stack = Stack::new(&mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, evaluator);
         let last = stack.aw().last();
         assert_ne!(last.and_then(|pv| pv.head()), None);
     }
 
     #[proptest]
     fn aw_extends_depth_to_find_some_pv(
-        e: Engine,
+        mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Position,
     ) {
         let evaluator = Evaluator::new(pos);
         let ctrl = Control::new(&evaluator, Limits::depth(Depth::lower()));
-        let mut stack = Stack::new(&e.searchers[0], &e.syzygy, &e.tt, &ctrl, evaluator);
+        let mut stack = Stack::new(&mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, evaluator);
         let last = stack.aw().last();
         assert_ne!(last.and_then(|pv| pv.head()), None);
     }

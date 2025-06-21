@@ -1,4 +1,5 @@
 use std::hint::assert_unchecked;
+use std::ptr::NonNull;
 
 /// A trait for types that can be assumed to be another type.
 pub trait Assume {
@@ -45,5 +46,27 @@ impl<T, E> Assume for Result<T, E> {
 
         // Definitely not safe, but we'll assume unit tests will catch everything.
         unsafe { self.unwrap_unchecked() }
+    }
+}
+
+impl<'a, T> Assume for &'a NonNull<T> {
+    type Assumed = &'a T;
+
+    #[track_caller]
+    #[inline(always)]
+    fn assume(self) -> Self::Assumed {
+        // Definitely not safe, but we'll assume unit tests will catch everything.
+        unsafe { self.as_ref() }
+    }
+}
+
+impl<'a, T> Assume for &'a mut NonNull<T> {
+    type Assumed = &'a mut T;
+
+    #[track_caller]
+    #[inline(always)]
+    fn assume(self) -> Self::Assumed {
+        // Definitely not safe, but we'll assume unit tests will catch everything.
+        unsafe { self.as_mut() }
     }
 }

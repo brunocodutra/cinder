@@ -2,9 +2,7 @@ use crate::chess::{Butterfly, Move, Position};
 use crate::search::{Graviton, Stat, Statistics};
 use derive_more::with_trait::Debug;
 
-/// [Historical statistics] about a [`Move`].
-///
-/// [Historical statistics]: https://www.chessprogramming.org/History_Heuristic
+/// Historical statistics about a [`Move`].
 #[derive(Debug)]
 #[debug("History")]
 pub struct History([[Butterfly<Graviton>; 2]; 2]);

@@ -5,6 +5,41 @@ use std::fmt::{self, Formatter, Write};
 use std::io::Write as _;
 use std::str::{self, FromStr};
 
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct Zobrists {
+    pub hash: Zobrist,
+    pub pawns: Zobrist,
+    pub minor: Zobrist,
+    pub major: Zobrist,
+    pub white: Zobrist,
+    pub black: Zobrist,
+}
+
+impl Zobrists {
+    #[inline(always)]
+    pub fn toggle(&mut self, p: Piece, sq: Square) {
+        self.hash ^= ZobristNumbers::psq(p, sq);
+
+        if p.role() == Role::Pawn {
+            self.pawns ^= ZobristNumbers::psq(p, sq);
+        } else {
+            match p.color() {
+                Color::White => self.white ^= ZobristNumbers::psq(p, sq),
+                Color::Black => self.black ^= ZobristNumbers::psq(p, sq),
+            }
+
+            if matches!(p.role(), Role::Knight | Role::Bishop) {
+                self.minor ^= ZobristNumbers::psq(p, sq);
+            } else if matches!(p.role(), Role::Rook | Role::Queen) {
+                self.major ^= ZobristNumbers::psq(p, sq);
+            } else {
+                self.minor ^= ZobristNumbers::psq(p, sq);
+                self.major ^= ZobristNumbers::psq(p, sq);
+            }
+        }
+    }
+}
+
 /// The chess board.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
@@ -108,26 +143,27 @@ impl Board {
         Piece::iter().flat_map(|p| self.by_piece(p).into_iter().map(move |sq| (p, sq)))
     }
 
-    /// Computes the [zobrist hash].
-    ///
-    /// [zobrist hash]: https://www.chessprogramming.org/Zobrist_Hashing
+    /// Computes the [zobrist hashes](`Zobrists`).
     #[inline(always)]
-    pub fn zobrist(&self) -> Zobrist {
-        let mut zobrist = ZobristNumbers::castling(self.castles);
-
-        for (p, sq) in self.iter() {
-            zobrist ^= ZobristNumbers::psq(p.color(), p.role(), sq);
-        }
+    pub fn zobrists(&self) -> Zobrists {
+        let mut zobrists = Zobrists {
+            hash: ZobristNumbers::castling(self.castles),
+            ..Default::default()
+        };
 
         if self.turn == Color::Black {
-            zobrist ^= ZobristNumbers::turn();
+            zobrists.hash ^= ZobristNumbers::turn();
         }
 
         if let Some(ep) = self.en_passant {
-            zobrist ^= ZobristNumbers::en_passant(ep.file());
+            zobrists.hash ^= ZobristNumbers::en_passant(ep.file());
         }
 
-        zobrist
+        for (p, sq) in self.iter() {
+            zobrists.toggle(p, sq);
+        }
+
+        zobrists
     }
 
     /// Toggles a piece on a square.

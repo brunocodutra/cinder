@@ -5,9 +5,7 @@ use derive_more::with_trait::{Constructor, Deref};
 use std::{cmp::Ordering, hash::Hash};
 use std::{hash::Hasher, ops::Neg};
 
-/// The [principal variation].
-///
-/// [principal variation]: https://www.chessprogramming.org/Principal_Variation
+/// The principal variation.
 #[derive(Debug, Clone, Deref, Constructor)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Pv<const N: usize = { Depth::MAX as _ }> {

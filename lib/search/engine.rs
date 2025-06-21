@@ -135,8 +135,7 @@ impl<'a> Stack<'a> {
 
         let offset = 2 * m.is_quiet() as usize;
         let (gamma, delta) = (params[offset], params[offset + 1]);
-        Params::continuation_scale_1() * ((gamma * depth.cast::<i32>() + delta) / Params::BASE)
-            / Params::BASE
+        (gamma * depth.cast::<i32>() + delta) / Params::BASE
     }
 
     fn history_penalty(&self, m: Move, depth: Depth) -> i32 {
@@ -162,8 +161,7 @@ impl<'a> Stack<'a> {
 
         let offset = 2 * m.is_quiet() as usize;
         let (gamma, delta) = (params[offset], params[offset + 1]);
-        -Params::continuation_scale_1() * ((gamma * depth.cast::<i32>() + delta) / Params::BASE)
-            / Params::BASE
+        -(gamma * depth.cast::<i32>() + delta) / Params::BASE
     }
 
     /// A measure for how much the position is improving.
@@ -276,13 +274,13 @@ impl<'a> Stack<'a> {
 
     /// Computes the futility pruning threshold.
     fn fpt(&self, depth: Depth) -> i32 {
-        let gamma = Params::futility_pruning_threshold_gamma();
+        let gamma = Params::futility_pruning_threshold();
         gamma * depth.cast::<i32>() / Params::BASE
     }
 
     /// Computes the SEE pruning threshold.
     fn spt(&self, depth: Depth) -> i32 {
-        let gamma = Params::see_pruning_threshold_gamma();
+        let gamma = Params::see_pruning_threshold();
         gamma * depth.cast::<i32>() / Params::BASE
     }
 
@@ -447,25 +445,25 @@ impl<'a> Stack<'a> {
                 return Bounded::upper();
             }
 
-            let mut rating = Bounded::new(0);
-            rating += self.searcher.history.get(&self.evaluator, m).cast::<i32>();
+            let mut rating = 0i32;
+            rating += Params::history_rating()
+                * self.searcher.history.get(&self.evaluator, m).cast::<i32>();
 
             let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
-            rating += Params::continuation_rating_scale_1() * reply.get(&self.evaluator, m) as i32
-                / Params::BASE;
+            rating += Params::continuation_rating() * reply.get(&self.evaluator, m).cast::<i32>();
 
             if killer.contains(m) {
-                rating += Params::killer_move_bonus() / Params::BASE;
+                rating += Params::killer_move_bonus();
             } else if !m.is_quiet() {
                 let gain = self.evaluator.gain(m);
                 if self.evaluator.winning(m, Value::new(1)) {
-                    let gamma = Params::noisy_gain_rating_gamma();
-                    let delta = Params::noisy_gain_rating_delta();
-                    rating += (gamma * gain.cast::<i32>() + delta) / Params::BASE;
+                    let gamma = Params::winning_rating_gamma();
+                    let delta = Params::winning_rating_delta();
+                    rating += gamma * gain.cast::<i32>() + delta;
                 }
             }
 
-            rating
+            (rating / Params::BASE).saturate()
         });
 
         #[allow(clippy::blocks_in_conditions)]
@@ -524,13 +522,16 @@ impl<'a> Stack<'a> {
                 }
             }
 
-            let rating = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
+            let reply = self.replies.get(ply.cast::<usize>().wrapping_sub(1));
+            let continuation = reply.get(&self.evaluator, m).cast::<i32>();
+            let history = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
             let mut next = self.next(Some(m));
 
             lmr -= is_pv as i32 * Params::late_move_reduction_pv();
             lmr -= killer.contains(m) as i32 * Params::late_move_reduction_killer();
             lmr -= next.evaluator.is_check() as i32 * Params::late_move_reduction_check();
-            lmr -= rating * Params::late_move_reduction_history() / 128;
+            lmr -= history * Params::late_move_reduction_history() / 128;
+            lmr -= continuation * Params::late_move_reduction_continuation() / 128;
             lmr -= improving * Params::late_move_reduction_improving();
             lmr += cut as i32 * Params::late_move_reduction_cut();
             lmr += transposed.head().is_some_and(|m| !m.is_quiet()) as i32

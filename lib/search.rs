@@ -1,6 +1,7 @@
 mod attention;
 mod continuation;
 mod control;
+mod correction;
 mod depth;
 mod engine;
 mod executor;
@@ -20,6 +21,7 @@ mod transposition;
 pub use attention::*;
 pub use continuation::*;
 pub use control::*;
+pub use correction::*;
 pub use depth::*;
 pub use engine::*;
 pub use executor::*;

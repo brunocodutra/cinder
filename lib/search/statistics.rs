@@ -1,62 +1,62 @@
-use crate::chess::{Move, Position};
+use crate::chess::Position;
 use crate::util::{Assume, Integer, Primitive};
 use derive_more::with_trait::Debug;
 use std::ptr::NonNull;
 
-/// A trait for types that record statistics about [`Move`]s.
-pub trait Statistics {
+/// A trait for types that record statistics for [`Position`]s.
+pub trait Statistics<C> {
     /// The stat type.
     type Stat: Stat;
 
-    /// Returns the accumulated [`Self::Stat`]s about a [`Move`] in a [`Position`].
-    fn get(&mut self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value;
+    /// Returns the accumulated [`Self::Stat`]s.
+    fn get(&mut self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value;
 
-    /// Updates [`Self::Stat`]s for a [`Move`] in a [`Position`].
-    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value);
+    /// Updates [`Self::Stat`]s.
+    fn update(&mut self, pos: &Position, ctx: C, delta: <Self::Stat as Stat>::Value);
 }
 
-impl<T: Statistics> Statistics for &mut T {
+impl<C, T: Statistics<C>> Statistics<C> for &mut T {
     type Stat = T::Stat;
 
     #[inline(always)]
-    fn get(&mut self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
-        (*self).get(pos, m)
+    fn get(&mut self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value {
+        (*self).get(pos, ctx)
     }
 
     #[inline(always)]
-    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
-        (*self).update(pos, m, delta)
+    fn update(&mut self, pos: &Position, ctx: C, delta: <Self::Stat as Stat>::Value) {
+        (*self).update(pos, ctx, delta)
     }
 }
 
-impl<T: Statistics> Statistics for Option<T> {
+impl<C, T: Statistics<C>> Statistics<C> for Option<T> {
     type Stat = T::Stat;
 
     #[inline(always)]
-    fn get(&mut self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
+    fn get(&mut self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value {
         self.as_mut()
-            .map_or_else(Default::default, |g| g.get(pos, m))
+            .map_or_else(Default::default, |g| g.get(pos, ctx))
     }
 
     #[inline(always)]
-    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
+    fn update(&mut self, pos: &Position, ctx: C, delta: <Self::Stat as Stat>::Value) {
         if let Some(g) = self {
-            g.update(pos, m, delta);
+            g.update(pos, ctx, delta);
         }
     }
 }
 
-impl<T: Statistics> Statistics for NonNull<T> {
+impl<C, T: Statistics<C>> Statistics<C> for NonNull<T> {
     type Stat = T::Stat;
 
     #[inline(always)]
-    fn get(&mut self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
-        self.assume().get(pos, m)
+    fn get(&mut self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value {
+        self.assume().get(pos, ctx)
     }
 
     #[inline(always)]
-    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
-        self.assume().update(pos, m, delta)
+    fn update(&mut self, pos: &Position, ctx: C, delta: <Self::Stat as Stat>::Value) {
+        self.assume().update(pos, ctx, delta)
     }
 }
 
@@ -106,25 +106,26 @@ impl<T: Stat> Stat for Option<T> {
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct Graviton(i8);
+pub struct Graviton<const MIN: i16, const MAX: i16>(i16);
 
-unsafe impl Integer for Graviton {
-    type Repr = i8;
-    const MIN: Self::Repr = -Self::MAX;
-    const MAX: Self::Repr = 127;
+unsafe impl<const MIN: i16, const MAX: i16> Integer for Graviton<MIN, MAX> {
+    type Repr = i16;
+    const MIN: Self::Repr = MIN;
+    const MAX: Self::Repr = MAX;
 }
 
-impl Stat for Graviton {
-    type Value = i8;
+impl<const MIN: i16, const MAX: i16> Stat for Graviton<MIN, MAX> {
+    type Value = i16;
 
     #[inline(always)]
     fn get(&mut self) -> Self::Value {
+        const { assert!(MIN <= MAX) }
         self.0
     }
 
     #[inline(always)]
     fn update(&mut self, delta: Self::Value) {
-        let delta = delta.clamp(Self::MIN, Self::MAX) as i16;
-        self.0 = (delta - delta.abs() * self.0 as i16 / Self::MAX as i16 + self.0 as i16) as i8
+        let delta = delta.clamp(Self::MIN, Self::MAX) as i32;
+        self.0 = (delta - delta.abs() * self.0 as i32 / Self::MAX as i32 + self.0 as i32) as i16
     }
 }

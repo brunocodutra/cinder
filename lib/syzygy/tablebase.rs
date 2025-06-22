@@ -145,13 +145,13 @@ impl Tablebase {
 
         if pos.occupied().len() == 2 {
             Some(Wdl::Draw)
-        } else if let Some(wdl) = CACHE.get(pos.zobrist()) {
+        } else if let Some(wdl) = CACHE.get(pos.zobrists().hash) {
             Some(wdl)
         } else {
             let material = Material::from_iter(pos.iter().map(|(p, _)| p));
             let key = material.normalize();
             let wdl = self.wdl.get(&key)?.probe(pos, material);
-            CACHE.set(pos.zobrist(), wdl);
+            CACHE.set(pos.zobrists().hash, wdl);
             Some(wdl)
         }
     }

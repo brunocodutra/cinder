@@ -455,8 +455,8 @@ impl Position {
 
     /// This position's [zobrist hashes](`Zobrists`)
     #[inline(always)]
-    pub fn zobrist(&self) -> Zobrist {
-        self.zobrists.hash
+    pub fn zobrists(&self) -> &Zobrists {
+        &self.zobrists
     }
 
     /// [`Square`]s occupied by pieces giving check.
@@ -474,7 +474,7 @@ impl Position {
     /// How many other times this position has repeated.
     #[inline(always)]
     pub fn repetitions(&self) -> usize {
-        match NonZeroU32::new(self.zobrist().cast()) {
+        match NonZeroU32::new(self.zobrists().hash.cast()) {
             None => 0,
             hash => {
                 let history = &self.history[self.turn() as usize];
@@ -689,7 +689,7 @@ impl Position {
             self.board.halfmoves += 1;
             let entries = self.history[turn as usize].len();
             self.history[turn as usize].copy_within(..entries - 1, 1);
-            self.history[turn as usize][0] = NonZeroU32::new(self.zobrist().cast());
+            self.history[turn as usize][0] = NonZeroU32::new(self.zobrists().hash.cast());
         }
 
         self.board.turn = !self.board.turn;
@@ -779,7 +779,7 @@ impl Position {
         self.board.halfmoves += 1;
         let entries = self.history[turn as usize].len();
         self.history[turn as usize].copy_within(..entries - 1, 1);
-        self.history[turn as usize][0] = NonZeroU32::new(self.zobrist().cast());
+        self.history[turn as usize][0] = NonZeroU32::new(self.zobrists().hash.cast());
 
         self.board.turn = !self.board.turn;
         self.zobrists.hash ^= ZobristNumbers::turn();
@@ -1105,7 +1105,7 @@ mod tests {
 
     #[proptest]
     fn threefold_repetition_implies_draw(#[filter(#pos.outcome().is_none() )] mut pos: Position) {
-        let zobrist = NonZeroU32::new(pos.zobrist().cast());
+        let zobrist = NonZeroU32::new(pos.zobrists().hash.cast());
         prop_assume!(zobrist.is_some());
 
         pos.history[pos.turn() as usize][..2].clone_from_slice(&[zobrist, zobrist]);

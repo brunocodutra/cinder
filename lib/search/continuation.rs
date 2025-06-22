@@ -4,7 +4,7 @@ use crate::util::Assume;
 use derive_more::with_trait::Debug;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct Reply([[[Graviton; 64]; 2]; 6]);
+pub struct Reply([[[<Self as Statistics<Move>>::Stat; 64]; 2]; 6]);
 
 impl Default for Reply {
     #[inline(always)]
@@ -14,15 +14,17 @@ impl Default for Reply {
 }
 
 impl Reply {
+    pub const LIMIT: i16 = 128;
+
     #[inline(always)]
-    fn graviton(&mut self, pos: &Position, m: Move) -> &mut Graviton {
+    fn graviton(&mut self, pos: &Position, m: Move) -> &mut <Self as Statistics<Move>>::Stat {
         let role = pos.role_on(m.whence()).assume() as usize;
         &mut self.0[role][m.is_quiet() as usize][m.whither() as usize]
     }
 }
 
-impl Statistics for Reply {
-    type Stat = Graviton;
+impl Statistics<Move> for Reply {
+    type Stat = Graviton<{ -Self::LIMIT }, { Self::LIMIT }>;
 
     #[inline(always)]
     fn get(&mut self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {

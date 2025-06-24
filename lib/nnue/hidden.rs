@@ -66,7 +66,7 @@ impl<const N: usize> Hidden<N> {
     #[inline(always)]
     #[cfg(target_feature = "avx2")]
     pub unsafe fn avx2(&self, us: &[i16; N], them: &[i16; N]) -> i32 {
-        const { assert!(N % 128 == 0) }
+        const { assert!(N.is_multiple_of(128)) }
 
         use crate::util::Assume;
         use std::{arch::x86_64::*, mem::transmute};
@@ -86,8 +86,8 @@ impl<const N: usize> Hidden<N> {
             let mut y1 = _mm256_setzero_si256();
 
             for (w, x) in self.weight.iter().zip([us, them]) {
-                (w.as_ptr() as usize % 32 == 0).assume();
-                (x.as_ptr() as usize % 32 == 0).assume();
+                (w.as_ptr() as usize).is_multiple_of(32).assume();
+                (x.as_ptr() as usize).is_multiple_of(32).assume();
 
                 for (w, x) in Iterator::zip(w.array_chunks::<128>(), x.array_chunks::<128>()) {
                     let w = transmute::<&[i8; 128], &[__m128i; 8]>(w);
@@ -122,7 +122,7 @@ impl<const N: usize> Hidden<N> {
     #[inline(always)]
     #[cfg(target_feature = "ssse3")]
     pub unsafe fn sse(&self, us: &[i16; N], them: &[i16; N]) -> i32 {
-        const { assert!(N % 64 == 0) }
+        const { assert!(N.is_multiple_of(64)) }
 
         use crate::util::Assume;
         use std::{arch::x86_64::*, mem::transmute};
@@ -142,8 +142,8 @@ impl<const N: usize> Hidden<N> {
             let mut y1 = _mm_setzero_si128();
 
             for (w, x) in self.weight.iter().zip([us, them]) {
-                (w.as_ptr() as usize % 32 == 0).assume();
-                (x.as_ptr() as usize % 32 == 0).assume();
+                (w.as_ptr() as usize).is_multiple_of(32).assume();
+                (x.as_ptr() as usize).is_multiple_of(32).assume();
 
                 for (w, x) in Iterator::zip(w.array_chunks::<64>(), x.array_chunks::<64>()) {
                     let w = transmute::<&[i8; 64], &[u64; 8]>(w);

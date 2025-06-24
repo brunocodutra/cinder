@@ -134,7 +134,7 @@ impl Control {
         let trend_magnitude = Params::score_trend_magnitude() as f64 / Params::BASE as f64;
         let trend_pivot = Params::score_trend_pivot() as f64 / Params::BASE as f64;
 
-        if nodes % 1024 == 0 {
+        if nodes.is_multiple_of(1024) {
             let time = self.time().as_secs_f64();
             let focus = self.attention.nodes(best).get() as f64 / nodes.max(1024) as f64;
             let delta = f64::from_bits(self.trend.load(Relaxed)) - pv.score().get() as f64;

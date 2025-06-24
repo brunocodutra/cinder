@@ -53,9 +53,8 @@ Cinder is an open source project and you're very welcome to contribute to this p
 opening [issues] and/or [pull requests][pulls], see [CONTRIBUTING] for general guidelines.
 
 Building Cinder from source currently requires a recent nightly Rust compiler,
-[cargo-make], and [cargo-pgo]. To compile binaries optimized for various CPU architectures,
-simply run `cargo make --profile production cinder`. The binary artifacts will be placed
-under `target/bin/`.
+and [cargo-pgo]. To compile binaries optimized for various CPU architectures,
+simply run `make release`. The binary artifacts will be placed under `target/bin/`.
 
 ## License
 
@@ -64,7 +63,6 @@ Cinder is distributed under the terms of the GPL-3.0 license, see [LICENSE] for 
 [issues]:           https://github.com/brunocodutra/cinder/issues
 [pulls]:            https://github.com/brunocodutra/cinder/pulls
 
-[cargo-make]:       https://crates.io/crates/cargo-make
 [cargo-pgo]:        https://crates.io/crates/cargo-pgo
 
 [LICENSE]:          https://github.com/brunocodutra/cinder/blob/master/LICENSE

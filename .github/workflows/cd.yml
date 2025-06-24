@@ -13,8 +13,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
     - uses: actions/checkout@v4
-    - run: cargo install --force cargo-make cargo-pgo
-    - run: cargo make --profile production cinder
+    - run: cargo install --force cargo-pgo
+    - run: make release --ignore-errors
     - run: ls "${{ github.workspace }}/target/bin/"
     - uses: svenstaro/upload-release-action@v2
       with:

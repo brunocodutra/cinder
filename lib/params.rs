@@ -187,6 +187,7 @@ params! {
     see_pruning_threshold: Param<218534>,
     late_move_reduction_gamma: Param<1056>,
     late_move_reduction_delta: Param<3916>,
+    late_move_reduction_baseline: Param<1024>,
     late_move_reduction_is_pv: Param<4342>,
     late_move_reduction_was_pv: Param<1024>,
     late_move_reduction_cut: Param<5143>,

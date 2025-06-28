@@ -67,7 +67,7 @@ proptest = { version = "1.7.0" }
 rand = { version = "0.9.1" }
 reqwest = { version = "0.12.20", features = ["blocking"] }
 tempfile = "3.20.0"
-test-strategy = { version = "0.4.1" }
+test-strategy = { version = "0.4.3" }
 
 [profile.release]
 codegen-units = 1

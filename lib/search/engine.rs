@@ -213,12 +213,14 @@ impl<'a> Stack<'a> {
             return 0;
         }
 
-        let idx = self.evaluator.ply().cast::<usize>();
+        let ply = self.evaluator.ply();
+        let idx = ply.cast::<usize>();
+        let value = self.value[idx];
 
-        let a = (idx >= 2 && self.value[idx] > self.value[idx - 2]) as i32;
-        let b = (idx >= 4 && self.value[idx] > self.value[idx - 4]) as i32;
+        let a = ply >= 2 && !self.evaluator[ply - 2].is_check() && value > self.value[idx - 2];
+        let b = ply >= 4 && !self.evaluator[ply - 4].is_check() && value > self.value[idx - 4];
 
-        a + b
+        a as i32 + b as i32
     }
 
     /// The mate distance pruning.

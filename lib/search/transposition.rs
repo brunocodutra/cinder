@@ -106,17 +106,24 @@ pub struct Transposition {
     score: ScoreBound,
     depth: Depth,
     best: Option<Move>,
+    was_pv: bool,
 }
 
 impl Transposition {
-    const BITS: u32 = <ScoreBound as Binary>::Bits::BITS
+    const BITS: u32 = 1
+        + <ScoreBound as Binary>::Bits::BITS
         + <Depth as Binary>::Bits::BITS
         + <Move as Binary>::Bits::BITS;
 
     /// Constructs a [`Transposition`] given a [`ScoreBound`], the [`Depth`] searched, and the best [`Move`].
     #[inline(always)]
-    pub fn new(score: ScoreBound, depth: Depth, best: Option<Move>) -> Self {
-        Transposition { score, depth, best }
+    pub fn new(score: ScoreBound, depth: Depth, best: Option<Move>, was_pv: bool) -> Self {
+        Transposition {
+            score,
+            depth,
+            best,
+            was_pv,
+        }
     }
 
     /// The score bound.
@@ -125,16 +132,22 @@ impl Transposition {
         self.score
     }
 
-    /// The best move.
-    #[inline(always)]
-    pub fn best(&self) -> Option<Move> {
-        self.best
-    }
-
     /// The depth searched.
     #[inline(always)]
     pub fn depth(&self) -> Depth {
         self.depth
+    }
+
+    /// Whether this position was ever in the PV.
+    #[inline(always)]
+    pub fn was_pv(&self) -> bool {
+        self.was_pv
+    }
+
+    /// The best move.
+    #[inline(always)]
+    pub fn best(&self) -> Option<Move> {
+        self.best
     }
 
     /// The principal variation normalized to [`Ply`].
@@ -156,12 +169,14 @@ impl Binary for Transposition {
         bits.push(self.score.encode());
         bits.push(self.depth.encode());
         bits.push(self.best.encode());
+        bits.push::<u8, 1>(Bits::new(self.was_pv as _));
         bits
     }
 
     #[inline(always)]
     fn decode(mut bits: Self::Bits) -> Self {
         Transposition {
+            was_pv: bits.pop::<u8, 1>() == Bits::new(1),
             best: Binary::decode(bits.pop()),
             depth: Binary::decode(bits.pop()),
             score: Binary::decode(bits.pop()),

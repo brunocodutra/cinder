@@ -74,44 +74,45 @@ impl<'a> Stack<'a> {
         &mut self,
         depth: Depth,
         bounds: Range<Score>,
-        best: Move,
         score: Score,
+        best: Move,
         moves: &Moves,
+        was_pv: bool,
     ) {
+        let pos = &*self.evaluator;
         let ply = self.evaluator.ply();
+        let value = self.value[ply.cast::<usize>()];
+        let score = ScoreBound::new(bounds, score, ply);
+        let tpos = Transposition::new(score, depth, Some(best), was_pv);
+        self.tt.set(pos.zobrists().hash, tpos);
 
-        if score >= bounds.end {
+        if matches!(score, ScoreBound::Lower(_)) {
             if best.is_quiet() {
                 self.killers[ply.cast::<usize>()].insert(best);
             }
 
             let bonus = self.history_bonus(best, depth).saturate();
-            self.searcher.history.update(&self.evaluator, best, bonus);
+            self.searcher.history.update(pos, best, bonus);
 
             let bonus = self.continuation_bonus(best, depth);
             let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
-            reply.update(&self.evaluator, best, bonus.saturate());
+            reply.update(pos, best, bonus.saturate());
 
             for m in moves.iter() {
                 if m == best {
                     break;
                 } else {
                     let penalty = self.history_penalty(m, depth).saturate();
-                    self.searcher.history.update(&self.evaluator, m, penalty);
+                    self.searcher.history.update(pos, m, penalty);
 
                     let penalty = self.continuation_penalty(m, depth);
                     let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
-                    reply.update(&self.evaluator, m, penalty.saturate());
+                    reply.update(pos, m, penalty.saturate());
                 }
             }
         }
 
-        let value = self.value[ply.cast::<usize>()];
-        let score = ScoreBound::new(bounds, score, ply);
-        let tpos = Transposition::new(score, depth, Some(best));
-
-        if best.is_quiet() && !self.evaluator.is_check() && !score.range(ply).contains(&value) {
-            let pos = &*self.evaluator;
+        if best.is_quiet() && !pos.is_check() && !score.range(ply).contains(&value) {
             let zobrists = &pos.zobrists();
             let corrections = &mut self.searcher.corrections;
             let diff = score.bound(ply).cast::<i32>() - value.cast::<i32>();
@@ -134,8 +135,6 @@ impl<'a> Stack<'a> {
             corrections.white.update(pos, zobrists.white, bonus);
             corrections.black.update(pos, zobrists.black, bonus);
         }
-
-        self.tt.set(self.evaluator.zobrists().hash, tpos);
     }
 
     fn correction(&mut self) -> i32 {
@@ -418,6 +417,8 @@ impl<'a> Stack<'a> {
         }
 
         let is_pv = alpha + 1 < beta;
+        let was_pv = is_pv || transposition.as_ref().is_some_and(Transposition::was_pv);
+
         if let Some(t) = transposition {
             let (lower, upper) = t.score().range(ply).into_inner();
 
@@ -449,7 +450,7 @@ impl<'a> Stack<'a> {
                     };
 
                     if score.upper(ply) <= alpha || score.lower(ply) >= beta {
-                        let transposition = Transposition::new(score, depth, None);
+                        let transposition = Transposition::new(score, depth, None, was_pv);
                         self.tt.set(self.evaluator.zobrists().hash, transposition);
                         return Ok(transposition.transpose(ply).truncate());
                     }
@@ -573,7 +574,8 @@ impl<'a> Stack<'a> {
             let history = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
             let mut next = self.next(Some(m));
 
-            lmr -= is_pv as i32 * Params::late_move_reduction_pv();
+            lmr -= is_pv as i32 * Params::late_move_reduction_is_pv();
+            lmr -= was_pv as i32 * Params::late_move_reduction_was_pv();
             lmr -= killer.contains(m) as i32 * Params::late_move_reduction_killer();
             lmr -= next.evaluator.is_check() as i32 * Params::late_move_reduction_check();
             lmr -= history * Params::late_move_reduction_history() / History::LIMIT as i32;
@@ -595,7 +597,7 @@ impl<'a> Stack<'a> {
         }
 
         let tail = tail.clamp(lower, upper);
-        self.record(depth, bounds, head, tail.score(), &moves);
+        self.record(depth, bounds, tail.score(), head, &moves, was_pv);
         Ok(tail.transpose(head))
     }
 
@@ -652,7 +654,7 @@ impl<'a> Stack<'a> {
             }
         }
 
-        self.record(depth, bounds, head, tail.score(), moves);
+        self.record(depth, bounds, tail.score(), head, moves, true);
         Ok(tail.transpose(head))
     }
 
@@ -907,11 +909,12 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter(#b.mate() == Mate::None)] b: Score,
+        was_pv: bool,
         d: Depth,
         #[filter(#s.mate() == Mate::None && #s >= #b)] s: Score,
         cut: bool,
     ) {
-        let tpos = Transposition::new(ScoreBound::Lower(s), Depth::upper(), Some(m));
+        let tpos = Transposition::new(ScoreBound::Lower(s), Depth::upper(), Some(m), was_pv);
         e.tt.set(pos.zobrists().hash, tpos);
 
         let ctrl = Control::new(&pos, Limits::none());
@@ -929,11 +932,12 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter(#b.mate() == Mate::None)] b: Score,
+        was_pv: bool,
         d: Depth,
         #[filter(#s.mate() == Mate::None && #s < #b)] s: Score,
         cut: bool,
     ) {
-        let tpos = Transposition::new(ScoreBound::Upper(s), Depth::upper(), Some(m));
+        let tpos = Transposition::new(ScoreBound::Upper(s), Depth::upper(), Some(m), was_pv);
         e.tt.set(pos.zobrists().hash, tpos);
 
         let ctrl = Control::new(&pos, Limits::none());
@@ -951,11 +955,12 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter(#b.mate() == Mate::None)] b: Score,
+        was_pv: bool,
         d: Depth,
         #[filter(#s.mate() == Mate::None)] s: Score,
         cut: bool,
     ) {
-        let tpos = Transposition::new(ScoreBound::Exact(s), Depth::upper(), Some(m));
+        let tpos = Transposition::new(ScoreBound::Exact(s), Depth::upper(), Some(m), was_pv);
         e.tt.set(pos.zobrists().hash, tpos);
 
         let ctrl = Control::new(&pos, Limits::none());

@@ -576,6 +576,7 @@ impl<'a> Stack<'a> {
             let history = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
             let mut next = self.next(Some(m));
 
+            lmr += Params::late_move_reduction_baseline();
             lmr -= is_pv as i32 * Params::late_move_reduction_is_pv();
             lmr -= was_pv as i32 * Params::late_move_reduction_was_pv();
             lmr -= killer.contains(m) as i32 * Params::late_move_reduction_killer();

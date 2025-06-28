@@ -583,9 +583,9 @@ impl<'a> Stack<'a> {
             lmr += transposed.head().is_some_and(|m| !m.is_quiet()) as i32
                 * Params::late_move_reduction_tt_noisy();
 
-            let reduction = Ord::max(lmr / Params::BASE, 0);
-            let pv = match -next.nw(depth - reduction - 1, -alpha, !cut)? {
-                pv if pv <= alpha || (pv >= beta && reduction <= 0) => pv,
+            let lmr = Ord::max(lmr / Params::BASE, 0);
+            let pv = match -next.nw(depth - lmr - 1, -alpha, !cut)? {
+                pv if pv <= alpha || (pv >= beta && lmr <= 0) => pv,
                 _ => -next.ab(depth - 1, -beta..-alpha, false)?,
             };
 
@@ -639,18 +639,11 @@ impl<'a> Stack<'a> {
                 break;
             }
 
-            let lmr_depth = depth - self.lmr(depth, idx) / Params::BASE;
-            if self.value[0] + self.futility(lmr_depth) <= alpha {
-                let margin = Value::new(1) + self.fpt(lmr_depth);
-                if !self.evaluator.winning(m, margin) {
-                    continue;
-                }
-            }
-
+            let lmr = self.lmr(depth, idx) / Params::BASE;
             let mut next = self.next(Some(m));
             next.nodes = Some(next.ctrl.attention().nodes(m));
-            let pv = match -next.nw(lmr_depth - 1, -alpha, false)? {
-                pv if pv <= alpha || (pv >= beta && lmr_depth >= depth) => pv,
+            let pv = match -next.nw(depth - lmr - 1, -alpha, false)? {
+                pv if pv <= alpha || (pv >= beta && lmr <= 0) => pv,
                 _ => -next.ab(depth - 1, -beta..-alpha, false)?,
             };
 

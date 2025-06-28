@@ -220,7 +220,7 @@ impl<'a> Stack<'a> {
         let a = ply >= 2 && !self.evaluator[ply - 2].is_check() && value > self.value[idx - 2];
         let b = ply >= 4 && !self.evaluator[ply - 4].is_check() && value > self.value[idx - 4];
 
-        a as i32 + b as i32
+        Params::improving_2() * a as i32 + Params::improving_4() * b as i32
     }
 
     /// The mate distance pruning.
@@ -333,7 +333,7 @@ impl<'a> Stack<'a> {
     fn lmp(&self, depth: Depth, idx: usize) -> i32 {
         let gamma = Params::late_move_pruning_gamma();
         let delta = Params::late_move_pruning_delta();
-        Params::BASE * idx.cast::<i32>() / (delta + gamma * depth.cast::<i32>().pow(2))
+        Params::BASE.pow(2) * idx.cast::<i32>() / (delta + gamma * depth.cast::<i32>().pow(2))
     }
 
     /// Computes the late move reduction.
@@ -556,7 +556,10 @@ impl<'a> Stack<'a> {
                 s => s.max(alpha),
             };
 
-            if self.lmp(depth, idx) > improving {
+            let mut lmp_threshold = Params::late_move_pruning_baseline();
+            lmp_threshold += improving * Params::late_move_pruning_improving() / Params::BASE;
+
+            if self.lmp(depth, idx) > lmp_threshold {
                 break;
             } else if !self.evaluator.winning(m, Value::new(1) - self.spt(depth)) {
                 continue;
@@ -583,7 +586,7 @@ impl<'a> Stack<'a> {
             lmr -= next.evaluator.is_check() as i32 * Params::late_move_reduction_check();
             lmr -= history * Params::late_move_reduction_history() / History::LIMIT as i32;
             lmr -= continuation * Params::late_move_reduction_continuation() / Reply::LIMIT as i32;
-            lmr -= improving * Params::late_move_reduction_improving();
+            lmr -= improving * Params::late_move_reduction_improving() / Params::BASE;
             lmr += cut as i32 * Params::late_move_reduction_cut();
             lmr += transposed.head().is_some_and(|m| !m.is_quiet()) as i32
                 * Params::late_move_reduction_tt_noisy();
@@ -640,7 +643,7 @@ impl<'a> Stack<'a> {
                 s => s.max(alpha),
             };
 
-            if self.lmp(depth, idx) > 0 {
+            if self.lmp(depth, idx) > Params::late_move_pruning_baseline() {
                 break;
             }
 

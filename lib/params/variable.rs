@@ -1,6 +1,7 @@
 use crate::params::Params;
 use derive_more::with_trait::{Display, Error};
 use serde::{Deserialize, Serialize};
+use std::cmp::max;
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -17,16 +18,24 @@ pub struct Param<const V: i32, const K: i32 = 1> {
 }
 
 impl<const V: i32, const K: i32> Param<V, K> {
+    const RANGE: i32 = if V < Params::BASE / 4 {
+        K * Params::BASE / 4
+    } else {
+        K * V
+    };
+
     pub const fn new() -> Self {
+        const { assert!(V >= 0) }
+        const { assert!(K >= 0) }
         Self { value: V as f64 }
     }
 
     pub fn min() -> i32 {
-        Ord::max(V - Ord::max(V, Params::BASE) * K / 2, 0)
+        max(V - Self::RANGE / 2, 0)
     }
 
     pub fn max() -> i32 {
-        Self::min() + Ord::max(V, Params::BASE) * K
+        Self::min() + Self::RANGE
     }
 
     pub fn get(&self) -> i32 {

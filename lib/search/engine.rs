@@ -39,6 +39,7 @@ struct Stack<'a> {
     replies: [Option<NonNull<Reply>>; Ply::MAX as usize + 1],
     killers: [Killers; Ply::MAX as usize + 1],
     value: [Value; Ply::MAX as usize + 1],
+    eval: [Value; Ply::MAX as usize + 1],
     evaluator: Evaluator,
     pv: Pv,
 }
@@ -60,6 +61,7 @@ impl<'a> Stack<'a> {
             replies: [const { None }; Ply::MAX as usize + 1],
             killers: [Default::default(); Ply::MAX as usize + 1],
             value: [Default::default(); Ply::MAX as usize + 1],
+            eval: [Default::default(); Ply::MAX as usize + 1],
             pv: if evaluator.is_check() {
                 Pv::empty(Score::mated(Ply::new(0)))
             } else {
@@ -81,7 +83,6 @@ impl<'a> Stack<'a> {
     ) {
         let pos = &*self.evaluator;
         let ply = self.evaluator.ply();
-        let value = self.value[ply.cast::<usize>()];
         let score = ScoreBound::new(bounds, score, ply);
         let tpos = Transposition::new(score, depth, Some(best), was_pv);
         self.tt.set(pos.zobrists().hash, tpos);
@@ -112,6 +113,7 @@ impl<'a> Stack<'a> {
             }
         }
 
+        let value = self.value[ply.cast::<usize>()];
         if best.is_quiet() && !pos.is_check() && !score.range(ply).contains(&value) {
             let zobrists = &pos.zobrists();
             let corrections = &mut self.searcher.corrections;
@@ -119,11 +121,10 @@ impl<'a> Stack<'a> {
 
             let gamma = Params::correction_gradient_gamma();
             let delta = Params::correction_gradient_delta();
-            let limit = Params::correction_gradient_limit();
-            let grad = (gamma * depth.cast::<i32>() + delta).min(limit) / Params::BASE;
+            let grad = (gamma * depth.get().max(1).ilog2() as i32 + delta) / Params::BASE;
 
-            let bonus = (Params::pawn_correction_bonus() * grad * diff / Params::BASE).saturate();
-            corrections.pawn.update(pos, zobrists.pawns, bonus);
+            let bonus = (Params::pawns_correction_bonus() * grad * diff / Params::BASE).saturate();
+            corrections.pawns.update(pos, zobrists.pawns, bonus);
 
             let bonus = (Params::minor_correction_bonus() * grad * diff / Params::BASE).saturate();
             corrections.minor.update(pos, zobrists.minor, bonus);
@@ -140,14 +141,14 @@ impl<'a> Stack<'a> {
     fn correction(&mut self) -> i32 {
         let zobrists = &self.evaluator.zobrists();
         let corrections = &mut self.searcher.corrections;
-        let pawn = corrections.pawn.get(&self.evaluator, zobrists.pawns);
+        let pawns = corrections.pawns.get(&self.evaluator, zobrists.pawns);
         let minor = corrections.minor.get(&self.evaluator, zobrists.minor);
         let major = corrections.major.get(&self.evaluator, zobrists.major);
         let white = corrections.white.get(&self.evaluator, zobrists.white);
         let black = corrections.black.get(&self.evaluator, zobrists.black);
 
         let mut correction = 0;
-        correction += pawn as i32 * Params::pawn_correction();
+        correction += pawns as i32 * Params::pawns_correction();
         correction += minor as i32 * Params::minor_correction();
         correction += major as i32 * Params::major_correction();
         correction += white as i32 * Params::pieces_correction();
@@ -236,7 +237,6 @@ impl<'a> Stack<'a> {
         let gamma = Params::null_move_reduction_gamma();
         let delta = Params::null_move_reduction_delta();
         match Params::BASE * surplus.cast::<i32>() {
-            ..0 => None,
             s if s < gamma - delta => None,
             s if s >= 3 * gamma - delta => Some(depth - 3 - depth / 4),
             s => Some(depth - (s + delta) / gamma - depth / 4),
@@ -288,57 +288,63 @@ impl<'a> Stack<'a> {
 
     /// Computes the razoring margin.
     fn razoring(&self, depth: Depth) -> i32 {
+        let theta = Params::razoring_margin_theta();
         let gamma = Params::razoring_margin_gamma();
         let delta = Params::razoring_margin_delta();
 
-        if depth <= 4 {
-            (gamma * depth.cast::<i32>() + delta) / Params::BASE
-        } else {
-            i32::MAX
-        }
+        let d = depth.cast::<i32>();
+        (theta * d.pow(2) + gamma * d + delta) / Params::BASE
     }
 
     /// Computes the reverse futility margin.
     fn rfp(&self, depth: Depth) -> i32 {
+        let theta = Params::reverse_futility_margin_theta();
         let gamma = Params::reverse_futility_margin_gamma();
         let delta = Params::reverse_futility_margin_delta();
 
-        if depth <= 6 {
-            (gamma * depth.cast::<i32>() + delta) / Params::BASE
-        } else {
-            i32::MAX
-        }
+        let d = depth.cast::<i32>();
+        (theta * d.pow(2) + gamma * d + delta) / Params::BASE
     }
 
     /// Computes the futility margin.
     fn futility(&self, depth: Depth) -> i32 {
+        let theta = Params::futility_margin_theta();
         let gamma = Params::futility_margin_gamma();
         let delta = Params::futility_margin_delta();
-        gamma * depth.cast::<i32>() + delta
+
+        let d = depth.cast::<i32>();
+        theta * d.pow(2) + gamma * d + delta
     }
 
     /// Computes the SEE pruning threshold.
     fn spt(&self, depth: Depth) -> i32 {
+        let theta = Params::see_pruning_theta();
         let gamma = Params::see_pruning_gamma();
         let delta = Params::see_pruning_delta();
-        delta - gamma * depth.cast::<i32>()
+
+        let d = depth.cast::<i32>();
+        delta - gamma * d - theta * d.pow(2)
     }
 
     /// Computes the late move pruning threshold.
     fn lmp(&self, depth: Depth, idx: usize) -> i32 {
+        let theta = Params::late_move_pruning_theta();
         let gamma = Params::late_move_pruning_gamma();
         let delta = Params::late_move_pruning_delta();
-        Params::BASE.pow(2) * idx.cast::<i32>() / (delta + gamma * depth.cast::<i32>().pow(2))
+
+        let d = depth.cast::<i32>();
+        Params::BASE.pow(2) * idx.cast::<i32>() / (theta * d.pow(2) + gamma * d + delta)
     }
 
     /// Computes the late move reduction.
     fn lmr(&self, depth: Depth, idx: usize) -> i32 {
+        let theta = Params::late_move_reduction_theta();
         let gamma = Params::late_move_reduction_gamma();
         let delta = Params::late_move_reduction_delta();
 
         let x = idx.max(1).ilog2() as i32;
         let y = depth.get().max(1).ilog2() as i32;
-        gamma * x * y + delta
+        theta * x * y + gamma * (x + y) + delta
     }
 
     #[must_use]
@@ -401,7 +407,9 @@ impl<'a> Stack<'a> {
             return Ok(Pv::empty(alpha));
         }
 
-        self.value[ply.cast::<usize>()] = self.evaluator.evaluate() + self.correction();
+        self.eval[ply.cast::<usize>()] = self.evaluator.evaluate();
+        self.value[ply.cast::<usize>()] = self.eval[ply.cast::<usize>()] + self.correction();
+
         let transposition = self.tt.get(self.evaluator.zobrists().hash);
         let transposed = match transposition {
             None => Pv::empty(self.value[ply.cast::<usize>()].saturate()),
@@ -626,6 +634,8 @@ impl<'a> Stack<'a> {
             return Err(Interrupted);
         }
 
+        self.value[0] = self.eval[0] + self.correction();
+
         moves.sort(|m| {
             if Some(m) == self.pv.head() {
                 Bounded::upper()
@@ -690,7 +700,8 @@ impl<'a> Stack<'a> {
             let mut stop = matches!((moves.len(), &clock), (0, _) | (1, Some(_)));
             let mut depth = Depth::new(0);
 
-            self.value[0] = self.evaluator.evaluate();
+            self.eval[0] = self.evaluator.evaluate();
+            self.value[0] = self.eval[0] + self.correction();
             if let Some(t) = self.tt.get(self.evaluator.zobrists().hash) {
                 if t.best().is_some_and(|m| moves.iter().any(|n| m == n)) {
                     self.pv = t.transpose(Ply::new(0)).truncate();
@@ -845,7 +856,7 @@ impl<'e, 'p> Stream for Search<'e, 'p> {
 
 #[derive(Debug, Default)]
 struct Corrections {
-    pawn: Correction,
+    pawns: Correction,
     minor: Correction,
     major: Correction,
     white: Correction,

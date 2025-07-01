@@ -5,6 +5,7 @@ pub struct Param<const V: i32, const K: i32 = 1> {}
 impl<const V: i32, const K: i32> Param<V, K> {
     #[inline(always)]
     pub const fn new() -> Self {
+        const { assert!(V >= 0) }
         Self {}
     }
 

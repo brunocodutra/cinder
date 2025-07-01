@@ -234,8 +234,8 @@ impl<'a> Stack<'a> {
 
     /// Computes the null move pruning reduction.
     fn nmp(&self, surplus: Score, depth: Depth) -> Option<Depth> {
-        let gamma = Params::null_move_reduction_gamma();
-        let delta = Params::null_move_reduction_delta();
+        let gamma = Params::null_move_pruning_gamma();
+        let delta = Params::null_move_pruning_delta();
         match Params::BASE * surplus.cast::<i32>() {
             s if s < gamma - delta => None,
             s if s >= 3 * gamma - delta => Some(depth - 3 - depth / 4),
@@ -293,7 +293,7 @@ impl<'a> Stack<'a> {
         let delta = Params::razoring_margin_delta();
 
         let d = depth.cast::<i32>();
-        (theta * d.pow(2) + gamma * d + delta) / Params::BASE
+        theta * d.pow(2) + gamma * d + delta
     }
 
     /// Computes the reverse futility margin.
@@ -303,7 +303,7 @@ impl<'a> Stack<'a> {
         let delta = Params::reverse_futility_margin_delta();
 
         let d = depth.cast::<i32>();
-        (theta * d.pow(2) + gamma * d + delta) / Params::BASE
+        theta * d.pow(2) + gamma * d + delta
     }
 
     /// Computes the futility margin.
@@ -407,8 +407,9 @@ impl<'a> Stack<'a> {
             return Ok(Pv::empty(alpha));
         }
 
+        let correction = self.correction();
         self.eval[ply.cast::<usize>()] = self.evaluator.evaluate();
-        self.value[ply.cast::<usize>()] = self.eval[ply.cast::<usize>()] + self.correction();
+        self.value[ply.cast::<usize>()] = self.eval[ply.cast::<usize>()] + correction;
 
         let transposition = self.tt.get(self.evaluator.zobrists().hash);
         let transposed = match transposition {
@@ -466,21 +467,29 @@ impl<'a> Stack<'a> {
         };
 
         let alpha = alpha.max(lower);
+        let improving = self.improving();
         let transposed = transposed.clamp(lower, upper);
+        let noisy_pv = transposed.head().is_some_and(|m| !m.is_quiet());
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
-        } else if !is_pv && !self.evaluator.is_check() && depth > 0 {
-            if self.value[ply.cast::<usize>()] + self.razoring(depth) <= alpha {
+        } else if !is_pv && depth > 0 && !self.evaluator.is_check() {
+            if self.value[ply.cast::<usize>()] + self.razoring(depth) / Params::BASE <= alpha {
                 let pv = self.nw(Depth::new(0), beta, cut)?;
                 if pv <= alpha {
                     return Ok(pv);
                 }
             }
 
-            if transposed.score() - self.rfp(depth) >= beta {
+            let mut margin = self.rfp(depth);
+            margin -= improving * Params::reverse_futility_margin_improving() / Params::BASE;
+            margin -= noisy_pv as i32 * Params::reverse_futility_margin_noisy_pv();
+            margin -= cut as i32 * Params::reverse_futility_margin_cut();
+            if transposed.score() - margin / Params::BASE >= beta {
                 return Ok(transposed.truncate());
-            } else if let Some(d) = self.nmp(transposed.score() - beta, depth) {
-                if self.evaluator.pieces(self.evaluator.turn()).len() > 1 {
+            }
+
+            if self.evaluator.pieces(self.evaluator.turn()).len() > 1 {
+                if let Some(d) = self.nmp(transposed.score() - beta, depth) {
                     if d <= 0 || -self.next(None).nw::<0>(d - 1, -beta + 1, !cut)? >= beta {
                         return Ok(transposed.truncate());
                     }
@@ -552,7 +561,6 @@ impl<'a> Stack<'a> {
             }
         };
 
-        let improving = self.improving();
         for (idx, m) in moves.sorted().skip(1).enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -603,9 +611,8 @@ impl<'a> Stack<'a> {
             lmr -= history * Params::late_move_reduction_history() / History::LIMIT as i32;
             lmr -= continuation * Params::late_move_reduction_continuation() / Reply::LIMIT as i32;
             lmr -= improving * Params::late_move_reduction_improving() / Params::BASE;
+            lmr += noisy_pv as i32 * Params::late_move_reduction_noisy_pv();
             lmr += cut as i32 * Params::late_move_reduction_cut();
-            lmr += transposed.head().is_some_and(|m| !m.is_quiet()) as i32
-                * Params::late_move_reduction_noisy_pv();
 
             let pv = match -next.nw(depth - lmr.max(0) / Params::BASE - 1, -alpha, !cut)? {
                 pv if pv <= alpha || (pv >= beta && lmr < Params::BASE) => pv,

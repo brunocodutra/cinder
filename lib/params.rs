@@ -30,6 +30,27 @@ mod constant;
 #[cfg(not(feature = "spsa"))]
 pub use constant::*;
 
+pub trait Param: Sized {
+    #[cfg(feature = "spsa")]
+    const LEN: usize;
+
+    type Value;
+
+    fn get(&self) -> Self::Value;
+
+    #[cfg(feature = "spsa")]
+    fn min() -> Self::Value;
+
+    #[cfg(feature = "spsa")]
+    fn max() -> Self::Value;
+
+    #[cfg(feature = "spsa")]
+    fn perturb<I: IntoIterator<Item = f64>>(&self, perturbations: I) -> (Self, Self);
+
+    #[cfg(feature = "spsa")]
+    fn update<I: IntoIterator<Item = f64>>(&mut self, corrections: I);
+}
+
 static PARAMS: SyncUnsafeCell<Params> = SyncUnsafeCell::new(Params::new());
 
 #[cfg(feature = "spsa")]
@@ -58,9 +79,9 @@ impl FromStr for Params {
 
 #[cfg(feature = "spsa")]
 macro_rules! len {
-    ($name:ident,) => { 1 };
-    ($first:ident, $($rest:ident,)*) => {
-        1 + len!($($rest,)*)
+    ($name:ty,) => { 1 };
+    ($first:ty, $($rest:ty,)*) => {
+        <$first>::LEN + len!($($rest,)*)
     }
 }
 
@@ -87,7 +108,7 @@ macro_rules! params {
         $(impl Params {
             /// This parameter's current value.
             #[inline(always)]
-            pub fn $name() -> i32 {
+            pub fn $name() -> <$type as Param>::Value {
                 unsafe { PARAMS.get().as_ref_unchecked().$name.get() }
             }
         })*
@@ -95,7 +116,7 @@ macro_rules! params {
         #[cfg(feature = "spsa")]
         impl Params {
             /// The number of parameters.
-            pub const LEN: usize = len!($($name,)*);
+            pub const LEN: usize = len!($($type,)*);
 
             /// Initializes the global [`PARAMS`].
             pub fn init(self) {
@@ -128,113 +149,104 @@ macro_rules! params {
 }
 
 params! {
-    value_scale: Param<524288, 0>,
-    moves_left_start: Param<729101, 0>,
-    moves_left_end: Param<8541, 0>,
-    soft_time_fraction: Param<3055, 0>,
-    hard_time_fraction: Param<3501, 0>,
-    score_trend_inertia: Param<28907, 0>,
-    pv_focus_gamma: Param<6752, 0>,
-    pv_focus_delta: Param<7735, 0>,
-    score_trend_magnitude: Param<3439, 0>,
-    score_trend_pivot: Param<128037>,
-    pawns_correction: Param<53122>,
-    minor_correction: Param<42507>,
-    major_correction: Param<53283>,
-    pieces_correction: Param<63172>,
-    correction_gradient_gamma: Param<2197>,
-    correction_gradient_delta: Param<2816>,
-    pawns_correction_bonus: Param<3448>,
-    minor_correction_bonus: Param<3643>,
-    major_correction_bonus: Param<3725>,
-    pieces_correction_bonus: Param<3487>,
-    quiet_history_bonus_gamma: Param<9242>,
-    quiet_history_bonus_delta: Param<1394>,
-    noisy_history_bonus_gamma: Param<6489>,
-    noisy_history_bonus_delta: Param<385>,
-    quiet_continuation_bonus_gamma: Param<10262>,
-    quiet_continuation_bonus_delta: Param<1772>,
-    noisy_continuation_bonus_gamma: Param<9174>,
-    noisy_continuation_bonus_delta: Param<1553>,
-    quiet_history_penalty_gamma: Param<10964>,
-    quiet_history_penalty_delta: Param<3622>,
-    noisy_history_penalty_gamma: Param<8954>,
-    noisy_history_penalty_delta: Param<2331>,
-    quiet_continuation_penalty_gamma: Param<10082>,
-    quiet_continuation_penalty_delta: Param<1355>,
-    noisy_continuation_penalty_gamma: Param<9464>,
-    noisy_continuation_penalty_delta: Param<1900>,
-    improving_2: Param<3601>,
-    improving_4: Param<4429>,
-    fail_high_reduction_gamma: Param<469832>,
-    fail_high_reduction_delta: Param<234248>,
-    fail_low_reduction_gamma: Param<1473904>,
-    fail_low_reduction_delta: Param<481719>,
-    single_extension_margin_gamma: Param<2893>,
-    single_extension_margin_delta: Param<2059>,
-    double_extension_margin_gamma: Param<4826>,
-    double_extension_margin_delta: Param<1173>,
-    triple_extension_margin_gamma: Param<2600>,
-    triple_extension_margin_delta: Param<636415>,
-    null_move_pruning_gamma: Param<47917>,
-    null_move_pruning_delta: Param<29724>,
-    razoring_margin_theta: Param<39340>,
-    razoring_margin_gamma: Param<97390>,
-    razoring_margin_delta: Param<154303>,
-    reverse_futility_margin_theta: Param<7786>,
-    reverse_futility_margin_gamma: Param<41220>,
-    reverse_futility_margin_delta: Param<36629>,
-    reverse_futility_margin_improving: Param<21363>,
-    reverse_futility_margin_noisy_pv: Param<4902>,
-    reverse_futility_margin_cut: Param<11169>,
-    futility_margin_theta: Param<1541>,
-    futility_margin_gamma: Param<133928>,
-    futility_margin_delta: Param<232438>,
-    futility_margin_is_pv: Param<30176>,
-    futility_margin_was_pv: Param<26686>,
-    futility_margin_gain: Param<5710>,
-    futility_margin_killer: Param<27863>,
-    futility_margin_check: Param<27551>,
-    futility_margin_history: Param<18111>,
-    futility_margin_continuation: Param<20278>,
-    futility_margin_improving: Param<16346>,
-    see_pruning_theta: Param<2392>,
-    see_pruning_gamma: Param<249649>,
-    see_pruning_delta: Param<3922>,
-    see_pruning_killer: Param<31273>,
-    see_pruning_history: Param<10874>,
-    see_pruning_continuation: Param<21552>,
-    late_move_reduction_theta: Param<918>,
-    late_move_reduction_gamma: Param<398>,
-    late_move_reduction_delta: Param<2919>,
-    late_move_reduction_baseline: Param<1219>,
-    late_move_reduction_root: Param<2384>,
-    late_move_reduction_is_pv: Param<2906>,
-    late_move_reduction_was_pv: Param<901>,
-    late_move_reduction_killer: Param<4802>,
-    late_move_reduction_check: Param<3988>,
-    late_move_reduction_history: Param<4127>,
-    late_move_reduction_continuation: Param<5773>,
-    late_move_reduction_improving: Param<1763>,
-    late_move_reduction_noisy_pv: Param<3242>,
-    late_move_reduction_cut: Param<5715>,
-    late_move_pruning_theta: Param<1772>,
-    late_move_pruning_gamma: Param<1160>,
-    late_move_pruning_delta: Param<4131>,
-    late_move_pruning_baseline: Param<3056>,
-    late_move_pruning_root: Param<4422>,
-    late_move_pruning_is_pv: Param<4235>,
-    late_move_pruning_was_pv: Param<3281>,
-    late_move_pruning_check: Param<3917>,
-    late_move_pruning_improving: Param<4657>,
-    killer_move_bonus: Param<225177>,
-    history_rating: Param<3417>,
-    continuation_rating: Param<5315>,
-    winning_rating_gamma: Param<7102>,
-    winning_rating_delta: Param<61864>,
-    aspiration_window_start: Param<22194>,
-    aspiration_window_gamma: Param<5599>,
-    aspiration_window_delta: Param<6676>,
+    value_scale: Constant<524288>,
+    moves_left_start: Constant<729101>,
+    moves_left_end: Constant<8541>,
+    soft_time_fraction: Constant<3055>,
+    hard_time_fraction: Constant<3501>,
+    score_trend_inertia: Constant<28907>,
+    pv_focus_gamma: Constant<6752>,
+    pv_focus_delta: Constant<7735>,
+    score_trend_magnitude: Constant<3439>,
+    score_trend_pivot: Scalar<135241>,
+    pawns_correction: Scalar<49839>,
+    minor_correction: Scalar<45339>,
+    major_correction: Scalar<48980>,
+    pieces_correction: Scalar<61072>,
+    correction_gradient_gamma: Scalar<1932>,
+    correction_gradient_delta: Scalar<2829>,
+    pawns_correction_bonus: Scalar<128431>,
+    minor_correction_bonus: Scalar<119736>,
+    major_correction_bonus: Scalar<120857>,
+    pieces_correction_bonus: Scalar<124393>,
+    history_bonus_quiet_gamma: Scalar<320738>,
+    history_bonus_quiet_delta: Scalar<45168>,
+    history_bonus_noisy_gamma: Scalar<211339>,
+    history_bonus_noisy_delta: Scalar<10332>,
+    history_penalty_quiet_gamma: Scalar<-379900>,
+    history_penalty_quiet_delta: Scalar<-110331>,
+    history_penalty_noisy_gamma: Scalar<-251402>,
+    history_penalty_noisy_delta: Scalar<-90270>,
+    continuation_bonus_quiet_gamma: Scalar<11220>,
+    continuation_bonus_quiet_delta: Scalar<1877>,
+    continuation_bonus_noisy_gamma: Scalar<8724>,
+    continuation_bonus_noisy_delta: Scalar<1453>,
+    continuation_penalty_quiet_gamma: Scalar<-9530>,
+    continuation_penalty_quiet_delta: Scalar<-1366>,
+    continuation_penalty_noisy_gamma: Scalar<-8736>,
+    continuation_penalty_noisy_delta: Scalar<-2016>,
+    fail_high_reduction_gamma: Scalar<437482>,
+    fail_high_reduction_delta: Scalar<243415>,
+    fail_low_reduction_gamma: Scalar<1469245>,
+    fail_low_reduction_delta: Scalar<449990>,
+    single_extension_margin_gamma: Scalar<2238>,
+    single_extension_margin_delta: Scalar<2131>,
+    double_extension_margin_gamma: Scalar<5071>,
+    double_extension_margin_delta: Scalar<1239>,
+    triple_extension_margin_gamma: Scalar<2485>,
+    triple_extension_margin_delta: Scalar<600655>,
+    null_move_pruning_gamma: Scalar<50188>,
+    null_move_pruning_delta: Scalar<23384>,
+    razoring_margin_scalar: Vector2<{ [135346, 103110] }>,
+    razoring_margin_depth: Vector1<{ [45913] }>,
+    reverse_futility_margin_scalar: Vector5<{ [40060, 42754, -28079, -4537, -11256] }>,
+    reverse_futility_margin_depth: Vector4<{ [8031, 0, 0, 0] }>,
+    reverse_futility_margin_improving: Vector3<{ [0, 0, 0] }>,
+    reverse_futility_margin_noisy_pv: Vector2<{ [0, 0] }>,
+    reverse_futility_margin_cut: Vector1<{ [0] }>,
+    futility_margin_scalar: Vector7<{ [212895, 154546, 30719, 25270, 26365, 28997, 28016] }>,
+    futility_margin_depth: Vector6<{ [1683, 0, 0, 0, 0, 0] }>,
+    futility_margin_is_pv: Vector5<{ [0, 0, 0, 0, 0] }>,
+    futility_margin_was_pv: Vector4<{ [0, 0, 0, 0] }>,
+    futility_margin_improving: Vector3<{ [0, 0, 0] }>,
+    futility_margin_is_killer: Vector2<{ [0, 0] }>,
+    futility_margin_in_check: Vector1<{ [0] }>,
+    futility_margin_gain: Scalar<4843>,
+    futility_margin_history: Scalar<18508>,
+    futility_margin_continuation: Scalar<22578>,
+    see_pruning_margin_scalar: Vector3<{ [3559, -249438, -33588] }>,
+    see_pruning_margin_depth: Vector2<{ [-2589, 0] }>,
+    see_pruning_margin_is_killer: Vector1<{ [0] }>,
+    see_pruning_history: Scalar<-11354>,
+    see_pruning_continuation: Scalar<-20205>,
+    late_move_reduction_scalar: Vector11<{ [4049, 406, 406, -3032, -903, -2337, -4796, -3682, 3459, 5921, -2298] }>,
+    late_move_reduction_depth: Vector10<{ [0, 852, 0, 0, 0, 0, 0, 0, 0, 0] }>,
+    late_move_reduction_index: Vector9<{ [0, 0, 0, 0, 0, 0, 0, 0, 0] }>,
+    late_move_reduction_is_pv: Vector8<{ [0, 0, 0, 0, 0, 0, 0, 3032] }>,
+    late_move_reduction_was_pv: Vector7<{ [0, 0, 0, 0, 0, 0, 903] }>,
+    late_move_reduction_improving: Vector6<{ [0, 0, 0, 0, 0, 0] }>,
+    late_move_reduction_is_killer: Vector5<{ [0, 0, 0, 0, 0] }>,
+    late_move_reduction_gives_check: Vector4<{ [0, 0, 0, 0] }>,
+    late_move_reduction_noisy_pv: Vector3<{ [0, 0, 0] }>,
+    late_move_reduction_cut: Vector2<{ [0, 0] }>,
+    late_move_reduction_is_root: Vector1<{ [0] }>,
+    late_move_reduction_history: Scalar<-4138>,
+    late_move_reduction_continuation: Scalar<-6114>,
+    late_move_pruning_scalar: Vector7<{ [4011, 1041, 0, 0, 0, 0, 0] }>,
+    late_move_pruning_depth: Vector6<{ [2067, 3945, 2918, 6488, 3805, 3999] }>,
+    late_move_pruning_is_pv: Vector5<{ [0, 0, 0, 0, 0] }>,
+    late_move_pruning_was_pv: Vector4<{ [0, 0, 0, 0] }>,
+    late_move_pruning_improving: Vector3<{ [0, 0, 0] }>,
+    late_move_pruning_in_check: Vector2<{ [0, 0] }>,
+    late_move_pruning_is_root: Vector1<{ [0] }>,
+    killer_move_bonus: Scalar<244544>,
+    history_rating: Scalar<452601>,
+    continuation_rating: Scalar<505784>,
+    winning_rating_gamma: Scalar<5753>,
+    winning_rating_delta: Scalar<69058>,
+    aspiration_window_start: Scalar<18939>,
+    aspiration_window_gamma: Scalar<5949>,
+    aspiration_window_delta: Scalar<7779>,
 }
 
 #[cfg(test)]

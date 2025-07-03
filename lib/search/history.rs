@@ -15,7 +15,7 @@ impl Default for History {
 }
 
 impl History {
-    pub const LIMIT: i16 = 128;
+    pub const LIMIT: i16 = 4096;
 
     #[inline(always)]
     fn graviton(&mut self, pos: &Position, m: Move) -> &mut <Self as Statistics<Move>>::Stat {

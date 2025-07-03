@@ -1,8 +1,9 @@
-#![allow(clippy::collapsible_if)]
+#![allow(clippy::collapsible_if, clippy::too_many_arguments)]
 #![cfg_attr(test, recursion_limit = "1024")]
 #![cfg_attr(target_arch = "x86_64", feature(stdarch_x86_mm_shuffle))]
 #![cfg_attr(target_arch = "aarch64", feature(stdarch_aarch64_prefetch))]
 #![feature(
+    adt_const_params,
     array_chunks,
     coverage_attribute,
     gen_blocks,

@@ -84,7 +84,7 @@ strip = false
 
 [lib]
 name = "cinder"
-path = "lib/cinder.rs"
+path = "lib/lib.rs"
 bench = false
 
 [[bin]]

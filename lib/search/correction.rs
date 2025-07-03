@@ -3,7 +3,7 @@ use crate::search::{Graviton, Stat, Statistics};
 use crate::util::Integer;
 use derive_more::with_trait::Debug;
 
-const BUCKETS: usize = 16384;
+const BUCKETS: usize = 8192;
 
 /// Historical statistics about a [`Move`].
 #[derive(Debug)]

@@ -117,22 +117,22 @@ impl<'a> Stack<'a> {
         if best.is_quiet() && !pos.is_check() && !score.range(ply).contains(&value) {
             let zobrists = &pos.zobrists();
             let corrections = &mut self.searcher.corrections;
-            let diff = score.bound(ply).cast::<i32>() - value.cast::<i32>();
 
             let gamma = Params::correction_gradient_gamma();
             let delta = Params::correction_gradient_delta();
-            let grad = (gamma * depth.get().max(1).ilog2() as i32 + delta) / Params::BASE;
+            let diff = score.bound(ply).cast::<i32>() - value.cast::<i32>();
+            let grad = diff * (gamma * depth.get().max(1).ilog2() as i32 + delta) / Params::BASE;
 
-            let bonus = (Params::pawns_correction_bonus() * grad * diff / Params::BASE).saturate();
+            let bonus = (Params::pawns_correction_bonus() * grad / Params::BASE).saturate();
             corrections.pawns.update(pos, zobrists.pawns, bonus);
 
-            let bonus = (Params::minor_correction_bonus() * grad * diff / Params::BASE).saturate();
+            let bonus = (Params::minor_correction_bonus() * grad / Params::BASE).saturate();
             corrections.minor.update(pos, zobrists.minor, bonus);
 
-            let bonus = (Params::major_correction_bonus() * grad * diff / Params::BASE).saturate();
+            let bonus = (Params::major_correction_bonus() * grad / Params::BASE).saturate();
             corrections.major.update(pos, zobrists.major, bonus);
 
-            let bonus = (Params::pieces_correction_bonus() * grad * diff / Params::BASE).saturate();
+            let bonus = (Params::pieces_correction_bonus() * grad / Params::BASE).saturate();
             corrections.white.update(pos, zobrists.white, bonus);
             corrections.black.update(pos, zobrists.black, bonus);
         }
@@ -148,20 +148,20 @@ impl<'a> Stack<'a> {
         let black = corrections.black.get(&self.evaluator, zobrists.black);
 
         let mut correction = 0;
-        correction += pawns as i32 * Params::pawns_correction();
-        correction += minor as i32 * Params::minor_correction();
-        correction += major as i32 * Params::major_correction();
-        correction += white as i32 * Params::pieces_correction();
-        correction += black as i32 * Params::pieces_correction();
-        correction / Params::BASE / Correction::LIMIT as i32
+        correction += pawns as i32 * Params::pawns_correction() / Correction::LIMIT as i32;
+        correction += minor as i32 * Params::minor_correction() / Correction::LIMIT as i32;
+        correction += major as i32 * Params::major_correction() / Correction::LIMIT as i32;
+        correction += white as i32 * Params::pieces_correction() / Correction::LIMIT as i32;
+        correction += black as i32 * Params::pieces_correction() / Correction::LIMIT as i32;
+        correction / Params::BASE
     }
 
     fn history_bonus(&self, m: Move, depth: Depth) -> i32 {
         let params = [
-            Params::noisy_history_bonus_gamma(),
-            Params::noisy_history_bonus_delta(),
-            Params::quiet_history_bonus_gamma(),
-            Params::quiet_history_bonus_delta(),
+            Params::history_bonus_noisy_gamma(),
+            Params::history_bonus_noisy_delta(),
+            Params::history_bonus_quiet_gamma(),
+            Params::history_bonus_quiet_delta(),
         ];
 
         let offset = 2 * m.is_quiet() as usize;
@@ -171,10 +171,10 @@ impl<'a> Stack<'a> {
 
     fn continuation_bonus(&self, m: Move, depth: Depth) -> i32 {
         let params = [
-            Params::noisy_continuation_bonus_gamma(),
-            Params::noisy_continuation_bonus_delta(),
-            Params::quiet_continuation_bonus_gamma(),
-            Params::quiet_continuation_bonus_delta(),
+            Params::continuation_bonus_noisy_gamma(),
+            Params::continuation_bonus_noisy_delta(),
+            Params::continuation_bonus_quiet_gamma(),
+            Params::continuation_bonus_quiet_delta(),
         ];
 
         let offset = 2 * m.is_quiet() as usize;
@@ -184,10 +184,10 @@ impl<'a> Stack<'a> {
 
     fn history_penalty(&self, m: Move, depth: Depth) -> i32 {
         let params = [
-            Params::noisy_history_penalty_gamma(),
-            Params::noisy_history_penalty_delta(),
-            Params::quiet_history_penalty_gamma(),
-            Params::quiet_history_penalty_delta(),
+            Params::history_penalty_noisy_gamma(),
+            Params::history_penalty_noisy_delta(),
+            Params::history_penalty_quiet_gamma(),
+            Params::history_penalty_quiet_delta(),
         ];
 
         let offset = 2 * m.is_quiet() as usize;
@@ -197,10 +197,10 @@ impl<'a> Stack<'a> {
 
     fn continuation_penalty(&self, m: Move, depth: Depth) -> i32 {
         let params = [
-            Params::noisy_continuation_penalty_gamma(),
-            Params::noisy_continuation_penalty_delta(),
-            Params::quiet_continuation_penalty_gamma(),
-            Params::quiet_continuation_penalty_delta(),
+            Params::continuation_penalty_noisy_gamma(),
+            Params::continuation_penalty_noisy_delta(),
+            Params::continuation_penalty_quiet_gamma(),
+            Params::continuation_penalty_quiet_delta(),
         ];
 
         let offset = 2 * m.is_quiet() as usize;
@@ -507,11 +507,12 @@ impl<'a> Stack<'a> {
             }
 
             let mut rating = 0i32;
-            rating += Params::history_rating()
-                * self.searcher.history.get(&self.evaluator, m).cast::<i32>();
+            let history = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
+            rating += Params::history_rating() * history / History::LIMIT as i32;
 
             let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
-            rating += Params::continuation_rating() * reply.get(&self.evaluator, m).cast::<i32>();
+            let continuation = reply.get(&self.evaluator, m).cast::<i32>();
+            rating += Params::continuation_rating() * continuation / Reply::LIMIT as i32;
 
             if killer.contains(m) {
                 rating += Params::killer_move_bonus();
@@ -645,13 +646,23 @@ impl<'a> Stack<'a> {
 
         moves.sort(|m| {
             if Some(m) == self.pv.head() {
-                Bounded::upper()
-            } else {
-                let mut rating = Bounded::new(0);
-                rating += self.searcher.history.get(&self.evaluator, m);
-                rating += self.evaluator.gain(m);
-                rating
+                return Bounded::upper();
             }
+
+            let mut rating = 0i32;
+            let history = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
+            rating += Params::history_rating() * history / History::LIMIT as i32;
+
+            if !m.is_quiet() {
+                let gain = self.evaluator.gain(m);
+                if self.evaluator.winning(m, Value::new(1)) {
+                    let gamma = Params::winning_rating_gamma();
+                    let delta = Params::winning_rating_delta();
+                    rating += gamma * gain.cast::<i32>() + delta;
+                }
+            }
+
+            (rating / Params::BASE).saturate()
         });
 
         let mut sorted_moves = moves.sorted();

@@ -214,7 +214,7 @@ impl<'a> Stack<'a> {
         let a = ply >= 2 && !self.evaluator[ply - 2].is_check() && value > self.value[idx - 2];
         let b = ply >= 4 && !self.evaluator[ply - 4].is_check() && value > self.value[idx - 4];
 
-        Params::improving_2() * a as i32 + Params::improving_4() * b as i32
+        a as i32 + b as i32
     }
 
     /// Computes the null move pruning reduction.
@@ -466,7 +466,7 @@ impl<'a> Stack<'a> {
             }
 
             let mut margin = self.rfp(depth);
-            margin += improving * Params::reverse_futility_margin_improving() / Params::BASE;
+            margin += improving * Params::reverse_futility_margin_improving();
             margin += noisy_pv as i32 * Params::reverse_futility_margin_noisy_pv();
             margin += cut as i32 * Params::reverse_futility_margin_cut();
             if transposed.score() - margin / Params::BASE >= beta {
@@ -558,8 +558,8 @@ impl<'a> Stack<'a> {
             let mut lmp = Params::late_move_pruning_baseline();
             lmp += is_pv as i32 * Params::late_move_pruning_is_pv();
             lmp += was_pv as i32 * Params::late_move_pruning_was_pv();
+            lmp += improving * Params::late_move_pruning_improving();
             lmp += self.evaluator.is_check() as i32 * Params::late_move_pruning_check();
-            lmp += improving * Params::late_move_pruning_improving() / Params::BASE;
             if self.lmp(depth, idx) > lmp {
                 break;
             }
@@ -572,12 +572,12 @@ impl<'a> Stack<'a> {
             let mut futility = self.futility(depth - lmr / Params::BASE);
             futility += is_pv as i32 * Params::futility_margin_is_pv();
             futility += was_pv as i32 * Params::futility_margin_was_pv();
+            futility += improving * Params::futility_margin_improving();
             futility += self.evaluator.gain(m).cast::<i32>() * Params::futility_margin_gain();
             futility += killer.contains(m) as i32 * Params::futility_margin_killer();
             futility += self.evaluator.is_check() as i32 * Params::futility_margin_check();
             futility += history * Params::futility_margin_history() / History::LIMIT as i32;
             futility += counter * Params::futility_margin_counter() / History::LIMIT as i32;
-            futility += improving * Params::futility_margin_improving() / Params::BASE;
             if self.value[ply.cast::<usize>()] + futility.max(0) / Params::BASE <= alpha {
                 continue;
             }
@@ -594,11 +594,11 @@ impl<'a> Stack<'a> {
             lmr += Params::late_move_reduction_baseline();
             lmr += is_pv as i32 * Params::late_move_reduction_is_pv();
             lmr += was_pv as i32 * Params::late_move_reduction_was_pv();
+            lmr += improving * Params::late_move_reduction_improving();
             lmr += killer.contains(m) as i32 * Params::late_move_reduction_killer();
             lmr += next.evaluator.is_check() as i32 * Params::late_move_reduction_check();
             lmr += history * Params::late_move_reduction_history() / History::LIMIT as i32;
             lmr += counter * Params::late_move_reduction_counter() / History::LIMIT as i32;
-            lmr += improving * Params::late_move_reduction_improving() / Params::BASE;
             lmr += noisy_pv as i32 * Params::late_move_reduction_noisy_pv();
             lmr += cut as i32 * Params::late_move_reduction_cut();
 

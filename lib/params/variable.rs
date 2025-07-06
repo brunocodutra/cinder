@@ -108,7 +108,7 @@ macro_rules! define_variable {
             }
 
             pub fn range() -> [i32; $n] {
-                V.map(|v| v.abs().max(Params::BASE / 4))
+                V.map(|v| v.abs().max(Params::BASE))
             }
         }
 

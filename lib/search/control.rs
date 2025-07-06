@@ -37,14 +37,14 @@ impl GlobalControl {
         };
 
         let time_left = clock - inc;
-        let moves_left_start = Params::moves_left_start() as f64 / Params::BASE as f64;
-        let moves_left_end = Params::moves_left_end() as f64 / Params::BASE as f64;
+        let moves_left_start = Params::moves_left_start()[0] as f64 / Params::BASE as f64;
+        let moves_left_end = Params::moves_left_end()[0] as f64 / Params::BASE as f64;
         let max_fullmoves = moves_left_start / moves_left_end;
         let moves_left = moves_left_start / max_fullmoves.min(pos.fullmoves().get() as _);
         let time_per_move = inc + time_left / moves_left;
 
-        let soft_time_fraction = Params::soft_time_fraction() as f64 / Params::BASE as f64;
-        let hard_time_fraction = Params::hard_time_fraction() as f64 / Params::BASE as f64;
+        let soft_time_fraction = Params::soft_time_fraction()[0] as f64 / Params::BASE as f64;
+        let hard_time_fraction = Params::hard_time_fraction()[0] as f64 / Params::BASE as f64;
         soft_time_fraction * time_per_move..clock * hard_time_fraction
     }
 
@@ -135,7 +135,7 @@ impl<'a> LocalControl<'a> {
         if self.trend.is_nan() {
             self.trend = score;
         } else if evaluator.ply() == 0 {
-            let inertia = Params::score_trend_inertia() as f64 / Params::BASE as f64;
+            let inertia = Params::score_trend_inertia()[0] as f64 / Params::BASE as f64;
             self.trend = (self.trend * inertia + score) / (inertia + 1.);
         }
 
@@ -145,10 +145,10 @@ impl<'a> LocalControl<'a> {
                 self.abort.store(true, Ordering::Relaxed);
                 return ControlFlow::Abort;
             } else if evaluator.ply() == 0 {
-                let gamma = Params::pv_focus_gamma() as f64 / Params::BASE as f64;
-                let delta = Params::pv_focus_delta() as f64 / Params::BASE as f64;
-                let pivot = Params::score_trend_pivot() as f64 / Params::BASE as f64;
-                let magnitude = Params::score_trend_magnitude() as f64 / Params::BASE as f64;
+                let gamma = Params::pv_focus_gamma()[0] as f64 / Params::BASE as f64;
+                let delta = Params::pv_focus_delta()[0] as f64 / Params::BASE as f64;
+                let pivot = Params::score_trend_pivot()[0] as f64 / Params::BASE as f64;
+                let magnitude = Params::score_trend_magnitude()[0] as f64 / Params::BASE as f64;
 
                 let nodes = self.nodes.max(1000) as f64;
                 let diff = self.trend - pv.score().get() as f64;

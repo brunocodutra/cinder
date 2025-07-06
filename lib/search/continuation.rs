@@ -1,5 +1,5 @@
 use crate::chess::{Move, Position};
-use crate::search::{Graviton, Stat, Statistics};
+use crate::search::{History, Stat, Statistics};
 use crate::util::Assume;
 use derive_more::with_trait::Debug;
 
@@ -14,8 +14,6 @@ impl Default for Reply {
 }
 
 impl Reply {
-    pub const LIMIT: i16 = 128;
-
     #[inline(always)]
     fn graviton(&mut self, pos: &Position, m: Move) -> &mut <Self as Statistics<Move>>::Stat {
         let role = pos.role_on(m.whence()).assume() as usize;
@@ -24,7 +22,7 @@ impl Reply {
 }
 
 impl Statistics<Move> for Reply {
-    type Stat = Graviton<{ -Self::LIMIT }, { Self::LIMIT }>;
+    type Stat = <History as Statistics<Move>>::Stat;
 
     #[inline(always)]
     fn get(&mut self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {

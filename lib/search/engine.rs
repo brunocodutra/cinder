@@ -71,7 +71,14 @@ impl<'a> Stack<'a> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// The mate distance pruning.
+    fn mdp(&self, bounds: &Range<Score>) -> (Score, Score) {
+        let ply = self.evaluator.ply();
+        let lower = Score::mated(ply);
+        let upper = Score::mating(ply + 1); // One can't mate in 0 plies!
+        (bounds.start.max(lower), bounds.end.min(upper))
+    }
+
     fn record(
         &mut self,
         depth: Depth,
@@ -222,14 +229,6 @@ impl<'a> Stack<'a> {
         let b = ply >= 4 && !self.evaluator[ply - 4].is_check() && value > self.value[idx - 4];
 
         Params::improving_2() * a as i32 + Params::improving_4() * b as i32
-    }
-
-    /// The mate distance pruning.
-    fn mdp(&self, bounds: &Range<Score>) -> (Score, Score) {
-        let ply = self.evaluator.ply();
-        let lower = Score::mated(ply);
-        let upper = Score::mating(ply + 1); // One can't mate in 0 plies!
-        (bounds.start.max(lower), bounds.end.min(upper))
     }
 
     /// Computes the null move pruning reduction.
@@ -507,11 +506,12 @@ impl<'a> Stack<'a> {
             }
 
             let mut rating = 0i32;
-            rating += Params::history_rating()
-                * self.searcher.history.get(&self.evaluator, m).cast::<i32>();
+            let history = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
+            rating += Params::history_rating() * history / History::LIMIT as i32;
 
             let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
-            rating += Params::continuation_rating() * reply.get(&self.evaluator, m).cast::<i32>();
+            let counter = reply.get(&self.evaluator, m).cast::<i32>();
+            rating += Params::counter_rating() * counter / History::LIMIT as i32;
 
             if killer.contains(m) {
                 rating += Params::killer_move_bonus();
@@ -578,7 +578,7 @@ impl<'a> Stack<'a> {
 
             let mut lmr = self.lmr(depth, idx);
             let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
-            let continuation = reply.get(&self.evaluator, m).cast::<i32>();
+            let counter = reply.get(&self.evaluator, m).cast::<i32>();
             let history = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
 
             let mut futility = self.futility(depth - lmr / Params::BASE);
@@ -588,7 +588,7 @@ impl<'a> Stack<'a> {
             futility += killer.contains(m) as i32 * Params::futility_margin_killer();
             futility += self.evaluator.is_check() as i32 * Params::futility_margin_check();
             futility += history * Params::futility_margin_history() / History::LIMIT as i32;
-            futility += continuation * Params::futility_margin_continuation() / Reply::LIMIT as i32;
+            futility += counter * Params::futility_margin_counter() / History::LIMIT as i32;
             futility += improving * Params::futility_margin_improving() / Params::BASE;
             if self.value[ply.cast::<usize>()] + futility.max(0) / Params::BASE <= alpha {
                 continue;
@@ -597,7 +597,7 @@ impl<'a> Stack<'a> {
             let mut spt = self.spt(depth - lmr / Params::BASE);
             spt -= killer.contains(m) as i32 * Params::see_pruning_killer();
             spt -= history * Params::see_pruning_history() / History::LIMIT as i32;
-            spt -= continuation * Params::see_pruning_continuation() / Reply::LIMIT as i32;
+            spt -= counter * Params::see_pruning_counter() / History::LIMIT as i32;
             if !self.evaluator.winning(m, (spt / Params::BASE).saturate()) {
                 continue;
             }
@@ -609,7 +609,7 @@ impl<'a> Stack<'a> {
             lmr -= killer.contains(m) as i32 * Params::late_move_reduction_killer();
             lmr -= next.evaluator.is_check() as i32 * Params::late_move_reduction_check();
             lmr -= history * Params::late_move_reduction_history() / History::LIMIT as i32;
-            lmr -= continuation * Params::late_move_reduction_continuation() / Reply::LIMIT as i32;
+            lmr -= counter * Params::late_move_reduction_counter() / History::LIMIT as i32;
             lmr -= improving * Params::late_move_reduction_improving() / Params::BASE;
             lmr += noisy_pv as i32 * Params::late_move_reduction_noisy_pv();
             lmr += cut as i32 * Params::late_move_reduction_cut();
@@ -645,13 +645,23 @@ impl<'a> Stack<'a> {
 
         moves.sort(|m| {
             if Some(m) == self.pv.head() {
-                Bounded::upper()
-            } else {
-                let mut rating = Bounded::new(0);
-                rating += self.searcher.history.get(&self.evaluator, m);
-                rating += self.evaluator.gain(m);
-                rating
+                return Bounded::upper();
             }
+
+            let mut rating = 0i32;
+            let history = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
+            rating += Params::history_rating() * history / History::LIMIT as i32;
+
+            if !m.is_quiet() {
+                let gain = self.evaluator.gain(m);
+                if self.evaluator.winning(m, Value::new(1)) {
+                    let gamma = Params::winning_rating_gamma();
+                    let delta = Params::winning_rating_delta();
+                    rating += gamma * gain.cast::<i32>() + delta;
+                }
+            }
+
+            (rating / Params::BASE).saturate()
         });
 
         let mut sorted_moves = moves.sorted();

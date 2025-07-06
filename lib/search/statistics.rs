@@ -102,6 +102,20 @@ impl<T: Stat> Stat for Option<T> {
     }
 }
 
+impl<T: Stat> Stat for NonNull<T> {
+    type Value = T::Value;
+
+    #[inline(always)]
+    fn get(&mut self) -> Self::Value {
+        self.assume().get()
+    }
+
+    #[inline(always)]
+    fn update(&mut self, delta: Self::Value) {
+        self.assume().update(delta);
+    }
+}
+
 /// A saturating accumulator that implements the "gravity" formula.
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
@@ -115,7 +129,7 @@ unsafe impl<const MIN: i16, const MAX: i16> Integer for Graviton<MIN, MAX> {
 }
 
 impl<const MIN: i16, const MAX: i16> Stat for Graviton<MIN, MAX> {
-    type Value = i16;
+    type Value = <Self as Integer>::Repr;
 
     #[inline(always)]
     fn get(&mut self) -> Self::Value {

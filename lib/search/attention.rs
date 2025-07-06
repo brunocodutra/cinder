@@ -1,26 +1,30 @@
-use crate::chess::{Butterfly, Move};
+use crate::chess::{Butterfly, Move, Position};
+use crate::search::{Stat, Statistics};
+use crate::util::Integer;
 use derive_more::with_trait::Debug;
-use std::mem::MaybeUninit;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-#[cfg(test)]
-use proptest::prelude::*;
+use std::array;
 
 /// A linear node counter.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct Nodes(#[cfg_attr(test, strategy(any::<usize>().prop_map_into()))] AtomicUsize);
+pub struct Nodes(usize);
 
-impl Nodes {
+unsafe impl Integer for Nodes {
+    type Repr = usize;
+}
+
+impl Stat for Nodes {
+    type Value = <Self as Integer>::Repr;
+
     #[inline(always)]
-    pub fn get(&self) -> usize {
-        self.0.load(Ordering::Relaxed)
+    fn get(&mut self) -> Self::Value {
+        self.0
     }
 
     #[inline(always)]
-    pub fn increment(&self) {
-        self.0.fetch_add(1, Ordering::Relaxed);
+    fn update(&mut self, delta: Self::Value) {
+        self.0 += delta;
     }
 }
 
@@ -32,13 +36,27 @@ pub struct Attention(Butterfly<Nodes>);
 impl Default for Attention {
     #[inline(always)]
     fn default() -> Self {
-        Self(unsafe { MaybeUninit::zeroed().assume_init() })
+        Self(array::from_fn(|_| array::from_fn(|_| Default::default())))
     }
 }
 
 impl Attention {
     #[inline(always)]
-    pub fn nodes(&self, m: Move) -> &Nodes {
-        &self.0[m.whence() as usize][m.whither() as usize]
+    pub fn nodes(&mut self, _: &Position, m: Move) -> &mut Nodes {
+        &mut self.0[m.whence() as usize][m.whither() as usize]
+    }
+}
+
+impl Statistics<Move> for Attention {
+    type Stat = Nodes;
+
+    #[inline(always)]
+    fn get(&mut self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
+        self.nodes(pos, m).get()
+    }
+
+    #[inline(always)]
+    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
+        self.nodes(pos, m).update(delta);
     }
 }

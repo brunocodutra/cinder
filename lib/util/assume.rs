@@ -5,7 +5,6 @@ use std::ptr::NonNull;
 pub trait Assume {
     /// The type of the assumed value.
     type Assumed;
-
     /// Assume `Self` represents a value of `Self::Assumed`.
     fn assume(self) -> Self::Assumed;
 }

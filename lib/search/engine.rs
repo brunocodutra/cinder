@@ -12,6 +12,20 @@ use std::{cell::SyncUnsafeCell, ops::Range, pin::Pin, ptr::NonNull, time::Durati
 #[cfg(test)]
 use proptest::prelude::*;
 
+#[inline(always)]
+fn convolve<const N: usize>(data: [(i64, &[i64]); N]) -> i64 {
+    let mut convolution = 0;
+
+    for i in 0..N {
+        for j in i..N {
+            let &param = data[i].1.get(j - i).assume();
+            convolution += param * data[i].0 * data[j].0;
+        }
+    }
+
+    convolution
+}
+
 #[derive(Debug, Display, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Error)]
 #[display("the search was interrupted")]
 struct Interrupted;
@@ -74,6 +88,7 @@ impl<'a> Stack<'a> {
     }
 
     /// The mate distance pruning.
+    #[inline(always)]
     fn mdp(&self, bounds: &Range<Score>) -> (Score, Score) {
         let ply = self.evaluator.ply();
         let lower = Score::mated(ply);
@@ -81,7 +96,8 @@ impl<'a> Stack<'a> {
         (bounds.start.max(lower), bounds.end.min(upper))
     }
 
-    fn correction(&mut self) -> i32 {
+    #[inline(always)]
+    fn correction(&mut self) -> i64 {
         let zobrists = &self.evaluator.zobrists();
         let corrections = &mut self.searcher.corrections;
         let pawns = corrections.pawns.get(&self.evaluator, zobrists.pawns);
@@ -91,99 +107,87 @@ impl<'a> Stack<'a> {
         let black = corrections.black.get(&self.evaluator, zobrists.black);
 
         let mut correction = 0;
-        correction += pawns as i32 * Params::pawns_correction() / Correction::LIMIT as i32;
-        correction += minor as i32 * Params::minor_correction() / Correction::LIMIT as i32;
-        correction += major as i32 * Params::major_correction() / Correction::LIMIT as i32;
-        correction += white as i32 * Params::pieces_correction() / Correction::LIMIT as i32;
-        correction += black as i32 * Params::pieces_correction() / Correction::LIMIT as i32;
-        correction / Params::BASE
+        correction += pawns as i64 * Params::pawns_correction()[0];
+        correction += minor as i64 * Params::minor_correction()[0];
+        correction += major as i64 * Params::major_correction()[0];
+        correction += white as i64 * Params::pieces_correction()[0];
+        correction += black as i64 * Params::pieces_correction()[0];
+        correction / Correction::LIMIT as i64 / Params::BASE
     }
 
+    #[inline(always)]
     fn update_correction(&mut self, depth: Depth, score: ScoreBound) {
         let pos = &*self.evaluator;
         let ply = self.evaluator.ply();
         let zobrists = &pos.zobrists();
+        let log_depth = depth.get().max(1).ilog2();
+        let diff = score.bound(ply).cast::<i64>() - self.value[ply.cast::<usize>()].cast::<i64>();
 
-        let gamma = Params::correction_gradient_gamma();
-        let delta = Params::correction_gradient_delta();
-        let diff = score.bound(ply).cast::<i32>() - self.value[ply.cast::<usize>()].cast::<i32>();
-        let grad = diff * (gamma * depth.get().max(1).ilog2() as i32 + delta) / Params::BASE;
+        let grad = convolve([
+            (log_depth as i64, &Params::correction_gradient_depth()),
+            (1, &Params::correction_gradient_scalar()),
+        ]) / Params::BASE;
 
         let corrections = &mut self.searcher.corrections;
-        let bonus = (Params::pawns_correction_bonus() * grad / Params::BASE).saturate();
+        let bonus = (Params::pawns_correction_bonus()[0] * diff * grad / Params::BASE).saturate();
         corrections.pawns.update(pos, zobrists.pawns, bonus);
 
-        let bonus = (Params::minor_correction_bonus() * grad / Params::BASE).saturate();
+        let bonus = (Params::minor_correction_bonus()[0] * diff * grad / Params::BASE).saturate();
         corrections.minor.update(pos, zobrists.minor, bonus);
 
-        let bonus = (Params::major_correction_bonus() * grad / Params::BASE).saturate();
+        let bonus = (Params::major_correction_bonus()[0] * diff * grad / Params::BASE).saturate();
         corrections.major.update(pos, zobrists.major, bonus);
 
-        let bonus = (Params::pieces_correction_bonus() * grad / Params::BASE).saturate();
+        let bonus = (Params::pieces_correction_bonus()[0] * diff * grad / Params::BASE).saturate();
         corrections.white.update(pos, zobrists.white, bonus);
         corrections.black.update(pos, zobrists.black, bonus);
     }
 
-    fn history_bonus(&self, m: Move, depth: Depth) -> i32 {
-        let params = [
-            Params::noisy_history_bonus_gamma(),
-            Params::noisy_history_bonus_delta(),
-            Params::quiet_history_bonus_gamma(),
-            Params::quiet_history_bonus_delta(),
-        ];
-
-        let offset = 2 * m.is_quiet() as usize;
-        let (gamma, delta) = (params[offset], params[offset + 1]);
-        (gamma * depth.cast::<i32>() + delta) / Params::BASE
+    #[inline(always)]
+    fn history_bonus(m: Move, depth: Depth) -> i64 {
+        convolve([
+            (depth.cast(), &Params::history_bonus_depth()),
+            (m.is_quiet() as _, &Params::history_bonus_is_quiet()),
+            (1, &Params::history_bonus_scalar()),
+        ])
     }
 
-    fn continuation_bonus(&self, m: Move, depth: Depth) -> i32 {
-        let params = [
-            Params::noisy_continuation_bonus_gamma(),
-            Params::noisy_continuation_bonus_delta(),
-            Params::quiet_continuation_bonus_gamma(),
-            Params::quiet_continuation_bonus_delta(),
-        ];
-
-        let offset = 2 * m.is_quiet() as usize;
-        let (gamma, delta) = (params[offset], params[offset + 1]);
-        (gamma * depth.cast::<i32>() + delta) / Params::BASE
+    #[inline(always)]
+    fn continuation_bonus(m: Move, depth: Depth) -> i64 {
+        convolve([
+            (depth.cast(), &Params::continuation_bonus_depth()),
+            (m.is_quiet() as _, &Params::continuation_bonus_is_quiet()),
+            (1, &Params::continuation_bonus_scalar()),
+        ])
     }
 
-    fn history_penalty(&self, m: Move, depth: Depth) -> i32 {
-        let params = [
-            Params::noisy_history_penalty_gamma(),
-            Params::noisy_history_penalty_delta(),
-            Params::quiet_history_penalty_gamma(),
-            Params::quiet_history_penalty_delta(),
-        ];
-
-        let offset = 2 * m.is_quiet() as usize;
-        let (gamma, delta) = (params[offset], params[offset + 1]);
-        (gamma * depth.cast::<i32>() + delta) / Params::BASE
+    #[inline(always)]
+    fn history_penalty(m: Move, depth: Depth) -> i64 {
+        convolve([
+            (depth.cast(), &Params::history_penalty_depth()),
+            (m.is_quiet() as _, &Params::history_penalty_is_quiet()),
+            (1, &Params::history_penalty_scalar()),
+        ])
     }
 
-    fn continuation_penalty(&self, m: Move, depth: Depth) -> i32 {
-        let params = [
-            Params::noisy_continuation_penalty_gamma(),
-            Params::noisy_continuation_penalty_delta(),
-            Params::quiet_continuation_penalty_gamma(),
-            Params::quiet_continuation_penalty_delta(),
-        ];
-
-        let offset = 2 * m.is_quiet() as usize;
-        let (gamma, delta) = (params[offset], params[offset + 1]);
-        (gamma * depth.cast::<i32>() + delta) / Params::BASE
+    #[inline(always)]
+    fn continuation_penalty(m: Move, depth: Depth) -> i64 {
+        convolve([
+            (depth.cast(), &Params::continuation_penalty_depth()),
+            (m.is_quiet() as _, &Params::continuation_penalty_is_quiet()),
+            (1, &Params::continuation_penalty_scalar()),
+        ])
     }
 
+    #[inline(always)]
     fn update_history(&mut self, depth: Depth, best: Move, moves: &Moves) {
         let pos = &*self.evaluator;
         let ply = self.evaluator.ply();
 
-        let bonus = self.history_bonus(best, depth).saturate();
-        self.searcher.history.update(pos, best, bonus);
+        let bonus = Self::history_bonus(best, depth) / Params::BASE;
+        self.searcher.history.update(pos, best, bonus.saturate());
 
-        let bonus = self.continuation_bonus(best, depth);
+        let bonus = Self::continuation_bonus(best, depth) / Params::BASE;
         let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
         reply.update(pos, best, bonus.saturate());
 
@@ -191,10 +195,10 @@ impl<'a> Stack<'a> {
             if m == best {
                 break;
             } else {
-                let penalty = self.history_penalty(m, depth).saturate();
-                self.searcher.history.update(pos, m, penalty);
+                let penalty = Self::history_penalty(m, depth) / Params::BASE;
+                self.searcher.history.update(pos, m, penalty.saturate());
 
-                let penalty = self.continuation_penalty(m, depth);
+                let penalty = Self::continuation_penalty(m, depth) / Params::BASE;
                 let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
                 reply.update(pos, m, penalty.saturate());
             }
@@ -202,7 +206,8 @@ impl<'a> Stack<'a> {
     }
 
     /// A measure for how much the position is improving.
-    fn improving(&self) -> i32 {
+    #[inline(always)]
+    fn improving(&self) -> i64 {
         if self.evaluator.is_check() {
             return 0;
         }
@@ -214,122 +219,139 @@ impl<'a> Stack<'a> {
         let a = ply >= 2 && !self.evaluator[ply - 2].is_check() && value > self.value[idx - 2];
         let b = ply >= 4 && !self.evaluator[ply - 4].is_check() && value > self.value[idx - 4];
 
-        Params::improving_2() * a as i32 + Params::improving_4() * b as i32
+        convolve([
+            (a as _, &Params::improving_2()),
+            (b as _, &Params::improving_4()),
+        ])
     }
 
     /// Computes the null move pruning reduction.
-    fn nmp(&self, surplus: Score, depth: Depth) -> Option<Depth> {
-        let gamma = Params::null_move_pruning_gamma();
-        let delta = Params::null_move_pruning_delta();
-        match Params::BASE * surplus.cast::<i32>() {
+    #[inline(always)]
+    fn nmp(surplus: Score, depth: Depth) -> Option<Depth> {
+        let gamma = Params::null_move_pruning_gamma()[0];
+        let delta = Params::null_move_pruning_delta()[0];
+        match Params::BASE * surplus.cast::<i64>() {
             s if s < gamma - delta => None,
             s if s >= 3 * gamma - delta => Some(depth - 3 - depth / 4),
             s => Some(depth - (s + delta) / gamma - depth / 4),
         }
     }
 
-    /// Computes fail-high pruning reduction.
-    fn fhp(&self, surplus: Score, depth: Depth) -> Option<Depth> {
-        let gamma = Params::fail_high_reduction_gamma();
-        let delta = Params::fail_high_reduction_delta();
-        match Params::BASE * surplus.cast::<i32>() {
-            ..0 => None,
-            s if s >= 3 * gamma - delta => Some(depth - 3),
-            s => Some(depth - (s + delta) / gamma),
-        }
-    }
-
     /// Computes the fail-low pruning reduction.
-    fn flp(&self, deficit: Score, depth: Depth) -> Option<Depth> {
-        let gamma = Params::fail_low_reduction_gamma();
-        let delta = Params::fail_low_reduction_delta();
-        match Params::BASE * deficit.cast::<i32>() {
-            ..0 => None,
-            s if s >= 3 * gamma - delta => Some(depth - 3),
-            s => Some(depth - (s + delta) / gamma),
+    #[inline(always)]
+    fn flp(depth: Depth) -> Option<i64> {
+        match depth.cast() {
+            5.. => None,
+            ..1 => Some(0),
+            d @ 1..5 => Some(convolve([
+                (d, &Params::fail_low_pruning_depth()),
+                (1, &Params::fail_low_pruning_scalar()),
+            ])),
         }
     }
 
-    /// Computes the singular extension margin.
-    fn single(&self, depth: Depth) -> i32 {
-        let gamma = Params::single_extension_margin_gamma();
-        let delta = Params::single_extension_margin_delta();
-        (gamma * depth.cast::<i32>() + delta) / Params::BASE
-    }
-
-    /// Computes the double extension margin.
-    fn double(&self, depth: Depth) -> i32 {
-        let gamma = Params::double_extension_margin_gamma();
-        let delta = Params::double_extension_margin_delta();
-        (gamma * depth.cast::<i32>() + delta) / Params::BASE
-    }
-
-    /// Computes the triple extension margin.
-    fn triple(&self, depth: Depth) -> i32 {
-        let gamma = Params::triple_extension_margin_gamma();
-        let delta = Params::triple_extension_margin_delta();
-        (gamma * depth.cast::<i32>() + delta) / Params::BASE
+    /// Computes fail-high pruning reduction.
+    #[inline(always)]
+    fn fhp(depth: Depth) -> Option<i64> {
+        match depth.cast() {
+            7.. => None,
+            ..1 => Some(0),
+            d @ 1..7 => Some(convolve([
+                (d, &Params::fail_high_pruning_depth()),
+                (1, &Params::fail_high_pruning_scalar()),
+            ])),
+        }
     }
 
     /// Computes the razoring margin.
-    fn razoring(&self, depth: Depth) -> i32 {
-        let theta = Params::razoring_margin_theta();
-        let gamma = Params::razoring_margin_gamma();
-        let delta = Params::razoring_margin_delta();
-
-        let d = depth.cast::<i32>();
-        theta * d.pow(2) + gamma * d + delta
+    #[inline(always)]
+    fn razoring(depth: Depth) -> Option<i64> {
+        match depth.cast() {
+            5.. => None,
+            d @ ..5 => Some(convolve([
+                (d, &Params::razoring_margin_depth()),
+                (1, &Params::razoring_margin_scalar()),
+            ])),
+        }
     }
 
     /// Computes the reverse futility margin.
-    fn rfp(&self, depth: Depth) -> i32 {
-        let theta = Params::reverse_futility_margin_theta();
-        let gamma = Params::reverse_futility_margin_gamma();
-        let delta = Params::reverse_futility_margin_delta();
-
-        let d = depth.cast::<i32>();
-        theta * d.pow(2) + gamma * d + delta
+    #[inline(always)]
+    fn rfp(depth: Depth) -> Option<i64> {
+        match depth.cast() {
+            9.. => None,
+            d @ ..9 => Some(convolve([
+                (d, &Params::reverse_futility_margin_depth()),
+                (1, &Params::reverse_futility_margin_scalar()),
+            ])),
+        }
     }
 
     /// Computes the futility margin.
-    fn futility(&self, depth: Depth) -> i32 {
-        let theta = Params::futility_margin_theta();
-        let gamma = Params::futility_margin_gamma();
-        let delta = Params::futility_margin_delta();
+    #[inline(always)]
+    fn futility(depth: Depth) -> i64 {
+        convolve([
+            (depth.cast(), &Params::futility_margin_depth()),
+            (1, &Params::futility_margin_scalar()),
+        ])
+    }
 
-        let d = depth.cast::<i32>();
-        theta * d.pow(2) + gamma * d + delta
+    /// Computes the singular extension margin.
+    #[inline(always)]
+    fn single(depth: Depth) -> i64 {
+        convolve([
+            (depth.cast(), &Params::single_extension_margin_depth()),
+            (1, &Params::single_extension_margin_scalar()),
+        ])
+    }
+
+    /// Computes the double extension margin.
+    #[inline(always)]
+    fn double(depth: Depth) -> i64 {
+        convolve([
+            (depth.cast(), &Params::double_extension_margin_depth()),
+            (1, &Params::double_extension_margin_scalar()),
+        ])
+    }
+
+    /// Computes the triple extension margin.
+    #[inline(always)]
+    fn triple(depth: Depth) -> i64 {
+        convolve([
+            (depth.cast(), &Params::triple_extension_margin_depth()),
+            (1, &Params::triple_extension_margin_scalar()),
+        ])
     }
 
     /// Computes the SEE pruning threshold.
-    fn spt(&self, depth: Depth) -> i32 {
-        let theta = Params::see_pruning_theta();
-        let gamma = Params::see_pruning_gamma();
-        let delta = Params::see_pruning_delta();
-
-        let d = depth.cast::<i32>();
-        theta * d.pow(2) + gamma * d + delta
+    #[inline(always)]
+    fn spt(depth: Depth) -> i64 {
+        convolve([
+            (depth.cast(), &Params::see_pruning_depth()),
+            (1, &Params::see_pruning_scalar()),
+        ])
     }
 
     /// Computes the late move pruning threshold.
-    fn lmp(&self, depth: Depth, idx: usize) -> i32 {
-        let theta = Params::late_move_pruning_theta();
-        let gamma = Params::late_move_pruning_gamma();
-        let delta = Params::late_move_pruning_delta();
-
-        let d = depth.cast::<i32>();
-        Params::BASE.pow(2) * idx.cast::<i32>() / (theta * d.pow(2) + gamma * d + delta)
+    #[inline(always)]
+    fn lmp(depth: Depth) -> i64 {
+        convolve([
+            (depth.cast(), &Params::late_move_pruning_depth()),
+            (1, &Params::late_move_pruning_scalar()),
+        ])
     }
 
     /// Computes the late move reduction.
-    fn lmr(&self, depth: Depth, idx: usize) -> i32 {
-        let theta = Params::late_move_reduction_theta();
-        let gamma = Params::late_move_reduction_gamma();
-        let delta = Params::late_move_reduction_delta();
+    #[inline(always)]
+    fn lmr(depth: Depth, index: usize) -> i64 {
+        let log_depth = depth.get().max(1).ilog2();
+        let log_index = index.max(1).ilog2();
 
-        let x = idx.max(1).ilog2() as i32;
-        let y = depth.get().max(1).ilog2() as i32;
-        theta * x * y + gamma * (x + y) + delta
+        convolve([
+            (log_depth.cast(), &Params::late_move_reduction_depth()),
+            (log_index.cast(), &Params::late_move_reduction_index()),
+            (1, &Params::late_move_reduction_scalar()),
+        ])
     }
 
     #[must_use]
@@ -396,6 +418,7 @@ impl<'a> Stack<'a> {
         self.eval[ply.cast::<usize>()] = self.evaluator.evaluate();
         self.value[ply.cast::<usize>()] = self.eval[ply.cast::<usize>()] + correction;
 
+        let is_check = self.evaluator.is_check();
         let transposition = self.tt.get(self.evaluator.zobrists().hash);
         let transposed = match transposition {
             None => Pv::empty(self.value[ply.cast::<usize>()].saturate()),
@@ -403,7 +426,7 @@ impl<'a> Stack<'a> {
         };
 
         if depth > 0 {
-            depth += self.evaluator.is_check() as i8;
+            depth += is_check as i8;
             depth -= transposition.is_none() as i8;
         }
 
@@ -413,14 +436,14 @@ impl<'a> Stack<'a> {
         if let Some(t) = transposition {
             let (lower, upper) = t.score().range(ply).into_inner();
 
-            if let Some(d) = self.fhp(lower - beta, depth) {
-                if !is_pv && t.depth() >= d {
+            if let Some(margin) = Self::flp(depth - t.depth()) {
+                if !is_pv && upper + margin / Params::BASE <= alpha {
                     return Ok(transposed.truncate());
                 }
             }
 
-            if let Some(d) = self.flp(alpha - upper, depth) {
-                if !is_pv && t.depth() >= d {
+            if let Some(margin) = Self::fhp(depth - t.depth()) {
+                if !is_pv && lower - margin / Params::BASE >= beta {
                     return Ok(transposed.truncate());
                 }
             }
@@ -454,27 +477,30 @@ impl<'a> Stack<'a> {
         let alpha = alpha.max(lower);
         let improving = self.improving();
         let transposed = transposed.clamp(lower, upper);
-        let noisy_pv = transposed.head().is_some_and(|m| !m.is_quiet());
+        let is_noisy_pv = transposed.head().is_some_and(|m| !m.is_quiet());
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
-        } else if !is_pv && depth > 0 && !self.evaluator.is_check() {
-            if self.value[ply.cast::<usize>()] + self.razoring(depth) / Params::BASE <= alpha {
-                let pv = self.nw(Depth::new(0), beta, cut)?;
-                if pv <= alpha {
-                    return Ok(pv);
+        } else if !is_pv && !is_check && depth > 0 {
+            if let Some(margin) = Self::razoring(depth) {
+                if self.value[ply.cast::<usize>()] + margin / Params::BASE <= alpha {
+                    let pv = self.nw(Depth::new(0), beta, cut)?;
+                    if pv <= alpha {
+                        return Ok(pv);
+                    }
                 }
             }
 
-            let mut margin = self.rfp(depth);
-            margin += improving * Params::reverse_futility_margin_improving() / Params::BASE;
-            margin += noisy_pv as i32 * Params::reverse_futility_margin_noisy_pv();
-            margin += cut as i32 * Params::reverse_futility_margin_cut();
-            if transposed.score() - margin / Params::BASE >= beta {
-                return Ok(transposed.truncate());
+            if let Some(mut margin) = Self::rfp(depth) {
+                margin += improving * Params::reverse_futility_margin_improving()[0] / Params::BASE;
+                margin += is_noisy_pv as i64 * Params::reverse_futility_margin_is_noisy_pv()[0];
+                margin += cut as i64 * Params::reverse_futility_margin_cut()[0];
+                if transposed.score() - margin / Params::BASE >= beta {
+                    return Ok(transposed.truncate());
+                }
             }
 
             if self.evaluator.pieces(self.evaluator.turn()).len() > 1 {
-                if let Some(d) = self.nmp(transposed.score() - beta, depth) {
+                if let Some(d) = Self::nmp(transposed.score() - beta, depth) {
                     if d <= 0 || -self.next(None).nw::<0>(d - 1, -beta + 1, !cut)? >= beta {
                         return Ok(transposed.truncate());
                     }
@@ -491,22 +517,23 @@ impl<'a> Stack<'a> {
                 return Bounded::upper();
             }
 
-            let mut rating = 0i32;
-            let history = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
-            rating += Params::history_rating() * history / History::LIMIT as i32;
+            let mut rating = 0i64;
+            let history = self.searcher.history.get(&self.evaluator, m).cast::<i64>();
+            rating += Params::history_rating()[0] * history / History::LIMIT as i64;
 
             let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
-            let counter = reply.get(&self.evaluator, m).cast::<i32>();
-            rating += Params::counter_rating() * counter / History::LIMIT as i32;
+            let counter = reply.get(&self.evaluator, m).cast::<i64>();
+            rating += Params::counter_rating()[0] * counter / History::LIMIT as i64;
 
             if killer.contains(m) {
-                rating += Params::killer_move_bonus();
+                rating += Params::killer_move_bonus()[0];
             } else if !m.is_quiet() {
                 let gain = self.evaluator.gain(m);
                 if self.evaluator.winning(m, Value::new(1)) {
-                    let gamma = Params::winning_rating_gamma();
-                    let delta = Params::winning_rating_delta();
-                    rating += gamma * gain.cast::<i32>() + delta;
+                    rating += convolve([
+                        (gain.cast(), &Params::winning_rating_depth()),
+                        (1, &Params::winning_rating_scalar()),
+                    ]);
                 }
             }
 
@@ -522,9 +549,9 @@ impl<'a> Stack<'a> {
                     if t.score().lower(ply) >= beta && t.depth() >= depth - 3 && depth >= 6 {
                         extension = 2 + m.is_quiet() as i8;
                         let s_depth = (depth - 1) / 2;
-                        let s_beta = beta - self.single(depth);
-                        let d_beta = beta - self.double(depth);
-                        let t_beta = beta - self.triple(depth);
+                        let s_beta = beta - Self::single(depth) / Params::BASE;
+                        let d_beta = beta - Self::double(depth) / Params::BASE;
+                        let t_beta = beta - Self::triple(depth) / Params::BASE;
                         for m in moves.sorted().skip(1) {
                             let pv = -self.next(Some(m)).nw(s_depth - 1, -s_beta + 1, !cut)?;
                             if pv >= beta {
@@ -547,60 +574,67 @@ impl<'a> Stack<'a> {
             }
         };
 
-        let mut is_noisy_node = self.evaluator.is_check();
+        let mut is_noisy_node = is_check;
         is_noisy_node |= !head.is_quiet() && tail.score() > alpha;
-        for (idx, m) in moves.sorted().skip(1).enumerate() {
+        for (index, m) in moves.sorted().skip(1).enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
             };
 
-            let mut lmp = Params::late_move_pruning_baseline();
-            lmp += is_pv as i32 * Params::late_move_pruning_is_pv();
-            lmp += was_pv as i32 * Params::late_move_pruning_was_pv();
-            lmp += self.evaluator.is_check() as i32 * Params::late_move_pruning_check();
-            lmp += improving * Params::late_move_pruning_improving() / Params::BASE;
-            if self.lmp(depth, idx) > lmp {
+            let mut lmp = Params::late_move_pruning_baseline()[0];
+            lmp += is_pv as i64 * Params::late_move_pruning_is_pv()[0];
+            lmp += was_pv as i64 * Params::late_move_pruning_was_pv()[0];
+            lmp += is_check as i64 * Params::late_move_pruning_is_check()[0];
+            lmp += improving * Params::late_move_pruning_improving()[0] / Params::BASE;
+            if index.cast::<i64>() * Params::BASE.pow(2) > Self::lmp(depth) * lmp {
                 break;
             }
 
-            let mut lmr = self.lmr(depth, idx);
             let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
-            let counter = reply.get(&self.evaluator, m).cast::<i32>();
-            let history = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
+            let counter = reply.get(&self.evaluator, m).cast::<i64>();
+            let history = self.searcher.history.get(&self.evaluator, m).cast::<i64>();
+            let gain = self.evaluator.gain(m).cast::<i64>();
+            let is_killer = killer.contains(m);
 
-            let mut futility = self.futility(depth - lmr / Params::BASE);
-            futility += is_pv as i32 * Params::futility_margin_is_pv();
-            futility += was_pv as i32 * Params::futility_margin_was_pv();
-            futility += self.evaluator.gain(m).cast::<i32>() * Params::futility_margin_gain();
-            futility += killer.contains(m) as i32 * Params::futility_margin_killer();
-            futility += self.evaluator.is_check() as i32 * Params::futility_margin_check();
-            futility += history * Params::futility_margin_history() / History::LIMIT as i32;
-            futility += counter * Params::futility_margin_counter() / History::LIMIT as i32;
-            futility += improving * Params::futility_margin_improving() / Params::BASE;
+            let mut lmr = Self::lmr(depth, index);
+            let mut futility = Self::futility(depth - lmr / Params::BASE);
+            futility += is_pv as i64 * Params::futility_margin_is_pv()[0];
+            futility += was_pv as i64 * Params::futility_margin_was_pv()[0];
+            futility += is_check as i64 * Params::futility_margin_is_check()[0];
+            futility += is_killer as i64 * Params::futility_margin_is_killer()[0];
+
+            futility += improving * Params::futility_margin_improving()[0] / Params::BASE;
+            futility += history * Params::futility_margin_history()[0] / History::LIMIT as i64;
+            futility += counter * Params::futility_margin_counter()[0] / History::LIMIT as i64;
+            futility += gain * Params::futility_margin_gain()[0];
+
             if self.value[ply.cast::<usize>()] + futility.max(0) / Params::BASE <= alpha {
                 continue;
             }
 
-            let mut spt = self.spt(depth - lmr / Params::BASE);
-            spt += killer.contains(m) as i32 * Params::see_pruning_killer();
-            spt += history * Params::see_pruning_history() / History::LIMIT as i32;
-            spt += counter * Params::see_pruning_counter() / History::LIMIT as i32;
+            let mut spt = Self::spt(depth - lmr / Params::BASE);
+            spt += is_killer as i64 * Params::see_pruning_is_killer()[0];
+            spt += history * Params::see_pruning_history()[0] / History::LIMIT as i64;
+            spt += counter * Params::see_pruning_counter()[0] / History::LIMIT as i64;
             if !self.evaluator.winning(m, (spt / Params::BASE).saturate()) {
                 continue;
             }
 
             let mut next = self.next(Some(m));
-            lmr += Params::late_move_reduction_baseline();
-            lmr += is_pv as i32 * Params::late_move_reduction_is_pv();
-            lmr += was_pv as i32 * Params::late_move_reduction_was_pv();
-            lmr += killer.contains(m) as i32 * Params::late_move_reduction_killer();
-            lmr += next.evaluator.is_check() as i32 * Params::late_move_reduction_check();
-            lmr += history * Params::late_move_reduction_history() / History::LIMIT as i32;
-            lmr += counter * Params::late_move_reduction_counter() / History::LIMIT as i32;
-            lmr += improving * Params::late_move_reduction_improving() / Params::BASE;
-            lmr += noisy_pv as i32 * Params::late_move_reduction_noisy_pv();
-            lmr += cut as i32 * Params::late_move_reduction_cut();
+            let gives_check = next.evaluator.is_check();
+
+            lmr += Params::late_move_reduction_baseline()[0];
+            lmr += is_pv as i64 * Params::late_move_reduction_is_pv()[0];
+            lmr += was_pv as i64 * Params::late_move_reduction_was_pv()[0];
+            lmr += gives_check as i64 * Params::late_move_reduction_gives_check()[0];
+            lmr += is_noisy_pv as i64 * Params::late_move_reduction_is_noisy_pv()[0];
+            lmr += is_killer as i64 * Params::late_move_reduction_is_killer()[0];
+            lmr += cut as i64 * Params::late_move_reduction_cut()[0];
+
+            lmr += improving * Params::late_move_reduction_improving()[0] / Params::BASE;
+            lmr += history * Params::late_move_reduction_history()[0] / History::LIMIT as i64;
+            lmr += counter * Params::late_move_reduction_counter()[0] / History::LIMIT as i64;
 
             let pv = match -next.nw(depth - lmr.max(0) / Params::BASE - 1, -alpha, !cut)? {
                 pv if pv <= alpha || (pv >= beta && lmr < Params::BASE) => pv,
@@ -647,6 +681,8 @@ impl<'a> Stack<'a> {
             _ => {}
         }
 
+        let is_check = self.evaluator.is_check();
+        let is_noisy_pv = self.pv.head().is_some_and(|m| !m.is_quiet());
         self.value[0] = self.eval[0] + self.correction();
 
         moves.sort(|m| {
@@ -654,16 +690,17 @@ impl<'a> Stack<'a> {
                 return Bounded::upper();
             }
 
-            let mut rating = 0i32;
-            let history = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
-            rating += Params::history_rating() * history / History::LIMIT as i32;
+            let mut rating = 0i64;
+            let history = self.searcher.history.get(&self.evaluator, m).cast::<i64>();
+            rating += Params::history_rating()[0] * history / History::LIMIT as i64;
 
             if !m.is_quiet() {
                 let gain = self.evaluator.gain(m);
                 if self.evaluator.winning(m, Value::new(1)) {
-                    let gamma = Params::winning_rating_gamma();
-                    let delta = Params::winning_rating_delta();
-                    rating += gamma * gain.cast::<i32>() + delta;
+                    rating += convolve([
+                        (gain.cast(), &Params::winning_rating_depth()),
+                        (1, &Params::winning_rating_scalar()),
+                    ]);
                 }
             }
 
@@ -678,33 +715,34 @@ impl<'a> Stack<'a> {
 
         let mut tail = -self.next(Some(head)).ab(depth - 1, -beta..-alpha, false)?;
 
-        let mut is_noisy_node = self.evaluator.is_check();
+        let mut is_noisy_node = is_check;
         is_noisy_node |= !head.is_quiet() && tail.score() > alpha;
-        for (idx, m) in sorted_moves.enumerate() {
+        for (index, m) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
             };
 
-            let mut lmp = Params::late_move_pruning_baseline();
-            lmp += self.evaluator.is_check() as i32 * Params::late_move_pruning_check();
-            if self.lmp(depth, idx) > lmp + Params::late_move_pruning_root() {
+            let mut lmp = Params::late_move_pruning_is_root()[0];
+            lmp += is_check as i64 * Params::late_move_pruning_is_check()[0];
+            if index.cast::<i64>() * Params::BASE.pow(2) > Self::lmp(depth) * lmp {
                 break;
             }
 
-            let mut lmr = self.lmr(depth, idx);
-            let history = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
+            let history = self.searcher.history.get(&self.evaluator, m).cast::<i64>();
+
             self.nodes = Some(NonNull::from_mut(
                 self.ctrl.attention().nodes(&self.evaluator, m),
             ));
 
             let mut next = self.next(Some(m));
-            lmr += Params::late_move_reduction_baseline();
-            lmr += Params::late_move_reduction_root();
-            lmr += next.evaluator.is_check() as i32 * Params::late_move_reduction_check();
-            lmr += history * Params::late_move_reduction_history() / History::LIMIT as i32;
-            lmr += next.pv.head().is_some_and(|m| !m.is_quiet()) as i32
-                * Params::late_move_reduction_noisy_pv();
+            let gives_check = next.evaluator.is_check();
+
+            let mut lmr = Self::lmr(depth, index);
+            lmr += Params::late_move_reduction_is_root()[0];
+            lmr += gives_check as i64 * Params::late_move_reduction_gives_check()[0];
+            lmr += is_noisy_pv as i64 * Params::late_move_reduction_is_noisy_pv()[0];
+            lmr += history * Params::late_move_reduction_history()[0] / History::LIMIT as i64;
 
             let pv = match -next.nw(depth - lmr.max(0) / Params::BASE - 1, -alpha, false)? {
                 pv if pv <= alpha || (pv >= beta && lmr < Params::BASE) => pv,
@@ -758,10 +796,6 @@ impl<'a> Stack<'a> {
                 }
             }
 
-            let aw_start = Params::aspiration_window_start();
-            let aw_gamma = Params::aspiration_window_gamma();
-            let aw_delta = Params::aspiration_window_delta();
-
             loop {
                 if self.index == 0 {
                     let pv = self.pv.clone().truncate();
@@ -775,14 +809,18 @@ impl<'a> Stack<'a> {
 
                 depth += 1;
                 let mut reduction = 0;
-                let mut window = aw_start / Params::BASE;
+                let mut window = Params::aspiration_window_baseline()[0] / Params::BASE;
                 let (mut lower, mut upper) = match depth.get() {
                     ..=4 => (Score::lower(), Score::upper()),
                     _ => (self.pv.score() - window, self.pv.score() + window),
                 };
 
                 loop {
-                    window = (window * aw_gamma + aw_delta) / Params::BASE;
+                    window = convolve([
+                        (window, &Params::aspiration_window_exponent()),
+                        (1, &Params::aspiration_window_scalar()),
+                    ]) / Params::BASE;
+
                     let partial = match self.root(&mut moves, depth - reduction, lower..upper) {
                         Err(_) => break stop = true,
                         Ok(pv) => pv,

@@ -18,7 +18,7 @@ impl Default for Correction {
 }
 
 impl Correction {
-    pub const LIMIT: i16 = 16384;
+    pub const LIMIT: i16 = 1024;
 
     #[inline(always)]
     fn graviton(

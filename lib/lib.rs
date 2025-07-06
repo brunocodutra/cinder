@@ -3,6 +3,7 @@
 #![cfg_attr(target_arch = "x86_64", feature(stdarch_x86_mm_shuffle))]
 #![cfg_attr(target_arch = "aarch64", feature(stdarch_aarch64_prefetch))]
 #![feature(
+    adt_const_params,
     coverage_attribute,
     gen_blocks,
     ptr_as_ref_unchecked,

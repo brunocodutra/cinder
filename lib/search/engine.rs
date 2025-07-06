@@ -122,24 +122,24 @@ impl<'a> Stack<'a> {
 
         let value = self.value[ply.cast::<usize>()];
         if best.is_quiet() && !pos.is_check() && !score.range(ply).contains(&value) {
+            let gamma = Params::correction_gradient_gamma();
+            let delta = Params::correction_gradient_delta();
+
             let zobrists = &pos.zobrists();
             let corrections = &mut self.searcher.corrections;
             let diff = score.bound(ply).cast::<i32>() - value.cast::<i32>();
+            let grad = diff * (gamma * depth.get().max(1).ilog2() as i32 + delta) / Params::BASE;
 
-            let gamma = Params::correction_gradient_gamma();
-            let delta = Params::correction_gradient_delta();
-            let grad = (gamma * depth.get().max(1).ilog2() as i32 + delta) / Params::BASE;
-
-            let bonus = (Params::pawns_correction_bonus() * grad * diff / Params::BASE).saturate();
+            let bonus = (Params::pawns_correction_bonus() * grad / Params::BASE).saturate();
             corrections.pawns.update(pos, zobrists.pawns, bonus);
 
-            let bonus = (Params::minor_correction_bonus() * grad * diff / Params::BASE).saturate();
+            let bonus = (Params::minor_correction_bonus() * grad / Params::BASE).saturate();
             corrections.minor.update(pos, zobrists.minor, bonus);
 
-            let bonus = (Params::major_correction_bonus() * grad * diff / Params::BASE).saturate();
+            let bonus = (Params::major_correction_bonus() * grad / Params::BASE).saturate();
             corrections.major.update(pos, zobrists.major, bonus);
 
-            let bonus = (Params::pieces_correction_bonus() * grad * diff / Params::BASE).saturate();
+            let bonus = (Params::pieces_correction_bonus() * grad / Params::BASE).saturate();
             corrections.white.update(pos, zobrists.white, bonus);
             corrections.black.update(pos, zobrists.black, bonus);
         }
@@ -155,12 +155,12 @@ impl<'a> Stack<'a> {
         let black = corrections.black.get(&self.evaluator, zobrists.black);
 
         let mut correction = 0;
-        correction += pawns as i32 * Params::pawns_correction();
-        correction += minor as i32 * Params::minor_correction();
-        correction += major as i32 * Params::major_correction();
-        correction += white as i32 * Params::pieces_correction();
-        correction += black as i32 * Params::pieces_correction();
-        correction / Params::BASE / Correction::LIMIT as i32
+        correction += pawns as i32 * Params::pawns_correction() / Correction::LIMIT as i32;
+        correction += minor as i32 * Params::minor_correction() / Correction::LIMIT as i32;
+        correction += major as i32 * Params::major_correction() / Correction::LIMIT as i32;
+        correction += white as i32 * Params::pieces_correction() / Correction::LIMIT as i32;
+        correction += black as i32 * Params::pieces_correction() / Correction::LIMIT as i32;
+        correction / Params::BASE
     }
 
     fn history_bonus(&self, m: Move, depth: Depth) -> i32 {

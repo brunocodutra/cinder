@@ -199,7 +199,7 @@ impl<'a> Stack<'a> {
 
         let offset = 2 * m.is_quiet() as usize;
         let (gamma, delta) = (params[offset], params[offset + 1]);
-        -(gamma * depth.cast::<i32>() + delta) / Params::BASE
+        (gamma * depth.cast::<i32>() + delta) / Params::BASE
     }
 
     fn continuation_penalty(&self, m: Move, depth: Depth) -> i32 {
@@ -212,7 +212,7 @@ impl<'a> Stack<'a> {
 
         let offset = 2 * m.is_quiet() as usize;
         let (gamma, delta) = (params[offset], params[offset + 1]);
-        -(gamma * depth.cast::<i32>() + delta) / Params::BASE
+        (gamma * depth.cast::<i32>() + delta) / Params::BASE
     }
 
     /// A measure for how much the position is improving.
@@ -322,7 +322,7 @@ impl<'a> Stack<'a> {
         let delta = Params::see_pruning_delta();
 
         let d = depth.cast::<i32>();
-        delta - gamma * d - theta * d.pow(2)
+        theta * d.pow(2) + gamma * d + delta
     }
 
     /// Computes the late move pruning threshold.
@@ -480,9 +480,9 @@ impl<'a> Stack<'a> {
             }
 
             let mut margin = self.rfp(depth);
-            margin -= improving * Params::reverse_futility_margin_improving() / Params::BASE;
-            margin -= noisy_pv as i32 * Params::reverse_futility_margin_noisy_pv();
-            margin -= cut as i32 * Params::reverse_futility_margin_cut();
+            margin += improving * Params::reverse_futility_margin_improving() / Params::BASE;
+            margin += noisy_pv as i32 * Params::reverse_futility_margin_noisy_pv();
+            margin += cut as i32 * Params::reverse_futility_margin_cut();
             if transposed.score() - margin / Params::BASE >= beta {
                 return Ok(transposed.truncate());
             }
@@ -595,22 +595,22 @@ impl<'a> Stack<'a> {
             }
 
             let mut spt = self.spt(depth - lmr / Params::BASE);
-            spt -= killer.contains(m) as i32 * Params::see_pruning_killer();
-            spt -= history * Params::see_pruning_history() / History::LIMIT as i32;
-            spt -= counter * Params::see_pruning_counter() / History::LIMIT as i32;
+            spt += killer.contains(m) as i32 * Params::see_pruning_killer();
+            spt += history * Params::see_pruning_history() / History::LIMIT as i32;
+            spt += counter * Params::see_pruning_counter() / History::LIMIT as i32;
             if !self.evaluator.winning(m, (spt / Params::BASE).saturate()) {
                 continue;
             }
 
             let mut next = self.next(Some(m));
             lmr += Params::late_move_reduction_baseline();
-            lmr -= is_pv as i32 * Params::late_move_reduction_is_pv();
-            lmr -= was_pv as i32 * Params::late_move_reduction_was_pv();
-            lmr -= killer.contains(m) as i32 * Params::late_move_reduction_killer();
-            lmr -= next.evaluator.is_check() as i32 * Params::late_move_reduction_check();
-            lmr -= history * Params::late_move_reduction_history() / History::LIMIT as i32;
-            lmr -= counter * Params::late_move_reduction_counter() / History::LIMIT as i32;
-            lmr -= improving * Params::late_move_reduction_improving() / Params::BASE;
+            lmr += is_pv as i32 * Params::late_move_reduction_is_pv();
+            lmr += was_pv as i32 * Params::late_move_reduction_was_pv();
+            lmr += killer.contains(m) as i32 * Params::late_move_reduction_killer();
+            lmr += next.evaluator.is_check() as i32 * Params::late_move_reduction_check();
+            lmr += history * Params::late_move_reduction_history() / History::LIMIT as i32;
+            lmr += counter * Params::late_move_reduction_counter() / History::LIMIT as i32;
+            lmr += improving * Params::late_move_reduction_improving() / Params::BASE;
             lmr += noisy_pv as i32 * Params::late_move_reduction_noisy_pv();
             lmr += cut as i32 * Params::late_move_reduction_cut();
 
@@ -688,9 +688,9 @@ impl<'a> Stack<'a> {
 
             let mut next = self.next(Some(m));
             lmr += Params::late_move_reduction_baseline();
-            lmr -= Params::late_move_reduction_root();
-            lmr -= next.evaluator.is_check() as i32 * Params::late_move_reduction_check();
-            lmr -= history * Params::late_move_reduction_history() / History::LIMIT as i32;
+            lmr += Params::late_move_reduction_root();
+            lmr += next.evaluator.is_check() as i32 * Params::late_move_reduction_check();
+            lmr += history * Params::late_move_reduction_history() / History::LIMIT as i32;
             lmr += next.pv.head().is_some_and(|m| !m.is_quiet()) as i32
                 * Params::late_move_reduction_noisy_pv();
 

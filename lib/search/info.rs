@@ -35,7 +35,7 @@ impl Info {
     /// The number of nodes searched per second.
     #[inline(always)]
     pub fn nps(&self) -> f64 {
-        self.nodes as f64 / self.time().as_secs_f64()
+        self.nodes as f64 / self.time().max(Duration::from_nanos(1)).as_secs_f64()
     }
 
     /// The principal variation.

@@ -53,7 +53,7 @@ impl GlobalControl {
     pub fn new(pos: &Position, limits: Limits) -> GlobalControl {
         GlobalControl {
             abort: AtomicBool::new(false),
-            visited: AtomicU64::new(limits.max_nodes()),
+            visited: AtomicU64::new(0),
             time: Self::time_to_search(pos, &limits),
             timestamp: Instant::now(),
             limits,
@@ -71,13 +71,14 @@ impl GlobalControl {
     pub fn elapsed(&self) -> Duration {
         Instant::now()
             .saturating_duration_since(self.timestamp)
-            .max(Duration::from_nanos(1))
+            .min(self.limits.max_time())
     }
 
     /// The nodes visited so far.
     #[inline(always)]
     pub fn visited(&self) -> u64 {
-        self.limits.max_nodes() - self.visited.load(Ordering::Relaxed)
+        let max_nodes = self.limits.max_nodes();
+        self.visited.load(Ordering::Relaxed).min(max_nodes)
     }
 
     /// Interrupts an ongoing search.
@@ -93,16 +94,20 @@ pub struct LocalControl<'a> {
     #[deref]
     global: &'a GlobalControl,
     attention: Attention,
+    visited: u64,
     nodes: u64,
     trend: f64,
 }
 
 impl<'a> LocalControl<'a> {
+    const LAP: u64 = 2048;
+
     #[inline(always)]
     pub fn new(global: &'a GlobalControl) -> Self {
         LocalControl {
             global,
             attention: Default::default(),
+            visited: 0,
             nodes: 0,
             trend: f64::NAN,
         }
@@ -119,6 +124,7 @@ impl<'a> LocalControl<'a> {
     pub fn check(&mut self, pv: &Pv, evaluator: &Evaluator) -> ControlFlow {
         let score = pv.score().get() as f64;
         let Some(head) = pv.head() else {
+            self.nodes += 1;
             return ControlFlow::Continue;
         };
 
@@ -126,17 +132,6 @@ impl<'a> LocalControl<'a> {
             return ControlFlow::Abort;
         }
 
-        use Ordering::Relaxed;
-        let dec = |i: u64| i.checked_sub(1);
-        let visited = match self.global.visited.fetch_update(Relaxed, Relaxed, dec) {
-            Ok(count) => self.limits.max_nodes() - count,
-            Err(_) => {
-                self.abort.store(true, Relaxed);
-                return ControlFlow::Abort;
-            }
-        };
-
-        self.nodes += 1;
         if self.trend.is_nan() {
             self.trend = score;
         } else if evaluator.ply() == 0 {
@@ -144,7 +139,7 @@ impl<'a> LocalControl<'a> {
             self.trend = (self.trend * inertia + score) / (inertia + 1.);
         }
 
-        if visited.is_multiple_of(2048) || evaluator.ply() == 0 {
+        if self.nodes.is_multiple_of(Self::LAP) || evaluator.ply() == 0 {
             let time = self.elapsed().as_secs_f64();
             if time >= self.time.end {
                 self.abort.store(true, Ordering::Relaxed);
@@ -165,6 +160,18 @@ impl<'a> LocalControl<'a> {
             }
         }
 
+        self.nodes += 1;
+        if self.nodes.is_multiple_of(Self::LAP) {
+            self.visited = self.global.visited.fetch_add(Self::LAP, Ordering::Relaxed) + Self::LAP;
+        }
+
+        let increment = self.nodes % Self::LAP;
+        if self.visited + increment >= self.limits.max_nodes() {
+            self.global.visited.fetch_add(increment, Ordering::Relaxed);
+            self.abort.store(true, Ordering::Relaxed);
+            return ControlFlow::Abort;
+        }
+
         ControlFlow::Continue
     }
 }
@@ -182,12 +189,6 @@ mod tests {
         let duration = Duration::from_millis(1);
         thread::sleep(duration);
         assert!(ctrl.elapsed() >= duration);
-    }
-
-    #[proptest]
-    fn time_elapsed_is_always_positive(pos: Evaluator, l: Limits) {
-        let ctrl = GlobalControl::new(&pos, l);
-        assert!(ctrl.elapsed() > Duration::ZERO);
     }
 
     #[proptest]
@@ -214,12 +215,12 @@ mod tests {
     }
 
     #[proptest]
-    fn counts_nodes_searched(pos: Evaluator, n: u64, #[filter(#pv.head().is_some())] pv: Pv) {
+    fn counts_nodes_visited(pos: Evaluator, n: u64, #[filter(#pv.head().is_some())] pv: Pv) {
         let global = GlobalControl::new(&pos, Limits::nodes(n));
         let mut local = LocalControl::new(&global);
-        assert_eq!(local.visited(), 0);
+        assert_eq!(local.nodes, 0);
         assert_eq!(local.check(&pv, &pos), ControlFlow::Continue);
-        assert_eq!(local.visited(), 1);
+        assert_eq!(local.nodes, 1);
     }
 
     #[proptest]

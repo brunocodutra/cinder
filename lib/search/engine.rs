@@ -743,8 +743,11 @@ impl<'a> Stack<'a> {
             let aw_delta = Params::aspiration_window_delta();
 
             loop {
-                let pv = self.pv.clone().truncate();
-                yield Info::new(depth, self.ctrl.elapsed(), self.ctrl.visited(), pv);
+                if self.index == 0 {
+                    let pv = self.pv.clone().truncate();
+                    yield Info::new(depth, self.ctrl.elapsed(), self.ctrl.visited(), pv);
+                }
+
                 stop |= self.index == 0 && depth >= self.ctrl.limits().max_depth();
                 if stop || depth >= Depth::upper() {
                     return;

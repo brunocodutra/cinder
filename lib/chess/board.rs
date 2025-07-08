@@ -5,6 +5,9 @@ use std::fmt::{self, Formatter, Write};
 use std::io::Write as _;
 use std::str::{self, FromStr};
 
+#[cfg(test)]
+use proptest::strategy::LazyJust;
+
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Zobrists {
     pub hash: Zobrist,
@@ -45,21 +48,29 @@ impl Zobrists {
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Board({self})")]
 pub struct Board {
-    #[cfg_attr(test, map(|mut bbs: [Bitboard; 6]| {
-        let mut occupied = bbs[0];
-        for bb in &mut bbs[1..] {
-            *bb &= !occupied;
-            occupied |= *bb;
+    #[cfg_attr(test, strategy(LazyJust::new(move || {
+        let mut roles = [Bitboard::empty(); 6];
+        for (i, o) in #pieces.iter().enumerate() {
+            if let Some(p) = o {
+                roles[p.role() as usize] |= <Square as Integer>::new(i as _).bitboard();
+            }
         }
 
-        bbs
-    }))]
+        roles
+    })))]
     roles: [Bitboard; 6],
-    #[cfg_attr(test, map(|bb: Bitboard| {
-        let occupied = #roles.iter().fold(Bitboard::empty(), |r, &b| r | b);
-        [occupied & bb, occupied & !bb]
-    }))]
+    #[cfg_attr(test, strategy(LazyJust::new(move || {
+        let mut colors = [Bitboard::empty(); 2];
+        for (i, o) in #pieces.iter().enumerate() {
+            if let Some(p) = o {
+                colors[p.color() as usize] |= <Square as Integer>::new(i as _).bitboard();
+            }
+        }
+
+        colors
+    })))]
     colors: [Bitboard; 2],
+    pieces: [Option<Piece>; 64],
     pub turn: Color,
     pub castles: Castles,
     pub en_passant: Option<Square>,
@@ -70,6 +81,20 @@ pub struct Board {
 impl Default for Board {
     #[inline(always)]
     fn default() -> Self {
+        use Piece::*;
+
+        #[rustfmt::skip]
+        let pieces = [
+            Some(WhiteRook), Some(WhiteKnight), Some(WhiteBishop), Some(WhiteQueen), Some(WhiteKing), Some(WhiteBishop), Some(WhiteKnight), Some(WhiteRook),
+            Some(WhitePawn), Some(WhitePawn),   Some(WhitePawn),   Some(WhitePawn),  Some(WhitePawn), Some(WhitePawn),   Some(WhitePawn),   Some(WhitePawn),
+            None,            None,              None,              None,             None,            None,              None,              None,
+            None,            None,              None,              None,             None,            None,              None,              None,
+            None,            None,              None,              None,             None,            None,              None,              None,
+            None,            None,              None,              None,             None,            None,              None,              None,
+            Some(BlackPawn), Some(BlackPawn),   Some(BlackPawn),   Some(BlackPawn),  Some(BlackPawn), Some(BlackPawn),   Some(BlackPawn),   Some(BlackPawn),
+            Some(BlackRook), Some(BlackKnight), Some(BlackBishop), Some(BlackQueen), Some(BlackKing), Some(BlackBishop), Some(BlackKnight), Some(BlackRook),
+        ];
+
         Self {
             roles: [
                 Bitboard::new(0x00FF00000000FF00),
@@ -83,7 +108,7 @@ impl Default for Board {
                 Bitboard::new(0x000000000000FFFF),
                 Bitboard::new(0xFFFF000000000000),
             ],
-
+            pieces,
             turn: Color::White,
             castles: Castles::all(),
             en_passant: None,
@@ -122,19 +147,19 @@ impl Board {
     /// The [`Color`] of the piece on the given [`Square`], if any.
     #[inline(always)]
     pub fn color_on(&self, sq: Square) -> Option<Color> {
-        Color::iter().find(|&c| self.material(c).contains(sq))
+        self.piece_on(sq).map(|p| p.color())
     }
 
     /// The [`Role`] of the piece on the given [`Square`], if any.
     #[inline(always)]
     pub fn role_on(&self, sq: Square) -> Option<Role> {
-        Role::iter().find(|&r| self.by_role(r).contains(sq))
+        self.piece_on(sq).map(|p| p.role())
     }
 
     /// The [`Piece`] on the given [`Square`], if any.
     #[inline(always)]
     pub fn piece_on(&self, sq: Square) -> Option<Piece> {
-        Option::zip(self.role_on(sq), self.color_on(sq)).map(|(r, c)| Piece::new(r, c))
+        self.pieces[sq as usize]
     }
 
     /// An iterator over all pieces on the board.
@@ -170,6 +195,7 @@ impl Board {
     #[inline(always)]
     pub fn toggle(&mut self, p: Piece, sq: Square) {
         debug_assert!(self.piece_on(sq).is_none_or(|q| p == q));
+        self.pieces[sq as usize] = self.pieces[sq as usize].xor(Some(p));
         self.colors[p.color() as usize] ^= sq.bitboard();
         self.roles[p.role() as usize] ^= sq.bitboard();
     }
@@ -256,6 +282,7 @@ impl FromStr for Board {
             return Err(ParseFenError::InvalidPlacement);
         };
 
+        let mut pieces: [_; 64] = [None; 64];
         let mut roles: [_; 6] = Default::default();
         let mut colors: [_; 2] = Default::default();
         for (rank, segment) in board.split('/').rev().enumerate() {
@@ -271,6 +298,7 @@ impl FromStr for Board {
                     let sq = Square::new(File::new(file as _), Rank::new(rank as _));
                     colors[p.color() as usize] ^= sq.bitboard();
                     roles[p.role() as usize] ^= sq.bitboard();
+                    pieces[sq as usize] = Some(p);
                     file += 1;
                 } else {
                     return Err(ParseFenError::InvalidPlacement);
@@ -317,6 +345,7 @@ impl FromStr for Board {
         Ok(Board {
             roles,
             colors,
+            pieces,
             turn,
             castles,
             en_passant,

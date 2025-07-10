@@ -454,7 +454,7 @@ impl<'a> Stack<'a> {
         let alpha = alpha.max(lower);
         let improving = self.improving();
         let transposed = transposed.clamp(lower, upper);
-        let noisy_pv = transposed.head().is_some_and(|m| !m.is_quiet());
+        let is_noisy_pv = transposed.head().is_some_and(|m| !m.is_quiet());
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
         } else if !is_pv && depth > 0 && !self.evaluator.is_check() {
@@ -467,7 +467,7 @@ impl<'a> Stack<'a> {
 
             let mut margin = self.rfp(depth);
             margin += improving * Params::reverse_futility_margin_improving();
-            margin += noisy_pv as i32 * Params::reverse_futility_margin_noisy_pv();
+            margin += is_noisy_pv as i32 * Params::reverse_futility_margin_is_noisy_pv();
             margin += cut as i32 * Params::reverse_futility_margin_cut();
             if transposed.score() - margin / Params::BASE >= beta {
                 return Ok(transposed.truncate());
@@ -555,35 +555,37 @@ impl<'a> Stack<'a> {
                 s => s.max(alpha),
             };
 
+            let is_killer = killer.contains(m);
+            let is_check = self.evaluator.is_check();
+
             let mut lmp = Params::late_move_pruning_baseline();
             lmp += is_pv as i32 * Params::late_move_pruning_is_pv();
             lmp += was_pv as i32 * Params::late_move_pruning_was_pv();
+            lmp += is_check as i32 * Params::late_move_pruning_is_check();
             lmp += improving * Params::late_move_pruning_improving();
-            lmp += self.evaluator.is_check() as i32 * Params::late_move_pruning_check();
             if self.lmp(depth, idx) > lmp {
                 break;
             }
 
-            let mut lmr = self.lmr(depth, idx);
             let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
             let counter = reply.get(&self.evaluator, m).cast::<i32>();
             let history = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
 
-            let mut futility = self.futility(depth - lmr / Params::BASE);
+            let mut futility = self.futility(depth);
             futility += is_pv as i32 * Params::futility_margin_is_pv();
             futility += was_pv as i32 * Params::futility_margin_was_pv();
+            futility += is_check as i32 * Params::futility_margin_is_check();
+            futility += is_killer as i32 * Params::futility_margin_is_killer();
             futility += improving * Params::futility_margin_improving();
             futility += self.evaluator.gain(m).cast::<i32>() * Params::futility_margin_gain();
-            futility += killer.contains(m) as i32 * Params::futility_margin_killer();
-            futility += self.evaluator.is_check() as i32 * Params::futility_margin_check();
             futility += history * Params::futility_margin_history() / History::LIMIT as i32;
             futility += counter * Params::futility_margin_counter() / History::LIMIT as i32;
             if self.value[ply.cast::<usize>()] + futility.max(0) / Params::BASE <= alpha {
                 continue;
             }
 
-            let mut spt = self.spt(depth - lmr / Params::BASE);
-            spt += killer.contains(m) as i32 * Params::see_pruning_killer();
+            let mut spt = self.spt(depth);
+            spt += is_killer as i32 * Params::see_pruning_is_killer();
             spt += history * Params::see_pruning_history() / History::LIMIT as i32;
             spt += counter * Params::see_pruning_counter() / History::LIMIT as i32;
             if !self.evaluator.winning(m, (spt / Params::BASE).saturate()) {
@@ -591,16 +593,18 @@ impl<'a> Stack<'a> {
             }
 
             let mut next = self.next(Some(m));
-            lmr += Params::late_move_reduction_baseline();
+            let gives_check = next.evaluator.is_check();
+
+            let mut lmr = next.lmr(depth, idx);
             lmr += is_pv as i32 * Params::late_move_reduction_is_pv();
             lmr += was_pv as i32 * Params::late_move_reduction_was_pv();
+            lmr += gives_check as i32 * Params::late_move_reduction_gives_check();
+            lmr += is_noisy_pv as i32 * Params::late_move_reduction_is_noisy_pv();
+            lmr += is_killer as i32 * Params::late_move_reduction_is_killer();
             lmr += improving * Params::late_move_reduction_improving();
-            lmr += killer.contains(m) as i32 * Params::late_move_reduction_killer();
-            lmr += next.evaluator.is_check() as i32 * Params::late_move_reduction_check();
+            lmr += cut as i32 * Params::late_move_reduction_cut();
             lmr += history * Params::late_move_reduction_history() / History::LIMIT as i32;
             lmr += counter * Params::late_move_reduction_counter() / History::LIMIT as i32;
-            lmr += noisy_pv as i32 * Params::late_move_reduction_noisy_pv();
-            lmr += cut as i32 * Params::late_move_reduction_cut();
 
             let pv = match -next.nw(depth - lmr.max(0) / Params::BASE - 1, -alpha, !cut)? {
                 pv if pv <= alpha || (pv >= beta && lmr < Params::BASE) => pv,
@@ -687,24 +691,25 @@ impl<'a> Stack<'a> {
             };
 
             let mut lmp = Params::late_move_pruning_baseline();
-            lmp += self.evaluator.is_check() as i32 * Params::late_move_pruning_check();
+            lmp += self.evaluator.is_check() as i32 * Params::late_move_pruning_is_check();
             if self.lmp(depth, idx) > lmp + Params::late_move_pruning_root() {
                 break;
             }
 
-            let mut lmr = self.lmr(depth, idx);
+            let is_noisy_pv = self.pv.head().is_some_and(|m| !m.is_quiet());
             let history = self.searcher.history.get(&self.evaluator, m).cast::<i32>();
             self.nodes = Some(NonNull::from_mut(
                 self.ctrl.attention().nodes(&self.evaluator, m),
             ));
 
             let mut next = self.next(Some(m));
-            lmr += Params::late_move_reduction_baseline();
+            let gives_check = next.evaluator.is_check();
+
+            let mut lmr = next.lmr(depth, idx);
             lmr += Params::late_move_reduction_root();
-            lmr += next.evaluator.is_check() as i32 * Params::late_move_reduction_check();
+            lmr += gives_check as i32 * Params::late_move_reduction_gives_check();
+            lmr += is_noisy_pv as i32 * Params::late_move_reduction_is_noisy_pv();
             lmr += history * Params::late_move_reduction_history() / History::LIMIT as i32;
-            lmr += next.pv.head().is_some_and(|m| !m.is_quiet()) as i32
-                * Params::late_move_reduction_noisy_pv();
 
             let pv = match -next.nw(depth - lmr.max(0) / Params::BASE - 1, -alpha, false)? {
                 pv if pv <= alpha || (pv >= beta && lmr < Params::BASE) => pv,

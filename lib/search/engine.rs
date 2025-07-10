@@ -81,72 +81,6 @@ impl<'a> Stack<'a> {
         (bounds.start.max(lower), bounds.end.min(upper))
     }
 
-    fn record(
-        &mut self,
-        depth: Depth,
-        bounds: Range<Score>,
-        score: Score,
-        best: Move,
-        moves: &Moves,
-        was_pv: bool,
-    ) {
-        let pos = &*self.evaluator;
-        let ply = self.evaluator.ply();
-        let score = ScoreBound::new(bounds, score, ply);
-        let tpos = Transposition::new(score, depth, Some(best), was_pv);
-        self.tt.set(pos.zobrists().hash, tpos);
-
-        if matches!(score, ScoreBound::Lower(_)) {
-            if best.is_quiet() {
-                self.killers[ply.cast::<usize>()].insert(best);
-            }
-
-            let bonus = self.history_bonus(best, depth).saturate();
-            self.searcher.history.update(pos, best, bonus);
-
-            let bonus = self.continuation_bonus(best, depth);
-            let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
-            reply.update(pos, best, bonus.saturate());
-
-            for m in moves.iter() {
-                if m == best {
-                    break;
-                } else {
-                    let penalty = self.history_penalty(m, depth).saturate();
-                    self.searcher.history.update(pos, m, penalty);
-
-                    let penalty = self.continuation_penalty(m, depth);
-                    let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
-                    reply.update(pos, m, penalty.saturate());
-                }
-            }
-        }
-
-        let value = self.value[ply.cast::<usize>()];
-        if best.is_quiet() && !pos.is_check() && !score.range(ply).contains(&value) {
-            let gamma = Params::correction_gradient_gamma();
-            let delta = Params::correction_gradient_delta();
-
-            let zobrists = &pos.zobrists();
-            let corrections = &mut self.searcher.corrections;
-            let diff = score.bound(ply).cast::<i32>() - value.cast::<i32>();
-            let grad = diff * (gamma * depth.get().max(1).ilog2() as i32 + delta) / Params::BASE;
-
-            let bonus = (Params::pawns_correction_bonus() * grad / Params::BASE).saturate();
-            corrections.pawns.update(pos, zobrists.pawns, bonus);
-
-            let bonus = (Params::minor_correction_bonus() * grad / Params::BASE).saturate();
-            corrections.minor.update(pos, zobrists.minor, bonus);
-
-            let bonus = (Params::major_correction_bonus() * grad / Params::BASE).saturate();
-            corrections.major.update(pos, zobrists.major, bonus);
-
-            let bonus = (Params::pieces_correction_bonus() * grad / Params::BASE).saturate();
-            corrections.white.update(pos, zobrists.white, bonus);
-            corrections.black.update(pos, zobrists.black, bonus);
-        }
-    }
-
     fn correction(&mut self) -> i32 {
         let zobrists = &self.evaluator.zobrists();
         let corrections = &mut self.searcher.corrections;
@@ -163,6 +97,31 @@ impl<'a> Stack<'a> {
         correction += white as i32 * Params::pieces_correction() / Correction::LIMIT as i32;
         correction += black as i32 * Params::pieces_correction() / Correction::LIMIT as i32;
         correction / Params::BASE
+    }
+
+    fn update_correction(&mut self, depth: Depth, score: ScoreBound) {
+        let pos = &*self.evaluator;
+        let ply = self.evaluator.ply();
+        let zobrists = &pos.zobrists();
+
+        let gamma = Params::correction_gradient_gamma();
+        let delta = Params::correction_gradient_delta();
+        let diff = score.bound(ply).cast::<i32>() - self.value[ply.cast::<usize>()].cast::<i32>();
+        let grad = diff * (gamma * depth.get().max(1).ilog2() as i32 + delta) / Params::BASE;
+
+        let corrections = &mut self.searcher.corrections;
+        let bonus = (Params::pawns_correction_bonus() * grad / Params::BASE).saturate();
+        corrections.pawns.update(pos, zobrists.pawns, bonus);
+
+        let bonus = (Params::minor_correction_bonus() * grad / Params::BASE).saturate();
+        corrections.minor.update(pos, zobrists.minor, bonus);
+
+        let bonus = (Params::major_correction_bonus() * grad / Params::BASE).saturate();
+        corrections.major.update(pos, zobrists.major, bonus);
+
+        let bonus = (Params::pieces_correction_bonus() * grad / Params::BASE).saturate();
+        corrections.white.update(pos, zobrists.white, bonus);
+        corrections.black.update(pos, zobrists.black, bonus);
     }
 
     fn history_bonus(&self, m: Move, depth: Depth) -> i32 {
@@ -215,6 +174,31 @@ impl<'a> Stack<'a> {
         let offset = 2 * m.is_quiet() as usize;
         let (gamma, delta) = (params[offset], params[offset + 1]);
         (gamma * depth.cast::<i32>() + delta) / Params::BASE
+    }
+
+    fn update_history(&mut self, depth: Depth, best: Move, moves: &Moves) {
+        let pos = &*self.evaluator;
+        let ply = self.evaluator.ply();
+
+        let bonus = self.history_bonus(best, depth).saturate();
+        self.searcher.history.update(pos, best, bonus);
+
+        let bonus = self.continuation_bonus(best, depth);
+        let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
+        reply.update(pos, best, bonus.saturate());
+
+        for m in moves.iter() {
+            if m == best {
+                break;
+            } else {
+                let penalty = self.history_penalty(m, depth).saturate();
+                self.searcher.history.update(pos, m, penalty);
+
+                let penalty = self.continuation_penalty(m, depth);
+                let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
+                reply.update(pos, m, penalty.saturate());
+            }
+        }
     }
 
     /// A measure for how much the position is improving.
@@ -563,6 +547,8 @@ impl<'a> Stack<'a> {
             }
         };
 
+        let mut is_noisy_node = self.evaluator.is_check();
+        is_noisy_node |= !head.is_quiet() && tail.score() > alpha;
         for (idx, m) in moves.sorted().skip(1).enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -623,11 +609,27 @@ impl<'a> Stack<'a> {
 
             if pv > tail {
                 (head, tail) = (m, pv);
+                is_noisy_node |= !head.is_quiet() && tail.score() > alpha;
             }
         }
 
         let tail = tail.clamp(lower, upper);
-        self.record(depth, bounds, tail.score(), head, &moves, was_pv);
+        let score = ScoreBound::new(bounds, tail.score(), ply);
+        let transposition = Transposition::new(score, depth, Some(head), was_pv);
+        self.tt.set(self.evaluator.zobrists().hash, transposition);
+
+        if matches!(score, ScoreBound::Lower(_)) {
+            self.update_history(depth, head, &moves);
+            if head.is_quiet() {
+                self.killers[ply.cast::<usize>()].insert(head);
+            }
+        }
+
+        let value = self.value[ply.cast::<usize>()];
+        if !is_noisy_node && !score.range(ply).contains(&value) {
+            self.update_correction(depth, score);
+        }
+
         Ok(tail.transpose(head))
     }
 
@@ -676,6 +678,8 @@ impl<'a> Stack<'a> {
 
         let mut tail = -self.next(Some(head)).ab(depth - 1, -beta..-alpha, false)?;
 
+        let mut is_noisy_node = self.evaluator.is_check();
+        is_noisy_node |= !head.is_quiet() && tail.score() > alpha;
         for (idx, m) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -709,10 +713,26 @@ impl<'a> Stack<'a> {
 
             if pv > tail {
                 (head, tail) = (m, pv);
+                is_noisy_node |= !head.is_quiet() && tail.score() > alpha;
             }
         }
 
-        self.record(depth, bounds, tail.score(), head, moves, true);
+        let score = ScoreBound::new(bounds, tail.score(), Ply::new(0));
+        let transposition = Transposition::new(score, depth, Some(head), true);
+        self.tt.set(self.evaluator.zobrists().hash, transposition);
+
+        if matches!(score, ScoreBound::Lower(_)) {
+            self.update_history(depth, head, moves);
+            if head.is_quiet() {
+                self.killers[0].insert(head);
+            }
+        }
+
+        let value = self.value[0];
+        if !is_noisy_node && !score.range(Ply::new(0)).contains(&value) {
+            self.update_correction(depth, score);
+        }
+
         Ok(tail.transpose(head))
     }
 

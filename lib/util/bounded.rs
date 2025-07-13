@@ -8,7 +8,7 @@ use std::{cmp::Ordering, mem::size_of, num::Saturating as S, str::FromStr};
 #[derive(Debug, Default, Copy, Clone, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, arbitrary(bound(T, Self: Debug)))]
-#[debug("Saturating({self})")]
+#[debug("Bounded({self})")]
 #[debug(bounds(T: Integer<Repr: Signed>, T::Repr: Display))]
 #[repr(transparent)]
 pub struct Bounded<T>(T);
@@ -179,23 +179,23 @@ where
     }
 }
 
-/// The reason why parsing [`Saturating`] failed.
+/// The reason why parsing [`Bounded`] failed.
 #[derive(Debug, Display, Clone, Eq, PartialEq, Error)]
-#[display("failed to parse saturating integer")]
-pub struct ParseSaturatingIntegerError;
+#[display("failed to parse bounded integer")]
+pub struct ParseBoundedIntegerError;
 
 impl<T: Integer<Repr: Signed>> FromStr for Bounded<T>
 where
     T::Repr: FromStr,
 {
-    type Err = ParseSaturatingIntegerError;
+    type Err = ParseBoundedIntegerError;
 
     #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<T::Repr>()
             .ok()
             .and_then(Integer::convert)
-            .ok_or(ParseSaturatingIntegerError)
+            .ok_or(ParseBoundedIntegerError)
     }
 }
 
@@ -299,37 +299,37 @@ mod tests {
     }
 
     #[proptest]
-    fn parsing_printed_saturating_integer_is_an_identity(a: Bounded<Asymmetric>) {
+    fn parsing_printed_bounded_integer_is_an_identity(a: Bounded<Asymmetric>) {
         assert_eq!(a.to_string().parse(), Ok(a));
     }
 
     #[proptest]
-    fn parsing_saturating_integer_fails_for_numbers_too_small(
+    fn parsing_bounded_integer_fails_for_numbers_too_small(
         #[strategy(..Bounded::<Asymmetric>::MIN)] n: i16,
     ) {
         assert_eq!(
             n.to_string().parse::<Bounded<Asymmetric>>(),
-            Err(ParseSaturatingIntegerError)
+            Err(ParseBoundedIntegerError)
         );
     }
 
     #[proptest]
-    fn parsing_saturating_integer_fails_for_numbers_too_large(
+    fn parsing_bounded_integer_fails_for_numbers_too_large(
         #[strategy(Bounded::<Asymmetric>::MAX + 1..)] n: i16,
     ) {
         assert_eq!(
             n.to_string().parse::<Bounded<Asymmetric>>(),
-            Err(ParseSaturatingIntegerError)
+            Err(ParseBoundedIntegerError)
         );
     }
 
     #[proptest]
-    fn parsing_saturating_integer_fails_for_invalid_number(
+    fn parsing_bounded_integer_fails_for_invalid_number(
         #[filter(#s.parse::<i16>().is_err())] s: String,
     ) {
         assert_eq!(
             s.to_string().parse::<Bounded<Asymmetric>>(),
-            Err(ParseSaturatingIntegerError)
+            Err(ParseBoundedIntegerError)
         );
     }
 }

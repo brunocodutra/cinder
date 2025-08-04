@@ -124,7 +124,7 @@ mod tests {
                 Nnue::positional().weight.iter().map(|a| a[i] as i32),
             );
 
-            for weights in features.array_chunks_mut::<768>() {
+            for weights in features.as_chunks_mut::<768>().0 {
                 let (small, _, _) = weights.select_nth_unstable(32);
                 assert!(small.iter().fold(bias, |s, &v| s + v).abs() <= i16::MAX as i32);
                 let (_, _, large) = weights.select_nth_unstable(735);

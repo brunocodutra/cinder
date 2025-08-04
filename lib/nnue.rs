@@ -4,7 +4,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use ruzstd::decoding::StreamingDecoder;
 use std::cell::SyncUnsafeCell;
 use std::io::{self, Read};
-use std::mem::{MaybeUninit, transmute};
+use std::mem::{transmute, zeroed};
 
 mod accumulator;
 mod evaluator;
@@ -29,7 +29,7 @@ struct Nnue {
     pieces: [[i32; Role::MAX as usize + 1]; Material::LEN],
 }
 
-static NNUE: SyncUnsafeCell<Nnue> = unsafe { MaybeUninit::zeroed().assume_init() };
+static NNUE: SyncUnsafeCell<Nnue> = unsafe { zeroed() };
 
 #[cold]
 #[ctor::ctor]

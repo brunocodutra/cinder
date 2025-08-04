@@ -1,7 +1,7 @@
 use crate::chess::*;
 use crate::util::{Bits, Integer};
 use rand::prelude::*;
-use std::{cell::SyncUnsafeCell, mem::MaybeUninit};
+use std::{cell::SyncUnsafeCell, mem::zeroed};
 
 /// A type representing a [`Position`]'s [zobrist hashes](`Zobrists`)
 pub type Zobrist = Bits<u64, 64>;
@@ -14,7 +14,7 @@ pub struct ZobristNumbers {
     turn: u64,
 }
 
-static ZOBRIST: SyncUnsafeCell<ZobristNumbers> = unsafe { MaybeUninit::zeroed().assume_init() };
+static ZOBRIST: SyncUnsafeCell<ZobristNumbers> = unsafe { zeroed() };
 
 #[cold]
 #[ctor::ctor]

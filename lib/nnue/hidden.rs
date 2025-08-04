@@ -39,7 +39,7 @@ impl<const N: usize> Hidden<N> {
                 (w.as_ptr() as usize % 64 == 0).assume();
                 (x.as_ptr() as usize % 64 == 0).assume();
 
-                for (w, x) in Iterator::zip(w.array_chunks::<256>(), x.array_chunks::<256>()) {
+                for (w, x) in w.as_chunks::<256>().0.iter().zip(x.as_chunks::<256>().0) {
                     let w = transmute::<&[i8; 256], &[__m256i; 8]>(w);
                     let x = transmute::<&[i16; 256], &[__m512i; 8]>(x);
 
@@ -89,7 +89,7 @@ impl<const N: usize> Hidden<N> {
                 (w.as_ptr() as usize).is_multiple_of(32).assume();
                 (x.as_ptr() as usize).is_multiple_of(32).assume();
 
-                for (w, x) in Iterator::zip(w.array_chunks::<128>(), x.array_chunks::<128>()) {
+                for (w, x) in w.as_chunks::<128>().0.iter().zip(x.as_chunks::<128>().0) {
                     let w = transmute::<&[i8; 128], &[__m128i; 8]>(w);
                     let x = transmute::<&[i16; 128], &[__m256i; 8]>(x);
 
@@ -145,7 +145,7 @@ impl<const N: usize> Hidden<N> {
                 (w.as_ptr() as usize).is_multiple_of(32).assume();
                 (x.as_ptr() as usize).is_multiple_of(32).assume();
 
-                for (w, x) in Iterator::zip(w.array_chunks::<64>(), x.array_chunks::<64>()) {
+                for (w, x) in w.as_chunks::<64>().0.iter().zip(x.as_chunks::<64>().0) {
                     let w = transmute::<&[i8; 64], &[u64; 8]>(w);
                     let x = transmute::<&[i16; 64], &[__m128i; 8]>(x);
 
@@ -200,7 +200,7 @@ impl<const N: usize> Hidden<N> {
                 (w.as_ptr() as usize % 32 == 0).assume();
                 (x.as_ptr() as usize % 32 == 0).assume();
 
-                for (w, x) in Iterator::zip(w.array_chunks::<64>(), x.array_chunks::<64>()) {
+                for (w, x) in w.as_chunks::<64>().0.iter().zip(x.as_chunks::<64>().0) {
                     let w = transmute::<&[i8; 64], &[int8x8_t; 8]>(w);
                     let x = transmute::<&[i16; 64], &[int16x8_t; 8]>(x);
 

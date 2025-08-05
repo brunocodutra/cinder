@@ -28,7 +28,7 @@ clap = { version = "4.5.41", default-features = false, features = [
     "help",
     "std",
 ] }
-ctor = { version = "0.4.2", default-features = false, features = ["proc_macro"] }
+ctor = { version = "0.4.3", default-features = false, features = ["proc_macro"] }
 derive_more = { version = "2.0.1", default-features = false, features = [
     "add",
     "add_assign",

@@ -432,6 +432,9 @@ impl<'a> Stack<'a> {
 
         let is_pv = alpha + 1 < beta;
         let was_pv = is_pv || transposition.as_ref().is_some_and(Transposition::was_pv);
+        let is_noisy_pv = transposition.is_some_and(|t| {
+            t.best().is_some_and(|m| !m.is_quiet()) && !matches!(t.score(), ScoreBound::Upper(_))
+        });
 
         if let Some(t) = transposition {
             let (lower, upper) = t.score().range(ply).into_inner();
@@ -477,7 +480,6 @@ impl<'a> Stack<'a> {
         let alpha = alpha.max(lower);
         let improving = self.improving();
         let transposed = transposed.clamp(lower, upper);
-        let is_noisy_pv = transposed.head().is_some_and(|m| !m.is_quiet());
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
         } else if !is_pv && !is_check && depth > 0 {
@@ -574,7 +576,7 @@ impl<'a> Stack<'a> {
             }
         };
 
-        let mut is_noisy_node = is_check;
+        let mut is_noisy_node = is_check || is_noisy_pv;
         is_noisy_node |= !head.is_quiet() && tail.score() > alpha;
         for (index, m) in moves.sorted().skip(1).enumerate() {
             let alpha = match tail.score() {
@@ -715,7 +717,7 @@ impl<'a> Stack<'a> {
 
         let mut tail = -self.next(Some(head)).ab(depth - 1, -beta..-alpha, false)?;
 
-        let mut is_noisy_node = is_check;
+        let mut is_noisy_node = is_check || is_noisy_pv;
         is_noisy_node |= !head.is_quiet() && tail.score() > alpha;
         for (index, m) in sorted_moves.enumerate() {
             let alpha = match tail.score() {

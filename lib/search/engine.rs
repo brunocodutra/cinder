@@ -607,8 +607,6 @@ impl<'a> Stack<'a> {
             futility += is_killer as i64 * Params::futility_margin_is_killer()[0];
 
             futility += improving * Params::futility_margin_improving()[0] / Params::BASE;
-            futility += history * Params::futility_margin_history()[0] / History::LIMIT as i64;
-            futility += counter * Params::futility_margin_counter()[0] / History::LIMIT as i64;
             futility += gain * Params::futility_margin_gain()[0];
 
             if self.value[ply.cast::<usize>()] + futility.max(0) / Params::BASE <= alpha {

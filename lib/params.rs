@@ -201,8 +201,6 @@ params! {
     futility_margin_is_check: Variable1<{ [29237] }>,
     futility_margin_is_killer: Variable1<{ [27284] }>,
     futility_margin_improving: Variable1<{ [15524] }>,
-    futility_margin_history: Variable1<{ [18938] }>,
-    futility_margin_counter: Variable1<{ [20506] }>,
     futility_margin_gain: Variable1<{ [5587] }>,
     single_extension_margin_depth: Variable2<{ [0, 3074] }>,
     single_extension_margin_scalar: Variable1<{ [2013] }>,

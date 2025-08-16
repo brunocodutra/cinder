@@ -1,11 +1,11 @@
 use crate::chess::{Butterfly, Move, Position};
 use crate::search::{Stat, Statistics};
 use crate::util::Integer;
+use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
-use std::array;
 
 /// A linear node counter.
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct Nodes(usize);
@@ -29,14 +29,14 @@ impl Stat for Nodes {
 }
 
 /// Measures the effort spent searching a root [`Move`].
-#[derive(Debug)]
+#[derive(Debug, Zeroable)]
 #[debug("Attention")]
 pub struct Attention(Butterfly<Nodes>);
 
 impl Default for Attention {
     #[inline(always)]
     fn default() -> Self {
-        Self(array::from_fn(|_| array::from_fn(|_| Default::default())))
+        zeroed()
     }
 }
 

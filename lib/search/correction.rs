@@ -1,19 +1,20 @@
 use crate::chess::{Position, Zobrist};
 use crate::search::{Graviton, Stat, Statistics};
 use crate::util::Integer;
+use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 
 const BUCKETS: usize = 8192;
 
 /// Historical statistics about a [`Move`].
-#[derive(Debug)]
+#[derive(Debug, Zeroable)]
 #[debug("Correction")]
-pub struct Correction([[<Self as Statistics<Zobrist>>::Stat; BUCKETS]; 2]);
+pub struct Correction([[<Correction as Statistics<Zobrist>>::Stat; BUCKETS]; 2]);
 
 impl Default for Correction {
     #[inline(always)]
     fn default() -> Self {
-        Self([[Default::default(); BUCKETS]; 2])
+        zeroed()
     }
 }
 

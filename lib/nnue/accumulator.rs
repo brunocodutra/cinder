@@ -1,14 +1,15 @@
 use crate::chess::Phase;
 use crate::util::{AlignTo64, Integer};
+use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::{Debug, Deref, DerefMut};
 
 /// The material accumulator.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Deref, DerefMut)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable, Deref, DerefMut)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Material")]
 #[repr(transparent)]
 pub struct Material(
-    #[cfg_attr(test, map(|vs: [i8; Self::LEN]| vs.map(i32::from)))] [i32; Self::LEN],
+    #[cfg_attr(test, map(|vs: [i8; Self::LEN]| vs.map(i32::from)))] [i32; Material::LEN],
 );
 
 impl Material {
@@ -18,18 +19,18 @@ impl Material {
 impl Default for Material {
     #[inline(always)]
     fn default() -> Self {
-        Material([0; Self::LEN])
+        zeroed()
     }
 }
 
 /// The positional accumulator.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Deref, DerefMut)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable, Deref, DerefMut)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Positional")]
 #[repr(transparent)]
 pub struct Positional(
     #[cfg_attr(test, map(|vs: [i8; Self::LEN]| AlignTo64(vs.map(i16::from))))]
-    AlignTo64<[i16; Self::LEN]>,
+    AlignTo64<[i16; Positional::LEN]>,
 );
 
 impl Positional {
@@ -39,6 +40,6 @@ impl Positional {
 impl Default for Positional {
     #[inline(always)]
     fn default() -> Self {
-        Positional(AlignTo64([0; Self::LEN]))
+        zeroed()
     }
 }

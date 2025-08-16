@@ -1,12 +1,13 @@
 use crate::chess::*;
 use crate::util::{Bits, Integer};
+use bytemuck::{Zeroable, zeroed};
 use rand::prelude::*;
-use std::{cell::SyncUnsafeCell, mem::zeroed};
+use std::cell::SyncUnsafeCell;
 
 /// A type representing a [`Position`]'s [zobrist hashes](`Zobrists`)
 pub type Zobrist = Bits<u64, 64>;
 
-#[derive(Debug)]
+#[derive(Debug, Zeroable)]
 pub struct ZobristNumbers {
     pieces: [[u64; 64]; 12],
     castles: [u64; 16],
@@ -14,7 +15,7 @@ pub struct ZobristNumbers {
     turn: u64,
 }
 
-static ZOBRIST: SyncUnsafeCell<ZobristNumbers> = unsafe { zeroed() };
+static ZOBRIST: SyncUnsafeCell<ZobristNumbers> = SyncUnsafeCell::new(zeroed());
 
 #[cold]
 #[ctor::ctor]

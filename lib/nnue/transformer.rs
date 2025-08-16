@@ -1,11 +1,12 @@
 use crate::nnue::Feature;
 use crate::util::{AlignTo64, Assume, Integer};
+use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::{Debug, Deref, DerefMut};
 use std::hint::unreachable_unchecked;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
 /// A linear feature transformer.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Deref, DerefMut)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable, Deref, DerefMut)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, arbitrary(bound(T, T: From<i8>)))]
 #[debug("Linear<{N}>")]
@@ -16,12 +17,12 @@ pub struct Linear<T, const N: usize> {
 
 impl<T, const N: usize> Linear<T, N>
 where
-    T: Default + Copy + Add<Output = T> + AddAssign + Sub<Output = T> + SubAssign,
+    T: Zeroable + Copy + Add<Output = T> + AddAssign + Sub<Output = T> + SubAssign,
 {
     /// A fresh accumulator.
     #[inline(always)]
     pub fn refresh(&self, accumulator: &mut [T; N]) {
-        *accumulator = [Default::default(); N];
+        *accumulator = zeroed();
     }
 
     /// Updates the `acc` by adding and removing features.
@@ -103,7 +104,7 @@ where
 }
 
 /// An affine feature transformer.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Deref)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable, Deref)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, arbitrary(bound(T, T: From<i8>)))]
 #[debug("Affine<{N}>")]
@@ -114,10 +115,7 @@ pub struct Affine<T, const N: usize> {
     pub(super) weight: Linear<T, N>,
 }
 
-impl<T, const N: usize> Affine<T, N>
-where
-    T: Default + Copy + Add<Output = T> + AddAssign + Sub<Output = T> + SubAssign,
-{
+impl<T: Copy, const N: usize> Affine<T, N> {
     /// Refreshes the `accumulator``.
     #[inline(always)]
     pub fn refresh(&self, accumulator: &mut [T; N]) {

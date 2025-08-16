@@ -1,6 +1,6 @@
 [package]
 name = "cinder"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Bruno Dutra <brunocodutra@gmail.com>"]
 edition = "2024"
 description = "A chess engine"

@@ -1,16 +1,17 @@
 use crate::chess::{Butterfly, Move, Position};
 use crate::search::{Graviton, Stat, Statistics};
+use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 
 /// Historical statistics about a [`Move`].
-#[derive(Debug)]
+#[derive(Debug, Zeroable)]
 #[debug("History")]
-pub struct History([[Butterfly<<Self as Statistics<Move>>::Stat>; 2]; 2]);
+pub struct History([[Butterfly<<History as Statistics<Move>>::Stat>; 2]; 2]);
 
 impl Default for History {
     #[inline(always)]
     fn default() -> Self {
-        Self([[[[Default::default(); 64]; 64]; 2]; 2])
+        zeroed()
     }
 }
 

@@ -1,15 +1,16 @@
 use crate::chess::{Move, Position};
 use crate::search::{History, Stat, Statistics};
 use crate::util::Assume;
+use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct Reply([[[<Self as Statistics<Move>>::Stat; 64]; 2]; 6]);
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Zeroable)]
+pub struct Reply([[[<Reply as Statistics<Move>>::Stat; 64]; 2]; 6]);
 
 impl Default for Reply {
     #[inline(always)]
     fn default() -> Self {
-        Self([[[Default::default(); 64]; 2]; 6])
+        zeroed()
     }
 }
 
@@ -35,14 +36,14 @@ impl Statistics<Move> for Reply {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
 #[debug("Continuation")]
 pub struct Continuation([[[Reply; 64]; 2]; 12]);
 
 impl Default for Continuation {
     #[inline(always)]
     fn default() -> Self {
-        Self([[[Default::default(); 64]; 2]; 12])
+        zeroed()
     }
 }
 

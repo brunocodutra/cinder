@@ -1,5 +1,6 @@
 use crate::chess::Position;
 use crate::util::{Assume, Integer, Primitive};
+use bytemuck::Zeroable;
 use derive_more::with_trait::Debug;
 use std::ptr::NonNull;
 
@@ -117,7 +118,7 @@ impl<T: Stat> Stat for NonNull<T> {
 }
 
 /// A saturating accumulator that implements the "gravity" formula.
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct Graviton<const MIN: i16, const MAX: i16>(i16);

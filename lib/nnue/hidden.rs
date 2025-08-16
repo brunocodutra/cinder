@@ -1,7 +1,8 @@
 use crate::util::AlignTo64;
+use bytemuck::Zeroable;
 
 /// The hidden layer.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Hidden<const N: usize> {
     #[cfg_attr(test, map(|b: i8| i32::from(b)))]

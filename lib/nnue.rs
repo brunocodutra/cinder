@@ -1,10 +1,11 @@
 use crate::chess::{Color, Phase, Piece, Role, Square};
 use crate::util::{Assume, Integer};
+use bytemuck::{Zeroable, zeroed};
 use byteorder::{LittleEndian, ReadBytesExt};
 use ruzstd::decoding::StreamingDecoder;
 use std::cell::SyncUnsafeCell;
 use std::io::{self, Read};
-use std::mem::{transmute, zeroed};
+use std::mem::transmute;
 
 mod accumulator;
 mod evaluator;
@@ -21,7 +22,7 @@ pub use transformer::*;
 pub use value::*;
 
 /// An Efficiently Updatable Neural Network.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
 struct Nnue {
     positional: Affine<i16, { Positional::LEN }>,
     material: Linear<i32, { Material::LEN }>,
@@ -29,7 +30,7 @@ struct Nnue {
     pieces: [[i32; Role::MAX as usize + 1]; Material::LEN],
 }
 
-static NNUE: SyncUnsafeCell<Nnue> = unsafe { zeroed() };
+static NNUE: SyncUnsafeCell<Nnue> = SyncUnsafeCell::new(zeroed());
 
 #[cold]
 #[ctor::ctor]

@@ -1,6 +1,7 @@
 use crate::nnue::{Feature, Material, Nnue, Positional, Value};
 use crate::util::{Assume, Integer};
 use crate::{chess::*, params::Params, search::Ply};
+use bytemuck::zeroed;
 use derive_more::with_trait::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, Index, Range};
@@ -93,8 +94,8 @@ impl Evaluator {
         let mut evaluator = Evaluator {
             ply: Ply::new(0),
             positions: array::from_fn(|_| Default::default()),
-            positional: array::from_fn(|_| array::from_fn(|_| Default::default())),
-            material: array::from_fn(|_| array::from_fn(|_| Default::default())),
+            positional: zeroed(),
+            material: zeroed(),
             moves: [None; Ply::MAX as usize],
         };
 

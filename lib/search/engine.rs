@@ -3,6 +3,7 @@ use crate::nnue::{Evaluator, Value};
 use crate::syzygy::{Syzygy, Wdl};
 use crate::util::{Assume, Bounded, Integer, Memory};
 use crate::{params::Params, search::*};
+use bytemuck::{Zeroable, try_zeroed_slice_box};
 use derive_more::with_trait::{Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
@@ -936,7 +937,7 @@ impl<'e, 'p> Stream for Search<'e, 'p> {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Zeroable)]
 struct Corrections {
     pawns: Correction,
     minor: Correction,
@@ -945,7 +946,7 @@ struct Corrections {
     black: Correction,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Zeroable)]
 struct Searcher {
     history: History,
     continuation: Continuation,
@@ -991,9 +992,7 @@ impl Engine {
             tt: Memory::new(options.hash.get()),
             syzygy: Syzygy::new(&options.syzygy),
             executor: Executor::new(options.threads),
-            searchers: (0..options.threads.get())
-                .map(|_| Searcher::default())
-                .collect(),
+            searchers: try_zeroed_slice_box(options.threads.cast()).assume(),
         }
     }
 

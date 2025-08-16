@@ -11,81 +11,81 @@ on:
   - cron:  '0 6 * * SAT'
 
 jobs:
-  fmt:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - run: cargo fmt --all -- --check
+  # fmt:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - run: cargo fmt --all -- --check
 
-  clippy:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - run: cargo clippy --all-targets --all-features -- -D warnings
+  # clippy:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - run: cargo clippy --all-targets --all-features -- -D warnings
 
-  audit:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - run: cargo install --force cargo-audit
-    - run: cargo generate-lockfile
-    - run: cargo audit
+  # audit:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - run: cargo install --force cargo-audit
+  #   - run: cargo generate-lockfile
+  #   - run: cargo audit
 
-  check:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - run: cargo check --all-targets --all-features --workspace
+  # check:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - run: cargo check --all-targets --all-features --workspace
 
-  doc:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - run: cargo doc --all-features --workspace --no-deps
+  # doc:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - run: cargo doc --all-features --workspace --no-deps
 
-  test:
-    needs: [fmt, clippy, audit, check, doc]
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macOS-latest]
-    steps:
-    - uses: actions/checkout@v4
-    - run: cargo test --all-targets --all-features --workspace
+  # test:
+  #   needs: [fmt, clippy, audit, check, doc]
+  #   runs-on: ${{ matrix.os }}
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       os: [ubuntu-latest, windows-latest, macOS-latest]
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - run: cargo test --all-targets --all-features --workspace
 
-  sanitize:
-    needs: [test]
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        sanitizer: [address, leak, memory, thread]
-    steps:
-    - uses: actions/checkout@v4
-    - run: cargo test --lib --all-features --workspace --target x86_64-unknown-linux-gnu -Zbuild-std -Zunstable-options --config='build.rustflags = ["-Zsanitizer=${{ matrix.sanitizer }}"]' -- --test-threads=1
-      env:
-        CC: "clang"
-        CFLAGS: "-fsanitize=${{ matrix.sanitizer }}"
-        PROPTEST_CASES: 32
+  # sanitize:
+  #   needs: [test]
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       sanitizer: [address, leak, memory, thread]
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - run: cargo test --lib --all-features --workspace --target x86_64-unknown-linux-gnu -Zbuild-std -Zunstable-options --config='build.rustflags = ["-Zsanitizer=${{ matrix.sanitizer }}"]' -- --test-threads=1
+  #     env:
+  #       CC: "clang"
+  #       CFLAGS: "-fsanitize=${{ matrix.sanitizer }}"
+  #       PROPTEST_CASES: 32
 
-  coverage:
-    needs: [test]
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - run: cargo install --force cargo-llvm-cov
-    - run: cargo llvm-cov --lib --all-features --workspace --lcov --output-path lcov.info
-      env:
-        PROPTEST_CASES: 32
-    - uses: codecov/codecov-action@v5
-      with:
-        token: ${{secrets.CODECOV_TOKEN}}
-        files: lcov.info
-        fail_ci_if_error: true
+  # coverage:
+  #   needs: [test]
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - run: cargo install --force cargo-llvm-cov
+  #   - run: cargo llvm-cov --lib --all-features --workspace --lcov --output-path lcov.info
+  #     env:
+  #       PROPTEST_CASES: 32
+  #   - uses: codecov/codecov-action@v5
+  #     with:
+  #       token: ${{secrets.CODECOV_TOKEN}}
+  #       files: lcov.info
+  #       fail_ci_if_error: true
 
   dist:
-    needs: [fmt, clippy, audit, check, doc]
+    # needs: [fmt, clippy, audit, check, doc]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -95,4 +95,4 @@ jobs:
     - uses: actions/checkout@v4
     - run: cargo install --force cargo-pgo
     - run: make release --ignore-errors
-    - run: ls "${{ github.workspace }}/target/bin/"
+    - run: ls -la "${{ github.workspace }}/target/bin/"

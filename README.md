@@ -23,7 +23,7 @@ directly on a terminal via its command line interface (CLI).
 
 ```
 uci
-id name Cinder 0.3.0
+id name Cinder 0.3.1
 id author Bruno Dutra
 option name Hash type spin default 16 min 0 max 33554432
 option name Threads type spin default 1 min 1 max 4096

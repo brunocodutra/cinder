@@ -6,6 +6,10 @@ use crate::util::Integer;
 #[repr(transparent)]
 pub struct Phase(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as Integer>::Repr);
 
+impl Phase {
+    pub const LEN: usize = Phase::MAX as usize + 1;
+}
+
 unsafe impl Integer for Phase {
     type Repr = u8;
     const MIN: Self::Repr = 0;

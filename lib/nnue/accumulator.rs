@@ -1,5 +1,4 @@
-use crate::chess::Phase;
-use crate::util::{AlignTo64, Integer};
+use crate::{chess::Phase, util::AlignTo64};
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::{Debug, Deref, DerefMut};
 
@@ -13,7 +12,7 @@ pub struct Material(
 );
 
 impl Material {
-    pub const LEN: usize = Phase::MAX as usize + 1;
+    pub const LEN: usize = Phase::LEN;
 }
 
 impl Default for Material {

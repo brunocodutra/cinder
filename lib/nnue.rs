@@ -5,7 +5,6 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use ruzstd::decoding::StreamingDecoder;
 use std::cell::SyncUnsafeCell;
 use std::io::{self, Read};
-use std::mem::transmute;
 
 mod accumulator;
 mod evaluator;
@@ -45,25 +44,19 @@ impl Nnue {
     #[inline(always)]
     fn load<T: Read>(&mut self, mut reader: T) -> io::Result<()> {
         reader.read_i16_into::<LittleEndian>(&mut *self.positional.bias)?;
-        reader.read_i16_into::<LittleEndian>(unsafe {
-            transmute::<
-                &mut [[_; Positional::LEN]; Feature::LEN],
-                &mut [_; Positional::LEN * Feature::LEN],
-            >(&mut *self.positional.weight)
-        })?;
+        for row in self.positional.weight.iter_mut() {
+            reader.read_i16_into::<LittleEndian>(row)?;
+        }
 
-        reader.read_i32_into::<LittleEndian>(unsafe {
-            transmute::<
-                &mut [[_; Material::LEN]; Feature::LEN],
-                &mut [_; Material::LEN * Feature::LEN],
-            >(&mut *self.material.weight)
-        })?;
+        for row in self.material.weight.iter_mut() {
+            reader.read_i32_into::<LittleEndian>(row)?;
+        }
 
-        for Hidden { bias, weight } in &mut self.hidden {
+        for Hidden { bias, weight } in self.hidden.iter_mut() {
             *bias = reader.read_i32::<LittleEndian>()?;
-            reader.read_i8_into(unsafe {
-                transmute::<&mut [[_; Positional::LEN]; 2], &mut [_; Positional::LEN * 2]>(weight)
-            })?;
+            for row in weight {
+                reader.read_i8_into(row)?;
+            }
         }
 
         debug_assert!(reader.read_u8().is_err());

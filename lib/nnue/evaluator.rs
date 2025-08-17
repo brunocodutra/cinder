@@ -191,13 +191,13 @@ impl Evaluator {
     /// The value of the [`Position`] at current ply.
     pub fn evaluate(&mut self) -> Value {
         let phase = self.phase();
-        let hl = Nnue::hidden(phase);
+        let out = Nnue::output(phase);
         let us = self.turn() as usize;
         let them = self.turn().flip() as usize;
         let idx = self.ply.cast::<usize>();
         let material = self.material[idx][us][phase.cast::<usize>()]
             - self.material[idx][them][phase.cast::<usize>()];
-        let positional = hl.forward(&self.positional[idx][us], &self.positional[idx][them]);
+        let positional = out.forward(&self.positional[idx][us], &self.positional[idx][them]);
         let scale = Params::value_scale()[0] / Params::BASE;
         let value = (material + 2 * positional) as i64 / scale;
         value.saturate()

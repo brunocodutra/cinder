@@ -12,7 +12,7 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 #[debug("Linear<{N}>")]
 pub struct Linear<T, const N: usize> {
     #[cfg_attr(test, map(|vs: [[i8; N]; Feature::LEN]| AlignTo64(vs.map(|v| v.map(T::from)))))]
-    pub(super) weight: AlignTo64<[[T; N]; Feature::LEN]>,
+    pub weight: AlignTo64<[[T; N]; Feature::LEN]>,
 }
 
 impl<T, const N: usize> Linear<T, N>
@@ -110,9 +110,9 @@ where
 #[debug("Affine<{N}>")]
 pub struct Affine<T, const N: usize> {
     #[cfg_attr(test, map(|vs: [i8; N]| AlignTo64(vs.map(T::from))))]
-    pub(super) bias: AlignTo64<[T; N]>,
+    pub bias: AlignTo64<[T; N]>,
     #[deref]
-    pub(super) weight: Linear<T, N>,
+    pub weight: Linear<T, N>,
 }
 
 impl<T: Copy, const N: usize> Affine<T, N> {

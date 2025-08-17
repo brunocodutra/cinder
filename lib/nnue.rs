@@ -9,23 +9,23 @@ use std::io::{self, Read};
 mod accumulator;
 mod evaluator;
 mod feature;
-mod hidden;
+mod output;
 mod transformer;
 mod value;
 
 pub use accumulator::*;
 pub use evaluator::*;
 pub use feature::*;
-pub use hidden::*;
+pub use output::*;
 pub use transformer::*;
 pub use value::*;
 
 /// An Efficiently Updatable Neural Network.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
-struct Nnue {
+pub struct Nnue {
     positional: Affine<i16, { Positional::LEN }>,
     material: Linear<i32, { Material::LEN }>,
-    hidden: [Hidden<{ Positional::LEN }>; Material::LEN],
+    output: [Output<{ Positional::LEN }>; Material::LEN],
     pieces: [[i32; Role::MAX as usize + 1]; Material::LEN],
 }
 
@@ -52,14 +52,15 @@ impl Nnue {
             reader.read_i32_into::<LittleEndian>(row)?;
         }
 
-        for Hidden { bias, weight } in self.hidden.iter_mut() {
+        for Output { bias, .. } in self.output.iter_mut() {
             *bias = reader.read_i32::<LittleEndian>()?;
-            for row in weight {
-                reader.read_i8_into(row)?;
-            }
         }
 
-        debug_assert!(reader.read_u8().is_err());
+        for Output { weight, .. } in self.output.iter_mut() {
+            for row in weight {
+                reader.read_i16_into::<LittleEndian>(row)?;
+            }
+        }
 
         for phase in Phase::iter() {
             for role in Role::iter() {
@@ -83,23 +84,23 @@ impl Nnue {
     }
 
     #[inline(always)]
-    fn positional() -> &'static Affine<i16, { Positional::LEN }> {
+    pub fn positional() -> &'static Affine<i16, { Positional::LEN }> {
         unsafe { &NNUE.get().as_ref_unchecked().positional }
     }
 
     #[inline(always)]
-    fn material() -> &'static Linear<i32, { Material::LEN }> {
+    pub fn material() -> &'static Linear<i32, { Material::LEN }> {
         unsafe { &NNUE.get().as_ref_unchecked().material }
     }
 
     #[inline(always)]
-    fn hidden(phase: Phase) -> &'static Hidden<{ Positional::LEN }> {
+    pub fn output(phase: Phase) -> &'static Output<{ Positional::LEN }> {
         let idx = phase.cast::<usize>();
-        unsafe { NNUE.get().as_ref_unchecked().hidden.get_unchecked(idx) }
+        unsafe { NNUE.get().as_ref_unchecked().output.get_unchecked(idx) }
     }
 
     #[inline(always)]
-    fn pieces(phase: Phase) -> &'static [i32; Role::MAX as usize + 1] {
+    pub fn pieces(phase: Phase) -> &'static [i32; Role::MAX as usize + 1] {
         let idx = phase.cast::<usize>();
         unsafe { NNUE.get().as_ref_unchecked().pieces.get_unchecked(idx) }
     }

@@ -226,15 +226,31 @@ impl<'a> Stack<'a> {
         ])
     }
 
-    /// Computes the null move pruning reduction.
+    /// Computes the null move reduction.
     #[inline(always)]
-    fn nmp(surplus: Score, depth: Depth) -> Option<Depth> {
-        let gamma = Params::null_move_pruning_gamma()[0];
-        let delta = Params::null_move_pruning_delta()[0];
-        match Params::BASE * surplus.cast::<i64>() {
-            s if s < gamma - delta => None,
-            s if s >= 3 * gamma - delta => Some(depth - 3 - depth / 4),
-            s => Some(depth - (s + delta) / gamma - depth / 4),
+    fn nmr(depth: Depth, surplus: Score) -> Option<i64> {
+        let gamma = Params::null_move_reduction_gamma()[0];
+        let delta = Params::null_move_reduction_delta()[0];
+
+        match depth.cast::<i64>() {
+            ..3 => None,
+            d @ 3.. => match Params::BASE * surplus.cast::<i64>() {
+                s if s < gamma - delta => None,
+                s if s >= 3 * gamma - delta => Some(3 + d / 4),
+                s => Some((s + delta) / gamma + d / 4),
+            },
+        }
+    }
+
+    /// Computes the null move pruning margin.
+    #[inline(always)]
+    fn nmp(depth: Depth) -> Option<i64> {
+        match depth.cast() {
+            ..1 | 5.. => None,
+            d @ 1..5 => Some(convolve([
+                (d, &Params::null_move_pruning_depth()),
+                (1, &Params::null_move_pruning_scalar()),
+            ])),
         }
     }
 
@@ -268,8 +284,8 @@ impl<'a> Stack<'a> {
     #[inline(always)]
     fn razoring(depth: Depth) -> Option<i64> {
         match depth.cast() {
-            5.. => None,
-            d @ ..5 => Some(convolve([
+            ..1 | 5.. => None,
+            d @ 1..5 => Some(convolve([
                 (d, &Params::razoring_margin_depth()),
                 (1, &Params::razoring_margin_scalar()),
             ])),
@@ -280,8 +296,8 @@ impl<'a> Stack<'a> {
     #[inline(always)]
     fn rfp(depth: Depth) -> Option<i64> {
         match depth.cast() {
-            9.. => None,
-            d @ ..9 => Some(convolve([
+            ..1 | 9.. => None,
+            d @ 1..9 => Some(convolve([
                 (d, &Params::reverse_futility_margin_depth()),
                 (1, &Params::reverse_futility_margin_scalar()),
             ])),
@@ -503,8 +519,14 @@ impl<'a> Stack<'a> {
             }
 
             if self.evaluator.pieces(self.evaluator.turn()).len() > 1 {
-                if let Some(d) = Self::nmp(transposed.score() - beta, depth) {
-                    if d <= 0 || -self.next(None).nw::<0>(d - 1, -beta + 1, !cut)? >= beta {
+                if let Some(margin) = Self::nmp(depth) {
+                    if transposed.score() - margin / Params::BASE >= beta {
+                        return Ok(transposed.truncate());
+                    }
+                }
+
+                if let Some(r) = Self::nmr(depth, transposed.score() - beta) {
+                    if -self.next(None).nw::<0>(depth - r - 1, -beta + 1, !cut)? >= beta {
                         return Ok(transposed.truncate());
                     }
                 }

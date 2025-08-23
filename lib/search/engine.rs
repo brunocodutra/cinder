@@ -340,12 +340,21 @@ impl<'a> Stack<'a> {
         ])
     }
 
-    /// Computes the SEE pruning threshold.
+    /// Computes the noisy SEE pruning margin.
     #[inline(always)]
-    fn spt(depth: Depth) -> i64 {
+    fn nsp(depth: Depth) -> i64 {
         convolve([
-            (depth.cast(), &Params::see_pruning_depth()),
-            (1, &Params::see_pruning_scalar()),
+            (depth.cast(), &Params::noisy_see_pruning_depth()),
+            (1, &Params::noisy_see_pruning_scalar()),
+        ])
+    }
+
+    /// Computes the quiet SEE pruning margin.
+    #[inline(always)]
+    fn qsp(depth: Depth) -> i64 {
+        convolve([
+            (depth.cast(), &Params::quiet_see_pruning_depth()),
+            (1, &Params::quiet_see_pruning_scalar()),
         ])
     }
 
@@ -616,14 +625,16 @@ impl<'a> Stack<'a> {
                 break;
             }
 
+            let mut lmr = Self::lmr(depth, index);
+            let lmr_depth = depth - lmr / Params::BASE;
             let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
             let counter = reply.get(&self.evaluator, m).cast::<i64>();
             let history = self.searcher.history.get(&self.evaluator, m).cast::<i64>();
             let gain = self.evaluator.gain(m).cast::<i64>();
             let is_killer = killer.contains(m);
+            let is_quiet = m.is_quiet();
 
-            let mut lmr = Self::lmr(depth, index);
-            let mut futility = Self::futility(depth - lmr / Params::BASE);
+            let mut futility = Self::futility(lmr_depth);
             futility += is_pv as i64 * Params::futility_margin_is_pv()[0];
             futility += was_pv as i64 * Params::futility_margin_was_pv()[0];
             futility += is_check as i64 * Params::futility_margin_is_check()[0];
@@ -636,7 +647,12 @@ impl<'a> Stack<'a> {
                 continue;
             }
 
-            let mut spt = Self::spt(depth - lmr / Params::BASE);
+            let mut spt = if is_quiet {
+                Self::qsp(lmr_depth)
+            } else {
+                Self::nsp(depth)
+            };
+
             spt += is_killer as i64 * Params::see_pruning_is_killer()[0];
             spt += history * Params::see_pruning_history()[0] / History::LIMIT as i64;
             spt += counter * Params::see_pruning_counter()[0] / History::LIMIT as i64;

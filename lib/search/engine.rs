@@ -145,37 +145,33 @@ impl<'a> Stack<'a> {
     }
 
     #[inline(always)]
-    fn history_bonus(m: Move, depth: Depth) -> i64 {
+    fn history_bonus(depth: Depth) -> i64 {
         convolve([
             (depth.cast(), &Params::history_bonus_depth()),
-            (m.is_quiet() as _, &Params::history_bonus_is_quiet()),
             (1, &Params::history_bonus_scalar()),
         ])
     }
 
     #[inline(always)]
-    fn continuation_bonus(m: Move, depth: Depth) -> i64 {
+    fn continuation_bonus(depth: Depth) -> i64 {
         convolve([
             (depth.cast(), &Params::continuation_bonus_depth()),
-            (m.is_quiet() as _, &Params::continuation_bonus_is_quiet()),
             (1, &Params::continuation_bonus_scalar()),
         ])
     }
 
     #[inline(always)]
-    fn history_penalty(m: Move, depth: Depth) -> i64 {
+    fn history_penalty(depth: Depth) -> i64 {
         convolve([
             (depth.cast(), &Params::history_penalty_depth()),
-            (m.is_quiet() as _, &Params::history_penalty_is_quiet()),
             (1, &Params::history_penalty_scalar()),
         ])
     }
 
     #[inline(always)]
-    fn continuation_penalty(m: Move, depth: Depth) -> i64 {
+    fn continuation_penalty(depth: Depth) -> i64 {
         convolve([
             (depth.cast(), &Params::continuation_penalty_depth()),
-            (m.is_quiet() as _, &Params::continuation_penalty_is_quiet()),
             (1, &Params::continuation_penalty_scalar()),
         ])
     }
@@ -185,10 +181,10 @@ impl<'a> Stack<'a> {
         let pos = &*self.evaluator;
         let ply = self.evaluator.ply();
 
-        let bonus = Self::history_bonus(best, depth) / Params::BASE;
+        let bonus = Self::history_bonus(depth) / Params::BASE;
         self.searcher.history.update(pos, best, bonus.saturate());
 
-        let bonus = Self::continuation_bonus(best, depth) / Params::BASE;
+        let bonus = Self::continuation_bonus(depth) / Params::BASE;
         let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
         reply.update(pos, best, bonus.saturate());
 
@@ -196,10 +192,10 @@ impl<'a> Stack<'a> {
             if m == best {
                 break;
             } else {
-                let penalty = Self::history_penalty(m, depth) / Params::BASE;
+                let penalty = Self::history_penalty(depth) / Params::BASE;
                 self.searcher.history.update(pos, m, penalty.saturate());
 
-                let penalty = Self::continuation_penalty(m, depth) / Params::BASE;
+                let penalty = Self::continuation_penalty(depth) / Params::BASE;
                 let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
                 reply.update(pos, m, penalty.saturate());
             }

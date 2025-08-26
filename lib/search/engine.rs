@@ -547,17 +547,15 @@ impl<'a> Stack<'a> {
                 return Bounded::upper();
             }
 
-            let mut rating = 0i64;
+            let mut rating = killer.contains(m) as i64 * Params::killer_move_bonus()[0];
             let history = self.searcher.history.get(&self.evaluator, m).cast::<i64>();
-            rating += Params::history_rating()[0] * history / History::LIMIT as i64;
+            rating += history * Params::history_rating()[0] / History::LIMIT as i64;
 
             let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
             let counter = reply.get(&self.evaluator, m).cast::<i64>();
-            rating += Params::counter_rating()[0] * counter / History::LIMIT as i64;
+            rating += counter * Params::counter_rating()[0] / History::LIMIT as i64;
 
-            if killer.contains(m) {
-                rating += Params::killer_move_bonus()[0];
-            } else if !m.is_quiet() {
+            if !m.is_quiet() {
                 let gain = self.evaluator.gain(m);
                 if self.evaluator.winning(m, Value::new(1)) {
                     rating += convolve([
@@ -725,7 +723,7 @@ impl<'a> Stack<'a> {
 
             let mut rating = 0i64;
             let history = self.searcher.history.get(&self.evaluator, m).cast::<i64>();
-            rating += Params::history_rating()[0] * history / History::LIMIT as i64;
+            rating += history * Params::history_rating()[0] / History::LIMIT as i64;
 
             if !m.is_quiet() {
                 let gain = self.evaluator.gain(m);

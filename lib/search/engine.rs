@@ -107,6 +107,7 @@ impl<'a> Stack<'a> {
     fn correction(&mut self) -> i64 {
         let pos = &self.searcher.pos;
         let zobrists = pos.zobrists();
+        let phase = pos.phase().cast::<usize>();
         let pawns = self.searcher.corrections.pawns.get(pos, zobrists.pawns);
         let minor = self.searcher.corrections.minor.get(pos, zobrists.minor);
         let major = self.searcher.corrections.major.get(pos, zobrists.major);
@@ -114,11 +115,11 @@ impl<'a> Stack<'a> {
         let black = self.searcher.corrections.black.get(pos, zobrists.black);
 
         let mut correction = 0;
-        correction += pawns as i64 * Params::pawns_correction()[0];
-        correction += minor as i64 * Params::minor_correction()[0];
-        correction += major as i64 * Params::major_correction()[0];
-        correction += white as i64 * Params::pieces_correction()[0];
-        correction += black as i64 * Params::pieces_correction()[0];
+        correction += pawns as i64 * Params::pawns_correction()[phase];
+        correction += minor as i64 * Params::minor_correction()[phase];
+        correction += major as i64 * Params::major_correction()[phase];
+        correction += white as i64 * Params::pieces_correction()[phase];
+        correction += black as i64 * Params::pieces_correction()[phase];
         correction / Correction::LIMIT as i64 / Params::BASE
     }
 

@@ -654,8 +654,6 @@ impl<'a> Stack<'a> {
             };
 
             spt += is_killer as i64 * Params::see_pruning_is_killer()[0];
-            spt += history * Params::see_pruning_history()[0] / History::LIMIT as i64;
-            spt += counter * Params::see_pruning_counter()[0] / History::LIMIT as i64;
             if !self.evaluator.winning(m, (spt / Params::BASE).saturate()) {
                 continue;
             }

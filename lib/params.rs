@@ -215,8 +215,6 @@ params! {
     quiet_see_pruning_depth: Variable2<{ [-40119, -4118] }>,
     quiet_see_pruning_scalar: Variable1<{ [36777] }>,
     see_pruning_is_killer: Variable1<{ [-26725] }>,
-    see_pruning_history: Variable1<{ [-12145] }>,
-    see_pruning_counter: Variable1<{ [-23816] }>,
     late_move_reduction_depth: Variable3<{ [0, 947, 378] }>,
     late_move_reduction_index: Variable2<{ [0, 401] }>,
     late_move_reduction_scalar: Variable1<{ [3145] }>,

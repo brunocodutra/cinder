@@ -1,6 +1,7 @@
 use crate::util::{Assume, Binary, Bits, Integer, Unsigned};
 use atomic::Atomic;
-use derive_more::with_trait::Debug;
+use bytemuck::{Zeroable, try_zeroed_slice_box};
+use derive_more::with_trait::{Debug, Deref, DerefMut};
 use std::ops::{Index, IndexMut};
 use std::{marker::PhantomData, mem::size_of, sync::atomic::Ordering};
 
@@ -12,10 +13,7 @@ type Key = Bits<u64, 64>;
 /// A [`Memory`] slot.
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Latch<
-    T: Binary<Bits: Integer<Repr: Binary>>,
-    U: Binary = <<T as Binary>::Bits as Integer>::Repr,
-> {
+pub struct Latch<T: Binary, U: Binary> {
     bits: U::Bits,
     phantom: PhantomData<T>,
 }
@@ -72,6 +70,12 @@ where
     }
 }
 
+#[derive(Debug, Deref, DerefMut)]
+#[repr(transparent)]
+struct Slot<T>(Atomic<T>);
+
+unsafe impl<T: Zeroable> Zeroable for Slot<T> {}
+
 /// A generic memoization data.
 #[derive(Debug)]
 #[debug("Memory")]
@@ -82,7 +86,7 @@ pub struct Memory<
     Option<Latch<T, U>>: Binary,
 {
     #[allow(clippy::type_complexity)]
-    data: Box<[Atomic<<Option<Latch<T, U>> as Binary>::Bits>]>,
+    data: Box<[Slot<<Option<Latch<T, U>> as Binary>::Bits>]>,
 }
 
 #[cfg(test)]
@@ -101,8 +105,8 @@ where
                 let cap = map.len().next_power_of_two();
 
                 #[allow(clippy::type_complexity)]
-                let mut data: Box<[Atomic<<Option<Latch<T, U>> as Binary>::Bits>]> =
-                    Box::from_iter((0..cap).map(|_| Atomic::new(None::<Latch<T, U>>.encode())));
+                let mut data: Box<[Slot<<Option<Latch<T, U>> as Binary>::Bits>]> =
+                    try_zeroed_slice_box(cap).assume();
 
                 if cap > 0 {
                     for (k, v) in map {
@@ -128,7 +132,7 @@ where
         let cap = (1 + size / 2).next_power_of_two() / size_of::<Latch<T, U>>();
 
         Memory {
-            data: Box::from_iter((0..cap).map(|_| Atomic::new(None::<Latch<T, U>>.encode()))),
+            data: try_zeroed_slice_box(cap).assume(),
         }
     }
 
@@ -184,8 +188,8 @@ where
     }
 }
 
-impl<T> Index<Key> for [Atomic<T>] {
-    type Output = Atomic<T>;
+impl<T> Index<Key> for [Slot<T>] {
+    type Output = Slot<T>;
 
     #[inline(always)]
     fn index(&self, key: Key) -> &Self::Output {
@@ -198,7 +202,7 @@ impl<T> Index<Key> for [Atomic<T>] {
     }
 }
 
-impl<T> IndexMut<Key> for [Atomic<T>] {
+impl<T> IndexMut<Key> for [Slot<T>] {
     #[inline(always)]
     fn index_mut(&mut self, key: Key) -> &mut Self::Output {
         let idx = match Key::BITS - self.len().trailing_zeros() {

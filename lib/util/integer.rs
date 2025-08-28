@@ -1,5 +1,5 @@
 use crate::util::Assume;
-use bytemuck::NoUninit;
+use bytemuck::{NoUninit, Zeroable};
 use std::fmt::{Binary, Debug, LowerHex, Octal, UpperHex};
 use std::{cmp::Ordering, hash::Hash, hint::unreachable_unchecked, mem::transmute_copy};
 use std::{num::*, ops::*};
@@ -99,7 +99,6 @@ pub unsafe trait Integer: Copy {
 /// Trait for primitive integer types.
 pub trait Primitive:
     Integer<Repr = Self>
-    + NoUninit
     + Debug
     + Binary
     + Octal
@@ -111,6 +110,8 @@ pub trait Primitive:
     + Ord
     + PartialOrd
     + Hash
+    + NoUninit
+    + Zeroable
     + Add<Output = Self>
     + AddAssign
     + Sub<Output = Self>
@@ -206,10 +207,10 @@ macro_rules! impl_primitive_for {
                     unsafe { transmute_copy(&self) }
                 } else {
                     match I::BITS {
-                        16 => (self as i16).cast(),
-                        32 => (self as i32).cast(),
-                        64 => (self as i64).cast(),
-                        128 => (self as i128).cast(),
+                        16 => (self as u16).cast(),
+                        32 => (self as u32).cast(),
+                        64 => (self as u64).cast(),
+                        128 => (self as u128).cast(),
                         _ => unsafe { unreachable_unchecked() },
                     }
                 }

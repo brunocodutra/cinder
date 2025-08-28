@@ -1,5 +1,5 @@
 use crate::util::{Integer, Unsigned};
-use bytemuck::NoUninit;
+use bytemuck::{NoUninit, Zeroable};
 use derive_more::with_trait::{Debug, *};
 use std::mem::transmute_copy;
 use std::ops::{Bound, Not, RangeBounds};
@@ -21,6 +21,7 @@ use std::ops::RangeInclusive;
     Ord,
     PartialOrd,
     Hash,
+    Zeroable,
     BitAnd,
     BitAndAssign,
     BitOr,
@@ -33,9 +34,7 @@ use std::ops::RangeInclusive;
 #[debug("Bits({_0:b})")]
 #[display("{_0:b}")]
 #[repr(transparent)]
-pub struct Bits<T: Unsigned + 'static, const W: u32>(
-    #[cfg_attr(test, strategy(T::zero()..=T::ones(W)))] T,
-);
+pub struct Bits<T, const W: u32>(#[cfg_attr(test, strategy(T::zero()..=T::ones(W)))] T);
 
 /// Workaround to https://github.com/rust-lang/rfcs/pull/3762.
 pub const fn bits<U: Integer<Repr: Unsigned>>(i: u128) -> U {

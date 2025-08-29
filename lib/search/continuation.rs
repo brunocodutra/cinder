@@ -38,7 +38,7 @@ impl Statistics<Move> for Reply {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
 #[debug("Continuation")]
-pub struct Continuation([[[Reply; 64]; 2]; 12]);
+pub struct Continuation([[Reply; 64]; 12]);
 
 impl Default for Continuation {
     #[inline(always)]
@@ -51,6 +51,6 @@ impl Continuation {
     #[inline(always)]
     pub fn reply(&mut self, pos: &Position, m: Move) -> &mut Reply {
         let piece = pos.piece_on(m.whence()).assume();
-        &mut self.0[piece as usize][m.is_quiet() as usize][m.whither() as usize]
+        &mut self.0[piece as usize][m.whither() as usize]
     }
 }

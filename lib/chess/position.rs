@@ -253,21 +253,14 @@ impl MoveGenerator {
                 }
             }
 
-            if let Some(c) = pos.castles().long(turn) {
-                let b = Square::new(File::B, c.rank());
-                let path = c.bitboard().with(Square::new(File::D, c.rank()));
-                if occupied & path.with(b) == Bitboard::empty() {
-                    if !path.iter().any(|sq| pos.is_threatened(sq, !turn, occupied)) {
-                        moves |= c.bitboard();
-                    }
-                }
-            }
-
-            if let Some(g) = pos.castles().short(turn) {
-                let path = g.bitboard().with(Square::new(File::F, g.rank()));
-                if occupied & path == Bitboard::empty() {
-                    if !path.iter().any(|sq| pos.is_threatened(sq, !turn, occupied)) {
-                        moves |= g.bitboard();
+            for castling in [Square::C1.perspective(turn), Square::G1.perspective(turn)] {
+                if pos.castles().has(castling) {
+                    let rook = Castles::rook(castling).whence();
+                    if occupied & Bitboard::segment(king, rook) == Bitboard::empty() {
+                        let path = Bitboard::segment(king, castling).with(castling);
+                        if !path.iter().any(|sq| pos.is_threatened(sq, !turn, occupied)) {
+                            moves |= castling.bitboard();
+                        }
                     }
                 }
             }
@@ -666,8 +659,7 @@ impl Position {
     pub fn play(&mut self, m: Move) {
         debug_assert!(self.moves().unpack().any(|n| m == n));
 
-        use {Role::*, Square::*};
-
+        use Role::*;
         let turn = self.turn();
         let promotion = m.promotion();
         let (wc, wt) = (m.whence(), m.whither());
@@ -722,17 +714,12 @@ impl Position {
             self.board.en_passant = Some(Square::new(wc.file(), Rank::Third.perspective(turn)));
             self.zobrists.hash ^= ZobristNumbers::en_passant(wc.file());
         } else if role == King && (wt - wc).abs() == 2 {
-            let (wc, wt) = if wt > wc {
-                (H1.perspective(turn), F1.perspective(turn))
-            } else {
-                (A1.perspective(turn), D1.perspective(turn))
-            };
-
+            let m = Castles::rook(wt);
             let rook = Piece::new(Rook, turn);
-            self.board.toggle(rook, wc);
-            self.board.toggle(rook, wt);
-            self.zobrists.toggle(rook, wc);
-            self.zobrists.toggle(rook, wt);
+            self.board.toggle(rook, m.whence());
+            self.board.toggle(rook, m.whither());
+            self.zobrists.toggle(rook, m.whence());
+            self.zobrists.toggle(rook, m.whither());
         }
 
         let disrupted = Castles::from(wc) | Castles::from(wt);

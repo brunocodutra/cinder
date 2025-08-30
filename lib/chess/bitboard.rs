@@ -1,5 +1,6 @@
 use crate::chess::{File, Flip, Rank, Square};
 use crate::util::{Assume, Integer};
+use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::{Debug, *};
 use std::cell::SyncUnsafeCell;
 use std::fmt::{self, Formatter, Write};
@@ -15,6 +16,7 @@ pub type Butterfly<T> = [[T; 64]; 64];
     Eq,
     PartialEq,
     Hash,
+    Zeroable,
     Constructor,
     Deref,
     BitAnd,
@@ -52,31 +54,31 @@ impl Debug for Bitboard {
 impl Bitboard {
     /// An empty board.
     #[inline(always)]
-    pub const fn empty() -> Self {
+    pub fn empty() -> Self {
         Bitboard::new(0)
     }
 
     /// A full board.
     #[inline(always)]
-    pub const fn full() -> Self {
+    pub fn full() -> Self {
         Bitboard::new(0xFFFFFFFFFFFFFFFF)
     }
 
     /// Border squares.
     #[inline(always)]
-    pub const fn border() -> Self {
+    pub fn border() -> Self {
         Bitboard::new(0xFF818181818181FF)
     }
 
     /// Light squares.
     #[inline(always)]
-    pub const fn light() -> Self {
+    pub fn light() -> Self {
         Bitboard::new(0x55AA55AA55AA55AA)
     }
 
     /// Dark squares.
     #[inline(always)]
-    pub const fn dark() -> Self {
+    pub fn dark() -> Self {
         Bitboard::new(0xAA55AA55AA55AA55)
     }
 
@@ -126,8 +128,7 @@ impl Bitboard {
     /// ```
     #[inline(always)]
     pub fn line(whence: Square, whither: Square) -> Self {
-        pub static LINES: SyncUnsafeCell<Butterfly<Bitboard>> =
-            SyncUnsafeCell::new([[Bitboard::empty(); 64]; 64]);
+        pub static LINES: SyncUnsafeCell<Butterfly<Bitboard>> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
         #[ctor::ctor]
@@ -169,8 +170,7 @@ impl Bitboard {
     /// ```
     #[inline(always)]
     pub fn segment(whence: Square, whither: Square) -> Self {
-        pub static SEGMENTS: SyncUnsafeCell<Butterfly<Bitboard>> =
-            SyncUnsafeCell::new([[Bitboard::empty(); 64]; 64]);
+        pub static SEGMENTS: SyncUnsafeCell<Butterfly<Bitboard>> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
         #[ctor::ctor]

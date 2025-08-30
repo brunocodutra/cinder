@@ -286,9 +286,9 @@ impl MoveGenerator {
 #[debug("Position({self})")]
 pub struct Position {
     board: Board,
-    zobrists: Zobrists,
-    checkers: Bitboard,
     pinned: Bitboard,
+    checkers: Bitboard,
+    zobrists: Zobrists,
     history: [[Option<NonZeroU32>; 32]; 2],
 }
 
@@ -323,9 +323,9 @@ impl Default for Position {
         let board = Board::default();
 
         Self {
-            zobrists: board.zobrists(),
-            checkers: Default::default(),
             pinned: Default::default(),
+            checkers: Default::default(),
+            zobrists: board.zobrists(),
             history: Default::default(),
             board,
         }
@@ -742,28 +742,8 @@ impl Position {
             self.zobrists.hash ^= ZobristNumbers::castling(self.castles());
         }
 
-        let king = self.king(!turn);
-        let ours = self.material(turn);
-        let occupied = self.occupied();
-
-        self.pinned = Bitboard::empty();
-        self.checkers = match promotion.unwrap_or(role) {
-            r @ Pawn | r @ Knight => Piece::new(r, !turn).attacks(king, occupied) & wt.into(),
-            _ => Bitboard::empty(),
-        };
-
-        let queens = self.by_role(Queen);
-        for role in [Bishop, Rook] {
-            let slider = Piece::new(role, !turn);
-            for wc in ours & slider.attacks(king, ours) & (queens | self.by_role(role)) {
-                let blockers = occupied & Bitboard::segment(king, wc);
-                match blockers.len() {
-                    0 => self.checkers |= wc.bitboard(),
-                    1 => self.pinned |= blockers,
-                    _ => {}
-                }
-            }
-        }
+        self.checkers = self.board.checkers();
+        self.pinned = self.board.pinned();
     }
 
     /// Play a null-move.
@@ -787,21 +767,7 @@ impl Position {
             self.zobrists.hash ^= ZobristNumbers::en_passant(ep.file());
         }
 
-        let king = self.king(!turn);
-        let ours = self.material(turn);
-        let occupied = self.occupied();
-
-        self.pinned = Bitboard::empty();
-        let queens = self.by_role(Role::Queen);
-        for role in [Role::Bishop, Role::Rook] {
-            let slider = Piece::new(role, !turn);
-            for wc in ours & slider.attacks(king, ours) & (queens | self.by_role(role)) {
-                let blockers = occupied & Bitboard::segment(king, wc);
-                if blockers.len() == 1 {
-                    self.pinned |= blockers;
-                }
-            }
-        }
+        self.pinned = self.board.pinned();
     }
 
     /// Counts the total number of reachable positions to the given depth.
@@ -842,37 +808,15 @@ impl FromStr for Position {
 
     #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        use {ParsePositionError::*, Role::*};
-
         let board: Board = s.parse()?;
-        let king = board.king(board.turn).ok_or(IllegalPosition)?;
-        let ours = board.material(board.turn);
-        let theirs = board.material(!board.turn);
-        let occupied = ours | theirs;
-
-        let mut checkers = Bitboard::empty();
-        for role in [Pawn, Knight] {
-            let stepper = Piece::new(role, board.turn);
-            checkers |= theirs & board.by_role(role) & stepper.attacks(king, occupied);
-        }
-
-        let mut pinned = Bitboard::empty();
-        let queens = board.by_role(Queen);
-        for role in [Bishop, Rook] {
-            let slider = Piece::new(role, board.turn);
-            for wc in theirs & slider.attacks(king, theirs) & (queens | board.by_role(role)) {
-                let blockers = occupied & Bitboard::segment(king, wc);
-                match blockers.len() {
-                    0 => checkers |= wc.bitboard(),
-                    1 => pinned |= blockers,
-                    _ => {}
-                }
-            }
+        for color in Color::iter() {
+            use ParsePositionError::IllegalPosition;
+            board.king(color).ok_or(IllegalPosition)?;
         }
 
         Ok(Position {
-            checkers,
-            pinned,
+            pinned: board.pinned(),
+            checkers: board.checkers(),
             zobrists: board.zobrists(),
             history: Default::default(),
             board,

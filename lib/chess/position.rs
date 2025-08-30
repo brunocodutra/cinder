@@ -410,7 +410,7 @@ impl Position {
         self.by_piece(Piece::new(Role::Pawn, side))
     }
 
-    /// [`Square`]s occupied by pieces other than pawns of a [`Color`].
+    /// [`Square`]s occupied by [`Piece`]s other than pawns of a [`Color`].
     #[inline(always)]
     pub fn pieces(&self, side: Color) -> Bitboard {
         self.material(side) ^ self.pawns(side)
@@ -422,13 +422,13 @@ impl Position {
         self.board.king(side).assume()
     }
 
-    /// The [`Color`] of the piece on the given [`Square`], if any.
+    /// The [`Color`] of the [`Piece`] on the given [`Square`], if any.
     #[inline(always)]
     pub fn color_on(&self, sq: Square) -> Option<Color> {
         self.board.color_on(sq)
     }
 
-    /// The [`Role`] of the piece on the given [`Square`], if any.
+    /// The [`Role`] of the [`Piece`] on the given [`Square`], if any.
     #[inline(always)]
     pub fn role_on(&self, sq: Square) -> Option<Role> {
         self.board.role_on(sq)
@@ -440,7 +440,7 @@ impl Position {
         self.board.piece_on(sq)
     }
 
-    /// An iterator over all pieces on the board.
+    /// An iterator over all [`Piece`]s on the board.
     #[inline(always)]
     pub fn iter(&self) -> impl Iterator<Item = (Piece, Square)> {
         self.board.iter()
@@ -452,13 +452,13 @@ impl Position {
         &self.zobrists
     }
 
-    /// [`Square`]s occupied by pieces giving check.
+    /// [`Square`]s occupied by [`Piece`]s giving check.
     #[inline(always)]
     pub fn checkers(&self) -> Bitboard {
         self.checkers
     }
 
-    /// [`Square`]s occupied by pieces pinned.
+    /// [`Square`]s occupied by pinned [`Piece`]s .
     #[inline(always)]
     pub fn pinned(&self) -> Bitboard {
         self.pinned
@@ -476,7 +476,7 @@ impl Position {
         }
     }
 
-    /// Whether a [`Square`] is threatened by a piece of a [`Color`].
+    /// Whether a [`Square`] is threatened by a [`Piece`] of a [`Color`].
     #[inline(always)]
     pub fn is_threatened(&self, sq: Square, side: Color, occupied: Bitboard) -> bool {
         let theirs = self.material(side);
@@ -615,6 +615,12 @@ impl Position {
                 attackers |= candidates & Piece::new(role, White).attacks(sq, occupied);
             }
 
+            let pinned = [self.pinned(), self.board.pinned(!turn)];
+
+            attackers &= !(pinned[0] | pinned[1])
+                | (pinned[0] & Bitboard::line(self.king(turn), sq))
+                | (pinned[1] & Bitboard::line(self.king(!turn), sq));
+
             loop {
                 turn = !turn;
                 let candidates = attackers & self.material(turn);
@@ -729,8 +735,8 @@ impl Position {
             self.zobrists.hash ^= ZobristNumbers::castling(self.castles());
         }
 
-        self.checkers = self.board.checkers();
-        self.pinned = self.board.pinned();
+        self.checkers = self.board.checkers(!turn);
+        self.pinned = self.board.pinned(!turn);
     }
 
     /// Play a null-move.
@@ -754,7 +760,7 @@ impl Position {
             self.zobrists.hash ^= ZobristNumbers::en_passant(ep.file());
         }
 
-        self.pinned = self.board.pinned();
+        self.pinned = self.board.pinned(!turn);
     }
 
     /// Counts the total number of reachable positions to the given depth.
@@ -802,8 +808,8 @@ impl FromStr for Position {
         }
 
         Ok(Position {
-            pinned: board.pinned(),
-            checkers: board.checkers(),
+            pinned: board.pinned(board.turn),
+            checkers: board.checkers(board.turn),
             zobrists: board.zobrists(),
             history: Default::default(),
             board,
@@ -901,15 +907,16 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Position,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
     ) {
+        prop_assume!(pos.board.pinned(pos.turn()).is_empty());
+        prop_assume!(pos.board.pinned(!pos.turn()).is_empty());
+
         let sq = m.whither();
         let exchanges = pos.exchanges(m);
         let mut pos = pos.clone();
         pos.play(m);
 
         for (m, captor, victim) in exchanges {
-            prop_assume!(pos.pinned().is_empty());
             prop_assume!(pos.checkers().is_empty());
-
             assert_eq!(pos.role_on(m.whither()).unwrap_or(Role::Pawn), victim);
 
             assert_eq!(
@@ -921,6 +928,9 @@ mod tests {
             );
 
             pos.play(m);
+
+            prop_assume!(pos.board.pinned(pos.turn()).is_empty());
+            prop_assume!(pos.board.pinned(!pos.turn()).is_empty());
         }
     }
 

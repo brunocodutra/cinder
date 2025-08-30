@@ -137,23 +137,23 @@ impl Board {
         self.material(p.color()) & self.by_role(p.role())
     }
 
-    /// Squares occupied by pinned [`Piece`]s.
+    /// Squares occupied by pinned [`Piece`]s of a [`Color`].
     #[inline(always)]
-    pub fn pinned(&self) -> Bitboard {
-        let ours = self.material(self.turn);
-        let theirs = self.material(!self.turn);
+    pub fn pinned(&self, c: Color) -> Bitboard {
+        let ours = self.material(c);
+        let theirs = self.material(!c);
         let occupied = ours | theirs;
 
         let queens = self.by_role(Role::Queen);
-        let king = self.king(self.turn).assume();
+        let king = self.king(c).assume();
 
         let mut pinned = Bitboard::empty();
         for role in [Role::Bishop, Role::Rook] {
-            let slider = Piece::new(role, self.turn);
+            let slider = Piece::new(role, c);
             for wc in theirs & slider.attacks(king, theirs) & (queens | self.by_role(role)) {
                 let blockers = occupied & Bitboard::segment(king, wc);
                 if blockers.len() == 1 {
-                    pinned |= blockers;
+                    pinned |= blockers & ours;
                 }
             }
         }
@@ -161,24 +161,24 @@ impl Board {
         pinned
     }
 
-    /// Squares occupied by [`Piece`]s giving check.
+    /// Squares occupied by [`Piece`]s checking the king of a [`Color`].
     #[inline(always)]
-    pub fn checkers(&self) -> Bitboard {
-        let ours = self.material(self.turn);
-        let theirs = self.material(!self.turn);
+    pub fn checkers(&self, c: Color) -> Bitboard {
+        let ours = self.material(c);
+        let theirs = self.material(!c);
         let occupied = ours | theirs;
 
         let queens = self.by_role(Role::Queen);
-        let king = self.king(self.turn).assume();
+        let king = self.king(c).assume();
 
         let mut checkers = Bitboard::empty();
         for role in [Role::Pawn, Role::Knight] {
-            let stepper = Piece::new(role, self.turn);
+            let stepper = Piece::new(role, c);
             checkers |= theirs & self.by_role(role) & stepper.attacks(king, occupied);
         }
 
         for role in [Role::Bishop, Role::Rook] {
-            let slider = Piece::new(role, self.turn);
+            let slider = Piece::new(role, c);
             for wc in theirs & slider.attacks(king, theirs) & (queens | self.by_role(role)) {
                 let blockers = occupied & Bitboard::segment(king, wc);
                 if blockers.is_empty() {

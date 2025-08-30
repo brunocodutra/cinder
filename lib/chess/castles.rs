@@ -1,7 +1,9 @@
-use crate::chess::{Color, Perspective, Piece, Role, Square};
+use crate::chess::{Color, Move, Perspective, Piece, Role, Square};
 use crate::util::{Bits, Integer, bits};
+use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::{Debug, *};
 use std::fmt::{self, Formatter};
+use std::hint::unreachable_unchecked;
 use std::{cell::SyncUnsafeCell, str::FromStr};
 
 /// The castling rights in a chess [`Position`][`crate::chess::Position`].
@@ -12,6 +14,7 @@ use std::{cell::SyncUnsafeCell, str::FromStr};
     Eq,
     PartialEq,
     Hash,
+    Zeroable,
     BitAnd,
     BitAndAssign,
     BitOr,
@@ -22,19 +25,32 @@ use std::{cell::SyncUnsafeCell, str::FromStr};
 )]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Castles({self})")]
+#[repr(transparent)]
 pub struct Castles(Bits<u8, 4>);
 
 impl Castles {
     /// No castling rights.
     #[inline(always)]
-    pub const fn none() -> Self {
+    pub fn none() -> Self {
         Castles(bits(0b0000))
     }
 
     /// All castling rights.
     #[inline(always)]
-    pub const fn all() -> Self {
+    pub fn all() -> Self {
         Castles(bits(0b1111))
+    }
+
+    /// The rook's [`Move`] given the king's castling [`Square`].
+    #[inline(always)]
+    pub fn rook(castling: Square) -> Move {
+        match castling {
+            Square::C1 => Move::regular(Square::A1, Square::D1, None),
+            Square::G1 => Move::regular(Square::H1, Square::F1, None),
+            Square::C8 => Move::regular(Square::A8, Square::D8, None),
+            Square::G8 => Move::regular(Square::H8, Square::F8, None),
+            _ => unsafe { unreachable_unchecked() },
+        }
     }
 
     /// A unique number the represents this castling rights configuration.
@@ -43,36 +59,10 @@ impl Castles {
         self.0.get()
     }
 
-    /// Whether the given side has king's side castling rights.
+    /// Whether the rights for the given castling square.
     #[inline(always)]
-    pub fn has_short(&self, side: Color) -> bool {
-        *self & Castles::from(Square::H1.perspective(side)) != Castles::none()
-    }
-
-    /// Whether the given side has queen's side castling rights.
-    #[inline(always)]
-    pub fn has_long(&self, side: Color) -> bool {
-        *self & Castles::from(Square::A1.perspective(side)) != Castles::none()
-    }
-
-    /// The king's side castling square, if side has the rights.
-    #[inline(always)]
-    pub fn short(&self, side: Color) -> Option<Square> {
-        if self.has_short(side) {
-            Some(Square::G1.perspective(side))
-        } else {
-            None
-        }
-    }
-
-    /// The queen's side castling square, if side has the rights.
-    #[inline(always)]
-    pub fn long(&self, side: Color) -> Option<Square> {
-        if self.has_long(side) {
-            Some(Square::C1.perspective(side))
-        } else {
-            None
-        }
+    pub fn has(&self, sq: Square) -> bool {
+        *self & Castles::from(Castles::rook(sq).whence()) != Castles::none()
     }
 }
 
@@ -86,8 +76,7 @@ impl Default for Castles {
 impl From<Square> for Castles {
     #[inline(always)]
     fn from(sq: Square) -> Self {
-        pub static CASTLES: SyncUnsafeCell<[Castles; 64]> =
-            SyncUnsafeCell::new([Castles::none(); 64]);
+        pub static CASTLES: SyncUnsafeCell<[Castles; 64]> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
         #[ctor::ctor]
@@ -109,11 +98,11 @@ impl From<Square> for Castles {
 impl Display for Castles {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         for side in Color::iter() {
-            if self.has_short(side) {
+            if self.has(Square::G1.perspective(side)) {
                 Display::fmt(&Piece::new(Role::King, side), f)?;
             }
 
-            if self.has_long(side) {
+            if self.has(Square::C1.perspective(side)) {
                 Display::fmt(&Piece::new(Role::Queen, side), f)?;
             }
         }
@@ -134,16 +123,16 @@ impl FromStr for Castles {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut castles = Castles::none();
 
-        use Piece::*;
+        use {Piece::*, Square::*};
         for c in s.chars() {
             let mut buffer = [0; 4];
 
             match Piece::from_str(c.encode_utf8(&mut buffer)) {
-                Ok(p @ WhiteKing | p @ BlackKing) if !castles.has_short(p.color()) => {
+                Ok(p @ WhiteKing | p @ BlackKing) if !castles.has(G1.perspective(p.color())) => {
                     castles |= Castles::from(Square::H1.perspective(p.color()));
                 }
 
-                Ok(p @ WhiteQueen | p @ BlackQueen) if !castles.has_long(p.color()) => {
+                Ok(p @ WhiteQueen | p @ BlackQueen) if !castles.has(C1.perspective(p.color())) => {
                     castles |= Castles::from(Square::A1.perspective(p.color()));
                 }
 
@@ -160,16 +149,6 @@ mod tests {
     use super::*;
     use std::fmt::Debug;
     use test_strategy::proptest;
-
-    #[proptest]
-    fn short_returns_kingside_castle_square(cr: Castles, #[filter(#cr.has_short(#c))] c: Color) {
-        assert_eq!(cr.short(c), Some(Square::G1.perspective(c)));
-    }
-
-    #[proptest]
-    fn long_returns_queenside_castle_square(cr: Castles, #[filter(#cr.has_long(#c))] c: Color) {
-        assert_eq!(cr.long(c), Some(Square::C1.perspective(c)));
-    }
 
     #[proptest]
     fn parsing_printed_castles_is_an_identity(cr: Castles) {

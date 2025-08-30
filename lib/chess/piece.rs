@@ -1,5 +1,6 @@
 use crate::chess::{Bitboard, Color, Flip, Magic, Perspective, Rank, Role, Square};
 use crate::util::{Assume, Integer};
+use bytemuck::zeroed;
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{cell::SyncUnsafeCell, ops::Shl, str::FromStr};
@@ -26,8 +27,7 @@ pub enum Piece {
 impl Piece {
     #[inline(always)]
     fn forks(wc: Square, color: Color) -> Bitboard {
-        pub static FORKS: SyncUnsafeCell<[[Bitboard; 64]; 2]> =
-            SyncUnsafeCell::new([[Bitboard::empty(); 64]; 2]);
+        pub static FORKS: SyncUnsafeCell<[[Bitboard; 64]; 2]> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
         #[ctor::ctor]
@@ -49,8 +49,7 @@ impl Piece {
 
     #[inline(always)]
     fn jumps(wc: Square) -> Bitboard {
-        pub static JUMPS: SyncUnsafeCell<[Bitboard; 64]> =
-            SyncUnsafeCell::new([Bitboard::empty(); 64]);
+        pub static JUMPS: SyncUnsafeCell<[Bitboard; 64]> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
         #[ctor::ctor]
@@ -71,8 +70,7 @@ impl Piece {
 
     #[inline(always)]
     fn steps(wc: Square) -> Bitboard {
-        pub static SLIDES: SyncUnsafeCell<[Bitboard; 64]> =
-            SyncUnsafeCell::new([Bitboard::empty(); 64]);
+        pub static SLIDES: SyncUnsafeCell<[Bitboard; 64]> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
         #[ctor::ctor]
@@ -93,8 +91,7 @@ impl Piece {
 
     #[inline(always)]
     fn slides(idx: usize) -> Bitboard {
-        pub static BITBOARDS: SyncUnsafeCell<[Bitboard; 88772]> =
-            SyncUnsafeCell::new([Bitboard::empty(); 88772]);
+        pub static BITBOARDS: SyncUnsafeCell<[Bitboard; 88772]> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
         #[ctor::ctor]

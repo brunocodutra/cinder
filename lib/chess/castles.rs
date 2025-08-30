@@ -1,9 +1,8 @@
 use crate::chess::{Color, Move, Perspective, Piece, Role, Square};
-use crate::util::{Bits, Integer, bits};
+use crate::util::{Assume, Bits, Integer, bits};
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::{Debug, *};
 use std::fmt::{self, Formatter};
-use std::hint::unreachable_unchecked;
 use std::{cell::SyncUnsafeCell, str::FromStr};
 
 /// The castling rights in a chess [`Position`][`crate::chess::Position`].
@@ -43,13 +42,13 @@ impl Castles {
 
     /// The rook's [`Move`] given the king's castling [`Square`].
     #[inline(always)]
-    pub fn rook(castling: Square) -> Move {
+    pub fn rook(castling: Square) -> Option<Move> {
         match castling {
-            Square::C1 => Move::regular(Square::A1, Square::D1, None),
-            Square::G1 => Move::regular(Square::H1, Square::F1, None),
-            Square::C8 => Move::regular(Square::A8, Square::D8, None),
-            Square::G8 => Move::regular(Square::H8, Square::F8, None),
-            _ => unsafe { unreachable_unchecked() },
+            Square::C1 => Some(Move::regular(Square::A1, Square::D1, None)),
+            Square::G1 => Some(Move::regular(Square::H1, Square::F1, None)),
+            Square::C8 => Some(Move::regular(Square::A8, Square::D8, None)),
+            Square::G8 => Some(Move::regular(Square::H8, Square::F8, None)),
+            _ => None,
         }
     }
 
@@ -62,7 +61,7 @@ impl Castles {
     /// Whether the rights for the given castling square.
     #[inline(always)]
     pub fn has(&self, sq: Square) -> bool {
-        *self & Castles::from(Castles::rook(sq).whence()) != Castles::none()
+        *self & Castles::from(Castles::rook(sq).assume().whence()) != Castles::none()
     }
 }
 

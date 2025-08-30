@@ -6,6 +6,7 @@ use std::{num::NonZeroU16, ops::RangeBounds};
 /// A chess move.
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
+#[cfg_attr(test, filter(#self.is_promotion() || #self.bits(..2) == Bits::new(0)))]
 pub struct Move(NonZeroU16);
 
 impl Move {

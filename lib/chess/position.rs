@@ -244,7 +244,7 @@ impl MoveGenerator {
 
             for castling in [Square::C1.perspective(turn), Square::G1.perspective(turn)] {
                 if pos.castles().has(castling) {
-                    let rook = Castles::rook(castling).whence();
+                    let rook = Castles::rook(castling).assume().whence();
                     if occ & Bitboard::segment(king, rook) == Bitboard::empty() {
                         let path = Bitboard::segment(king, castling).with(castling);
                         if pos.threats() & path == Bitboard::empty() {
@@ -557,6 +557,75 @@ impl Position {
         }
     }
 
+    /// Whether a [`Move`] is legal in this position.
+    #[inline(always)]
+    pub fn is_legal(&self, m: Move) -> bool {
+        let turn = self.turn();
+        let ours = self.material(turn);
+        let theirs = self.material(!turn);
+        let occ = ours ^ theirs;
+        let king = self.king(turn);
+        let (wc, wt) = (m.whence(), m.whither());
+
+        let unpinned = match self.checkers().len() {
+            0 => ours & (!self.pinned() | Bitboard::line(king, wt)),
+            1 => ours & !self.pinned(),
+            2 => king.bitboard(),
+            _ => return false,
+        };
+
+        use Role::*;
+        if !unpinned.contains(wc) || ours.contains(wt) || self.by_role(King).contains(wt) {
+            return false;
+        }
+
+        let piece = self.piece_on(wc).assume();
+        let role = piece.role();
+
+        if m.is_promotion() != ((role, wt.rank()) == (Pawn, Rank::Eighth.perspective(turn))) {
+            return false;
+        } else if m.is_capture() && role == Pawn && self.en_passant() == Some(wt) {
+            let target = Square::new(wt.file(), wc.rank());
+            let blockers = occ.without(target).without(wc).with(wt);
+            return !self.is_discovered(king, !turn, blockers)
+                && piece.attacks(wc, occ).contains(wt);
+        }
+
+        let capture = self.piece_on(wt);
+        if m.is_capture() != capture.is_some() {
+            return false;
+        }
+
+        if role == King && (wt - wc).abs() == 2 {
+            let path = Bitboard::segment(king, wt).with(wt);
+            let Some(rook) = Castles::rook(wt) else {
+                return false;
+            };
+
+            return self.castles().has(wt)
+                && self.threats() & path == Bitboard::empty()
+                && Bitboard::segment(king, rook.whence()) & occ == Bitboard::empty();
+        }
+
+        if capture.is_some() && !piece.attacks(wc, occ).contains(wt) {
+            return false;
+        }
+
+        if capture.is_none() && !piece.moves(wc, ours, theirs).contains(wt) {
+            return false;
+        }
+
+        if role == King {
+            return !self.threats().contains(wt);
+        }
+
+        let checks = self.checkers().iter().fold(self.checkers(), |bb, sq| {
+            Bitboard::segment(king, sq).union(bb)
+        });
+
+        checks.is_empty() || checks.contains(wt)
+    }
+
     /// The legal moves that can be played in this position.
     #[inline(always)]
     pub fn moves(&self) -> MovePack {
@@ -586,23 +655,23 @@ impl Position {
 
             let mut turn = self.turn();
             let mut attackers = Bitboard::empty();
-            let mut occupied = self.occupied().without(m.whence()).without(sq);
+            let mut occ = self.occupied().without(m.whence()).without(sq);
             let mut victim = match m.promotion() {
                 None => self.role_on(m.whence()).assume(),
                 Some(r) => r,
             };
 
             for piece in [WhitePawn, BlackPawn] {
-                attackers |= self.by_piece(piece) & piece.flip().attacks(sq, occupied);
+                attackers |= self.by_piece(piece) & piece.flip().attacks(sq, occ);
             }
 
             for role in [Knight, King] {
                 let candidates = self.by_role(role);
-                attackers |= candidates & Piece::new(role, White).attacks(sq, occupied);
+                attackers |= candidates & Piece::new(role, White).attacks(sq, occ);
             }
 
             for (role, candidates) in [(Bishop, bishops | queens), (Rook, rooks | queens)] {
-                attackers |= candidates & Piece::new(role, White).attacks(sq, occupied);
+                attackers |= candidates & Piece::new(role, White).attacks(sq, occ);
             }
 
             let pinned = [self.pinned(), self.board.pinned(!turn)];
@@ -625,21 +694,21 @@ impl Position {
                         let piece = Piece::new(role, turn);
                         let moves = MoveSet::capture(piece, wc, sq.bitboard());
                         lva = moves.into_iter().next().map(|m| (m, role));
-                        occupied ^= wc.bitboard();
+                        occ ^= wc.bitboard();
                         break;
                     }
                 }
 
                 let (m, captor) = lva.assume();
                 if matches!(captor, Pawn | Bishop | Queen) {
-                    attackers |= (bishops | queens) & WhiteBishop.attacks(sq, occupied);
+                    attackers |= (bishops | queens) & WhiteBishop.attacks(sq, occ);
                 }
 
                 if matches!(captor, Rook | Queen) {
-                    attackers |= (rooks | queens) & WhiteRook.attacks(sq, occupied);
+                    attackers |= (rooks | queens) & WhiteRook.attacks(sq, occ);
                 }
 
-                attackers &= occupied;
+                attackers &= occ;
                 if captor == King && !self.material(!turn).intersection(attackers).is_empty() {
                     break;
                 }
@@ -653,7 +722,7 @@ impl Position {
     /// Play a [`Move`].
     #[inline(always)]
     pub fn play(&mut self, m: Move) {
-        debug_assert!(self.moves().unpack().any(|n| m == n));
+        debug_assert!(self.is_legal(m), "{self} {m}");
 
         use Role::*;
         let turn = self.turn();
@@ -710,7 +779,7 @@ impl Position {
             self.board.en_passant = Some(Square::new(wc.file(), Rank::Third.perspective(turn)));
             self.zobrists.hash ^= ZobristNumbers::en_passant(wc.file());
         } else if role == King && (wt - wc).abs() == 2 {
-            let m = Castles::rook(wt);
+            let m = Castles::rook(wt).assume();
             let rook = Piece::new(Rook, turn);
             self.board.toggle(rook, m.whence());
             self.board.toggle(rook, m.whither());
@@ -891,7 +960,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Position,
     ) {
         for m in pos.moves().unpack() {
-            pos.clone().play(m);
+            assert!(pos.is_legal(m));
         }
     }
 
@@ -954,6 +1023,11 @@ mod tests {
     }
 
     #[proptest]
+    fn move_is_legal_if_can_be_played(#[filter(#pos.outcome().is_none())] pos: Position, m: Move) {
+        assert_eq!(pos.is_legal(m), pos.moves().unpack().any(|n| m == n))
+    }
+
+    #[proptest]
     fn legal_move_updates_position(
         #[filter(#pos.outcome().is_none())] mut pos: Position,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
@@ -1007,10 +1081,7 @@ mod tests {
 
     #[proptest]
     #[should_panic]
-    fn play_panics_if_move_illegal(
-        mut pos: Position,
-        #[filter(!#pos.moves().unpack().any(|m| #m == m))] m: Move,
-    ) {
+    fn play_panics_if_move_illegal(mut pos: Position, #[filter(!#pos.is_legal(#m))] m: Move) {
         pos.play(m);
     }
 

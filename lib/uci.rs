@@ -491,8 +491,8 @@ mod tests {
 
     #[proptest]
     fn ignores_position_with_invalid_move(
-        #[strategy("[^[:ascii:]]+")] _s: String,
         #[any(StaticStream::new([format!("position startpos moves {}", #_s)]))] mut uci: MockUci,
+        #[strategy("[^[:ascii:]]+")] _s: String,
     ) {
         let pos = uci.position.clone();
         assert_eq!(block_on(uci.run()), Ok(()));
@@ -502,9 +502,8 @@ mod tests {
 
     #[proptest]
     fn handles_position_with_illegal_move(
-        #[filter(!Position::default().moves().unpack().any(|m| UciMove(m) == *#_m.to_string()))]
-        _m: Move,
         #[any(StaticStream::new([format!("position startpos moves {}", #_m)]))] mut uci: MockUci,
+        #[filter(!Position::default().is_legal(#_m))] _m: Move,
     ) {
         let pos = uci.position.clone();
         assert_eq!(block_on(uci.run()), Ok(()));

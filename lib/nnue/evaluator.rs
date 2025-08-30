@@ -323,7 +323,7 @@ impl Evaluator {
                 let victim = Piece::new(r, !turn);
                 sub[1] = Some(Feature::new(side, ksq, victim, sq));
             } else if role == Role::King && (wt - wc).abs() == 2 {
-                let m = Castles::rook(wt);
+                let m = Castles::rook(wt).assume();
                 let rook = Piece::new(Role::Rook, turn);
                 sub[1] = Some(Feature::new(side, ksq, rook, m.whence()));
                 add[1] = Some(Feature::new(side, ksq, rook, m.whither()));

@@ -88,6 +88,16 @@ impl<'a> Stack<'a> {
         }
     }
 
+    #[inline(always)]
+    fn transposition(&self) -> Option<Transposition> {
+        let tpos = self.tt.get(self.evaluator.zobrists().hash)?;
+        if tpos.best().is_none_or(|m| self.evaluator.is_legal(m)) {
+            Some(tpos)
+        } else {
+            None
+        }
+    }
+
     /// The mate distance pruning.
     #[inline(always)]
     fn mdp(&self, bounds: &Range<Score>) -> (Score, Score) {
@@ -441,7 +451,7 @@ impl<'a> Stack<'a> {
         self.value[ply.cast::<usize>()] = self.eval[ply.cast::<usize>()] + correction;
 
         let is_check = self.evaluator.is_check();
-        let transposition = self.tt.get(self.evaluator.zobrists().hash);
+        let transposition = self.transposition();
         let transposed = match transposition {
             None => Pv::empty(self.value[ply.cast::<usize>()].saturate()),
             Some(t) => t.transpose(ply),
@@ -811,16 +821,10 @@ impl<'a> Stack<'a> {
 
             self.eval[0] = self.evaluator.evaluate();
             self.value[0] = self.eval[0] + self.correction();
-            if let Some(t) = self.tt.get(self.evaluator.zobrists().hash) {
-                if t.best().is_some_and(|m| moves.iter().any(|n| m == n)) {
-                    self.pv = t.transpose(Ply::new(0)).truncate();
-                }
-            }
-
-            if self.pv.head().is_none() {
-                if let Some(m) = moves.iter().next() {
-                    self.pv = Pv::new(self.value[0].saturate(), Line::singular(m));
-                }
+            if let Some(t) = self.transposition().filter(|t| t.best().is_some()) {
+                self.pv = t.transpose(Ply::new(0)).truncate();
+            } else if let Some(m) = moves.iter().next() {
+                self.pv = Pv::new(self.value[0].saturate(), Line::singular(m));
             }
 
             loop {

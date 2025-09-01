@@ -196,8 +196,6 @@ params! {
     reverse_futility_margin_depth: Variable2<{ [5250, 48192] }>,
     reverse_futility_margin_scalar: Variable1<{ [36518] }>,
     reverse_futility_margin_improving: Variable1<{ [-22725] }>,
-    reverse_futility_margin_is_noisy_pv: Variable1<{ [-4246] }>,
-    reverse_futility_margin_cut: Variable1<{ [-10858] }>,
     futility_margin_depth: Variable2<{ [7783, 116394] }>,
     futility_margin_scalar: Variable1<{ [241533] }>,
     futility_margin_is_pv: Variable1<{ [29737] }>,

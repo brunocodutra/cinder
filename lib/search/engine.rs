@@ -516,8 +516,6 @@ impl<'a> Stack<'a> {
 
             if let Some(mut margin) = Self::rfp(depth) {
                 margin += improving * Params::reverse_futility_margin_improving()[0] / Params::BASE;
-                margin += is_noisy_pv as i64 * Params::reverse_futility_margin_is_noisy_pv()[0];
-                margin += cut as i64 * Params::reverse_futility_margin_cut()[0];
                 if transposed.score() - margin / Params::BASE >= beta {
                     return Ok(transposed.truncate());
                 }

@@ -319,6 +319,15 @@ impl<'a> Stack<'a> {
         ])
     }
 
+    /// Computes the probcut margin.
+    #[inline(always)]
+    fn probcut(depth: Depth) -> i64 {
+        convolve([
+            (depth.cast(), &Params::probcut_margin_depth()),
+            (1, &Params::probcut_margin_scalar()),
+        ])
+    }
+
     /// Computes the singular extension margin.
     #[inline(always)]
     fn single(depth: Depth) -> i64 {
@@ -574,6 +583,43 @@ impl<'a> Stack<'a> {
             (rating / Params::BASE).saturate()
         });
 
+        if let Some(t) = transposition {
+            let p_beta = beta + Self::probcut(depth) / Params::BASE;
+            let p_depth = depth - 3;
+
+            if !was_pv
+                && depth >= 6
+                && t.depth() >= p_depth
+                && t.score().lower(ply) >= p_beta
+                && t.best().is_none_or(|m| !m.is_quiet())
+            {
+                for m in moves.sorted() {
+                    if m.is_quiet() {
+                        continue;
+                    }
+
+                    let margin = p_beta - self.value[ply.cast::<usize>()];
+                    if !self.evaluator.winning(m, margin.saturate()) {
+                        continue;
+                    }
+
+                    let mut next = self.next(Some(m));
+                    let pv = match -next.nw::<0>(Depth::new(0), -p_beta + 1, !cut)? {
+                        pv if pv < p_beta => continue,
+                        _ => -next.nw(p_depth - 1, -p_beta + 1, !cut)?,
+                    };
+
+                    drop(next);
+                    if pv >= p_beta {
+                        let score = ScoreBound::new(bounds, pv.score(), ply);
+                        let transposition = Transposition::new(score, p_depth, Some(m), was_pv);
+                        self.tt.set(self.evaluator.zobrists().hash, transposition);
+                        return Ok(pv.transpose(m));
+                    }
+                }
+            }
+        }
+
         #[allow(clippy::blocks_in_conditions)]
         let (mut head, mut tail) = match { moves.sorted().next() } {
             None => return Ok(transposed.truncate()),
@@ -609,7 +655,7 @@ impl<'a> Stack<'a> {
         };
 
         let mut is_noisy_node = is_check || is_noisy_pv;
-        is_noisy_node |= !head.is_quiet() && tail.score() > alpha;
+        is_noisy_node |= !head.is_quiet() && tail > alpha;
         for (index, m) in moves.sorted().skip(1).enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -680,7 +726,7 @@ impl<'a> Stack<'a> {
 
             if pv > tail {
                 (head, tail) = (m, pv);
-                is_noisy_node |= !head.is_quiet() && tail.score() > alpha;
+                is_noisy_node |= !head.is_quiet() && tail > alpha;
             }
         }
 
@@ -753,7 +799,7 @@ impl<'a> Stack<'a> {
         let mut tail = -self.next(Some(head)).ab(depth - 1, -beta..-alpha, false)?;
 
         let mut is_noisy_node = is_check || is_noisy_pv;
-        is_noisy_node |= !head.is_quiet() && tail.score() > alpha;
+        is_noisy_node |= !head.is_quiet() && tail > alpha;
         for (index, m) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -788,7 +834,7 @@ impl<'a> Stack<'a> {
 
             if pv > tail {
                 (head, tail) = (m, pv);
-                is_noisy_node |= !head.is_quiet() && tail.score() > alpha;
+                is_noisy_node |= !head.is_quiet() && tail > alpha;
             }
         }
 

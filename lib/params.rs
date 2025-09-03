@@ -177,6 +177,8 @@ params! {
     history_penalty_scalar: Variable1<{ [-7056] }>,
     continuation_penalty_depth: Variable2<{ [0, -21640] }>,
     continuation_penalty_scalar: Variable1<{ [-2968] }>,
+    probcut_margin_depth: Variable2<{ [0, 51200] }>,
+    probcut_margin_scalar: Variable1<{ [819200] }>,
     single_extension_margin_depth: Variable2<{ [0, 3267] }>,
     single_extension_margin_scalar: Variable1<{ [2141] }>,
     double_extension_margin_depth: Variable2<{ [0, 4246] }>,

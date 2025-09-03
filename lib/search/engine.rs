@@ -476,8 +476,6 @@ impl<'a> Stack<'a> {
 
         let (lower, upper) = if depth <= 0 {
             (transposed.score(), Score::upper())
-        } else if !is_pv {
-            (Score::lower(), Score::upper())
         } else {
             match self.syzygy.wdl_after_zeroing(&self.evaluator) {
                 None => (Score::lower(), Score::upper()),

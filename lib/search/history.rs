@@ -6,7 +6,8 @@ use derive_more::with_trait::Debug;
 /// Historical statistics about a [`Move`].
 #[derive(Debug, Zeroable)]
 #[debug("History")]
-pub struct History([[Butterfly<<History as Statistics<Move>>::Stat>; 2]; 2]);
+#[allow(clippy::type_complexity)]
+pub struct History([[Butterfly<[[<History as Statistics<Move>>::Stat; 2]; 2]>; 2]; 2]);
 
 impl Default for History {
     #[inline(always)]
@@ -20,8 +21,11 @@ impl History {
 
     #[inline(always)]
     fn graviton(&mut self, pos: &Position, m: Move) -> &mut <Self as Statistics<Move>>::Stat {
-        let (wc, wt) = (m.whence() as usize, m.whither() as usize);
-        &mut self.0[pos.turn() as usize][m.is_quiet() as usize][wc][wt]
+        let (wc, wt) = (m.whence(), m.whither());
+        let evading = pos.threats().contains(wc);
+        let surrendering = pos.threats().contains(wt);
+        &mut self.0[pos.turn() as usize][m.is_quiet() as usize][wc as usize][wt as usize]
+            [evading as usize][surrendering as usize]
     }
 }
 

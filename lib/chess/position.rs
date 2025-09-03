@@ -92,7 +92,7 @@ impl EvasionGenerator {
         let turn = pos.turn();
         let ours = pos.material(turn);
         let theirs = pos.material(!turn);
-        let occupied = ours | theirs;
+        let occ = ours | theirs;
         let king = pos.king(turn);
 
         let checks = pos.checkers().iter().fold(Bitboard::empty(), |bb, sq| {
@@ -108,11 +108,11 @@ impl EvasionGenerator {
             let piece = Piece::new(Role::Pawn, turn);
             let ep = pos.en_passant().map_or(Bitboard::empty(), Square::bitboard);
             let mut moves = piece.moves(wc, ours, theirs) & checks;
-            moves |= piece.attacks(wc, occupied) & (pos.checkers() | ep);
+            moves |= piece.attacks(wc, occ) & (pos.checkers() | ep);
 
             for wt in moves & ep {
                 let target = Square::new(wt.file(), wc.rank());
-                let blockers = occupied.without(target).without(wc);
+                let blockers = occ.without(target).without(wc);
                 if pos.is_threatened(king, !turn, blockers) {
                     moves ^= ep;
                 }
@@ -157,7 +157,7 @@ impl EvasionGenerator {
             let piece = Piece::new(Role::King, turn);
             let mut moves = piece.moves(king, ours, theirs) & !checks;
             for wt in moves {
-                if pos.is_threatened(wt, !turn, occupied.without(king)) {
+                if pos.is_threatened(wt, !turn, occ.without(king)) {
                     moves ^= wt.bitboard();
                 }
             }
@@ -177,21 +177,21 @@ impl MoveGenerator {
         let turn = pos.turn();
         let ours = pos.material(turn);
         let theirs = pos.material(!turn);
-        let occupied = ours | theirs;
+        let occ = ours | theirs;
         let king = pos.king(turn);
 
         for wc in ours & pos.by_role(Role::Pawn) {
             let piece = Piece::new(Role::Pawn, turn);
             let ep = pos.en_passant().map_or(Bitboard::empty(), Square::bitboard);
             let mut moves = piece.moves(wc, ours, theirs);
-            moves |= piece.attacks(wc, occupied) & (theirs | ep);
+            moves |= piece.attacks(wc, occ) & (theirs | ep);
             if pos.pinned().contains(wc) {
                 moves &= Bitboard::line(king, wc);
             }
 
             for wt in moves & ep {
                 let target = Square::new(wt.file(), wc.rank());
-                let blockers = occupied.without(target).without(wc).with(wt);
+                let blockers = occ.without(target).without(wc).with(wt);
                 if pos.is_threatened(king, !turn, blockers) {
                     moves ^= ep;
                 }
@@ -246,19 +246,14 @@ impl MoveGenerator {
 
         {
             let piece = Piece::new(Role::King, turn);
-            let mut moves = piece.moves(king, ours, theirs);
-            for wt in moves {
-                if pos.is_threatened(wt, !turn, occupied) {
-                    moves ^= wt.bitboard();
-                }
-            }
+            let mut moves = piece.moves(king, ours, theirs) & !pos.threats();
 
             for castling in [Square::C1.perspective(turn), Square::G1.perspective(turn)] {
                 if pos.castles().has(castling) {
                     let rook = Castles::rook(castling).whence();
-                    if occupied & Bitboard::segment(king, rook) == Bitboard::empty() {
+                    if occ & Bitboard::segment(king, rook) == Bitboard::empty() {
                         let path = Bitboard::segment(king, castling).with(castling);
-                        if !path.iter().any(|sq| pos.is_threatened(sq, !turn, occupied)) {
+                        if pos.threats() & path == Bitboard::empty() {
                             moves |= castling.bitboard();
                         }
                     }
@@ -281,6 +276,7 @@ pub struct Position {
     board: Board,
     pinned: Bitboard,
     checkers: Bitboard,
+    threats: Bitboard,
     zobrists: Zobrists,
     history: [[Option<NonZeroU32>; 32]; 2],
 }
@@ -318,6 +314,7 @@ impl Default for Position {
         Self {
             pinned: Default::default(),
             checkers: Default::default(),
+            threats: board.threats(!board.turn),
             zobrists: board.zobrists(),
             history: Default::default(),
             board,
@@ -464,6 +461,12 @@ impl Position {
         self.pinned
     }
 
+    /// [`Square`]s threatened by opponent's [`Piece`]s .
+    #[inline(always)]
+    pub fn threats(&self) -> Bitboard {
+        self.threats
+    }
+
     /// How many other times this position has repeated.
     #[inline(always)]
     pub fn repetitions(&self) -> usize {
@@ -478,19 +481,19 @@ impl Position {
 
     /// Whether a [`Square`] is threatened by a [`Piece`] of a [`Color`].
     #[inline(always)]
-    pub fn is_threatened(&self, sq: Square, side: Color, occupied: Bitboard) -> bool {
+    pub fn is_threatened(&self, sq: Square, side: Color, occ: Bitboard) -> bool {
         let theirs = self.material(side);
         for role in [Role::Pawn, Role::Knight, Role::King] {
-            let candidates = occupied & theirs & self.by_role(role);
-            if Piece::new(role, !side).attacks(sq, occupied) & candidates != Bitboard::empty() {
+            let candidates = occ & theirs & self.by_role(role);
+            if Piece::new(role, !side).attacks(sq, occ) & candidates != Bitboard::empty() {
                 return true;
             }
         }
 
         let queens = self.by_role(Role::Queen);
         for role in [Role::Bishop, Role::Rook] {
-            let candidates = occupied & theirs & (queens | self.by_role(role));
-            if Piece::new(role, !side).attacks(sq, occupied) & candidates != Bitboard::empty() {
+            let candidates = occ & theirs & (queens | self.by_role(role));
+            if Piece::new(role, !side).attacks(sq, occ) & candidates != Bitboard::empty() {
                 return true;
             }
         }
@@ -735,8 +738,9 @@ impl Position {
             self.zobrists.hash ^= ZobristNumbers::castling(self.castles());
         }
 
-        self.checkers = self.board.checkers(!turn);
         self.pinned = self.board.pinned(!turn);
+        self.checkers = self.board.checkers(!turn);
+        self.threats = self.board.threats(turn);
     }
 
     /// Play a null-move.
@@ -761,6 +765,7 @@ impl Position {
         }
 
         self.pinned = self.board.pinned(!turn);
+        self.threats = self.board.threats(turn);
     }
 
     /// Counts the total number of reachable positions to the given depth.
@@ -810,6 +815,7 @@ impl FromStr for Position {
         Ok(Position {
             pinned: board.pinned(board.turn),
             checkers: board.checkers(board.turn),
+            threats: board.threats(!board.turn),
             zobrists: board.zobrists(),
             history: Default::default(),
             board,

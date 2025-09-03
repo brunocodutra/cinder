@@ -180,11 +180,11 @@ impl Piece {
     /// This piece's possible moves from a given square.
     #[inline(always)]
     pub fn moves(&self, wc: Square, ours: Bitboard, theirs: Bitboard) -> Bitboard {
-        let occupied = ours | theirs;
+        let occ = ours | theirs;
         if self.role() != Role::Pawn {
-            self.attacks(wc, occupied) & !ours
+            self.attacks(wc, occ) & !ours
         } else {
-            let empty = !occupied;
+            let empty = !occ;
             let color = self.color();
             let third = Rank::Third.bitboard();
             let push = wc.bitboard().perspective(color).shl(8).perspective(color) & empty;

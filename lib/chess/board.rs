@@ -142,7 +142,7 @@ impl Board {
     pub fn pinned(&self, c: Color) -> Bitboard {
         let ours = self.material(c);
         let theirs = self.material(!c);
-        let occupied = ours | theirs;
+        let occ = ours | theirs;
 
         let queens = self.by_role(Role::Queen);
         let king = self.king(c).assume();
@@ -151,7 +151,7 @@ impl Board {
         for role in [Role::Bishop, Role::Rook] {
             let slider = Piece::new(role, c);
             for wc in theirs & slider.attacks(king, theirs) & (queens | self.by_role(role)) {
-                let blockers = occupied & Bitboard::segment(king, wc);
+                let blockers = occ & Bitboard::segment(king, wc);
                 if blockers.len() == 1 {
                     pinned |= blockers & ours;
                 }
@@ -166,7 +166,7 @@ impl Board {
     pub fn checkers(&self, c: Color) -> Bitboard {
         let ours = self.material(c);
         let theirs = self.material(!c);
-        let occupied = ours | theirs;
+        let occ = ours | theirs;
 
         let queens = self.by_role(Role::Queen);
         let king = self.king(c).assume();
@@ -174,13 +174,13 @@ impl Board {
         let mut checkers = Bitboard::empty();
         for role in [Role::Pawn, Role::Knight] {
             let stepper = Piece::new(role, c);
-            checkers |= theirs & self.by_role(role) & stepper.attacks(king, occupied);
+            checkers |= theirs & self.by_role(role) & stepper.attacks(king, occ);
         }
 
         for role in [Role::Bishop, Role::Rook] {
             let slider = Piece::new(role, c);
             for wc in theirs & slider.attacks(king, theirs) & (queens | self.by_role(role)) {
-                let blockers = occupied & Bitboard::segment(king, wc);
+                let blockers = occ & Bitboard::segment(king, wc);
                 if blockers.is_empty() {
                     checkers |= wc.bitboard()
                 }
@@ -188,6 +188,36 @@ impl Board {
         }
 
         checkers
+    }
+
+    /// Squares occupied by [`Square`]s threatened by [`Piece`]s of a [`Color`].
+    #[inline(always)]
+    pub fn threats(&self, c: Color) -> Bitboard {
+        let ours = self.material(!c);
+        let theirs = self.material(c);
+        let occ = ours | theirs;
+
+        let pawns = theirs & self.by_role(Role::Pawn);
+        let mut threats = Bitboard::empty();
+
+        threats |= match c {
+            Color::White => (pawns << 7 & !File::H.bitboard()) | (pawns << 9 & !File::A.bitboard()),
+            Color::Black => (pawns >> 7 & !File::A.bitboard()) | (pawns >> 9 & !File::H.bitboard()),
+        };
+
+        for role in [Role::Knight, Role::King] {
+            for wc in theirs & self.by_role(role) {
+                threats |= Piece::new(role, c).attacks(wc, occ);
+            }
+        }
+
+        for role in [Role::Bishop, Role::Rook] {
+            for wc in theirs & (self.by_role(role) | self.by_role(Role::Queen)) {
+                threats |= Piece::new(role, c).attacks(wc, occ);
+            }
+        }
+
+        threats
     }
 
     /// [`Square`] occupied by a the king of a [`Color`].

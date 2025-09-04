@@ -92,7 +92,7 @@ impl EvasionGenerator {
         let turn = pos.turn();
         let ours = pos.material(turn);
         let theirs = pos.material(!turn);
-        let occ = ours | theirs;
+        let occ = ours ^ theirs;
         let king = pos.king(turn);
 
         let checks = pos.checkers().iter().fold(Bitboard::empty(), |bb, sq| {
@@ -112,8 +112,8 @@ impl EvasionGenerator {
 
             for wt in moves & ep {
                 let target = Square::new(wt.file(), wc.rank());
-                let blockers = occ.without(target).without(wc);
-                if pos.is_threatened(king, !turn, blockers) {
+                let blockers = occ.without(target).without(wc).with(wt);
+                if pos.is_discovered(king, !turn, blockers) {
                     moves ^= ep;
                 }
             }
@@ -155,13 +155,7 @@ impl EvasionGenerator {
 
         {
             let piece = Piece::new(Role::King, turn);
-            let mut moves = piece.moves(king, ours, theirs) & !checks;
-            for wt in moves {
-                if pos.is_threatened(wt, !turn, occ.without(king)) {
-                    moves ^= wt.bitboard();
-                }
-            }
-
+            let moves = piece.moves(king, ours, theirs) & !pos.threats();
             packer.pack(piece, king, moves, theirs)?;
         }
 
@@ -177,7 +171,7 @@ impl MoveGenerator {
         let turn = pos.turn();
         let ours = pos.material(turn);
         let theirs = pos.material(!turn);
-        let occ = ours | theirs;
+        let occ = ours ^ theirs;
         let king = pos.king(turn);
 
         for wc in ours & pos.by_role(Role::Pawn) {
@@ -192,7 +186,7 @@ impl MoveGenerator {
             for wt in moves & ep {
                 let target = Square::new(wt.file(), wc.rank());
                 let blockers = occ.without(target).without(wc).with(wt);
-                if pos.is_threatened(king, !turn, blockers) {
+                if pos.is_discovered(king, !turn, blockers) {
                     moves ^= ep;
                 }
             }
@@ -479,17 +473,10 @@ impl Position {
         }
     }
 
-    /// Whether a [`Square`] is threatened by a [`Piece`] of a [`Color`].
+    /// Whether a [`Square`] is threatened by a slider of a [`Color`].
     #[inline(always)]
-    pub fn is_threatened(&self, sq: Square, side: Color, occ: Bitboard) -> bool {
+    pub fn is_discovered(&self, sq: Square, side: Color, occ: Bitboard) -> bool {
         let theirs = self.material(side);
-        for role in [Role::Pawn, Role::Knight, Role::King] {
-            let candidates = occ & theirs & self.by_role(role);
-            if Piece::new(role, !side).attacks(sq, occ) & candidates != Bitboard::empty() {
-                return true;
-            }
-        }
-
         let queens = self.by_role(Role::Queen);
         for role in [Role::Bishop, Role::Rook] {
             let candidates = occ & theirs & (queens | self.by_role(role));

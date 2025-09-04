@@ -142,10 +142,10 @@ impl Board {
     pub fn pinned(&self, c: Color) -> Bitboard {
         let ours = self.material(c);
         let theirs = self.material(!c);
-        let occ = ours | theirs;
+        let occ = ours ^ theirs;
 
-        let queens = self.by_role(Role::Queen);
         let king = self.king(c).assume();
+        let queens = self.by_role(Role::Queen);
 
         let mut pinned = Bitboard::empty();
         for role in [Role::Bishop, Role::Rook] {
@@ -166,10 +166,10 @@ impl Board {
     pub fn checkers(&self, c: Color) -> Bitboard {
         let ours = self.material(c);
         let theirs = self.material(!c);
-        let occ = ours | theirs;
+        let occ = ours ^ theirs;
 
-        let queens = self.by_role(Role::Queen);
         let king = self.king(c).assume();
+        let queens = self.by_role(Role::Queen);
 
         let mut checkers = Bitboard::empty();
         for role in [Role::Pawn, Role::Knight] {
@@ -195,8 +195,9 @@ impl Board {
     pub fn threats(&self, c: Color) -> Bitboard {
         let ours = self.material(!c);
         let theirs = self.material(c);
-        let occ = ours | theirs;
+        let occ = ours ^ theirs;
 
+        let king = self.king(!c).assume();
         let pawns = theirs & self.by_role(Role::Pawn);
         let mut threats = Bitboard::empty();
 
@@ -205,15 +206,16 @@ impl Board {
             Color::Black => (pawns >> 7 & !File::A.bitboard()) | (pawns >> 9 & !File::H.bitboard()),
         };
 
+        let blockers = occ.without(king);
         for role in [Role::Knight, Role::King] {
             for wc in theirs & self.by_role(role) {
-                threats |= Piece::new(role, c).attacks(wc, occ);
+                threats |= Piece::new(role, c).attacks(wc, blockers);
             }
         }
 
         for role in [Role::Bishop, Role::Rook] {
             for wc in theirs & (self.by_role(role) | self.by_role(Role::Queen)) {
-                threats |= Piece::new(role, c).attacks(wc, occ);
+                threats |= Piece::new(role, c).attacks(wc, blockers);
             }
         }
 

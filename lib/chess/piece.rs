@@ -180,7 +180,7 @@ impl Piece {
     /// This piece's possible moves from a given square.
     #[inline(always)]
     pub fn moves(&self, wc: Square, ours: Bitboard, theirs: Bitboard) -> Bitboard {
-        let occ = ours | theirs;
+        let occ = ours ^ theirs;
         if self.role() != Role::Pawn {
             self.attacks(wc, occ) & !ours
         } else {

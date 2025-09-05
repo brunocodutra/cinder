@@ -22,10 +22,9 @@ impl History {
     #[inline(always)]
     fn graviton(&mut self, pos: &Position, m: Move) -> &mut <Self as Statistics<Move>>::Stat {
         let (wc, wt) = (m.whence(), m.whither());
-        let evading = pos.threats().contains(wc);
-        let surrendering = pos.threats().contains(wt);
+        let threats = [pos.threats().contains(wc), pos.threats().contains(wt)];
         &mut self.0[pos.turn() as usize][m.is_quiet() as usize][wc as usize][wt as usize]
-            [evading as usize][surrendering as usize]
+            [threats[0] as usize][threats[1] as usize]
     }
 }
 

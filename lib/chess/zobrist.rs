@@ -9,7 +9,7 @@ pub type Zobrist = Bits<u64, 64>;
 
 #[derive(Debug, Zeroable)]
 pub struct ZobristNumbers {
-    pieces: [[u64; 64]; 12],
+    pieces: PieceTo<u64>,
     castles: [u64; 16],
     en_passant: [u64; 8],
     turn: u64,

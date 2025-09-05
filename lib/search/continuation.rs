@@ -1,4 +1,4 @@
-use crate::chess::{Move, Position};
+use crate::chess::{Move, PieceTo, Position};
 use crate::search::{History, Stat, Statistics};
 use crate::util::Assume;
 use bytemuck::{Zeroable, zeroed};
@@ -17,8 +17,9 @@ impl Default for Reply {
 impl Reply {
     #[inline(always)]
     fn graviton(&mut self, pos: &Position, m: Move) -> &mut <Self as Statistics<Move>>::Stat {
-        let role = pos.role_on(m.whence()).assume() as usize;
-        &mut self.0[role][m.whither() as usize]
+        let (wc, wt) = (m.whence(), m.whither());
+        let role = pos.role_on(wc).assume() as usize;
+        &mut self.0[role][wt as usize]
     }
 }
 
@@ -38,7 +39,7 @@ impl Statistics<Move> for Reply {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
 #[debug("Continuation")]
-pub struct Continuation([[Reply; 64]; 12]);
+pub struct Continuation(PieceTo<[Reply; 2]>);
 
 impl Default for Continuation {
     #[inline(always)]
@@ -50,7 +51,9 @@ impl Default for Continuation {
 impl Continuation {
     #[inline(always)]
     pub fn reply(&mut self, pos: &Position, m: Move) -> &mut Reply {
-        let piece = pos.piece_on(m.whence()).assume();
-        &mut self.0[piece as usize][m.whither() as usize]
+        let (wc, wt) = (m.whence(), m.whither());
+        let piece = pos.piece_on(wc).assume();
+        let threats = pos.threats().contains(wt);
+        &mut self.0[piece as usize][wt as usize][threats as usize]
     }
 }

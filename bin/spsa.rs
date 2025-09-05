@@ -90,18 +90,17 @@ impl MatchRunner {
             format!("-openings file={} order=random", p.display())
         });
 
-        let tb = self
-            .syzygy
-            .as_ref()
-            .map_or_else(String::new, |p| format!("-tb {}", p.display()));
+        let (tb, option_syzygy_path) = self.syzygy.as_ref().map_or_else(Default::default, |p| {
+            let path = p.display();
+            (format!("-tb {path}"), format!("option.SyzygyPath={path}"))
+        });
 
         let args = format!(
             "-games 2 -rounds {pairs} -concurrency {concurrency} -use-affinity -recover
-            -report penta=false -ratinginterval 0 -autosaveinterval 0
-            {openings} {tb} -draw movenumber=40 movecount=8 score=10
+            -report penta=false -ratinginterval 0 -autosaveinterval 0 {openings} {tb}
             -engine name=left cmd={engine} args=--params={left}
             -engine name=right cmd={engine} args=--params={right}
-            -each tc={tc}"
+            -each tc={tc} {option_syzygy_path}"
         );
 
         let args: Vec<_> = args.split_whitespace().collect();

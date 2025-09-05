@@ -31,3 +31,9 @@ pub use rank::*;
 pub use role::*;
 pub use square::*;
 pub use zobrist::*;
+
+/// The butterfly board.
+pub type Butterfly<T> = [[T; 64]; 64];
+
+/// The piece-to board.
+pub type PieceTo<T> = [[T; 64]; 12];

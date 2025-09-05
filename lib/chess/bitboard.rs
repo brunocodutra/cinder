@@ -1,12 +1,9 @@
-use crate::chess::{File, Flip, Rank, Square};
+use crate::chess::{Butterfly, File, Flip, Rank, Square};
 use crate::util::{Assume, Integer};
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::{Debug, *};
 use std::cell::SyncUnsafeCell;
 use std::fmt::{self, Formatter, Write};
-
-/// The butterfly board.
-pub type Butterfly<T> = [[T; 64]; 64];
 
 /// A set of squares on a chess board.
 #[derive(

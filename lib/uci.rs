@@ -150,7 +150,6 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
             tag("position"),
             tag("go"),
             tag("perft"),
-            tag("eval"),
             tag("setoption"),
             tag("isready"),
             tag("ucinewgame"),

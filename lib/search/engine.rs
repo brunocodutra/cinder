@@ -572,9 +572,10 @@ impl<'a> Stack<'a> {
 
             if !m.is_quiet() {
                 let gain = self.evaluator.gain(m);
-                if self.evaluator.winning(m, Value::new(1)) {
+                let margin = Params::winning_rating_margin()[0] / Params::BASE;
+                if self.evaluator.winning(m, margin.saturate()) {
                     rating += convolve([
-                        (gain.cast(), &Params::winning_rating_depth()),
+                        (gain.cast(), &Params::winning_rating_gain()),
                         (1, &Params::winning_rating_scalar()),
                     ]);
                 }
@@ -779,9 +780,10 @@ impl<'a> Stack<'a> {
 
             if !m.is_quiet() {
                 let gain = self.evaluator.gain(m);
-                if self.evaluator.winning(m, Value::new(1)) {
+                let margin = Params::winning_rating_margin()[0] / Params::BASE;
+                if self.evaluator.winning(m, margin.saturate()) {
                     rating += convolve([
-                        (gain.cast(), &Params::winning_rating_depth()),
+                        (gain.cast(), &Params::winning_rating_gain()),
                         (1, &Params::winning_rating_scalar()),
                     ]);
                 }

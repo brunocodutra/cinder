@@ -502,7 +502,7 @@ mod tests {
     #[proptest]
     fn handles_position_with_illegal_move(
         #[any(StaticStream::new([format!("position startpos moves {}", #_m)]))] mut uci: MockUci,
-        #[filter(!Position::default().is_legal(#_m))] _m: Move,
+        #[filter(!Position::default().moves().unpack().any(|m| UciMove(m) == *#_m.to_string()))] _m: Move,
     ) {
         let pos = uci.position.clone();
         assert_eq!(block_on(uci.run()), Ok(()));

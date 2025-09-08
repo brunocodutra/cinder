@@ -500,9 +500,9 @@ impl<'a> Stack<'a> {
                 None => (Score::lower(), Score::upper()),
                 Some(wdl) => {
                     let score = match wdl {
-                        Wdl::Win => ScoreBound::Lower(wdl.to_score(ply)),
-                        Wdl::Loss => ScoreBound::Upper(wdl.to_score(ply)),
-                        _ => ScoreBound::Exact(wdl.to_score(ply)),
+                        Wdl::Win => ScoreBound::Lower(Score::upper()),
+                        Wdl::Loss => ScoreBound::Upper(Score::lower()),
+                        _ => ScoreBound::Exact(Score::new(0)),
                     };
 
                     if score.upper(ply) <= alpha || score.lower(ply) >= beta {

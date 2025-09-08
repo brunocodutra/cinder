@@ -1,6 +1,6 @@
 use crate::search::{Ply, Score};
+use crate::syzygy::Dtz;
 use crate::util::{Binary, Bits, Integer};
-use crate::{nnue::Value, syzygy::Dtz};
 use std::ops::Neg;
 
 /// The possible outcomes of a final [`Position`].
@@ -31,8 +31,8 @@ impl Wdl {
     #[inline(always)]
     pub fn to_score(self, ply: Ply) -> Score {
         match self {
-            Wdl::Win => Score::new(Value::MAX) - ply,
-            Wdl::Loss => Score::new(Value::MIN) + ply,
+            Wdl::Win => Score::mating(ply),
+            Wdl::Loss => Score::mated(ply),
             _ => Score::new(0),
         }
     }

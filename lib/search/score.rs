@@ -90,6 +90,24 @@ impl Score {
     pub fn mated(ply: Ply) -> Self {
         Self::lower().relative_to_ply(ply)
     }
+
+    /// Returns true if the score represents a winning position.
+    #[inline(always)]
+    pub fn is_win(&self) -> bool {
+        matches!(self.mate(), Mate::Mating(_))
+    }
+
+    /// Returns true if the score represents a losing position.
+    #[inline(always)]
+    pub fn is_loss(&self) -> bool {
+        matches!(self.mate(), Mate::Mated(_))
+    }
+
+    /// Returns true if the score represents a decisive position (win or loss).
+    #[inline(always)]
+    pub fn is_decisive(&self) -> bool {
+        self.is_win() || self.is_loss()
+    }
 }
 
 impl Flip for Score {
@@ -142,6 +160,26 @@ mod tests {
     #[proptest]
     fn mate_returns_plies_to_mated(p: Ply) {
         assert_eq!(Score::mated(p).mate(), Mate::Mated(p));
+    }
+
+    #[proptest]
+    fn mating_implies_is_win(p: Ply) {
+        assert!(Score::mating(p).is_win());
+    }
+
+    #[proptest]
+    fn mated_implies_is_loss(p: Ply) {
+        assert!(Score::mated(p).is_loss());
+    }
+
+    #[proptest]
+    fn mating_implies_is_decisive(p: Ply) {
+        assert!(Score::mating(p).is_decisive());
+    }
+
+    #[proptest]
+    fn mated_implies_is_decisive(p: Ply) {
+        assert!(Score::mated(p).is_decisive());
     }
 
     #[proptest]

@@ -674,15 +674,13 @@ impl Position {
                 attackers |= candidates & Piece::new(role, White).attacks(sq, occ);
             }
 
-            let pinned = [self.pinned(), self.board.pinned(!turn)];
-
-            attackers &= !(pinned[0] | pinned[1])
-                | (pinned[0] & Bitboard::line(self.king(turn), sq))
-                | (pinned[1] & Bitboard::line(self.king(!turn), sq));
-
             loop {
                 turn = !turn;
-                let candidates = attackers & self.material(turn);
+
+                let pinned = self.board.pinned(turn, occ);
+                let mut candidates = attackers & self.material(turn);
+                candidates &= !pinned | (pinned & Bitboard::line(self.king(turn), sq));
+
                 if candidates.is_empty() {
                     break;
                 }
@@ -794,7 +792,7 @@ impl Position {
             self.zobrists.hash ^= ZobristNumbers::castling(self.castles());
         }
 
-        self.pinned = self.board.pinned(!turn);
+        self.pinned = self.board.pinned(!turn, Bitboard::full());
         self.checkers = self.board.checkers(!turn);
         self.threats = self.board.threats(turn);
     }
@@ -820,7 +818,7 @@ impl Position {
             self.zobrists.hash ^= ZobristNumbers::en_passant(ep.file());
         }
 
-        self.pinned = self.board.pinned(!turn);
+        self.pinned = self.board.pinned(!turn, Bitboard::full());
         self.threats = self.board.threats(turn);
     }
 
@@ -869,7 +867,7 @@ impl FromStr for Position {
         }
 
         Ok(Position {
-            pinned: board.pinned(board.turn),
+            pinned: board.pinned(board.turn, Bitboard::full()),
             checkers: board.checkers(board.turn),
             threats: board.threats(!board.turn),
             zobrists: board.zobrists(),
@@ -969,9 +967,6 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Position,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
     ) {
-        prop_assume!(pos.board.pinned(pos.turn()).is_empty());
-        prop_assume!(pos.board.pinned(!pos.turn()).is_empty());
-
         let sq = m.whither();
         let exchanges = pos.exchanges(m);
         let mut pos = pos.clone();
@@ -990,9 +985,6 @@ mod tests {
             );
 
             pos.play(m);
-
-            prop_assume!(pos.board.pinned(pos.turn()).is_empty());
-            prop_assume!(pos.board.pinned(!pos.turn()).is_empty());
         }
     }
 

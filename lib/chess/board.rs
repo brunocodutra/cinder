@@ -139,9 +139,9 @@ impl Board {
 
     /// Squares occupied by pinned [`Piece`]s of a [`Color`].
     #[inline(always)]
-    pub fn pinned(&self, c: Color) -> Bitboard {
-        let ours = self.material(c);
-        let theirs = self.material(!c);
+    pub fn pinned(&self, c: Color, mask: Bitboard) -> Bitboard {
+        let ours = mask & self.material(c);
+        let theirs = mask & self.material(!c);
         let occ = ours ^ theirs;
 
         let king = self.king(c).assume();

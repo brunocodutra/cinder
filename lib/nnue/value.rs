@@ -9,7 +9,7 @@ pub struct ValueRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as
 unsafe impl Integer for ValueRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
-    const MAX: Self::Repr = 3999;
+    const MAX: Self::Repr = 3839;
 }
 
 /// A position's static evaluation.

@@ -31,7 +31,6 @@ impl ScoreBound {
     }
 
     // The score bound.
-    #[track_caller]
     #[inline(always)]
     pub fn bound(&self, ply: Ply) -> Score {
         match *self {
@@ -42,7 +41,6 @@ impl ScoreBound {
     }
 
     /// A lower bound for the score normalized to [`Ply`].
-    #[track_caller]
     #[inline(always)]
     pub fn lower(&self, ply: Ply) -> Score {
         match *self {
@@ -52,7 +50,6 @@ impl ScoreBound {
     }
 
     /// An upper bound for the score normalized to [`Ply`].
-    #[track_caller]
     #[inline(always)]
     pub fn upper(&self, ply: Ply) -> Score {
         match *self {

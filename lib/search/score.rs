@@ -1,6 +1,6 @@
 use crate::nnue::Value;
 use crate::util::{Binary, Bits, Bounded, Integer};
-use crate::{chess::Flip, search::Ply, util::Assume};
+use crate::{chess::Flip, search::Ply};
 
 /// Number of [plies][`Ply`] to mate.
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
@@ -39,16 +39,40 @@ pub type Score = Bounded<ScoreRepr>;
 
 impl Score {
     const _CONDITION: () = const {
-        assert!(Value::MAX + (Ply::MAX as i16) < Self::MAX);
-        assert!(Value::MIN + (Ply::MIN as i16) > Self::MIN);
+        assert!(Value::MAX + 2 * (Ply::MAX as i16 + 1) <= Self::MAX);
+        assert!(Value::MIN + 2 * (Ply::MIN as i16 - 1) >= Self::MIN);
     };
+
+    /// The tablebase loss score at `ply`.
+    #[inline(always)]
+    pub fn losing(ply: Ply) -> Self {
+        Self::mated(Ply::upper()).relative_to_ply(ply) + 1
+    }
+
+    /// The maximum value.
+    #[inline(always)]
+    pub fn winning(ply: Ply) -> Self {
+        Self::mating(Ply::upper()).relative_to_ply(ply) - 1
+    }
+
+    /// Mated score at `ply`
+    #[inline(always)]
+    pub fn mated(ply: Ply) -> Self {
+        Self::lower().relative_to_ply(ply)
+    }
+
+    /// Mating score at `ply`
+    #[inline(always)]
+    pub fn mating(ply: Ply) -> Self {
+        Self::upper().relative_to_ply(ply)
+    }
 
     /// Returns number of plies to mate, if one is in the horizon.
     #[inline(always)]
     pub fn mate(&self) -> Mate {
-        if *self < Value::MIN {
+        if self.is_loss() {
             Mate::Mated((*self - Score::lower()).saturate())
-        } else if *self > Value::MAX {
+        } else if self.is_win() {
             Mate::Mating((Score::upper() - *self).saturate())
         } else {
             Mate::None
@@ -58,10 +82,8 @@ impl Score {
     /// Normalizes mate scores from `ply` relative to the root node.
     #[inline(always)]
     pub fn relative_to_root(&self, ply: Ply) -> Self {
-        if *self < Value::MIN {
-            *self - ply
-        } else if *self > Value::MAX {
-            *self + ply
+        if self.is_decisive() {
+            *self + ply.cast::<i16>() * self.signum()
         } else {
             *self
         }
@@ -70,37 +92,23 @@ impl Score {
     /// Normalizes mate scores from the root node relative to `ply`.
     #[inline(always)]
     pub fn relative_to_ply(&self, ply: Ply) -> Self {
-        if *self < Value::MIN {
-            Value::lower().convert::<Score>().assume().min(*self + ply)
-        } else if *self > Value::MAX {
-            Value::upper().convert::<Score>().assume().max(*self - ply)
+        if self.is_decisive() {
+            *self - ply.cast::<i16>() * self.signum()
         } else {
             *self
         }
     }
 
-    /// Mating score at `ply`
-    #[inline(always)]
-    pub fn mating(ply: Ply) -> Self {
-        Self::upper().relative_to_ply(ply)
-    }
-
-    /// Mated score at `ply`
-    #[inline(always)]
-    pub fn mated(ply: Ply) -> Self {
-        Self::lower().relative_to_ply(ply)
-    }
-
     /// Returns true if the score represents a winning position.
     #[inline(always)]
     pub fn is_win(&self) -> bool {
-        matches!(self.mate(), Mate::Mating(_))
+        *self > Value::MAX
     }
 
     /// Returns true if the score represents a losing position.
     #[inline(always)]
     pub fn is_loss(&self) -> bool {
-        matches!(self.mate(), Mate::Mated(_))
+        *self < Value::MIN
     }
 
     /// Returns true if the score represents a decisive position (win or loss).

@@ -508,7 +508,7 @@ impl<'a> Stack<'a> {
                     };
 
                     if score.upper(ply) <= alpha || score.lower(ply) >= beta {
-                        let transposition = Transposition::new(score, depth, None, was_pv);
+                        let transposition = Transposition::new(score, depth + 4, None, was_pv);
                         self.tt.set(self.evaluator.zobrists().hash, transposition);
                         return Ok(transposition.transpose(ply).truncate());
                     }

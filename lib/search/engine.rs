@@ -477,18 +477,20 @@ impl<'a> Stack<'a> {
             t.best().is_some_and(|m| !m.is_quiet()) && !matches!(t.score(), ScoreBound::Upper(_))
         });
 
-        if let Some(t) = transposition {
-            let (lower, upper) = t.score().range(ply).into_inner();
+        if !is_pv && self.evaluator.halfmoves() < 90 {
+            if let Some(t) = transposition {
+                let (lower, upper) = t.score().range(ply).into_inner();
 
-            if let Some(margin) = Self::flp(depth - t.depth()) {
-                if !is_pv && upper + margin / Params::BASE <= alpha {
-                    return Ok(transposed.truncate());
+                if let Some(margin) = Self::flp(depth - t.depth()) {
+                    if upper + margin / Params::BASE <= alpha {
+                        return Ok(transposed.truncate());
+                    }
                 }
-            }
 
-            if let Some(margin) = Self::fhp(depth - t.depth()) {
-                if !is_pv && lower - margin / Params::BASE >= beta {
-                    return Ok(transposed.truncate());
+                if let Some(margin) = Self::fhp(depth - t.depth()) {
+                    if lower - margin / Params::BASE >= beta {
+                        return Ok(transposed.truncate());
+                    }
                 }
             }
         }

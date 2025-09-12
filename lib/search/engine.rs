@@ -1,8 +1,7 @@
 use crate::chess::{Move, Position};
 use crate::nnue::{Evaluator, Value};
-use crate::syzygy::{Syzygy, Wdl};
 use crate::util::{Assume, Bounded, Integer, Memory};
-use crate::{params::Params, search::*};
+use crate::{params::Params, search::*, syzygy::Syzygy};
 use bytemuck::{Zeroable, try_zeroed_slice_box};
 use derive_more::with_trait::{Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
@@ -501,19 +500,16 @@ impl<'a> Stack<'a> {
             match self.syzygy.wdl_after_zeroing(&self.evaluator) {
                 None => (Score::lower(), Score::upper()),
                 Some(wdl) => {
-                    let score = match wdl {
-                        Wdl::Win => ScoreBound::Lower(Score::upper()),
-                        Wdl::Loss => ScoreBound::Upper(Score::lower()),
-                        _ => ScoreBound::Exact(Score::new(0)),
-                    };
-
-                    if score.upper(ply) <= alpha || score.lower(ply) >= beta {
+                    let bounds = Score::losing(Ply::upper())..Score::winning(Ply::upper());
+                    let score = ScoreBound::new(bounds, wdl.to_score(ply), ply);
+                    let (lower, upper) = score.range(ply).into_inner();
+                    if lower >= upper || upper <= alpha || lower >= beta {
                         let transposition = Transposition::new(score, depth + 4, None, was_pv);
                         self.tt.set(self.evaluator.zobrists().hash, transposition);
                         return Ok(transposition.transpose(ply).truncate());
                     }
 
-                    score.range(ply).into_inner()
+                    (lower, upper)
                 }
             }
         };

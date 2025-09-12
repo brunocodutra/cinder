@@ -116,7 +116,7 @@ pub struct Affine<T, const N: usize> {
 }
 
 impl<T: Copy, const N: usize> Affine<T, N> {
-    /// Refreshes the `accumulator``.
+    /// Refreshes the `accumulator`.
     #[inline(always)]
     pub fn refresh(&self, accumulator: &mut [T; N]) {
         *accumulator = *self.bias;

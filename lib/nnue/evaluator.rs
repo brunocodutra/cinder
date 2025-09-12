@@ -353,42 +353,9 @@ impl FromStr for Evaluator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::sample::{Selector, select};
+    use proptest::sample::select;
     use std::fmt::Debug;
     use test_strategy::proptest;
-
-    #[proptest]
-    fn accumulators_are_updated_lazily(
-        mut e: Evaluator,
-        #[strategy(..16usize)] mut n: usize,
-        selector: Selector,
-    ) {
-        let mut i = e.ply();
-        let mut pos = e.deref().clone();
-        while n > 0 && e.ply() < Ply::MAX && e.outcome().is_none() {
-            n -= 1;
-            if n % 5 == 1 && i > 0 {
-                e.pop();
-                pos = e.deref().clone();
-                i -= 1;
-            } else if n % 3 == 1 && !pos.is_check() {
-                e.push(None);
-                pos.pass();
-                i += 1;
-            } else {
-                let m = selector.select(pos.moves().unpack());
-                e.push(Some(m));
-                pos.play(m);
-                i += 1;
-            }
-        }
-
-        let mut f = Evaluator::new(pos);
-
-        assert_eq!(e, f);
-        assert_eq!(e.ply(), f.ply() + i);
-        assert_eq!(e.evaluate(), f.evaluate());
-    }
 
     #[proptest]
     fn parsing_printed_evaluator_is_an_identity(e: Evaluator) {

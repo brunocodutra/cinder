@@ -1,6 +1,6 @@
 use crate::chess::{Castles, MovePack, MoveSet, Position};
 use crate::syzygy::{Dtz, DtzTable, Material, NormalizedMaterial, TableDescriptor, Wdl, WdlTable};
-use crate::util::{Integer, Memory};
+use crate::util::Integer;
 use derive_more::with_trait::Debug;
 use rustc_hash::FxHashMap;
 use std::{collections::hash_map::Entry, ffi::OsStr, io, path::Path, str::FromStr};
@@ -140,19 +140,12 @@ impl Tablebase {
     }
 
     fn get_wdl(&self, pos: &Position) -> Option<Wdl> {
-        #[ctor::ctor]
-        static CACHE: Memory<Wdl, u32> = { Memory::new(1 << 22) };
-
         if pos.occupied().len() == 2 {
             Some(Wdl::Draw)
-        } else if let Some(wdl) = CACHE.get(pos.zobrists().hash) {
-            Some(wdl)
         } else {
             let material = Material::from_iter(pos.iter().map(|(p, _)| p));
             let key = material.normalize();
-            let wdl = self.wdl.get(&key)?.probe(pos, material);
-            CACHE.set(pos.zobrists().hash, wdl);
-            Some(wdl)
+            Some(self.wdl.get(&key)?.probe(pos, material))
         }
     }
 

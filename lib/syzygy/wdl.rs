@@ -1,6 +1,5 @@
 use crate::search::{Ply, Score};
-use crate::syzygy::Dtz;
-use crate::util::{Binary, Bits, Integer};
+use crate::{syzygy::Dtz, util::Integer};
 use std::ops::Neg;
 
 /// The possible outcomes of a final [`Position`].
@@ -69,20 +68,6 @@ impl From<Dtz> for Wdl {
     }
 }
 
-impl Binary for Wdl {
-    type Bits = Bits<u8, 3>;
-
-    #[inline(always)]
-    fn encode(&self) -> Self::Bits {
-        Bits::new((self.get() - Self::MIN + 1).cast())
-    }
-
-    #[inline(always)]
-    fn decode(bits: Self::Bits) -> Self {
-        Wdl::new(bits.cast::<i8>() + Self::MIN - 1)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,15 +76,5 @@ mod tests {
     #[proptest]
     fn wdl_has_an_equivalent_dtz(wdl: Wdl) {
         assert_eq!(Wdl::from(Dtz::from(wdl)), wdl);
-    }
-
-    #[proptest]
-    fn decoding_encoded_wdl_is_an_identity(wdl: Wdl) {
-        assert_eq!(Wdl::decode(wdl.encode()), wdl);
-    }
-
-    #[proptest]
-    fn decoding_encoded_optional_wdl_is_an_identity(wdl: Option<Wdl>) {
-        assert_eq!(Option::decode(wdl.encode()), wdl);
     }
 }

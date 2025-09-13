@@ -8,7 +8,7 @@ pub struct PlyRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as I
 unsafe impl Integer for PlyRepr {
     type Repr = i8;
     const MIN: Self::Repr = 0;
-    const MAX: Self::Repr = 95;
+    const MAX: Self::Repr = 127;
 }
 
 /// The number of half-moves played.

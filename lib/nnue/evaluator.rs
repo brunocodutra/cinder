@@ -1,10 +1,11 @@
 use crate::nnue::{Feature, Material, Nnue, Positional, Value};
+use crate::params::Params;
 use crate::util::{Assume, Integer};
-use crate::{chess::*, params::Params, search::Ply};
+use crate::{chess::*, search::Ply};
 use bytemuck::zeroed;
 use derive_more::with_trait::Debug;
 use std::hash::{Hash, Hasher};
-use std::ops::{Deref, Index, Range};
+use std::ops::{Deref, Div, Index, Range};
 use std::{array, hint::unreachable_unchecked, str::FromStr};
 
 #[cfg(test)]
@@ -187,34 +188,44 @@ impl Evaluator {
         let them = self.turn().flip() as usize;
         let material = self.material[idx][us][phase] - self.material[idx][them][phase];
         let positional = out.forward(&self.positional[idx][us], &self.positional[idx][them]);
-        let scale = Params::value_scale()[0] / Params::BASE;
-        let value = (material + 2 * positional) as i64 / scale;
+        let value = (material + 2 * positional) / 128;
         value.saturate()
+    }
+
+    /// Piece values at this phase of the game.
+    pub fn piece_values(&self) -> [i64; Role::MAX as usize + 1] {
+        let phase = self.phase().cast::<usize>();
+
+        [
+            Params::pawn_values()[phase],
+            Params::knight_values()[phase],
+            Params::bishop_values()[phase],
+            Params::rook_values()[phase],
+            Params::queen_values()[phase],
+            0,
+        ]
     }
 
     /// Estimates the material gain of a move.
     pub fn gain(&self, m: Move) -> Value {
-        let phase = self.phase();
         let mut gain = 0;
 
         if !m.is_quiet() {
-            let pieces = Nnue::pieces(phase);
+            let piece_values = self.piece_values();
 
             if let Some(victim) = self.role_on(m.whither()) {
-                gain += pieces[victim.cast::<usize>()];
+                gain += piece_values[victim.cast::<usize>()];
             } else if m.is_capture() {
-                gain += pieces[Role::Pawn.cast::<usize>()];
+                gain += piece_values[Role::Pawn.cast::<usize>()];
             }
 
             if let Some(promotion) = m.promotion() {
-                gain += pieces[promotion.cast::<usize>()];
-                gain -= pieces[Role::Pawn.cast::<usize>()];
+                gain += piece_values[promotion.cast::<usize>()];
+                gain -= piece_values[Role::Pawn.cast::<usize>()];
             }
         }
 
-        let scale = Params::value_scale()[0] / Params::BASE;
-        let score = gain as i64 / scale;
-        score.saturate()
+        gain.div(Params::BASE).saturate()
     }
 
     /// Whether this move wins the exchange by at least `margin`.
@@ -232,13 +243,11 @@ impl Evaluator {
             return alpha;
         }
 
-        let phase = self.phase();
-        let pieces = Nnue::pieces(phase);
-        let scale = Params::value_scale()[0] / Params::BASE;
+        let piece_values = self.piece_values();
 
         score -= match m.promotion() {
-            None => pieces[self.role_on(m.whence()).assume().cast::<usize>()] as i64 / scale,
-            Some(promotion) => pieces[promotion.cast::<usize>()] as i64 / scale,
+            None => piece_values[self.role_on(m.whence()).assume().cast::<usize>()] / Params::BASE,
+            Some(promotion) => piece_values[promotion.cast::<usize>()] / Params::BASE,
         };
 
         alpha = alpha.max(score);
@@ -254,7 +263,7 @@ impl Evaluator {
                 break beta;
             };
 
-            score = -(score + pieces[captor.cast::<usize>()] as i64 / scale);
+            score = -(score + piece_values[captor.cast::<usize>()] / Params::BASE);
             beta = beta.min(-score);
 
             if alpha >= beta {
@@ -265,7 +274,7 @@ impl Evaluator {
                 break alpha;
             };
 
-            score = -(score + pieces[captor.cast::<usize>()] as i64 / scale);
+            score = -(score + piece_values[captor.cast::<usize>()] / Params::BASE);
             alpha = alpha.max(score);
 
             if alpha >= beta {

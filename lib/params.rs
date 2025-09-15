@@ -149,7 +149,6 @@ macro_rules! params {
 }
 
 params! {
-    value_scale: Constant1<{ [524288] }>,
     moves_left_start: Constant1<{ [704116] }>,
     moves_left_end: Constant1<{ [8404] }>,
     soft_time_fraction: Constant1<{ [3064] }>,
@@ -159,6 +158,11 @@ params! {
     pv_focus_delta: Constant1<{ [7711] }>,
     score_trend_magnitude: Constant1<{ [3420] }>,
     score_trend_pivot: Variable1<{ [114222] }>,
+    pawn_values: Variable8<{ [166784, 207104, 212928, 234112, 243392, 231008, 217504, 204064] }>,
+    knight_values: Variable8<{ [942688, 768160, 779456, 783104, 777984, 763008, 728384, 685440] }>,
+    bishop_values: Variable8<{ [1013664, 860928, 876608, 886336, 878272, 852352, 831392, 787456] }>,
+    rook_values: Variable8<{ [1017504, 1271392, 1321280, 1376672, 1369888, 1325472, 1303392, 1244864] }>,
+    queen_values: Variable8<{ [2251488, 2503552, 2579648, 2662752, 2613600, 2541536, 2457248, 2592608] }>,
     pawns_correction: Variable1<{ [55273] }>,
     minor_correction: Variable1<{ [39438] }>,
     major_correction: Variable1<{ [47572] }>,

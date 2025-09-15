@@ -1,4 +1,4 @@
-use crate::chess::{Color, Phase, Piece, Role, Square};
+use crate::chess::Phase;
 use crate::util::{Assume, Integer};
 use bytemuck::{Zeroable, zeroed};
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -26,7 +26,6 @@ pub struct Nnue {
     positional: Affine<i16, { Positional::LEN }>,
     material: Linear<i32, { Material::LEN }>,
     output: [Output<{ Positional::LEN }>; Material::LEN],
-    pieces: [[i32; Role::MAX as usize + 1]; Material::LEN],
 }
 
 static NNUE: SyncUnsafeCell<Nnue> = SyncUnsafeCell::new(zeroed());
@@ -62,24 +61,6 @@ impl Nnue {
             }
         }
 
-        for phase in Phase::iter() {
-            for role in Role::iter() {
-                let mut deltas = [0i32, 0i32];
-
-                for sq in Square::iter() {
-                    for (d, side) in deltas.iter_mut().zip(Color::iter()) {
-                        for ksq in Square::iter() {
-                            let feat = Feature::new(side, ksq, Piece::new(role, Color::White), sq);
-                            *d += self.material.weight[feat.cast::<usize>()][phase.cast::<usize>()];
-                        }
-                    }
-                }
-
-                self.pieces[phase.cast::<usize>()][role.cast::<usize>()] =
-                    (deltas[0] - deltas[1]) / (Square::MAX as i32 + 1).pow(2);
-            }
-        }
-
         Ok(())
     }
 
@@ -97,12 +78,6 @@ impl Nnue {
     pub fn output(phase: Phase) -> &'static Output<{ Positional::LEN }> {
         let idx = phase.cast::<usize>();
         unsafe { NNUE.get().as_ref_unchecked().output.get_unchecked(idx) }
-    }
-
-    #[inline(always)]
-    pub fn pieces(phase: Phase) -> &'static [i32; Role::MAX as usize + 1] {
-        let idx = phase.cast::<usize>();
-        unsafe { NNUE.get().as_ref_unchecked().pieces.get_unchecked(idx) }
     }
 }
 

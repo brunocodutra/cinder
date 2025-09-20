@@ -17,7 +17,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 spsa = ["rand/thread_rng", "ron", "serde"]
 
 [dependencies]
-anyhow = { version = "1.0.98", default-features = false, features = ["std"] }
+anyhow = { version = "1.0.100", default-features = false, features = ["std"] }
 arrayvec = { version = "0.7.6", default-features = false, features = ["std"] }
 atomic = { version = "0.6.1", default-features = false, features = ["std"] }
 bytemuck = { version = "1.23.2", default-features = false, features = [

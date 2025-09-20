@@ -1,4 +1,4 @@
-use crate::nnue::{Feature, Material, Nnue, Positional, Value};
+use crate::nnue::{Accumulator, Feature, Nnue, Value};
 use crate::params::Params;
 use crate::util::{Assume, Integer};
 use crate::{chess::*, search::Ply};
@@ -23,8 +23,7 @@ enum Pending {
 pub struct Evaluator {
     ply: Ply,
     positions: [Position; Ply::MAX as usize + 1],
-    positional: [[Positional; 2]; Ply::MAX as usize + 1],
-    material: [[Material; 2]; Ply::MAX as usize + 1],
+    accumulator: [[Accumulator; 2]; Ply::MAX as usize + 1],
     pending: [[Option<Pending>; Ply::MAX as usize + 1]; 2],
     // move[i] leads to pos[i + 1]
     moves: [Option<Move>; Ply::MAX as usize],
@@ -102,8 +101,7 @@ impl Evaluator {
         let mut evaluator = Evaluator {
             ply: Ply::new(0),
             positions: array::from_fn(|_| Default::default()),
-            positional: zeroed(),
-            material: zeroed(),
+            accumulator: zeroed(),
             pending: [[None; Ply::MAX as usize + 1]; 2],
             moves: [None; Ply::MAX as usize],
         };
@@ -179,16 +177,13 @@ impl Evaluator {
         let phase = self.phase();
         let out = Nnue::output(phase);
 
-        let phase = phase.cast::<usize>();
         let idx = self.ply.cast::<usize>();
         debug_assert_eq!(self.pending[0][idx], None);
         debug_assert_eq!(self.pending[1][idx], None);
 
         let us = self.turn() as usize;
         let them = self.turn().flip() as usize;
-        let material = self.material[idx][us][phase] - self.material[idx][them][phase];
-        let positional = out.forward(&self.positional[idx][us], &self.positional[idx][them]);
-        let value = (material + 2 * positional) / 128;
+        let value = out.forward(&self.accumulator[idx][us], &self.accumulator[idx][them]) / 75;
         value.saturate()
     }
 
@@ -286,16 +281,13 @@ impl Evaluator {
     fn refresh(&mut self, side: Color, ply: Ply) {
         let idx = ply.cast::<usize>();
         self.pending[side.cast::<usize>()][idx] = None;
-        Nnue::material().refresh(&mut self.material[idx][side.cast::<usize>()]);
-        Nnue::positional().refresh(&mut self.positional[idx][side.cast::<usize>()]);
+        Nnue::transformer().refresh(&mut self.accumulator[idx][side.cast::<usize>()]);
 
         let ksq = self.positions[idx].king(side);
         for (p, s) in self.positions[idx].iter() {
             let add = [Some(Feature::new(side, ksq, p, s)), None];
-            let accumulator = &mut self.material[idx][side.cast::<usize>()];
-            Nnue::material().accumulate_in_place(accumulator, [None; 2], add);
-            let accumulator = &mut self.positional[idx][side.cast::<usize>()];
-            Nnue::positional().accumulate_in_place(accumulator, [None; 2], add);
+            let accumulator = &mut self.accumulator[idx][side.cast::<usize>()];
+            Nnue::transformer().accumulate_in_place(accumulator, [None; 2], add);
         }
     }
 
@@ -339,15 +331,10 @@ impl Evaluator {
             }
         }
 
-        let (left, right) = self.material.split_at_mut(idx);
+        let (left, right) = self.accumulator.split_at_mut(idx);
         let src = &left[left.len() - 1][side.cast::<usize>()];
         let dst = &mut right[0][side.cast::<usize>()];
-        Nnue::material().accumulate(src, dst, sub, add);
-
-        let (left, right) = self.positional.split_at_mut(idx);
-        let src = &left[left.len() - 1][side.cast::<usize>()];
-        let dst = &mut right[0][side.cast::<usize>()];
-        Nnue::positional().accumulate(src, dst, sub, add);
+        Nnue::transformer().accumulate(src, dst, sub, add);
     }
 }
 

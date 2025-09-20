@@ -1,5 +1,7 @@
 /target
 /engines
+/checkpoints
+/data
 /proptest-regressions
 *.proptest-regressions
 .vscode

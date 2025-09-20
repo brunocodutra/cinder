@@ -13,7 +13,7 @@ use std::fmt::{self, Display, Formatter};
 use std::io::{Write, stdout};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use std::{fs::File, process::Command as Process};
+use std::{fs::File, num::NonZero, ops::Div, process::Command, thread::available_parallelism};
 
 /// Configuration for the SPSA algorithm.
 #[derive(Debug, Args, Serialize, Deserialize)]
@@ -51,7 +51,7 @@ struct GameResult {
 #[serde(deny_unknown_fields)]
 struct MatchRunner {
     /// How many games to run concurrently per match.
-    #[clap(long, default_value_t = 1)]
+    #[clap(long, default_value_t = available_parallelism().map_or(1, NonZero::get).div(2).max(1))]
     concurrency: usize,
 
     /// The number of game pairs per iteration.
@@ -104,7 +104,7 @@ impl MatchRunner {
         );
 
         let args: Vec<_> = args.split_whitespace().collect();
-        let output = Process::new("fastchess").args(&args).output()?;
+        let output = Command::new("fastchess").args(&args).output()?;
         let stdout = String::from_utf8(output.stdout)?;
 
         if let Err(e) = output.status.exit_ok() {
@@ -246,13 +246,13 @@ struct Cli {
     checkpoint: PathBuf,
 
     #[clap(subcommand)]
-    command: Command,
+    action: Action,
 }
 
 /// Controls whether to resume a tuning session from a checkpoint or to start a new one.
 #[derive(Debug, Subcommand)]
 #[allow(clippy::large_enum_variant)]
-enum Command {
+enum Action {
     /// Starts a new tuning session.
     Start(#[clap(flatten)] SpsaTuner),
 
@@ -262,9 +262,9 @@ enum Command {
 
 fn main() -> Result<(), Failure> {
     let args = Cli::parse();
-    let mut spsa = match args.command {
-        Command::Start(spsa) => spsa,
-        Command::Resume => {
+    let mut spsa = match args.action {
+        Action::Start(spsa) => spsa,
+        Action::Resume => {
             let file = File::open(&args.checkpoint)?;
             deserialize(file)?
         }

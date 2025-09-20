@@ -23,9 +23,8 @@ pub use value::*;
 /// An Efficiently Updatable Neural Network.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
 pub struct Nnue {
-    positional: Affine<i16, { Positional::LEN }>,
-    material: Linear<i32, { Material::LEN }>,
-    output: [Output<{ Positional::LEN }>; Material::LEN],
+    transformer: Affine<i16, { Accumulator::LEN }>,
+    output: [Output<{ Accumulator::LEN }>; Phase::LEN],
 }
 
 static NNUE: SyncUnsafeCell<Nnue> = SyncUnsafeCell::new(zeroed());
@@ -42,13 +41,9 @@ unsafe fn init() {
 impl Nnue {
     #[inline(always)]
     fn load<T: Read>(&mut self, mut reader: T) -> io::Result<()> {
-        reader.read_i16_into::<LittleEndian>(&mut *self.positional.bias)?;
-        for row in self.positional.weight.iter_mut() {
+        reader.read_i16_into::<LittleEndian>(&mut *self.transformer.bias)?;
+        for row in self.transformer.weight.iter_mut() {
             reader.read_i16_into::<LittleEndian>(row)?;
-        }
-
-        for row in self.material.weight.iter_mut() {
-            reader.read_i32_into::<LittleEndian>(row)?;
         }
 
         for Output { bias, .. } in self.output.iter_mut() {
@@ -65,17 +60,12 @@ impl Nnue {
     }
 
     #[inline(always)]
-    pub fn positional() -> &'static Affine<i16, { Positional::LEN }> {
-        unsafe { &NNUE.get().as_ref_unchecked().positional }
+    pub fn transformer() -> &'static Affine<i16, { Accumulator::LEN }> {
+        unsafe { &NNUE.get().as_ref_unchecked().transformer }
     }
 
     #[inline(always)]
-    pub fn material() -> &'static Linear<i32, { Material::LEN }> {
-        unsafe { &NNUE.get().as_ref_unchecked().material }
-    }
-
-    #[inline(always)]
-    pub fn output(phase: Phase) -> &'static Output<{ Positional::LEN }> {
+    pub fn output(phase: Phase) -> &'static Output<{ Accumulator::LEN }> {
         let idx = phase.cast::<usize>();
         unsafe { NNUE.get().as_ref_unchecked().output.get_unchecked(idx) }
     }
@@ -88,10 +78,10 @@ mod tests {
 
     #[test]
     fn feature_transformer_does_not_overflow() {
-        (0..Positional::LEN).for_each(|i| {
-            let bias = Nnue::positional().bias[i] as i32;
+        (0..Accumulator::LEN).for_each(|i| {
+            let bias = Nnue::transformer().bias[i] as i32;
             let mut features = ArrayVec::<_, { Feature::LEN }>::from_iter(
-                Nnue::positional().weight.iter().map(|a| a[i] as i32),
+                Nnue::transformer().weight.iter().map(|a| a[i] as i32),
             );
 
             for weights in features.as_chunks_mut::<768>().0 {

@@ -7,6 +7,10 @@ use crate::util::Integer;
 #[repr(transparent)]
 pub struct Bucket(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as Integer>::Repr);
 
+impl Bucket {
+    pub const LEN: usize = Self::MAX as usize + 1;
+}
+
 unsafe impl Integer for Bucket {
     type Repr = u8;
     const MIN: Self::Repr = 0;
@@ -27,7 +31,7 @@ unsafe impl Integer for Feature {
 
 impl Feature {
     /// The total number of different features.
-    pub const LEN: usize = 8 * 768;
+    pub const LEN: usize = 768 * Bucket::LEN / 2;
 
     /// Constructs a [`Feature`].
     #[inline(always)]

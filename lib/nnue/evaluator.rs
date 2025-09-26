@@ -2,7 +2,7 @@ use crate::nnue::{Accumulator, Feature, Nnue, Value};
 use crate::params::Params;
 use crate::util::{Assume, Integer};
 use crate::{chess::*, search::Ply};
-use bytemuck::zeroed;
+use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, Div, Index, Range};
@@ -28,6 +28,8 @@ pub struct Evaluator {
     // move[i] leads to pos[i + 1]
     moves: [Option<Move>; Ply::MAX as usize],
 }
+
+unsafe impl Zeroable for Evaluator {}
 
 impl Default for Evaluator {
     #[inline(always)]

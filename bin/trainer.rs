@@ -199,7 +199,6 @@ impl TrainingDataFilter {
 
 const SB0: usize = 200;
 const SB1: usize = 800;
-const SB2: usize = 200;
 const EVAL_SCALE: i16 = 508;
 const Q0: i16 = 255;
 const Q1: i16 = 16 * EVAL_SCALE;
@@ -389,12 +388,6 @@ impl Orchestrator {
         if stage < 1 || (stage == 1 && superbatch < SB1) {
             let start = if stage == 1 { superbatch + 1 } else { 1 };
             let schedule = self.schedule("stage1", start..=SB1, 2e-4..=5e-6, 0.0..=self.wdl);
-            trainer.run(&schedule, &settings, &training_dataloader);
-        }
-
-        if stage < 2 || (stage == 2 && superbatch < SB2) {
-            let start = if stage == 2 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage2", start..=SB2, 5e-6..=1e-7, self.wdl..=self.wdl);
             trainer.run(&schedule, &settings, &training_dataloader);
         }
 

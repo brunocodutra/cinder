@@ -533,7 +533,9 @@ impl<'a> Stack<'a> {
                 }
             }
 
-            if self.searcher.pos.pieces(self.searcher.pos.turn()).len() > 1 {
+            let turn = self.searcher.pos.turn();
+            let pawns = self.searcher.pos.pawns(turn);
+            if (self.searcher.pos.material(turn) ^ pawns).len() > 1 {
                 if let Some(margin) = Self::nmp(depth) {
                     if transposed.score() - margin / Params::BASE >= beta {
                         return Ok(transposed.truncate());
@@ -992,9 +994,13 @@ impl<'e> Stream for Search<'e> {
             return Poll::Ready(Some(info));
         }
 
+        searchers.iter().for_each(move |cell| {
+            let searcher = unsafe { &mut *cell.get() };
+            searcher.pos = pos.clone()
+        });
+
         self.task = Some(executor.execute(move |idx| {
             let searcher = unsafe { &mut *searchers.get(idx).assume().get() };
-            searcher.pos = pos.clone();
             for info in Stack::new(idx, searcher, syzygy, tt, ctrl).aw() {
                 if idx == 0 {
                     tx.unbounded_send(info).assume();

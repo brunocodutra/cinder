@@ -1,8 +1,8 @@
-use crate::nnue::{Accumulator, Feature, Nnue, Value};
+use crate::nnue::{Accumulator, Bucket, Feature, Nnue, Value};
 use crate::params::Params;
 use crate::util::{Assume, Integer};
 use crate::{chess::*, search::Ply};
-use bytemuck::{Zeroable, zeroed};
+use bytemuck::{Zeroable, ZeroableInOption, zeroed};
 use derive_more::with_trait::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, Div, Index, Range};
@@ -11,14 +11,43 @@ use std::{array, hint::unreachable_unchecked, str::FromStr};
 #[cfg(test)]
 use proptest::{prelude::*, sample::*};
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
+struct CachedAccumulator {
+    roles: [Bitboard; 6],
+    colors: [Bitboard; 2],
+    pieces: [Option<Piece>; 64],
+    accumulator: Accumulator,
+}
+
+impl Default for CachedAccumulator {
+    fn default() -> Self {
+        let mut cache: Self = zeroed();
+        Nnue::transformer().refresh(&mut cache.accumulator);
+        cache
+    }
+}
+
+impl CachedAccumulator {
+    fn by_piece(&self, p: Piece) -> Bitboard {
+        self.colors[p.color().cast::<usize>()] & self.roles[p.role().cast::<usize>()]
+    }
+
+    pub fn piece_on(&self, sq: Square) -> Option<Piece> {
+        self.pieces[sq.cast::<usize>()]
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Zeroable)]
+#[repr(u8)]
 enum Pending {
     Update,
     Refresh,
 }
 
+unsafe impl ZeroableInOption for Pending {}
+
 /// A [`Position`] evaluation stack.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Zeroable)]
 #[debug("Evaluator({})", self.deref())]
 pub struct Evaluator {
     ply: Ply,
@@ -27,9 +56,8 @@ pub struct Evaluator {
     pending: [[Option<Pending>; Ply::MAX as usize + 1]; 2],
     // move[i] leads to pos[i + 1]
     moves: [Option<Move>; Ply::MAX as usize],
+    cache: [[CachedAccumulator; Bucket::LEN]; 2],
 }
-
-unsafe impl Zeroable for Evaluator {}
 
 impl Default for Evaluator {
     #[inline(always)]
@@ -102,10 +130,11 @@ impl Evaluator {
     pub fn new(pos: Position) -> Self {
         let mut evaluator = Evaluator {
             ply: Ply::new(0),
-            positions: array::from_fn(|_| Default::default()),
+            positions: zeroed(),
             accumulator: zeroed(),
             pending: [[None; Ply::MAX as usize + 1]; 2],
             moves: [None; Ply::MAX as usize],
+            cache: Default::default(),
         };
 
         evaluator.positions[0] = pos;
@@ -282,15 +311,49 @@ impl Evaluator {
 
     fn refresh(&mut self, side: Color, ply: Ply) {
         let idx = ply.cast::<usize>();
-        self.pending[side.cast::<usize>()][idx] = None;
-        Nnue::transformer().refresh(&mut self.accumulator[idx][side.cast::<usize>()]);
-
         let ksq = self.positions[idx].king(side);
-        for (p, s) in self.positions[idx].iter() {
-            let add = [Some(Feature::new(side, ksq, p, s)), None];
-            let accumulator = &mut self.accumulator[idx][side.cast::<usize>()];
-            Nnue::transformer().accumulate_in_place(accumulator, [None; 2], add);
+        let bucket = Feature::bucket(side, ksq);
+
+        let mut to_sub = Bitboard::empty();
+        let mut to_add = Bitboard::empty();
+
+        for piece in Piece::iter() {
+            let current = self.cache[side.cast::<usize>()][bucket.cast::<usize>()].by_piece(piece);
+            let target = self.by_piece(piece);
+            to_sub |= current & !target;
+            to_add |= target & !current;
         }
+
+        let mut to_sub = Squares::new(to_sub);
+        let mut to_add = Squares::new(to_add);
+
+        while to_sub.len() > 0 || to_add.len() > 0 {
+            let sub = array::from_fn(|_| {
+                to_sub.next().map(|sq| {
+                    let cache = &self.cache[side.cast::<usize>()][bucket.cast::<usize>()];
+                    let piece = cache.piece_on(sq).assume();
+                    Feature::new(side, ksq, piece, sq)
+                })
+            });
+
+            let add = array::from_fn(|_| {
+                to_add.next().map(|sq| {
+                    let piece = self.piece_on(sq).assume();
+                    Feature::new(side, ksq, piece, sq)
+                })
+            });
+
+            let cache = &mut self.cache[side.cast::<usize>()][bucket.cast::<usize>()];
+            Nnue::transformer().accumulate_in_place(&mut cache.accumulator, sub, add);
+        }
+
+        self.cache[side.cast::<usize>()][bucket.cast::<usize>()].roles = self.roles();
+        self.cache[side.cast::<usize>()][bucket.cast::<usize>()].colors = self.colors();
+        self.cache[side.cast::<usize>()][bucket.cast::<usize>()].pieces = self.pieces();
+
+        let cache = &self.cache[side.cast::<usize>()][bucket.cast::<usize>()];
+        self.accumulator[idx][side.cast::<usize>()] = cache.accumulator.clone();
+        self.pending[side.cast::<usize>()][idx] = None;
     }
 
     fn update(&mut self, side: Color, ply: Ply) {
@@ -354,6 +417,16 @@ mod tests {
     use proptest::sample::select;
     use std::fmt::Debug;
     use test_strategy::proptest;
+
+    #[proptest]
+    fn evaluator_updates_accumulator_lazily(
+        #[filter(#pos.outcome().is_none())] mut pos: Evaluator,
+    ) {
+        assert_eq!(
+            pos.evaluate(),
+            Evaluator::new(pos.deref().clone()).evaluate()
+        )
+    }
 
     #[proptest]
     fn parsing_printed_evaluator_is_an_identity(e: Evaluator) {

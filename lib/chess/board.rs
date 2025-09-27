@@ -1,5 +1,6 @@
 use crate::chess::*;
 use crate::util::{Assume, Integer};
+use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::io::Write as _;
@@ -8,7 +9,7 @@ use std::str::{self, FromStr};
 #[cfg(test)]
 use proptest::strategy::LazyJust;
 
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash, Zeroable)]
 pub struct Zobrists {
     pub hash: Zobrist,
     pub pawns: Zobrist,
@@ -44,7 +45,7 @@ impl Zobrists {
 }
 
 /// The chess board.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Board({self})")]
 pub struct Board {
@@ -119,6 +120,24 @@ impl Default for Board {
 }
 
 impl Board {
+    /// The [`Color`] bitboards.
+    #[inline(always)]
+    pub fn colors(&self) -> [Bitboard; 2] {
+        self.colors
+    }
+
+    /// The [`Role`] bitboards.
+    #[inline(always)]
+    pub fn roles(&self) -> [Bitboard; 6] {
+        self.roles
+    }
+
+    /// The [`Piece`]s table.
+    #[inline(always)]
+    pub fn pieces(&self) -> [Option<Piece>; 64] {
+        self.pieces
+    }
+
     /// [`Square`]s occupied by [`Piece`]s of a [`Color`].
     #[inline(always)]
     pub fn material(&self, c: Color) -> Bitboard {

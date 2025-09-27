@@ -41,7 +41,7 @@ pub const fn bits<U: Integer<Repr: Unsigned>>(i: u128) -> U {
     unsafe { transmute_copy(&i) }
 }
 
-unsafe impl<T: Unsigned + 'static, const W: u32> NoUninit for Bits<T, W> {}
+unsafe impl<T: NoUninit, const W: u32> NoUninit for Bits<T, W> {}
 
 unsafe impl<T: Unsigned + 'static, const W: u32> Integer for Bits<T, W> {
     type Repr = T;

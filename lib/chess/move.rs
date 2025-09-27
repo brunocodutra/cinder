@@ -1,5 +1,6 @@
 use crate::chess::{Bitboard, Flip, Perspective, Piece, Rank, Role, Square, Squares};
 use crate::util::{Assume, Binary, Bits, Integer};
+use bytemuck::ZeroableInOption;
 use std::fmt::{self, Debug, Display, Formatter, Write};
 use std::{num::NonZeroU16, ops::RangeBounds};
 
@@ -107,6 +108,8 @@ impl Display for Move {
         Ok(())
     }
 }
+
+unsafe impl ZeroableInOption for Move {}
 
 impl Binary for Move {
     type Bits = Bits<u16, 16>;

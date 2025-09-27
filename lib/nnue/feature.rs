@@ -1,11 +1,12 @@
 use crate::chess::{Color, File, Perspective, Piece, Side, Square};
 use crate::util::Integer;
+use bytemuck::Zeroable;
 
 /// The king's bucket.
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct Bucket(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as Integer>::Repr);
+pub struct Bucket(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Bucket as Integer>::Repr);
 
 impl Bucket {
     pub const LEN: usize = Self::MAX as usize + 1;
@@ -18,10 +19,10 @@ unsafe impl Integer for Bucket {
 }
 
 /// A bucketed feature set with horizontal mirroring.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct Feature(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as Integer>::Repr);
+pub struct Feature(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Feature as Integer>::Repr);
 
 unsafe impl Integer for Feature {
     type Repr = u16;

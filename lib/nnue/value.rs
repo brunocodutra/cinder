@@ -1,10 +1,13 @@
 use crate::chess::Flip;
 use crate::util::{Bounded, Integer};
+use bytemuck::Zeroable;
 
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct ValueRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as Integer>::Repr);
+pub struct ValueRepr(
+    #[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <ValueRepr as Integer>::Repr,
+);
 
 unsafe impl Integer for ValueRepr {
     type Repr = i16;

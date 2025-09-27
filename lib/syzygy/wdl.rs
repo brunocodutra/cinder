@@ -1,9 +1,10 @@
 use crate::search::{Ply, Score};
 use crate::{syzygy::Dtz, util::Integer};
+use bytemuck::{Zeroable, ZeroableInOption};
 use std::ops::Neg;
 
 /// The possible outcomes of a final [`Position`].
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(i8)]
 pub enum Wdl {
@@ -18,6 +19,8 @@ pub enum Wdl {
     /// Unconditional win.
     Win = 2,
 }
+
+unsafe impl ZeroableInOption for Wdl {}
 
 unsafe impl Integer for Wdl {
     type Repr = i8;

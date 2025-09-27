@@ -134,7 +134,7 @@ impl<const MIN: i16, const MAX: i16> Stat for Graviton<MIN, MAX> {
 
     #[inline(always)]
     fn get(&mut self) -> Self::Value {
-        const { assert!(MIN <= MAX) }
+        const { assert!(MIN <= 0 && 0 <= MAX) }
         self.0
     }
 

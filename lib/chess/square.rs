@@ -1,12 +1,13 @@
 use crate::chess::*;
 use crate::util::{Assume, Binary, Bits, Integer};
+use bytemuck::{Zeroable, ZeroableInOption};
 use derive_more::with_trait::{Display, Error, From};
 use std::fmt::{self, Formatter};
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 use std::str::FromStr;
 
 /// A square on the chess board.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(i8)]
 #[rustfmt::skip]
@@ -46,6 +47,8 @@ impl Square {
         Bitboard::new(1 << self.get())
     }
 }
+
+unsafe impl ZeroableInOption for Square {}
 
 unsafe impl Integer for Square {
     type Repr = i8;

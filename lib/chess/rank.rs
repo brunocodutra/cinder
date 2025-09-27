@@ -1,11 +1,12 @@
 use crate::chess::{Bitboard, File, Flip, Transpose};
 use crate::util::{Assume, Integer};
+use bytemuck::{Zeroable, ZeroableInOption};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{ops::Sub, str::FromStr};
 
 /// A row on the chess board.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(i8)]
 pub enum Rank {
@@ -26,6 +27,8 @@ impl Rank {
         Bitboard::new(0x000000000000FF << (self.get() * 8))
     }
 }
+
+unsafe impl ZeroableInOption for Rank {}
 
 unsafe impl Integer for Rank {
     type Repr = i8;

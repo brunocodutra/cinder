@@ -1,6 +1,7 @@
 use crate::nnue::Value;
 use crate::util::{Binary, Bits, Bounded, Integer};
 use crate::{chess::Flip, search::Ply};
+use bytemuck::Zeroable;
 
 /// Number of [plies][`Ply`] to mate.
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
@@ -23,10 +24,10 @@ impl Mate {
     }
 }
 
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct ScoreRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as Integer>::Repr);
+pub struct ScoreRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Score as Integer>::Repr);
 
 unsafe impl Integer for ScoreRepr {
     type Repr = i16;

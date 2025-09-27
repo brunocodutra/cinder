@@ -1,10 +1,11 @@
 use crate::util::Integer;
+use bytemuck::{Zeroable, ZeroableInOption};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::str::FromStr;
 
 /// The type of a chess [`Piece`][`crate::Piece`].
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(u8)]
 pub enum Role {
@@ -15,6 +16,8 @@ pub enum Role {
     Queen,
     King,
 }
+
+unsafe impl ZeroableInOption for Role {}
 
 unsafe impl Integer for Role {
     type Repr = u8;

@@ -1,11 +1,12 @@
 use crate::chess::{Bitboard, Mirror, Rank, Transpose};
 use crate::util::{Assume, Integer};
+use bytemuck::{Zeroable, ZeroableInOption};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{ops::Sub, str::FromStr};
 
 /// A column on the chess board.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(i8)]
 pub enum File {
@@ -18,6 +19,8 @@ pub enum File {
     G,
     H,
 }
+
+unsafe impl ZeroableInOption for File {}
 
 impl File {
     /// Returns a [`Bitboard`] that only contains this file.

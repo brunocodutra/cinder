@@ -1,6 +1,7 @@
 use crate::util::{Assume, Integer};
 use crate::{chess::*, search::Depth};
 use arrayvec::ArrayVec;
+use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Deref, DerefMut, Display, Error, From, IntoIterator};
 use std::fmt::{self, Formatter};
 use std::hash::{Hash, Hasher};
@@ -264,7 +265,7 @@ impl MoveGenerator {
 /// The current position on the board.
 ///
 /// This type guarantees that it only holds valid positions.
-#[derive(Debug, Clone, Eq)]
+#[derive(Debug, Clone, Eq, Zeroable)]
 #[debug("Position({self})")]
 pub struct Position {
     board: Board,
@@ -371,6 +372,24 @@ impl Position {
         Phase::new((self.occupied().len() - 1) as u8 / 4)
     }
 
+    /// The [`Color`] bitboards.
+    #[inline(always)]
+    pub fn colors(&self) -> [Bitboard; 2] {
+        self.board.colors()
+    }
+
+    /// The [`Role`] bitboards.
+    #[inline(always)]
+    pub fn roles(&self) -> [Bitboard; 6] {
+        self.board.roles()
+    }
+
+    /// The [`Piece`]s table.
+    #[inline(always)]
+    pub fn pieces(&self) -> [Option<Piece>; 64] {
+        self.board.pieces()
+    }
+
     /// [`Square`]s occupied.
     #[inline(always)]
     pub fn occupied(&self) -> Bitboard {
@@ -399,12 +418,6 @@ impl Position {
     #[inline(always)]
     pub fn pawns(&self, side: Color) -> Bitboard {
         self.by_piece(Piece::new(Role::Pawn, side))
-    }
-
-    /// [`Square`]s occupied by [`Piece`]s other than pawns of a [`Color`].
-    #[inline(always)]
-    pub fn pieces(&self, side: Color) -> Bitboard {
-        self.material(side) ^ self.pawns(side)
     }
 
     /// [`Square`] occupied by a the king of a [`Color`].
@@ -906,11 +919,6 @@ mod tests {
         for sq in pos.occupied() {
             assert_ne!(pos.piece_on(sq), None);
         }
-    }
-
-    #[proptest]
-    fn material_is_either_pawn_or_piece(pos: Position, c: Color) {
-        assert_eq!(pos.material(c), pos.pawns(c) ^ pos.pieces(c));
     }
 
     #[proptest]

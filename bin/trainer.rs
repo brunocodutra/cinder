@@ -177,7 +177,7 @@ impl TrainingDataFilter {
         let frequency = count as f64 / total as f64;
 
         // Calculate the acceptance probability for this piece count
-        let acceptance = 0.7 * DESIRED_DISTRIBUTION[pc] / frequency;
+        let acceptance = 0.5 * DESIRED_DISTRIBUTION[pc] / frequency;
         1. - acceptance.clamp(0., 1.)
     }
 
@@ -199,9 +199,8 @@ impl TrainingDataFilter {
 
 const SB0: usize = 200;
 const SB1: usize = 800;
-const EVAL_SCALE: i16 = 508;
 const Q0: i16 = 255;
-const Q1: i16 = 16 * EVAL_SCALE;
+const Q1: i16 = 8128;
 const MAX_WEIGHT: f32 = 127. * 127. / Q1 as f32;
 
 /// An efficiently updatable neural network (NNUE) trainer.
@@ -325,7 +324,7 @@ impl Orchestrator {
             ])
             .use_win_rate_model()
             .loss_fn(|output, pt| {
-                let score = EVAL_SCALE as f32 * output;
+                let score = 300. * output;
                 let q = (score - 270.) / 340.;
                 let qm = (-score - 270.) / 340.;
                 let qf = 0.5 * (1. + q.sigmoid() - qm.sigmoid());

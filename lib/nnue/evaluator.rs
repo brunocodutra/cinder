@@ -206,7 +206,7 @@ impl Evaluator {
         }
 
         let phase = self.phase();
-        let out = Nnue::output(phase);
+        let output = Nnue::output(phase);
 
         let idx = self.ply.cast::<usize>();
         debug_assert_eq!(self.pending[0][idx], None);
@@ -214,7 +214,7 @@ impl Evaluator {
 
         let us = self.turn() as usize;
         let them = self.turn().flip() as usize;
-        let value = out.forward(&self.accumulator[idx][us], &self.accumulator[idx][them]) / 75;
+        let value = output.forward(&self.accumulator[idx][us], &self.accumulator[idx][them]) / 128;
         value.saturate()
     }
 

@@ -1,10 +1,6 @@
-use crate::chess::Phase;
-use crate::util::{Assume, Integer};
+use crate::{chess::Phase, util::Integer};
 use bytemuck::{Zeroable, zeroed};
-use byteorder::{LittleEndian, ReadBytesExt};
-use ruzstd::decoding::StreamingDecoder;
-use std::cell::SyncUnsafeCell;
-use std::io::{self, Read};
+use std::slice;
 
 mod accumulator;
 mod evaluator;
@@ -20,6 +16,8 @@ pub use output::*;
 pub use transformer::*;
 pub use value::*;
 
+const NNUE: Nnue = Nnue::new();
+
 /// An Efficiently Updatable Neural Network.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
 pub struct Nnue {
@@ -27,47 +25,46 @@ pub struct Nnue {
     output: [Output<{ Accumulator::LEN }>; Phase::LEN],
 }
 
-static NNUE: SyncUnsafeCell<Nnue> = SyncUnsafeCell::new(zeroed());
-
-#[cold]
-#[ctor::ctor]
-#[inline(never)]
-unsafe fn init() {
-    let encoded = include_bytes!("nnue/nn.zst").as_slice();
-    let decoder = StreamingDecoder::new(encoded).assume();
-    unsafe { Nnue::load(NNUE.get().as_mut_unchecked(), decoder).assume() }
+const unsafe fn copy_from_slice<T>(dst: &mut T, src: &[u8]) -> usize {
+    let len = size_of_val(dst);
+    let dst = unsafe { slice::from_raw_parts_mut(dst as *mut T as *mut u8, len) };
+    dst.copy_from_slice(&src[..len]);
+    len
 }
 
 impl Nnue {
-    #[inline(always)]
-    fn load<T: Read>(&mut self, mut reader: T) -> io::Result<()> {
-        reader.read_i16_into::<LittleEndian>(&mut *self.transformer.bias)?;
-        for row in self.transformer.weight.iter_mut() {
-            reader.read_i16_into::<LittleEndian>(row)?;
+    const fn new() -> Self {
+        let bytes = include_bytes!("nnue/nnue.bin");
+        let mut nnue: Self = zeroed();
+        let mut cursor = 0;
+
+        cursor += unsafe { copy_from_slice(&mut nnue.transformer.bias, &bytes[cursor..]) };
+        cursor += unsafe { copy_from_slice(&mut nnue.transformer.weight, &bytes[cursor..]) };
+
+        let mut phase = 0;
+        while phase < Phase::LEN {
+            cursor += unsafe { copy_from_slice(&mut nnue.output[phase].bias, &bytes[cursor..]) };
+            phase += 1;
         }
 
-        for Output { bias, .. } in self.output.iter_mut() {
-            *bias = reader.read_i32::<LittleEndian>()?;
+        let mut phase = 0;
+        while phase < Phase::LEN {
+            cursor += unsafe { copy_from_slice(&mut nnue.output[phase].weight, &bytes[cursor..]) };
+            phase += 1;
         }
 
-        for Output { weight, .. } in self.output.iter_mut() {
-            for row in weight {
-                reader.read_i16_into::<LittleEndian>(row)?;
-            }
-        }
-
-        Ok(())
+        nnue
     }
 
     #[inline(always)]
     pub fn transformer() -> &'static Affine<i16, { Accumulator::LEN }> {
-        unsafe { &NNUE.get().as_ref_unchecked().transformer }
+        &NNUE.transformer
     }
 
     #[inline(always)]
     pub fn output(phase: Phase) -> &'static Output<{ Accumulator::LEN }> {
         let idx = phase.cast::<usize>();
-        unsafe { NNUE.get().as_ref_unchecked().output.get_unchecked(idx) }
+        unsafe { NNUE.output.get_unchecked(idx) }
     }
 }
 

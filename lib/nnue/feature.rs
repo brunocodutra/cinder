@@ -15,7 +15,7 @@ impl Bucket {
 unsafe impl Integer for Bucket {
     type Repr = u8;
     const MIN: Self::Repr = 0;
-    const MAX: Self::Repr = 15;
+    const MAX: Self::Repr = 23;
 }
 
 /// A bucketed feature set with horizontal mirroring.
@@ -50,14 +50,14 @@ impl Feature {
     pub fn bucket(side: Color, ksq: Square) -> Bucket {
         #[rustfmt::skip]
         const BUCKETS: [u8; 64] = [
-             8,  8,  9,  9, 1, 1, 0, 0,
-            10, 10, 11, 11, 3, 3, 2, 2,
-            12, 12, 13, 13, 5, 5, 4, 4,
-            12, 12, 13, 13, 5, 5, 4, 4,
-            14, 14, 15, 15, 7, 7, 6, 6,
-            14, 14, 15, 15, 7, 7, 6, 6,
-            14, 14, 15, 15, 7, 7, 6, 6,
-            14, 14, 15, 15, 7, 7, 6, 6,
+            12, 13, 14, 15,  3,  2,  1,  0,
+            16, 17, 18, 19,  7,  6,  5,  4,
+            20, 20, 21, 21,  9,  9,  8,  8,
+            20, 20, 21, 21,  9,  9,  8,  8,
+            22, 22, 23, 23, 11, 11, 10, 10,
+            22, 22, 23, 23, 11, 11, 10, 10,
+            22, 22, 23, 23, 11, 11, 10, 10,
+            22, 22, 23, 23, 11, 11, 10, 10,
         ];
 
         Integer::new(BUCKETS[ksq.perspective(side).cast::<usize>()])

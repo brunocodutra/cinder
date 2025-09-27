@@ -4,6 +4,8 @@
 #![cfg_attr(target_arch = "aarch64", feature(stdarch_aarch64_prefetch))]
 #![feature(
     adt_const_params,
+    const_index,
+    const_trait_impl,
     coverage_attribute,
     gen_blocks,
     ptr_as_ref_unchecked,

@@ -14,19 +14,25 @@ jobs:
   fmt:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
+      with:
+        lfs: true
     - run: cargo fmt --all -- --check
 
   clippy:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
+      with:
+        lfs: true
     - run: cargo clippy --all-targets --all-features -- -D warnings
 
   audit:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
+      with:
+        lfs: true
     - run: cargo install --force cargo-audit
     - run: cargo generate-lockfile
     - run: cargo audit
@@ -34,35 +40,41 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
+      with:
+        lfs: true
     - run: cargo check --all-targets --all-features --workspace
 
   doc:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
+      with:
+        lfs: true
     - run: cargo doc --all-features --workspace --no-deps
 
   test:
     needs: [fmt, clippy, audit, check, doc]
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
+      with:
+        lfs: true
     - run: cargo test --all-targets --all-features --workspace
 
   sanitize:
     needs: [test]
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
         sanitizer: [address, leak, memory, thread]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
+      with:
+        lfs: true
     - run: cargo test --lib --all-features --workspace --target x86_64-unknown-linux-gnu -Zbuild-std -Zunstable-options --config='build.rustflags = ["-Zsanitizer=${{ matrix.sanitizer }}"]' -- --test-threads=1
       env:
         CC: "clang"
@@ -73,7 +85,9 @@ jobs:
     needs: [test]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
+      with:
+        lfs: true
     - run: cargo install --force cargo-llvm-cov
     - run: cargo llvm-cov --lib --all-features --workspace --lcov --output-path lcov.info
       env:
@@ -88,11 +102,12 @@ jobs:
     needs: [fmt, clippy, audit, check, doc]
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
+      with:
+        lfs: true
     - run: cargo install --force cargo-pgo
     - run: make cinder-linux-x86-64 cinder-linux-x86-64-v2 cinder-linux-x86-64-v3
       if: runner.os == 'Linux'

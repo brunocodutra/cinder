@@ -197,10 +197,11 @@ impl TrainingDataFilter {
     }
 }
 
-const SB0: usize = 200;
-const SB1: usize = 800;
 const Q0: i16 = 255;
 const Q1: i16 = 8128;
+const SB0: usize = 200;
+const SB1: usize = 800;
+const SB2: usize = 200;
 const MAX_WEIGHT: f32 = 127. * 127. / Q1 as f32;
 
 /// An efficiently updatable neural network (NNUE) trainer.
@@ -215,11 +216,11 @@ struct Orchestrator {
     threads: usize,
 
     /// How many positions per batch.
-    #[clap(long, default_value_t = 16384)]
+    #[clap(long, default_value_t = 98304)]
     batch_size: usize,
 
     /// How many batches per superbatch.
-    #[clap(long, default_value_t = 6144)]
+    #[clap(long, default_value_t = 1024)]
     batches_per_superbatch: usize,
 
     /// The target wdl fraction.
@@ -387,6 +388,12 @@ impl Orchestrator {
         if stage < 1 || (stage == 1 && superbatch < SB1) {
             let start = if stage == 1 { superbatch + 1 } else { 1 };
             let schedule = self.schedule("stage1", start..=SB1, 2e-4..=5e-6, 0.0..=self.wdl);
+            trainer.run(&schedule, &settings, &training_dataloader);
+        }
+
+        if stage < 2 || (stage == 2 && superbatch < SB2) {
+            let start = if stage == 2 { superbatch + 1 } else { 1 };
+            let schedule = self.schedule("stage2", start..=SB2, 5e-6..=1e-7, self.wdl..=self.wdl);
             trainer.run(&schedule, &settings, &training_dataloader);
         }
 

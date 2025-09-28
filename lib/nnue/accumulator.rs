@@ -13,7 +13,7 @@ pub struct Accumulator(
 );
 
 impl Accumulator {
-    pub const LEN: usize = 1536;
+    pub const LEN: usize = 2048;
 }
 
 impl Default for Accumulator {

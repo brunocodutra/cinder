@@ -60,21 +60,9 @@ cinder-mac-apple-m3:
 cinder-mac-apple-m4:
 	$(call build,aarch64-apple-darwin,apple-m4,)
 
-release:
-ifeq ($(PLATFORM),linux)
-	$(MAKE) cinder-linux-x86-64 cinder-linux-x86-64-v2 cinder-linux-x86-64-v3 cinder-linux-x86-64-v4
-else ifeq ($(PLATFORM),windows)
-	$(MAKE) cinder-windows-x86-64 cinder-windows-x86-64-v2 cinder-windows-x86-64-v3 cinder-windows-x86-64-v4
-else ifeq ($(PLATFORM),mac)
-	$(MAKE) cinder-mac-apple-m1 cinder-mac-apple-m2 cinder-mac-apple-m3 cinder-mac-apple-m4
-else
-	@echo "Unsupported platform $(PLATFORM)"
-endif
-
-.PHONY: default release spsa cinder-native
+.PHONY: default spsa cinder-native
 .PHONY: cinder-linux-x86-64 cinder-linux-x86-64-v2 cinder-linux-x86-64-v3 cinder-linux-x86-64-v4
 .PHONY: cinder-windows-x86-64 cinder-windows-x86-64-v2 cinder-windows-x86-64-v3 cinder-windows-x86-64-v4
-.PHONY: cinder-mac-x86-64 cinder-mac-x86-64-v2 cinder-mac-x86-64-v3 cinder-mac-x86-64-v4
 .PHONY: cinder-mac-apple-m1 cinder-mac-apple-m2 cinder-mac-apple-m3 cinder-mac-apple-m4
 
 define build

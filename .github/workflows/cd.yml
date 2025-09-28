@@ -14,7 +14,12 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - run: cargo install --force cargo-pgo
-    - run: make release --ignore-errors
+    - run: make cinder-linux-x86-64 cinder-linux-x86-64-v2 cinder-linux-x86-64-v3
+      if: runner.os == 'Linux'
+    - run: make cinder-windows-x86-64 cinder-windows-x86-64-v2 cinder-windows-x86-64-v3
+      if: runner.os == 'Windows'
+    - run: make cinder-mac-apple-m1 cinder-mac-apple-m2 cinder-mac-apple-m3 cinder-mac-apple-m4
+      if: runner.os == 'macOS'
     - run: ls "${{ github.workspace }}/target/bin/"
     - uses: svenstaro/upload-release-action@v2
       with:

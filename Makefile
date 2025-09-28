@@ -96,7 +96,6 @@ define instrument
 		-Zunstable-options \
 		--config=profile.release.rustflags='["-Ctarget-cpu=$2"]' \
 		-Zbuild-std=core,alloc,std,panic_abort \
-		-Zbuild-std-features=panic_immediate_abort \
 		--target-dir=$(TARGET_DIR)/$2/ \
 		--target=$1 $3
 endef
@@ -107,7 +106,6 @@ define optimize
 		-Zunstable-options \
 		--config=profile.release.rustflags='["-Ctarget-cpu=$2"]' \
 		-Zbuild-std=core,alloc,std,panic_abort \
-		-Zbuild-std-features=panic_immediate_abort \
 		--target-dir=$(TARGET_DIR)/$2/ \
 		--target=$1 $3
 endef

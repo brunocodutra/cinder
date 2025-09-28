@@ -2,7 +2,7 @@
 profile-rustflags = true
 
 [env]
-RUST_MIN_STACK = "16777216" # runtime only
+RUST_MIN_STACK = "33554432" # runtime only
 
 [build]
 rustflags = ["-Ctarget-cpu=native"]

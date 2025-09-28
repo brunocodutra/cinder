@@ -1,8 +1,8 @@
 use crate::search::ThreadCount;
-use crate::util::{Assume, Integer};
+use crate::util::{Assume, Integer, thread};
 use derive_more::with_trait::Debug;
 use std::sync::{Arc, Condvar, Mutex};
-use std::{cell::SyncUnsafeCell, iter::repeat_n, thread};
+use std::{cell::SyncUnsafeCell, iter::repeat_n};
 
 struct Barrier {
     lap: u16,
@@ -113,7 +113,7 @@ impl Executor {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU16, Ordering};
-    use std::{fmt::Debug, sync::atomic::AtomicUsize};
+    use std::{fmt::Debug, sync::atomic::AtomicUsize, thread};
     use test_strategy::proptest;
 
     #[proptest]

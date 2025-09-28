@@ -5,7 +5,9 @@ mod bits;
 mod bounded;
 mod integer;
 mod memory;
+
 pub mod parsers;
+pub mod thread;
 
 pub use align::*;
 pub use assume::*;

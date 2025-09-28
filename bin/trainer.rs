@@ -311,8 +311,8 @@ impl Orchestrator {
                 SavedFormat::id("l0b").quantise::<i16>(Q0),
                 SavedFormat::id("l0w")
                     .add_transform(|graph, _, mut l0w| {
-                        let factoriser = graph.get_weights("l0f").get_dense_vals().unwrap();
-                        for (i, j) in l0w.iter_mut().zip(factoriser.repeat(KingBuckets::LEN)) {
+                        let l0f = graph.get_weights("l0f").get_dense_vals().unwrap();
+                        for (i, j) in l0w.iter_mut().zip(l0f.repeat(KingBuckets::LEN)) {
                             *i += j;
                         }
 
@@ -331,22 +331,20 @@ impl Orchestrator {
                 qf.squared_error(pt)
             })
             .build(|builder, stm, ntm, phase| {
-                let factoriser = builder.new_weights(
-                    "l0f",
-                    Shape::new(Accumulator::LEN, Feature::LEN / KingBuckets::LEN),
-                    InitSettings::Zeroed,
-                );
+                let l0f_shape = Shape::new(Accumulator::LEN, Feature::LEN / KingBuckets::LEN);
+                let l0f = builder.new_weights("l0f", l0f_shape, InitSettings::Zeroed);
 
-                let mut transformer = builder.new_affine("l0", Feature::LEN, Accumulator::LEN);
-                transformer.weights = transformer.weights + factoriser.repeat(KingBuckets::LEN);
+                let mut l0 = builder.new_affine("l0", Feature::LEN, Accumulator::LEN);
+                l0.init_with_effective_input_size(32);
+                l0.weights = l0.weights + l0f.repeat(KingBuckets::LEN);
 
-                let output = builder.new_affine("l1", 2 * Accumulator::LEN, Phase::LEN);
+                let l1 = builder.new_affine("l1", Accumulator::LEN, Phase::LEN);
 
-                let stm = transformer.forward(stm).screlu();
-                let ntm = transformer.forward(ntm).screlu();
+                let stm = l0.forward(stm).crelu().pairwise_mul();
+                let ntm = l0.forward(ntm).crelu().pairwise_mul();
                 let accumulator = stm.concat(ntm);
 
-                output.forward(accumulator).select(phase)
+                l1.forward(accumulator).select(phase)
             });
 
         trainer.optimiser.set_params(AdamWParams {

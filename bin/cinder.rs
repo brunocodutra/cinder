@@ -1,9 +1,9 @@
 use anyhow::Error as Failure;
-use cinder::uci::Uci;
+use cinder::{uci::Uci, util::thread};
 use clap::Parser;
 use futures::{channel::mpsc::unbounded, executor::block_on, sink::unfold as sink};
+use std::future::ready;
 use std::io::{prelude::*, stdin, stdout};
-use std::{future::ready, thread};
 
 #[derive(Debug, Parser)]
 #[clap(name = "Cinder", version, author)]
@@ -41,8 +41,11 @@ fn main() -> Result<(), Failure> {
         }
     });
 
-    let mut stdout = stdout().lock();
-    let output = sink((), |_, line: String| ready(writeln!(stdout, "{line}")));
-    block_on(Uci::new(input, output).run())?;
-    Ok(())
+    let handle = thread::spawn(move || {
+        let mut stdout = stdout().lock();
+        let output = sink((), |_, line: String| ready(writeln!(stdout, "{line}")));
+        Ok(block_on(Uci::new(input, output).run())?)
+    });
+
+    handle.join()
 }

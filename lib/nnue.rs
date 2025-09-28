@@ -21,7 +21,7 @@ const NNUE: Nnue = Nnue::new();
 /// An Efficiently Updatable Neural Network.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
 pub struct Nnue {
-    transformer: Affine<i16, { Accumulator::LEN }>,
+    transformer: Transformer<i16, { Accumulator::LEN }>,
     output: [Output<{ Accumulator::LEN }>; Phase::LEN],
 }
 
@@ -57,7 +57,7 @@ impl Nnue {
     }
 
     #[inline(always)]
-    pub fn transformer() -> &'static Affine<i16, { Accumulator::LEN }> {
+    pub fn transformer() -> &'static Transformer<i16, { Accumulator::LEN }> {
         &NNUE.transformer
     }
 

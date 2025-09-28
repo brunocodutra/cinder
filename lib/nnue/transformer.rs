@@ -1,31 +1,33 @@
 use crate::nnue::Feature;
 use crate::util::{AlignTo64, Assume, Integer};
-use bytemuck::{Zeroable, zeroed};
-use derive_more::with_trait::{Debug, Deref, DerefMut};
+use bytemuck::Zeroable;
+use derive_more::with_trait::Debug;
 use std::hint::unreachable_unchecked;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
-/// A linear feature transformer.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable, Deref, DerefMut)]
+/// The NNUE feature transformer.
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, arbitrary(bound(T, T: From<i8>)))]
-#[debug("Linear<{N}>")]
-pub struct Linear<T, const N: usize> {
+#[debug("Transformer<{N}>")]
+pub struct Transformer<T, const N: usize> {
+    #[cfg_attr(test, map(|vs: [i8; N]| AlignTo64(vs.map(T::from))))]
+    pub bias: AlignTo64<[T; N]>,
     #[cfg_attr(test, map(|vs: [[i8; N]; Feature::LEN]| AlignTo64(vs.map(|v| v.map(T::from)))))]
     pub weight: AlignTo64<[[T; N]; Feature::LEN]>,
 }
 
-impl<T, const N: usize> Linear<T, N>
+impl<T, const N: usize> Transformer<T, N>
 where
     T: Zeroable + Copy + Add<Output = T> + AddAssign + Sub<Output = T> + SubAssign,
 {
-    /// A fresh accumulator.
+    /// Refreshes `accumulator`.
     #[inline(always)]
     pub fn refresh(&self, accumulator: &mut [T; N]) {
-        *accumulator = zeroed();
+        *accumulator = *self.bias;
     }
 
-    /// Updates the `acc` by adding and removing features.
+    /// Updates `acc` by adding and removing features.
     #[inline(always)]
     pub fn accumulate_in_place(
         &self,
@@ -112,7 +114,7 @@ where
         }
     }
 
-    /// Updates the `dst` by adding and removing features to/from `src`.
+    /// Updates `dst` by adding and removing features from `src`.
     #[inline(always)]
     pub fn accumulate(
         &self,
@@ -169,26 +171,6 @@ where
     }
 }
 
-/// An affine feature transformer.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable, Deref)]
-#[cfg_attr(test, derive(test_strategy::Arbitrary))]
-#[cfg_attr(test, arbitrary(bound(T, T: From<i8>)))]
-#[debug("Affine<{N}>")]
-pub struct Affine<T, const N: usize> {
-    #[cfg_attr(test, map(|vs: [i8; N]| AlignTo64(vs.map(T::from))))]
-    pub bias: AlignTo64<[T; N]>,
-    #[deref]
-    pub weight: Linear<T, N>,
-}
-
-impl<T: Copy, const N: usize> Affine<T, N> {
-    /// Refreshes the `accumulator`.
-    #[inline(always)]
-    pub fn refresh(&self, accumulator: &mut [T; N]) {
-        *accumulator = *self.bias;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,7 +180,7 @@ mod tests {
 
     #[proptest]
     fn fresh_accumulator_equals_bias(
-        t: Affine<i16, 3>,
+        t: Transformer<i16, 3>,
         #[strategy(uniform3(-128..128i16))] acc: [i16; 3],
     ) {
         let mut acc = AlignTo64(acc);
@@ -208,7 +190,7 @@ mod tests {
 
     #[proptest]
     fn updates_accumulator_in_place_by_removing_one_feature(
-        t: Affine<i16, 3>,
+        t: Transformer<i16, 3>,
         s1: Feature,
         #[strategy(uniform3(-128..128i16))] prev: [i16; 3],
     ) {
@@ -221,7 +203,7 @@ mod tests {
 
     #[proptest]
     fn updates_accumulator_in_place_by_adding_one_feature(
-        t: Affine<i16, 3>,
+        t: Transformer<i16, 3>,
         a1: Feature,
         #[strategy(uniform3(-128..128i16))] prev: [i16; 3],
     ) {
@@ -234,7 +216,7 @@ mod tests {
 
     #[proptest]
     fn updates_accumulator_in_place_by_removing_two_features(
-        t: Affine<i16, 3>,
+        t: Transformer<i16, 3>,
         s1: Feature,
         s2: Feature,
         #[strategy(uniform3(-128..128i16))] prev: [i16; 3],
@@ -257,7 +239,7 @@ mod tests {
 
     #[proptest]
     fn updates_accumulator_in_place_by_adding_two_features(
-        t: Affine<i16, 3>,
+        t: Transformer<i16, 3>,
         a1: Feature,
         a2: Feature,
         #[strategy(uniform3(-128..128i16))] prev: [i16; 3],
@@ -279,7 +261,7 @@ mod tests {
 
     #[proptest]
     fn updates_accumulator_in_place_by_adding_one_and_removing_one_features(
-        t: Affine<i16, 3>,
+        t: Transformer<i16, 3>,
         a1: Feature,
         s1: Feature,
         #[strategy(uniform3(-128..128i16))] prev: [i16; 3],
@@ -302,7 +284,7 @@ mod tests {
 
     #[proptest]
     fn updates_accumulator_in_place_by_adding_two_and_removing_one_features(
-        t: Affine<i16, 3>,
+        t: Transformer<i16, 3>,
         a1: Feature,
         a2: Feature,
         s1: Feature,
@@ -327,7 +309,7 @@ mod tests {
 
     #[proptest]
     fn updates_accumulator_in_place_by_adding_one_and_removing_two_features(
-        t: Affine<i16, 3>,
+        t: Transformer<i16, 3>,
         a1: Feature,
         s1: Feature,
         s2: Feature,
@@ -352,7 +334,7 @@ mod tests {
 
     #[proptest]
     fn updates_accumulator_in_place_by_adding_two_and_removing_two_features(
-        t: Affine<i16, 3>,
+        t: Transformer<i16, 3>,
         a1: Feature,
         a2: Feature,
         s1: Feature,
@@ -379,7 +361,7 @@ mod tests {
 
     #[proptest]
     fn updates_accumulator_by_adding_one_feature(
-        t: Affine<i16, 3>,
+        t: Transformer<i16, 3>,
         a1: Feature,
         #[strategy(uniform3(-128..128i16))] src: [i16; 3],
         #[strategy(uniform3(-128..128i16))] mut dst: [i16; 3],
@@ -392,7 +374,7 @@ mod tests {
 
     #[proptest]
     fn updates_accumulator_by_adding_one_and_removing_one_features(
-        t: Affine<i16, 3>,
+        t: Transformer<i16, 3>,
         a1: Feature,
         s1: Feature,
         #[strategy(uniform3(-128..128i16))] src: [i16; 3],
@@ -415,7 +397,7 @@ mod tests {
 
     #[proptest]
     fn updates_accumulator_by_adding_one_and_removing_two_features(
-        t: Affine<i16, 3>,
+        t: Transformer<i16, 3>,
         a1: Feature,
         s1: Feature,
         s2: Feature,
@@ -440,7 +422,7 @@ mod tests {
 
     #[proptest]
     fn updates_accumulator_by_adding_two_and_removing_two_features(
-        t: Affine<i16, 3>,
+        t: Transformer<i16, 3>,
         a1: Feature,
         a2: Feature,
         s1: Feature,

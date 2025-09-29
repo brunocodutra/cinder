@@ -6,8 +6,9 @@ use bytemuck::{Zeroable, try_zeroed_slice_box};
 use derive_more::with_trait::{Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
+use std::ops::{Div, Mul, Range};
 use std::task::{Context, Poll};
-use std::{cell::SyncUnsafeCell, ops::Range, pin::Pin, ptr::NonNull, time::Duration};
+use std::{cell::SyncUnsafeCell, pin::Pin, ptr::NonNull, time::Duration};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -130,23 +131,38 @@ impl<'a> Stack<'a> {
         let zobrists = &pos.zobrists();
         let log_depth = depth.get().max(1).ilog2();
         let diff = score.bound(ply).cast::<i64>() - self.value[ply.cast::<usize>()].cast::<i64>();
+        let corrections = &mut self.searcher.corrections;
 
         let grad = convolve([
-            (log_depth as i64, &Params::correction_gradient_depth()),
-            (1, &Params::correction_gradient_scalar()),
-        ]) / Params::BASE;
+            (log_depth as i64, &Params::pawns_correction_grad_depth()),
+            (1, &Params::pawns_correction_grad_scalar()),
+        ]);
 
-        let corrections = &mut self.searcher.corrections;
-        let bonus = (Params::pawns_correction_bonus()[0] * diff * grad / Params::BASE).saturate();
+        let bonus = diff.mul(grad).div(Params::BASE).saturate();
         corrections.pawns.update(pos, zobrists.pawns, bonus);
 
-        let bonus = (Params::minor_correction_bonus()[0] * diff * grad / Params::BASE).saturate();
+        let grad = convolve([
+            (log_depth as i64, &Params::minor_correction_grad_depth()),
+            (1, &Params::minor_correction_grad_scalar()),
+        ]);
+
+        let bonus = diff.mul(grad).div(Params::BASE).saturate();
         corrections.minor.update(pos, zobrists.minor, bonus);
 
-        let bonus = (Params::major_correction_bonus()[0] * diff * grad / Params::BASE).saturate();
+        let grad = convolve([
+            (log_depth as i64, &Params::major_correction_grad_depth()),
+            (1, &Params::major_correction_grad_scalar()),
+        ]);
+
+        let bonus = diff.mul(grad).div(Params::BASE).saturate();
         corrections.major.update(pos, zobrists.major, bonus);
 
-        let bonus = (Params::pieces_correction_bonus()[0] * diff * grad / Params::BASE).saturate();
+        let grad = convolve([
+            (log_depth as i64, &Params::pieces_correction_grad_depth()),
+            (1, &Params::pieces_correction_grad_scalar()),
+        ]);
+
+        let bonus = diff.mul(grad).div(Params::BASE).saturate();
         corrections.white.update(pos, zobrists.white, bonus);
         corrections.black.update(pos, zobrists.black, bonus);
     }
@@ -580,7 +596,7 @@ impl<'a> Stack<'a> {
                 }
             }
 
-            (rating / Params::BASE).saturate()
+            rating.div(Params::BASE).saturate()
         });
 
         if let Some(t) = transposition {
@@ -701,7 +717,7 @@ impl<'a> Stack<'a> {
             };
 
             spt += is_killer as i64 * Params::see_pruning_is_killer()[0];
-            if !pos.winning(m, (spt / Params::BASE).saturate()) {
+            if !pos.winning(m, spt.div(Params::BASE).saturate()) {
                 continue;
             }
 
@@ -790,7 +806,7 @@ impl<'a> Stack<'a> {
                 }
             }
 
-            (rating / Params::BASE).saturate()
+            rating.div(Params::BASE).saturate()
         });
 
         let mut sorted_moves = moves.sorted();

@@ -1,11 +1,12 @@
 use anyhow::{Context, Error as Failure};
+use bullet::acyclib::graph::{GraphNodeId, GraphNodeIdTy};
 use bullet::game::formats::bulletformat::ChessBoard;
 use bullet::game::formats::sfbinpack::TrainingDataEntry;
 use bullet::game::formats::sfbinpack::chess::r#move::MoveType;
 use bullet::game::formats::sfbinpack::chess::piecetype::PieceType;
 use bullet::game::inputs::SparseInputType;
 use bullet::game::outputs::OutputBuckets;
-use bullet::lr::LinearDecayLR;
+use bullet::lr::{LinearDecayLR, Warmup};
 use bullet::nn::optimiser::{AdamW, AdamWParams};
 use bullet::nn::{InitSettings, Shape};
 use bullet::trainer::save::SavedFormat;
@@ -16,8 +17,7 @@ use bullet::value::loader::{DataLoader, SfBinpackLoader};
 use bullet::wdl::LinearWDL;
 use bytemuck::zeroed;
 use cinder::chess::{Color, Flip, Phase, Piece, Role, Square};
-use cinder::nnue::{Accumulator, Bucket, Feature};
-use cinder::util::Integer;
+use cinder::{nnue::*, util::Integer};
 use clap::{Args, Parser, Subcommand};
 use rand::{Rng, rng};
 use std::ops::{Deref, Div, RangeInclusive};
@@ -198,12 +198,10 @@ impl TrainingDataFilter {
     }
 }
 
-const Q0: i16 = 255;
-const Q1: i16 = 8128;
 const SB0: usize = 200;
 const SB1: usize = 600;
 const SB2: usize = 200;
-const MAX_WEIGHT: f32 = 127. * 127. / Q1 as f32;
+const MAX_WEIGHT: f32 = HLQ as f32 / HLS as f32;
 
 /// An efficiently updatable neural network (NNUE) trainer.
 #[derive(Debug, Parser)]
@@ -217,11 +215,11 @@ struct Orchestrator {
     threads: usize,
 
     /// How many positions per batch.
-    #[clap(long, default_value_t = 393216)]
+    #[clap(long, default_value_t = 262144)]
     batch_size: usize,
 
     /// How many batches per superbatch.
-    #[clap(long, default_value_t = 256)]
+    #[clap(long, default_value_t = 384)]
     batches_per_superbatch: usize,
 
     /// The target wdl fraction.
@@ -238,6 +236,22 @@ struct Orchestrator {
     /// Whether to resume training from a checkpoint.
     #[clap(subcommand)]
     mode: Option<Mode>,
+}
+
+fn save(id: &str) -> SavedFormat {
+    SavedFormat::id(id).add_transform(|graph, idw, mut weights| {
+        if let (prefix, "w") = idw.split_at(idw.len() - 1)
+            && let Some(idf) = graph.weight_idx(&[prefix, "f"].concat())
+            && let Ok(tensor) = graph.get(GraphNodeId::new(idf, GraphNodeIdTy::Values))
+            && let Ok(factoriser) = tensor.get_dense_vals()
+        {
+            for (w, f) in weights.iter_mut().zip(factoriser.repeat(KingBuckets::LEN)) {
+                *w += f;
+            }
+        }
+
+        weights
+    })
 }
 
 /// Controls whether to resume training from a checkpoint.
@@ -273,7 +287,7 @@ impl Orchestrator {
         sb: RangeInclusive<usize>,
         lr: RangeInclusive<f32>,
         wdl: RangeInclusive<f32>,
-    ) -> TrainingSchedule<LinearDecayLR, LinearWDL> {
+    ) -> TrainingSchedule<Warmup<LinearDecayLR>, LinearWDL> {
         let (start_superbatch, end_superbatch) = sb.into_inner();
         let (initial_lr, final_lr) = lr.into_inner();
         let (start_wdl, end_wdl) = wdl.into_inner();
@@ -291,10 +305,13 @@ impl Orchestrator {
                 start: start_wdl,
                 end: end_wdl,
             },
-            lr_scheduler: LinearDecayLR {
-                initial_lr,
-                final_lr,
-                final_superbatch: end_superbatch,
+            lr_scheduler: Warmup {
+                warmup_batches: self.batches_per_superbatch,
+                inner: LinearDecayLR {
+                    initial_lr,
+                    final_lr,
+                    final_superbatch: end_superbatch,
+                },
             },
             save_rate: 10,
         }
@@ -307,45 +324,42 @@ impl Orchestrator {
             .inputs(KingBuckets)
             .output_buckets(Phaser)
             .save_format(&[
-                SavedFormat::id("l0b").quantise::<i16>(Q0),
-                SavedFormat::id("l0w")
-                    .add_transform(|graph, _, mut l0w| {
-                        let factoriser = graph.get_weights("l0f").get_dense_vals().unwrap();
-                        for (i, j) in l0w.iter_mut().zip(factoriser.repeat(KingBuckets::LEN)) {
-                            *i += j;
-                        }
-
-                        l0w
-                    })
-                    .quantise::<i16>(Q0),
-                SavedFormat::id("l1b").quantise::<i32>(Q1 as _),
-                SavedFormat::id("l1w").quantise::<i16>(Q1 / 127).transpose(),
+                save("ftb").round().quantise::<i16>(FTQ),
+                save("ftw").round().quantise::<i16>(FTQ),
+                save("l12b").round().quantise::<i32>(HLS * HLQ),
+                save("l23b").round().quantise::<i32>(HLS * HLQ),
+                save("l3ob").round().quantise::<i32>(HLS * HLQ),
+                save("l12w").round().quantise::<i8>(HLS as _).transpose(),
+                save("l23w").round().quantise::<i8>(HLS as _).transpose(),
+                save("l3ow").round().quantise::<i8>(HLS as _).transpose(),
             ])
             .use_win_rate_model()
             .loss_fn(|output, pt| {
-                let score = 300. * output;
+                let score = 300. * output.copy();
                 let q = (score - 270.) / 340.;
                 let qm = (-score - 270.) / 340.;
                 let qf = 0.5 * (1. + q.sigmoid() - qm.sigmoid());
                 qf.squared_error(pt)
             })
             .build(|builder, stm, ntm, phase| {
-                let factoriser = builder.new_weights(
-                    "l0f",
-                    Shape::new(Accumulator::LEN, Feature::LEN / KingBuckets::LEN),
-                    InitSettings::Zeroed,
-                );
+                let ftf_shape = Shape::new(Layer0::LEN, Feature::LEN / KingBuckets::LEN);
+                let ftf = builder.new_weights("ftf", ftf_shape, InitSettings::Zeroed);
 
-                let mut transformer = builder.new_affine("l0", Feature::LEN, Accumulator::LEN);
-                transformer.weights = transformer.weights + factoriser.repeat(KingBuckets::LEN);
+                let mut ft = builder.new_affine("ft", Feature::LEN, Layer0::LEN);
+                ft.init_with_effective_input_size(32);
+                ft.weights = ft.weights + ftf.repeat(KingBuckets::LEN);
 
-                let output = builder.new_affine("l1", 2 * Accumulator::LEN, Phase::LEN);
+                let l12 = builder.new_affine("l12", Layer1::LEN, Phase::LEN * Layer2::LEN);
+                let l23 = builder.new_affine("l23", Layer2::LEN, Phase::LEN * Layer3::LEN);
+                let l3o = builder.new_affine("l3o", Layer3::LEN, Phase::LEN);
 
-                let stm = transformer.forward(stm).screlu();
-                let ntm = transformer.forward(ntm).screlu();
-                let accumulator = stm.concat(ntm);
+                let stm = ft.forward(stm).crelu().pairwise_mul();
+                let ntm = ft.forward(ntm).crelu().pairwise_mul();
 
-                output.forward(accumulator).select(phase)
+                let l1 = stm.concat(ntm);
+                let l2 = l12.forward(l1).select(phase).crelu();
+                let l3 = l23.forward(l2).select(phase).crelu();
+                l3o.forward(l3).select(phase)
             });
 
         trainer.optimiser.set_params(AdamWParams {
@@ -378,20 +392,20 @@ impl Orchestrator {
 
         if stage == 0 && superbatch < SB0 {
             let start = if stage == 0 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage0", start..=SB0, 1e-3..=5e-5, 0.0..=0.0);
+            let schedule = self.schedule("stage0", start..=SB0, 2.5e-3..=1e-4, 0.0..=0.0);
             let priming_dataloader = self.dataloader(&[priming_dataset], 0);
             trainer.run(&schedule, &settings, &priming_dataloader);
         }
 
         if stage < 1 || (stage == 1 && superbatch < SB1) {
             let start = if stage == 1 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage1", start..=SB1, 5e-4..=1e-5, 0.0..=self.wdl);
+            let schedule = self.schedule("stage1", start..=SB1, 1e-3..=2e-5, 0.0..=self.wdl);
             trainer.run(&schedule, &settings, &training_dataloader);
         }
 
         if stage < 2 || (stage == 2 && superbatch < SB2) {
             let start = if stage == 2 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage2", start..=SB2, 1e-5..=1e-7, self.wdl..=self.wdl);
+            let schedule = self.schedule("stage2", start..=SB2, 2e-5..=2e-7, self.wdl..=self.wdl);
             trainer.run(&schedule, &settings, &training_dataloader);
         }
 

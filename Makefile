@@ -76,7 +76,8 @@ define instrument
 	cargo pgo instrument build -- \
 		--bin=cinder \
 		-Zunstable-options \
-		--config=profile.release.rustflags='["-Ctarget-cpu=$3"]' \
+		-Zprofile-rustflags \
+		--config=profile.release.rustflags='["-Ctarget-cpu=$3", "-Cpanic=abort", "-Cstrip=symbols", "-Zlocation-detail=none"]' \
 		--target-dir=$(TARGET_DIR)/$1/ \
 		--target=$2 $4
 endef
@@ -85,7 +86,8 @@ define optimize
 	cargo pgo optimize build -- \
 		--bin=cinder \
 		-Zunstable-options \
-		--config=profile.release.rustflags='["-Ctarget-cpu=$3"]' \
+		-Zprofile-rustflags \
+		--config=profile.release.rustflags='["-Ctarget-cpu=$3", "-Cpanic=abort", "-Cstrip=symbols", "-Zlocation-detail=none"]' \
 		--target-dir=$(TARGET_DIR)/$1/ \
 		--target=$2 $4
 endef

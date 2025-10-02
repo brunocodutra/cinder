@@ -85,9 +85,8 @@ test-strategy = { version = "0.4.3" }
 
 [profile.release]
 codegen-units = 1
-panic = "abort"
+strip = "none"
 lto = true
-strip = true
 
 [profile.dev]
 opt-level = 3

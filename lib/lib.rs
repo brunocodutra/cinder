@@ -1,4 +1,4 @@
-#![allow(clippy::collapsible_if)]
+#![allow(clippy::collapsible_if, long_running_const_eval)]
 #![cfg_attr(test, recursion_limit = "1024")]
 #![cfg_attr(target_arch = "x86_64", feature(stdarch_x86_mm_shuffle))]
 #![cfg_attr(
@@ -7,10 +7,12 @@
 )]
 #![feature(
     adt_const_params,
+    const_cmp,
     const_index,
     const_trait_impl,
     coverage_attribute,
     gen_blocks,
+    iter_array_chunks,
     portable_simd,
     ptr_as_ref_unchecked,
     slice_swap_unchecked,

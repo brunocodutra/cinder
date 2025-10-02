@@ -1,4 +1,4 @@
-use crate::nnue::{Accumulator, Bucket, Feature, Nnue, Value};
+use crate::nnue::{Accumulator, Bucket, Feature, Nnue, Synapse, Value};
 use crate::params::Params;
 use crate::util::{Assume, Integer};
 use crate::{chess::*, search::Ply};
@@ -206,7 +206,7 @@ impl Evaluator {
         }
 
         let phase = self.phase();
-        let output = Nnue::output(phase);
+        let nn = Nnue::nn(phase);
 
         let idx = self.ply.cast::<usize>();
         debug_assert_eq!(self.pending[0][idx], None);
@@ -214,7 +214,7 @@ impl Evaluator {
 
         let us = self.turn() as usize;
         let them = self.turn().flip() as usize;
-        let value = output.forward(&self.accumulator[idx][us], &self.accumulator[idx][them]) / 128;
+        let value = nn.forward((&self.accumulator[idx][us], &self.accumulator[idx][them])) / 128;
         value.saturate()
     }
 

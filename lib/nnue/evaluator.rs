@@ -1,6 +1,6 @@
-use crate::nnue::{Accumulator, Bucket, Feature, Nnue, Value};
+use crate::nnue::{Accumulator, Bucket, Feature, Nnue, Synapse, Value};
 use crate::params::Params;
-use crate::util::{Assume, Integer};
+use crate::util::{Assume, Integer, Memory};
 use crate::{chess::*, search::Ply};
 use bytemuck::{Zeroable, ZeroableInOption, zeroed};
 use derive_more::with_trait::Debug;
@@ -125,6 +125,9 @@ impl Arbitrary for Evaluator {
     }
 }
 
+#[ctor::ctor]
+static VALUES: Memory<Value, u64> = { Memory::new(1 << 22) };
+
 impl Evaluator {
     /// Constructs the evaluator from a [`Position`].
     pub fn new(pos: Position) -> Self {
@@ -174,15 +177,22 @@ impl Evaluator {
                 }
             }
         }
+
+        VALUES.prefetch(self.zobrists().hash);
     }
 
     /// Pops a [`Position`] from the evaluator stack.
     pub fn pop(&mut self) {
         (self.ply > 0).assume();
         self.ply -= 1;
+        VALUES.prefetch(self.zobrists().hash);
     }
 
     pub fn evaluate(&mut self) -> Value {
+        if let Some(value) = VALUES.get(self.zobrists().hash) {
+            return value;
+        }
+
         for side in Color::iter() {
             let mut idx = self.ply.cast::<usize>();
             if self.pending[side.cast::<usize>()][idx].is_none() {
@@ -206,7 +216,7 @@ impl Evaluator {
         }
 
         let phase = self.phase();
-        let output = Nnue::output(phase);
+        let nn = Nnue::nn(phase);
 
         let idx = self.ply.cast::<usize>();
         debug_assert_eq!(self.pending[0][idx], None);
@@ -214,7 +224,8 @@ impl Evaluator {
 
         let us = self.turn() as usize;
         let them = self.turn().flip() as usize;
-        let value = output.forward(&self.accumulator[idx][us], &self.accumulator[idx][them]) / 128;
+        let value = nn.forward((&self.accumulator[idx][us], &self.accumulator[idx][them])) / 128;
+        VALUES.set(self.zobrists().hash, value.saturate());
         value.saturate()
     }
 

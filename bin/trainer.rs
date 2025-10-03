@@ -5,7 +5,7 @@ use bullet::game::formats::sfbinpack::chess::r#move::MoveType;
 use bullet::game::formats::sfbinpack::chess::piecetype::PieceType;
 use bullet::game::inputs::SparseInputType;
 use bullet::game::outputs::OutputBuckets;
-use bullet::lr::{LinearDecayLR, Warmup};
+use bullet::lr::LinearDecayLR;
 use bullet::nn::optimiser::{AdamW, AdamWParams};
 use bullet::nn::{InitSettings, Shape};
 use bullet::trainer::save::SavedFormat;
@@ -86,7 +86,7 @@ pub struct TrainingDataFilter {
     #[clap(long, default_value_t = 10000)]
     pub max_score: u16,
     /// Filter out positions where score diverges from the result by more than this value.
-    #[clap(long, default_value_t = 2500)]
+    #[clap(long, default_value_t = 1000)]
     pub max_score_anomaly: u16,
     /// The probability of skipping a random position.
     #[clap(long, default_value_t = 0.25)]
@@ -200,7 +200,7 @@ impl TrainingDataFilter {
 const Q0: i16 = 255;
 const Q1: i16 = 8128;
 const SB0: usize = 200;
-const SB1: usize = 800;
+const SB1: usize = 600;
 const SB2: usize = 200;
 const MAX_WEIGHT: f32 = 127. * 127. / Q1 as f32;
 
@@ -216,11 +216,11 @@ struct Orchestrator {
     threads: usize,
 
     /// How many positions per batch.
-    #[clap(long, default_value_t = 98304)]
+    #[clap(long, default_value_t = 393216)]
     batch_size: usize,
 
     /// How many batches per superbatch.
-    #[clap(long, default_value_t = 1024)]
+    #[clap(long, default_value_t = 256)]
     batches_per_superbatch: usize,
 
     /// The target wdl fraction.
@@ -272,7 +272,7 @@ impl Orchestrator {
         sb: RangeInclusive<usize>,
         lr: RangeInclusive<f32>,
         wdl: RangeInclusive<f32>,
-    ) -> TrainingSchedule<Warmup<LinearDecayLR>, LinearWDL> {
+    ) -> TrainingSchedule<LinearDecayLR, LinearWDL> {
         let (start_superbatch, end_superbatch) = sb.into_inner();
         let (initial_lr, final_lr) = lr.into_inner();
         let (start_wdl, end_wdl) = wdl.into_inner();
@@ -290,13 +290,10 @@ impl Orchestrator {
                 start: start_wdl,
                 end: end_wdl,
             },
-            lr_scheduler: Warmup {
-                inner: LinearDecayLR {
-                    initial_lr,
-                    final_lr,
-                    final_superbatch: end_superbatch,
-                },
-                warmup_batches: 192,
+            lr_scheduler: LinearDecayLR {
+                initial_lr,
+                final_lr,
+                final_superbatch: end_superbatch,
             },
             save_rate: 10,
         }
@@ -380,20 +377,20 @@ impl Orchestrator {
 
         if stage == 0 && superbatch < SB0 {
             let start = if stage == 0 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage0", start..=SB0, 1e-3..=2e-5, 0.0..=0.0);
+            let schedule = self.schedule("stage0", start..=SB0, 1e-3..=5e-5, 0.0..=0.0);
             let priming_dataloader = self.dataloader(&[priming_dataset], 0);
             trainer.run(&schedule, &settings, &priming_dataloader);
         }
 
         if stage < 1 || (stage == 1 && superbatch < SB1) {
             let start = if stage == 1 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage1", start..=SB1, 2e-4..=5e-6, 0.0..=self.wdl);
+            let schedule = self.schedule("stage1", start..=SB1, 5e-4..=1e-5, 0.0..=self.wdl);
             trainer.run(&schedule, &settings, &training_dataloader);
         }
 
         if stage < 2 || (stage == 2 && superbatch < SB2) {
             let start = if stage == 2 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage2", start..=SB2, 5e-6..=1e-7, self.wdl..=self.wdl);
+            let schedule = self.schedule("stage2", start..=SB2, 1e-5..=1e-7, self.wdl..=self.wdl);
             trainer.run(&schedule, &settings, &training_dataloader);
         }
 

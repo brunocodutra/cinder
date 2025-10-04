@@ -14,6 +14,7 @@ use bullet::trainer::settings::LocalSettings;
 use bullet::value::ValueTrainerBuilder;
 use bullet::value::loader::{DataLoader, SfBinpackLoader};
 use bullet::wdl::LinearWDL;
+use bytemuck::zeroed;
 use cinder::chess::{Color, Flip, Phase, Piece, Role, Square};
 use cinder::nnue::{Accumulator, Bucket, Feature};
 use cinder::util::Integer;
@@ -21,7 +22,7 @@ use clap::{Args, Parser, Subcommand};
 use rand::{Rng, rng};
 use std::ops::{Deref, Div, RangeInclusive};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::{fs::create_dir_all, mem::MaybeUninit, num::NonZero, thread::available_parallelism};
+use std::{fs::create_dir_all, num::NonZero, thread::available_parallelism};
 
 #[derive(Debug, Default, Copy, Clone)]
 struct KingBuckets;
@@ -168,7 +169,7 @@ impl TrainingDataFilter {
             0.022727271053, 0.020641545085, 0.018411966423,
         ];
 
-        static PIECE_COUNT_STATS: [AtomicU64; 33] = unsafe { MaybeUninit::zeroed().assume_init() };
+        static PIECE_COUNT_STATS: [AtomicU64; 33] = zeroed();
         static PIECE_COUNT_TOTAL: AtomicU64 = AtomicU64::new(0);
 
         let pc = entry.pos.occupied().count() as usize;

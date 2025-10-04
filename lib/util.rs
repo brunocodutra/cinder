@@ -1,4 +1,4 @@
-mod align;
+mod aligned;
 mod assume;
 mod binary;
 mod bits;
@@ -9,7 +9,7 @@ mod memory;
 pub mod parsers;
 pub mod thread;
 
-pub use align::*;
+pub use aligned::*;
 pub use assume::*;
 pub use binary::*;
 pub use bits::*;

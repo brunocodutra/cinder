@@ -1,4 +1,4 @@
-use crate::util::AlignTo64;
+use crate::util::Aligned;
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::{Debug, Deref, DerefMut};
 
@@ -8,8 +8,8 @@ use derive_more::with_trait::{Debug, Deref, DerefMut};
 #[debug("Accumulator")]
 #[repr(transparent)]
 pub struct Accumulator(
-    #[cfg_attr(test, map(|vs: [i8; Self::LEN]| AlignTo64(vs.map(i16::from))))]
-    AlignTo64<[i16; Accumulator::LEN]>,
+    #[cfg_attr(test, map(|vs: [i8; Self::LEN]| Aligned(vs.map(i16::from))))]
+    Aligned<[i16; Accumulator::LEN]>,
 );
 
 impl Accumulator {

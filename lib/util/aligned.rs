@@ -6,4 +6,4 @@ use derive_more::with_trait::{Deref, DerefMut, IntoIterator};
 )]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(align(64))]
-pub struct AlignTo64<T>(#[into_iterator(owned, ref, ref_mut)] pub T);
+pub struct Aligned<T>(#[into_iterator(owned, ref, ref_mut)] pub T);

@@ -1,5 +1,5 @@
 use crate::nnue::Feature;
-use crate::util::{AlignTo64, Assume, Integer};
+use crate::util::{Aligned, Assume, Integer};
 use bytemuck::Zeroable;
 use derive_more::with_trait::Debug;
 use std::hint::unreachable_unchecked;
@@ -11,10 +11,10 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 #[cfg_attr(test, arbitrary(bound(T, T: From<i8>)))]
 #[debug("Transformer<{N}>")]
 pub struct Transformer<T, const N: usize> {
-    #[cfg_attr(test, map(|vs: [i8; N]| AlignTo64(vs.map(T::from))))]
-    pub bias: AlignTo64<[T; N]>,
-    #[cfg_attr(test, map(|vs: [[i8; N]; Feature::LEN]| AlignTo64(vs.map(|v| v.map(T::from)))))]
-    pub weight: AlignTo64<[[T; N]; Feature::LEN]>,
+    #[cfg_attr(test, map(|vs: [i8; N]| Aligned(vs.map(T::from))))]
+    pub bias: Aligned<[T; N]>,
+    #[cfg_attr(test, map(|vs: [[i8; N]; Feature::LEN]| Aligned(vs.map(|v| v.map(T::from)))))]
+    pub weight: Aligned<[[T; N]; Feature::LEN]>,
 }
 
 impl<T, const N: usize> Transformer<T, N>
@@ -183,7 +183,7 @@ mod tests {
         t: Transformer<i16, 3>,
         #[strategy(uniform3(-128..128i16))] acc: [i16; 3],
     ) {
-        let mut acc = AlignTo64(acc);
+        let mut acc = Aligned(acc);
         t.refresh(&mut acc);
         assert_eq!(acc, t.bias);
     }

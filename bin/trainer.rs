@@ -1,5 +1,4 @@
 use anyhow::{Context, Error as Failure};
-use bullet::acyclib::graph::{GraphNodeId, GraphNodeIdTy};
 use bullet::game::formats::bulletformat::ChessBoard;
 use bullet::game::formats::sfbinpack::TrainingDataEntry;
 use bullet::game::formats::sfbinpack::chess::r#move::MoveType;
@@ -238,22 +237,6 @@ struct Orchestrator {
     mode: Option<Mode>,
 }
 
-fn save(id: &str) -> SavedFormat {
-    SavedFormat::id(id).add_transform(|graph, idw, mut weights| {
-        if let (prefix, "w") = idw.split_at(idw.len() - 1)
-            && let Some(idf) = graph.weight_idx(&[prefix, "f"].concat())
-            && let Ok(tensor) = graph.get(GraphNodeId::new(idf, GraphNodeIdTy::Values))
-            && let Ok(factoriser) = tensor.get_dense_vals()
-        {
-            for (w, f) in weights.iter_mut().zip(factoriser.repeat(KingBuckets::LEN)) {
-                *w += f;
-            }
-        }
-
-        weights
-    })
-}
-
 /// Controls whether to resume training from a checkpoint.
 #[derive(Debug, Subcommand)]
 #[allow(clippy::large_enum_variant)]
@@ -324,14 +307,23 @@ impl Orchestrator {
             .inputs(KingBuckets)
             .output_buckets(Phaser)
             .save_format(&[
-                save("ftb").round().quantise::<i16>(FTQ),
-                save("ftw").round().quantise::<i16>(FTQ),
-                save("l12b").round().quantise::<i32>(HLS * HLQ),
-                save("l23b").round().quantise::<i32>(HLS * HLQ),
-                save("l3ob").round().quantise::<i32>(HLS * HLQ),
-                save("l12w").round().quantise::<i8>(HLS as _).transpose(),
-                save("l23w").round().quantise::<i8>(HLS as _).transpose(),
-                save("l3ow").round().quantise::<i8>(HLS as _).transpose(),
+                SavedFormat::id("ftw")
+                    .transform(|store, weights| {
+                        let factoriser = store.get("ftf").values.repeat(KingBuckets::LEN);
+                        Vec::from_iter(weights.into_iter().zip(factoriser).map(|(w, f)| w + f))
+                    })
+                    .round()
+                    .quantise::<i16>(FTQ),
+                SavedFormat::id("ftb").round().quantise::<i16>(FTQ),
+                SavedFormat::id("l12w")
+                    .transpose()
+                    .round()
+                    .quantise::<i8>(HLS as _),
+                SavedFormat::id("l12b"),
+                SavedFormat::id("l23w").transpose(),
+                SavedFormat::id("l23b"),
+                SavedFormat::id("l3ow").transpose(),
+                SavedFormat::id("l3ob"),
             ])
             .use_win_rate_model()
             .loss_fn(|output, pt| {
@@ -350,23 +342,34 @@ impl Orchestrator {
                 ft.weights = ft.weights + ftf.repeat(KingBuckets::LEN);
 
                 let l12 = builder.new_affine("l12", Layer1::LEN, Phase::LEN * Layer2::LEN);
-                let l23 = builder.new_affine("l23", Layer2::LEN, Phase::LEN * Layer3::LEN);
+                let l23 = builder.new_affine("l23", Layer2::LEN * 2, Phase::LEN * Layer3::LEN);
                 let l3o = builder.new_affine("l3o", Layer3::LEN, Phase::LEN);
 
                 let stm = ft.forward(stm).crelu().pairwise_mul();
                 let ntm = ft.forward(ntm).crelu().pairwise_mul();
 
                 let l1 = stm.concat(ntm);
-                let l2 = l12.forward(l1).select(phase).crelu();
-                let l3 = l23.forward(l2).select(phase).crelu();
+                let l2 = l12.forward(l1).select(phase);
+                let l2 = l2.abs_pow(2.).concat(l2).crelu();
+                let l3 = l23.forward(l2).select(phase).screlu();
                 l3o.forward(l3).select(phase)
             });
 
-        trainer.optimiser.set_params(AdamWParams {
-            max_weight: MAX_WEIGHT,
-            min_weight: -MAX_WEIGHT,
+        let params = AdamWParams {
+            min_weight: f32::MIN,
+            max_weight: f32::MAX,
             ..AdamWParams::default()
-        });
+        };
+
+        let clipped = AdamWParams {
+            min_weight: -MAX_WEIGHT,
+            max_weight: MAX_WEIGHT,
+            ..params
+        };
+
+        trainer.optimiser.set_params(params);
+        trainer.optimiser.set_params_for_weight("ftw", clipped);
+        trainer.optimiser.set_params_for_weight("l12w", clipped);
 
         let settings = LocalSettings {
             threads: self.threads,

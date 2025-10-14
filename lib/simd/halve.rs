@@ -1,5 +1,5 @@
 use std::mem::transmute_copy;
-pub use std::simd::{SimdElement, prelude::*};
+use std::simd::{SimdElement, prelude::*};
 
 /// Trait for [`Simd<_, N>` ] types that implement `halve`.
 pub trait Halve {

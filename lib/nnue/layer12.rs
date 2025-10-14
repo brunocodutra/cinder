@@ -1,12 +1,13 @@
-use crate::nnue::{FTQ, Layer, Layer1, Layer2, Synapse};
+use crate::nnue::{FTQ, HLS, Layer, Layer1, Layer2, Synapse};
 use crate::{simd::*, util::Aligned};
 use bytemuck::Zeroable;
 use std::array;
 use std::mem::{transmute, transmute_copy};
-use std::ops::{Add, Shr};
 
 const I: usize = Layer1::LEN;
 const O: usize = Layer2::LEN;
+
+const I2F: f32 = (1 << 9) as f32 / (FTQ as f32 * FTQ as f32 * HLS as f32);
 
 const NNZ_OFFSETS: [u16x8; 256] = {
     let mut offsets = [u16x8::splat(0); 256];
@@ -28,11 +29,9 @@ const NNZ_OFFSETS: [u16x8; 256] = {
 };
 
 /// The first hidden transformer.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
-#[cfg_attr(test, derive(test_strategy::Arbitrary))]
+#[derive(Debug, Zeroable)]
 pub struct Layer12<S> {
-    #[cfg_attr(test, map(|vs: [i16; O]| Aligned(vs.map(i32::from))))]
-    pub bias: Aligned<[i32; O]>,
+    pub bias: Aligned<[f32; O]>,
     pub weight: Aligned<[[i8; 4]; I * O / 4]>,
     pub next: S,
 }
@@ -96,9 +95,9 @@ impl<S: for<'a> Synapse<Input<'a> = Layer2<'a>>> Synapse for Layer12<S> {
             }
 
             let mut output = self.bias;
-            let os = transmute::<&mut [i32; O], &mut [R2<i32>; O / W2]>(&mut output);
+            let os = transmute::<&mut [f32; O], &mut [R2<f32>; O / W2]>(&mut output);
             for (o, acc) in os.iter_mut().zip(accumulators) {
-                *o = acc.add(*o).shr(6);
+                *o = acc.cast::<f32>().mul_add(Simd::splat(I2F), *o);
             }
 
             self.next.forward(&output)

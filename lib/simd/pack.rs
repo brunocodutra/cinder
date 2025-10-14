@@ -1,5 +1,5 @@
 use std::mem::{transmute, transmute_copy};
-pub use std::simd::prelude::*;
+use std::simd::prelude::*;
 
 /// Trait for [`Simd<i16, _>` ] types that implement `pack`.
 pub trait Pack: SimdInt<Scalar = i16> {

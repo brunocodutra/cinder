@@ -25,7 +25,7 @@ jobs:
     - uses: actions/checkout@v5
       with:
         lfs: true
-    - run: cargo clippy --all-targets --all-features -- -D warnings
+    - run: cargo clippy --all-targets --all-features --features bullet/cpu -- -D warnings
 
   audit:
     runs-on: ubuntu-latest
@@ -43,7 +43,7 @@ jobs:
     - uses: actions/checkout@v5
       with:
         lfs: true
-    - run: cargo check --all-targets --all-features --workspace
+    - run: cargo check --all-targets --all-features --features bullet/cpu --workspace
 
   doc:
     runs-on: ubuntu-latest
@@ -51,7 +51,7 @@ jobs:
     - uses: actions/checkout@v5
       with:
         lfs: true
-    - run: cargo doc --all-features --workspace --no-deps
+    - run: cargo doc --all-features --workspace --features bullet/cpu --no-deps
 
   test:
     needs: [fmt, clippy, audit, check, doc]
@@ -63,7 +63,7 @@ jobs:
     - uses: actions/checkout@v5
       with:
         lfs: true
-    - run: cargo test --all-targets --all-features --workspace
+    - run: cargo test --all-targets --all-features --features bullet/cpu --workspace
 
   sanitize:
     needs: [test]
@@ -75,7 +75,7 @@ jobs:
     - uses: actions/checkout@v5
       with:
         lfs: true
-    - run: cargo test --lib --all-features --workspace --target x86_64-unknown-linux-gnu -Zbuild-std -Zunstable-options --config='build.rustflags = ["-Zsanitizer=${{ matrix.sanitizer }}"]' -- --test-threads=1
+    - run: cargo test --lib --all-features --features bullet/cpu --workspace --target x86_64-unknown-linux-gnu -Zbuild-std -Zunstable-options --config='build.rustflags = ["-Zsanitizer=${{ matrix.sanitizer }}"]' -- --test-threads=1
       env:
         CC: "clang"
         CFLAGS: "-fsanitize=${{ matrix.sanitizer }}"
@@ -89,7 +89,7 @@ jobs:
       with:
         lfs: true
     - run: cargo install --force cargo-llvm-cov
-    - run: cargo llvm-cov --lib --all-features --workspace --lcov --output-path lcov.info
+    - run: cargo llvm-cov --lib --all-features --features bullet/cpu --workspace --lcov --output-path lcov.info
       env:
         PROPTEST_CASES: 32
     - uses: codecov/codecov-action@v5

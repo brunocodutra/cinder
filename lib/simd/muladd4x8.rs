@@ -1,4 +1,4 @@
-pub use std::simd::prelude::*;
+use std::simd::prelude::*;
 
 /// Trait for [`Simd<i8, _>` ] types that implement `mul_add_4x8`.
 pub trait MulAdd4x8: SimdInt<Scalar = i8> {

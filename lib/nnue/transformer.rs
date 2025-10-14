@@ -7,7 +7,7 @@ use std::hint::unreachable_unchecked;
 const N: usize = Accumulator::LEN;
 
 /// The NNUE feature transformer.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
+#[derive(Debug, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Transformer<{N}>")]
 pub struct Transformer {

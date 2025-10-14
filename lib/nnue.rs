@@ -90,7 +90,7 @@ const fn interleave<T: Copy, const N: usize>(input: &[T; N], output: &mut [T; N]
 const NNUE: Nnue = Nnue::new();
 
 /// An Efficiently Updatable Neural Network.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
+#[derive(Debug, Zeroable)]
 pub struct Nnue {
     transformer: Transformer,
     nn: [Layer12<Layer23<Output>>; Phase::LEN],
@@ -102,29 +102,8 @@ impl Nnue {
         let mut nnue: Self = zeroed();
         let mut cursor = 0;
 
-        cursor += unsafe { copy_bytes(&mut nnue.transformer.bias.0, &bytes[cursor..]) };
         cursor += unsafe { copy_bytes(&mut nnue.transformer.weight.0, &bytes[cursor..]) };
-
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase];
-            cursor += unsafe { copy_bytes(&mut nn.bias.0, &bytes[cursor..]) };
-            phase += 1;
-        }
-
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase].next;
-            cursor += unsafe { copy_bytes(&mut nn.bias.0, &bytes[cursor..]) };
-            phase += 1;
-        }
-
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase].next.next;
-            cursor += unsafe { copy_bytes(&mut nn.bias, &bytes[cursor..]) };
-            phase += 1;
-        }
+        cursor += unsafe { copy_bytes(&mut nnue.transformer.bias.0, &bytes[cursor..]) };
 
         let mut phase = 0;
         while phase < Phase::LEN {
@@ -139,8 +118,15 @@ impl Nnue {
 
         let mut phase = 0;
         while phase < Phase::LEN {
+            let nn = &mut nnue.nn[phase];
+            cursor += unsafe { copy_bytes(&mut nn.bias.0, &bytes[cursor..]) };
+            phase += 1;
+        }
+
+        let mut phase = 0;
+        while phase < Phase::LEN {
             let nn = &mut nnue.nn[phase].next;
-            let mut weight = [[0i8; Layer2::LEN]; Layer3::LEN];
+            let mut weight = [[0f32; 2 * Layer2::LEN]; Layer3::LEN];
             cursor += unsafe { copy_bytes(&mut weight, &bytes[cursor..]) };
             arrange_in_blocks(&weight, &mut nn.weight.0);
             phase += 1;
@@ -148,8 +134,22 @@ impl Nnue {
 
         let mut phase = 0;
         while phase < Phase::LEN {
+            let nn = &mut nnue.nn[phase].next;
+            cursor += unsafe { copy_bytes(&mut nn.bias.0, &bytes[cursor..]) };
+            phase += 1;
+        }
+
+        let mut phase = 0;
+        while phase < Phase::LEN {
             let nn = &mut nnue.nn[phase].next.next;
             cursor += unsafe { copy_bytes(&mut nn.weight.0, &bytes[cursor..]) };
+            phase += 1;
+        }
+
+        let mut phase = 0;
+        while phase < Phase::LEN {
+            let nn = &mut nnue.nn[phase].next.next;
+            cursor += unsafe { copy_bytes(&mut nn.bias, &bytes[cursor..]) };
             phase += 1;
         }
 

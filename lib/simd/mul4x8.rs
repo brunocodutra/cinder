@@ -1,6 +1,4 @@
-use std::mem::transmute;
-pub use std::simd::prelude::*;
-use std::{array, ops::Mul};
+use std::{array, mem::transmute, ops::Mul, simd::prelude::*};
 
 /// Trait for [`Simd<i8, _>` ] types that implement `mul_4x8`.
 pub trait Mul4x8: SimdInt<Scalar = i8> {

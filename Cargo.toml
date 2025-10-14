@@ -14,7 +14,6 @@ default-run = "cinder"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [features]
-default = ["bullet?/cpu"]
 spsa = ["rand/thread_rng", "dep:ron", "dep:serde"]
 trainer = ["dep:bullet"]
 

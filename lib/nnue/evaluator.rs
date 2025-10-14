@@ -224,7 +224,7 @@ impl Evaluator {
 
         let us = self.turn() as usize;
         let them = self.turn().flip() as usize;
-        let value = nn.forward((&self.accumulator[idx][us], &self.accumulator[idx][them])) / 128;
+        let value = nn.forward((&self.accumulator[idx][us], &self.accumulator[idx][them]));
         VALUES.set(self.zobrists().hash, value.saturate());
         value.saturate()
     }

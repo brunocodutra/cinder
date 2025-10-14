@@ -1,6 +1,5 @@
-use std::mem::transmute;
 use std::ops::{Mul, Shl, Shr};
-pub use std::simd::prelude::*;
+use std::{mem::transmute, simd::prelude::*};
 
 /// Trait for [`Simd<i16, _>` ] types that implement `mul_high`.
 pub trait MulHigh: SimdInt<Scalar = i16> {

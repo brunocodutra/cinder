@@ -1,5 +1,5 @@
 use crate::nnue::Accumulator;
-use crate::util::{Aligned, Signed};
+use crate::util::Aligned;
 
 /// Trait for types that represent layers in a neural network.
 pub trait Layer {
@@ -7,7 +7,7 @@ pub trait Layer {
     const LEN: usize;
 
     /// The integer type representing each neuron.
-    type Neuron: Signed;
+    type Neuron;
 }
 
 impl<T: Layer> Layer for &T {
@@ -15,7 +15,7 @@ impl<T: Layer> Layer for &T {
     type Neuron = T::Neuron;
 }
 
-impl<I: Signed, const N: usize> Layer for [I; N] {
+impl<I, const N: usize> Layer for [I; N] {
     const LEN: usize = N;
     type Neuron = I;
 }
@@ -32,10 +32,10 @@ pub type Layer0<'a> = &'a Accumulator;
 pub type Layer1<'a> = (Layer0<'a>, Layer0<'a>);
 
 /// The second neuron layer.
-pub type Layer2<'a> = &'a Aligned<[i32; 16]>;
+pub type Layer2<'a> = &'a Aligned<[f32; 16]>;
 
 /// The third neuron layer.
-pub type Layer3<'a> = &'a Aligned<[i32; 32]>;
+pub type Layer3<'a> = &'a Aligned<[f32; 32]>;
 
 impl<'a> Layer for Layer1<'a> {
     const LEN: usize = Layer0::<'a>::LEN;

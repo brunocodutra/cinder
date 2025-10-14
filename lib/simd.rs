@@ -10,6 +10,8 @@ pub use muladd4x8::*;
 pub use mulhi::*;
 pub use pack::*;
 
+pub use std::simd::{StdFloat, prelude::*};
+
 #[cfg(target_feature = "avx512f")]
 const WIDTH: usize = 64;
 

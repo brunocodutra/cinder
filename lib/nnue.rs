@@ -28,10 +28,10 @@ pub use value::*;
 pub const FTQ: i16 = 255;
 
 /// Quantization constant for the hidden layers.
-pub const HLQ: i32 = 127;
+pub const HLQ: i16 = 127;
 
 /// Quantization scale for the hidden layers.
-pub const HLS: i32 = 64;
+pub const HLS: i16 = 64;
 
 const unsafe fn copy_bytes<T>(dst: &mut T, src: &[u8]) -> usize {
     let len = size_of_val(dst);

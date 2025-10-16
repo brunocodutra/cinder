@@ -74,30 +74,33 @@ impl<S: for<'a> Synapse<Input<'a> = Layer2<'a>>> Synapse for Layer12<S> {
             }
 
             const K: usize = usize::max(8 * W2 / O, 1);
-            let mut accumulators = [[Simd::splat(0); K]; O / W2];
-            let xs = transmute::<&[R8<u8>; I / W8], &[u8x4; I / 4]>(&is);
-            let ws = transmute::<&[[i8; 4]; I * O / 4], &[R8<i8>; I * O / W8]>(&self.weight);
+            let mut acc = [[Simd::splat(0); K]; O / W2];
             let mut nzs = nzs[..nzs_len].iter().copied().array_chunks::<K>();
+            let xs = transmute::<&[R8<u8>; I / W8], &[u8x4; I / 4]>(&is);
+            let ws = transmute::<&[[i8; 4]; I * O / 4], &[[R8<i8>; O / W2]; I / 4]>(&self.weight);
+
             for nzs in &mut nzs {
-                let xs = nzs.map(|nz| transmute_copy::<[u8x4; W2], R8<u8>>(&[xs[nz as usize]; W2]));
-                for (j, acc) in accumulators.iter_mut().enumerate() {
-                    let ws = nzs.map(|nz| ws[nz as usize * O / W2 + j]);
-                    *acc = array::from_fn(|k| ws[k].mul_add_4x8(xs[k], acc[k]));
+                for (j, a) in acc.iter_mut().enumerate() {
+                    *a = array::from_fn(|k| {
+                        let x = xs.get_unchecked(nzs[k] as usize);
+                        let w = ws.get_unchecked(nzs[k] as usize)[j];
+                        w.mul_add_4x8(transmute_copy::<[u8x4; W2], R8<u8>>(&[*x; W2]), a[k])
+                    });
                 }
             }
 
-            let mut accumulators = accumulators.map(|acc| acc.iter().sum::<R2<i32>>());
             for nz in nzs.into_remainder().into_iter().flatten() {
-                let x = transmute_copy::<[u8x4; W2], R8<u8>>(&[xs[nz as usize]; W2]);
-                for (j, acc) in accumulators.iter_mut().enumerate() {
-                    *acc = ws[nz as usize * O / W2 + j].mul_add_4x8(x, *acc);
+                let x = transmute_copy::<[u8x4; W2], R8<u8>>(&[*xs.get_unchecked(nz as usize); W2]);
+                for (j, a) in acc.iter_mut().enumerate() {
+                    a[0] = ws.get_unchecked(nz as usize)[j].mul_add_4x8(x, a[0]);
                 }
             }
 
             let mut output = self.bias;
             let os = transmute::<&mut [f32; O], &mut [R2<f32>; O / W2]>(&mut output);
-            for (o, acc) in os.iter_mut().zip(accumulators) {
-                *o = acc.cast::<f32>().mul_add(Simd::splat(I2F), *o);
+            for (o, a) in os.iter_mut().zip(acc) {
+                let sum = a.iter().sum::<R2<i32>>();
+                *o = sum.cast::<f32>().mul_add(Simd::splat(I2F), *o);
             }
 
             self.next.forward(&output)

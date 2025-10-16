@@ -21,14 +21,12 @@ impl Synapse for Output {
         const { assert!(N.is_multiple_of(W2)) }
 
         unsafe {
-            let xs = transmute::<&[f32; N], &[R2<f32>; N / W2]>(input).map(|i| {
-                let clipped = i.simd_clamp(Simd::splat(0.), Simd::splat(1.));
-                clipped * clipped
-            });
+            let xs = transmute::<&[f32; N], &[R2<f32>; N / W2]>(input)
+                .map(|i| i.simd_clamp(Simd::splat(0.), Simd::splat(1.)).powi::<2>());
 
             let ws = transmute::<&[f32; N], &[R2<f32>; N / W2]>(&self.weight);
-            let accumulators: [_; N / W2] = array::from_fn(|i| ws[i] * xs[i]);
-            let output = self.bias + accumulators.iter().sum::<R2<f32>>().reduce_sum();
+            let acc: [_; N / W2] = array::from_fn(|i| ws[i] * xs[i]);
+            let output = self.bias + acc.iter().sum::<R2<f32>>().reduce_sum();
             output.mul(HLS as f32) as _
         }
     }

@@ -1,9 +1,7 @@
 use crate::nnue::{Layer, Layer2, Layer3, Synapse};
 use crate::{simd::*, util::Aligned};
 use bytemuck::Zeroable;
-use std::array;
-use std::mem::transmute;
-use std::ops::{Add, Mul};
+use std::{array::from_fn as each, mem::transmute};
 
 const I: usize = Layer2::LEN;
 const O: usize = Layer3::LEN;
@@ -29,25 +27,25 @@ impl<S: for<'a> Synapse<Input<'a> = Layer3<'a>>> Synapse for Layer23<S> {
             let is = transmute::<&[f32; I], &[R2<f32>; I / W2]>(input);
 
             let is = [
-                is.map(|i| i.mul(i).simd_clamp(Simd::splat(0.), Simd::splat(1.))),
-                is.map(|i| i.simd_clamp(Simd::splat(0.), Simd::splat(1.))),
+                is.map(|i| i.powi::<2>().simd_clamp(Simd::splat(0.), Simd::splat(1.))),
+                is.map(|i| i.powi::<1>().simd_clamp(Simd::splat(0.), Simd::splat(1.))),
             ];
 
             const K: usize = usize::max(8 * W2 / O, 1);
-            let mut accumulators = [[Simd::splat(0.); K]; O / W2];
-            let xs = transmute::<&[[R2<f32>; I / W2]; 2], &[f32; 2 * I]>(&is);
-            let ws = transmute::<&[[f32; 1]; 2 * I * O], &[R2<f32>; 2 * I * O / W2]>(&self.weight);
-            for (i, xs) in xs.iter().array_chunks::<K>().enumerate() {
-                let xs: [_; K] = array::from_fn(|k| Simd::splat(*xs[k]));
-                for (j, acc) in accumulators.iter_mut().enumerate() {
-                    *acc = array::from_fn(|k| ws[(K * i + k) * O / W2 + j].mul_add(xs[k], acc[k]));
-                }
+            let mut acc = [[Simd::splat(0.); K]; O / W2];
+            let xs = transmute::<&[[R2<f32>; I / W2]; 2], &[[f32; K]; 2 * I / K]>(&is);
+            let ws = transmute::<&[[f32; 1]; 2 * I * O], &[[[R2<f32>; O / W2]; K]; 2 * I / K]>(
+                &self.weight,
+            );
+
+            for (i, xs) in xs.iter().enumerate() {
+                acc = each(|j| each(|k| ws[i][k][j].mul_add(Simd::splat(xs[k]), acc[j][k])));
             }
 
             let mut output = self.bias;
             let os = transmute::<&mut [f32; O], &mut [R2<f32>; O / W2]>(&mut output);
-            for (o, acc) in os.iter_mut().zip(accumulators) {
-                *o = acc.iter().sum::<R2<f32>>().add(*o);
+            for (o, a) in os.iter_mut().zip(acc) {
+                *o += a.iter().sum::<R2<f32>>();
             }
 
             self.next.forward(&output)

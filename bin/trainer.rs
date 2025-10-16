@@ -318,7 +318,7 @@ impl Orchestrator {
                 SavedFormat::id("l12w")
                     .transpose()
                     .round()
-                    .quantise::<i8>(HLS as _),
+                    .quantise::<i8>(HLS),
                 SavedFormat::id("l12b"),
                 SavedFormat::id("l23w").transpose(),
                 SavedFormat::id("l23b"),

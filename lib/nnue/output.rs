@@ -1,33 +1,37 @@
-use crate::nnue::{HLS, Layer, Layer3, Synapse};
+use crate::nnue::{Layer, Layer2, Layer3, Synapse};
 use crate::{simd::*, util::Aligned};
 use bytemuck::Zeroable;
-use std::{array::from_fn as each, mem::transmute, ops::Mul};
+use std::{array::from_fn as each, mem::transmute};
 
-const N: usize = Layer3::LEN;
+const I: usize = Layer3::LEN;
+const O: usize = Layer2::LEN;
 
 /// The output layer.
 #[derive(Debug, Zeroable)]
 pub struct Output {
-    pub bias: Aligned<[f32; N]>,
-    pub weight: Aligned<[f32; N]>,
+    pub bias: Aligned<[f32; I]>,
+    pub weight: Aligned<[f32; I]>,
 }
 
 impl Synapse for Output {
     type Input<'a> = Layer3<'a>;
-    type Output = i32;
+    type Output = [V2<f32>; O / W2];
 
     #[inline(always)]
     fn forward<'a>(&self, input: Self::Input<'a>) -> Self::Output {
-        const { assert!(N.is_multiple_of(W2)) }
+        const { assert!(I.is_multiple_of(O)) }
+        const { assert!(I.is_multiple_of(W2)) }
+        const { assert!(O.is_multiple_of(W2)) }
 
         unsafe {
-            let active = transmute::<&[f32; N], &[V2<f32>; N / W2]>(input)
+            let active = transmute::<&[f32; I], &[V2<f32>; I / W2]>(input)
                 .map(|i| i.simd_clamp(Simd::splat(0.), Simd::splat(1.)).powi::<2>());
 
-            let bs = transmute::<&[f32; N], &[V2<f32>; N / W2]>(&self.bias);
-            let ws = transmute::<&[f32; N], &[V2<f32>; N / W2]>(&self.weight);
-            let output: [_; N / W2] = each(|i| ws[i].mul_add(active[i], bs[i]));
-            output.iter().sum::<V2<f32>>().reduce_sum().mul(HLS as f32) as _
+            let bs = transmute::<&[f32; I], &[[V2<f32>; I / O]; O / W2]>(&self.bias);
+            let ws = transmute::<&[f32; I], &[[V2<f32>; I / O]; O / W2]>(&self.weight);
+            let xs = transmute::<&[V2<f32>; I / W2], &[[V2<f32>; I / O]; O / W2]>(&active);
+            let output: [_; O / W2] = each(|i| each(|j| ws[i][j].mul_add(xs[i][j], bs[i][j])));
+            output.map(|a: [_; I / O]| a.iter().sum::<V2<f32>>())
         }
     }
 }

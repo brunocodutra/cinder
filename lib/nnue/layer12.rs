@@ -1,8 +1,8 @@
 use crate::nnue::{FTQ, HLS, Layer, Layer1, Layer2, Synapse};
 use crate::{simd::*, util::Aligned};
 use bytemuck::Zeroable;
-use std::array::from_fn as each;
 use std::mem::{transmute, transmute_copy};
+use std::{array::from_fn as each, ops::Mul};
 
 const I: usize = Layer1::LEN;
 const O: usize = Layer2::LEN;
@@ -31,14 +31,18 @@ const NNZ_OFFSETS: [u16x8; 256] = {
 /// The first hidden transformer.
 #[derive(Debug, Zeroable)]
 pub struct Layer12<S> {
+    pub bypass: Aligned<[f32; O]>,
     pub bias: Aligned<[f32; O]>,
     pub weight: Aligned<[[i8; 4]; I * O / 4]>,
     pub next: S,
 }
 
-impl<S: for<'a> Synapse<Input<'a> = Layer2<'a>>> Synapse for Layer12<S> {
+impl<S> Synapse for Layer12<S>
+where
+    S: for<'a> Synapse<Input<'a> = Layer2<'a>, Output = [V2<f32>; O / W2]>,
+{
     type Input<'a> = Layer1<'a>;
-    type Output = S::Output;
+    type Output = i32;
 
     #[inline(always)]
     fn forward<'a>(&self, (us, them): Self::Input<'a>) -> Self::Output {
@@ -103,7 +107,10 @@ impl<S: for<'a> Synapse<Input<'a> = Layer2<'a>>> Synapse for Layer12<S> {
                 *o = sum.cast::<f32>().mul_add(Simd::splat(I2F), *o);
             }
 
-            self.next.forward(&output)
+            let res = self.next.forward(&output);
+            let bps = transmute::<&[f32; O], &[V2<f32>; O / W2]>(&self.bypass);
+            let output: [_; O / W2] = each(|i| bps[i].mul_add(os[i], res[i]));
+            output.iter().sum::<V2<f32>>().reduce_sum().mul(HLS as f32) as _
         }
     }
 }

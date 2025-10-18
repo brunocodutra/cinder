@@ -320,6 +320,7 @@ impl Orchestrator {
                     .round()
                     .quantise::<i8>(HLS),
                 SavedFormat::id("l12b"),
+                SavedFormat::id("l12r").transpose(),
                 SavedFormat::id("l23w").transpose(),
                 SavedFormat::id("l23b"),
                 SavedFormat::id("l3ow").transpose(),
@@ -341,6 +342,8 @@ impl Orchestrator {
                 ft.init_with_effective_input_size(32);
                 ft.weights = ft.weights + ftf.repeat(KingBuckets::LEN);
 
+                let shape = Shape::new(Phase::LEN, Layer2::LEN);
+                let l12r = builder.new_weights("l12r", shape, InitSettings::Zeroed);
                 let l12 = builder.new_affine("l12", Layer1::LEN, Phase::LEN * Layer2::LEN);
                 let l23 = builder.new_affine("l23", Layer2::LEN * 2, Phase::LEN * Layer3::LEN);
                 let l3o = builder.new_affine("l3o", Layer3::LEN, Phase::LEN);
@@ -350,9 +353,10 @@ impl Orchestrator {
 
                 let l1 = stm.concat(ntm);
                 let l2 = l12.forward(l1).select(phase);
-                let l2 = l2.abs_pow(2.).concat(l2).crelu();
+                let res = l12r.matmul(l2).select(phase);
+                let l2 = l2.concat(-l2).sqrrelu();
                 let l3 = l23.forward(l2).select(phase).screlu();
-                l3o.forward(l3).select(phase)
+                res + l3o.forward(l3).select(phase)
             });
 
         let params = AdamWParams {
@@ -395,20 +399,20 @@ impl Orchestrator {
 
         if stage == 0 && superbatch < SB0 {
             let start = if stage == 0 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage0", start..=SB0, 2.5e-3..=1e-4, 0.0..=0.0);
+            let schedule = self.schedule("stage0", start..=SB0, 1e-3..=4e-5, 0.0..=0.0);
             let priming_dataloader = self.dataloader(&[priming_dataset], 0);
             trainer.run(&schedule, &settings, &priming_dataloader);
         }
 
         if stage < 1 || (stage == 1 && superbatch < SB1) {
             let start = if stage == 1 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage1", start..=SB1, 1e-3..=2e-5, 0.0..=self.wdl);
+            let schedule = self.schedule("stage1", start..=SB1, 5e-4..=1e-5, 0.0..=self.wdl);
             trainer.run(&schedule, &settings, &training_dataloader);
         }
 
         if stage < 2 || (stage == 2 && superbatch < SB2) {
             let start = if stage == 2 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage2", start..=SB2, 2e-5..=2e-7, self.wdl..=self.wdl);
+            let schedule = self.schedule("stage2", start..=SB2, 1e-5..=1e-7, self.wdl..=self.wdl);
             trainer.run(&schedule, &settings, &training_dataloader);
         }
 

@@ -30,7 +30,7 @@ pub const W2: usize = WIDTH / 4;
 pub const W4: usize = WIDTH / 2;
 pub const W8: usize = WIDTH;
 
-pub type R1<T> = Simd<T, W1>;
-pub type R2<T> = Simd<T, W2>;
-pub type R4<T> = Simd<T, W4>;
-pub type R8<T> = Simd<T, W8>;
+pub type V1<T> = Simd<T, W1>;
+pub type V2<T> = Simd<T, W2>;
+pub type V4<T> = Simd<T, W4>;
+pub type V8<T> = Simd<T, W8>;

@@ -8,12 +8,9 @@ const N: usize = Accumulator::LEN;
 
 /// The NNUE feature transformer.
 #[derive(Debug, Zeroable)]
-#[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Transformer<{N}>")]
 pub struct Transformer {
-    #[cfg_attr(test, map(|vs: [i8; N]| Aligned(vs.map(i16::from))))]
     pub bias: Aligned<[i16; N]>,
-    #[cfg_attr(test, map(|vs: [[i8; N]; Feature::LEN]| Aligned(vs.map(|v| v.map(i16::from)))))]
     pub weight: Aligned<[[i16; N]; Feature::LEN]>,
 }
 

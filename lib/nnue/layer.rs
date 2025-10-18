@@ -1,5 +1,4 @@
-use crate::nnue::Accumulator;
-use crate::util::Aligned;
+use crate::{nnue::Accumulator, util::Aligned};
 
 /// Trait for types that represent layers in a neural network.
 pub trait Layer {

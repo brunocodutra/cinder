@@ -149,7 +149,9 @@ impl Nnue {
         let mut phase = 0;
         while phase < Phase::LEN {
             let nn = &mut nnue.nn[phase].next.next;
-            cursor += unsafe { copy_bytes(&mut nn.bias, &bytes[cursor..]) };
+            let mut bias = 0f32;
+            cursor += unsafe { copy_bytes(&mut bias, &bytes[cursor..]) };
+            nn.bias.0 = [bias / nn.bias.0.len() as f32; _];
             phase += 1;
         }
 

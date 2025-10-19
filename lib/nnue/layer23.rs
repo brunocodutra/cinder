@@ -1,7 +1,7 @@
 use crate::nnue::{Layer, Layer2, Layer3, Synapse};
 use crate::{simd::*, util::Aligned};
 use bytemuck::Zeroable;
-use std::{array::from_fn as each, mem::transmute};
+use std::array::from_fn as each;
 
 const I: usize = Layer2::LEN;
 const O: usize = Layer3::LEN;
@@ -23,30 +23,26 @@ impl<S: for<'a> Synapse<Input<'a> = Layer3<'a>>> Synapse for Layer23<S> {
         const { assert!(I.is_multiple_of(W2)) }
         const { assert!(O.is_multiple_of(W2)) }
 
-        unsafe {
-            let is = transmute::<&[f32; I], &[V2<f32>; I / W2]>(input);
+        let is: &[V2<f32>; I / W2] = input.cast();
 
-            let active = [
-                is.map(|i| i.simd_max(Simd::splat(0.)).powi::<2>()),
-                is.map(|i| i.simd_min(Simd::splat(0.)).powi::<2>()),
-            ];
+        let active = Aligned([
+            is.map(|i| i.simd_max(Simd::splat(0.)).powi::<2>()),
+            is.map(|i| i.simd_min(Simd::splat(0.)).powi::<2>()),
+        ]);
 
-            const K: usize = usize::max(8 * W2 / O, 1);
-            let mut acc = [[Simd::splat(0.); K]; O / W2];
-            let xs = transmute::<&[[V2<f32>; I / W2]; 2], &[[f32; K]; 2 * I / K]>(&active);
-            let ws = transmute::<&[[f32; 1]; 2 * I * O], &[[[V2<f32>; O / W2]; K]; 2 * I / K]>(
-                &self.weight,
-            );
+        const K: usize = usize::max(8 * W2 / O, 1);
+        let mut acc = [[Simd::splat(0.); K]; O / W2];
+        let xs: &[[f32; K]; 2 * I / K] = active.cast();
+        let ws: &[[[V2<f32>; O / W2]; K]; 2 * I / K] = self.weight.cast();
 
-            for (i, xs) in xs.iter().enumerate() {
-                acc = each(|j| each(|k| ws[i][k][j].mul_add(Simd::splat(xs[k]), acc[j][k])));
-            }
-
-            let mut output = self.bias;
-            let os = transmute::<&mut [f32; O], &mut [V2<f32>; O / W2]>(&mut output);
-            *os = each(|j| acc[j].iter().sum::<V2<f32>>() + os[j]);
-
-            self.next.forward(&output)
+        for (i, xs) in xs.iter().enumerate() {
+            acc = each(|j| each(|k| ws[i][k][j].mul_add(Simd::splat(xs[k]), acc[j][k])));
         }
+
+        let mut output = self.bias;
+        let os: &mut [V2<f32>; O / W2] = output.cast_mut();
+        *os = each(|j| acc[j].iter().sum::<V2<f32>>() + os[j]);
+
+        self.next.forward(&output)
     }
 }

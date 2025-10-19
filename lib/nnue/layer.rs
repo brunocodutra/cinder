@@ -34,7 +34,10 @@ pub type Layer1<'a> = (Layer0<'a>, Layer0<'a>);
 pub type Layer2<'a> = &'a Aligned<[f32; 16]>;
 
 /// The third neuron layer.
-pub type Layer3<'a> = &'a Aligned<[f32; 32]>;
+pub type Layer3<'a> = &'a Aligned<[f32; 16]>;
+
+/// The fourth neuron layer.
+pub type Layer4<'a> = &'a Aligned<[f32; 32]>;
 
 impl<'a> Layer for Layer1<'a> {
     const LEN: usize = Layer0::<'a>::LEN;

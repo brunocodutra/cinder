@@ -8,7 +8,7 @@ mod feature;
 mod layer;
 mod layer12;
 mod layer23;
-mod output;
+mod layer3o;
 mod synapse;
 mod transformer;
 mod value;
@@ -17,9 +17,9 @@ pub use accumulator::*;
 pub use evaluator::*;
 pub use feature::*;
 pub use layer::*;
+pub use layer3o::*;
 pub use layer12::*;
 pub use layer23::*;
-pub use output::*;
 pub use synapse::*;
 pub use transformer::*;
 pub use value::*;
@@ -93,7 +93,7 @@ const NNUE: Nnue = Nnue::new();
 #[derive(Debug, Zeroable)]
 pub struct Nnue {
     transformer: Transformer,
-    nn: [Layer12<Layer23<Output>>; Phase::LEN],
+    nn: [Layer12<Layer23<Layer3o>>; Phase::LEN],
 }
 
 impl Nnue {
@@ -171,7 +171,7 @@ impl Nnue {
     }
 
     #[inline(always)]
-    pub fn nn(phase: Phase) -> &'static Layer12<Layer23<Output>> {
+    pub fn nn(phase: Phase) -> &'static Layer12<Layer23<Layer3o>> {
         let idx = phase.cast::<usize>();
         unsafe { NNUE.nn.get_unchecked(idx) }
     }

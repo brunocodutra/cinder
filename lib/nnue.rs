@@ -8,7 +8,8 @@ mod feature;
 mod layer;
 mod layer12;
 mod layer23;
-mod layer3o;
+mod layer34;
+mod layer4o;
 mod synapse;
 mod transformer;
 mod value;
@@ -17,9 +18,10 @@ pub use accumulator::*;
 pub use evaluator::*;
 pub use feature::*;
 pub use layer::*;
-pub use layer3o::*;
+pub use layer4o::*;
 pub use layer12::*;
 pub use layer23::*;
+pub use layer34::*;
 pub use synapse::*;
 pub use transformer::*;
 pub use value::*;
@@ -93,7 +95,7 @@ const NNUE: Nnue = Nnue::new();
 #[derive(Debug, Zeroable)]
 pub struct Nnue {
     transformer: Transformer,
-    nn: [Layer12<Layer23<Layer3o>>; Phase::LEN],
+    nn: [Layer12<Layer23<Layer34<Layer4o>>>; Phase::LEN],
 }
 
 impl Nnue {
@@ -149,13 +151,29 @@ impl Nnue {
         let mut phase = 0;
         while phase < Phase::LEN {
             let nn = &mut nnue.nn[phase].next.next;
-            cursor += unsafe { copy_bytes(&mut nn.weight.0, &bytes[cursor..]) };
+            let mut weight = [[0f32; 2 * Layer3::LEN]; Layer4::LEN];
+            cursor += unsafe { copy_bytes(&mut weight, &bytes[cursor..]) };
+            arrange_in_blocks(&weight, &mut nn.weight.0);
             phase += 1;
         }
 
         let mut phase = 0;
         while phase < Phase::LEN {
             let nn = &mut nnue.nn[phase].next.next;
+            cursor += unsafe { copy_bytes(&mut nn.bias.0, &bytes[cursor..]) };
+            phase += 1;
+        }
+
+        let mut phase = 0;
+        while phase < Phase::LEN {
+            let nn = &mut nnue.nn[phase].next.next.next;
+            cursor += unsafe { copy_bytes(&mut nn.weight.0, &bytes[cursor..]) };
+            phase += 1;
+        }
+
+        let mut phase = 0;
+        while phase < Phase::LEN {
+            let nn = &mut nnue.nn[phase].next.next.next;
             let mut bias = 0f32;
             cursor += unsafe { copy_bytes(&mut bias, &bytes[cursor..]) };
             nn.bias.0 = [bias / nn.bias.0.len() as f32; _];
@@ -171,7 +189,7 @@ impl Nnue {
     }
 
     #[inline(always)]
-    pub fn nn(phase: Phase) -> &'static Layer12<Layer23<Layer3o>> {
+    pub fn nn(phase: Phase) -> &'static Layer12<Layer23<Layer34<Layer4o>>> {
         let idx = phase.cast::<usize>();
         unsafe { NNUE.nn.get_unchecked(idx) }
     }

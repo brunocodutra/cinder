@@ -198,8 +198,8 @@ impl TrainingDataFilter {
 }
 
 const SB0: usize = 200;
-const SB1: usize = 600;
-const SB2: usize = 200;
+const SB1: usize = 700;
+const SB2: usize = 100;
 const MAX_WEIGHT: f32 = HLQ as f32 / HLS as f32;
 
 /// An efficiently updatable neural network (NNUE) trainer.
@@ -214,11 +214,11 @@ struct Orchestrator {
     threads: usize,
 
     /// How many positions per batch.
-    #[clap(long, default_value_t = 262144)]
+    #[clap(long, default_value_t = 196608)]
     batch_size: usize,
 
     /// How many batches per superbatch.
-    #[clap(long, default_value_t = 384)]
+    #[clap(long, default_value_t = 512)]
     batches_per_superbatch: usize,
 
     /// The target wdl fraction.
@@ -323,8 +323,10 @@ impl Orchestrator {
                 SavedFormat::id("l12r").transpose(),
                 SavedFormat::id("l23w").transpose(),
                 SavedFormat::id("l23b"),
-                SavedFormat::id("l3ow").transpose(),
-                SavedFormat::id("l3ob"),
+                SavedFormat::id("l34w").transpose(),
+                SavedFormat::id("l34b"),
+                SavedFormat::id("l4ow").transpose(),
+                SavedFormat::id("l4ob"),
             ])
             .use_win_rate_model()
             .loss_fn(|output, pt| {
@@ -346,7 +348,8 @@ impl Orchestrator {
                 let l12r = builder.new_weights("l12r", shape, InitSettings::Zeroed);
                 let l12 = builder.new_affine("l12", Layer1::LEN, Phase::LEN * Layer2::LEN);
                 let l23 = builder.new_affine("l23", Layer2::LEN * 2, Phase::LEN * Layer3::LEN);
-                let l3o = builder.new_affine("l3o", Layer3::LEN, Phase::LEN);
+                let l34 = builder.new_affine("l34", Layer3::LEN * 2, Phase::LEN * Layer4::LEN);
+                let l4o = builder.new_affine("l4o", Layer4::LEN, Phase::LEN);
 
                 let stm = ft.forward(stm).crelu().pairwise_mul();
                 let ntm = ft.forward(ntm).crelu().pairwise_mul();
@@ -355,8 +358,10 @@ impl Orchestrator {
                 let l2 = l12.forward(l1).select(phase);
                 let res = l12r.matmul(l2).select(phase);
                 let l2 = l2.concat(-l2).sqrrelu();
-                let l3 = l23.forward(l2).select(phase).screlu();
-                res + l3o.forward(l3).select(phase)
+                let l3 = l23.forward(l2).select(phase);
+                let l3 = l3.concat(-l3).sqrrelu();
+                let l4 = l34.forward(l3).select(phase).screlu();
+                res + l4o.forward(l4).select(phase)
             });
 
         let params = AdamWParams {
@@ -373,6 +378,7 @@ impl Orchestrator {
 
         trainer.optimiser.set_params(params);
         trainer.optimiser.set_params_for_weight("ftw", clipped);
+        trainer.optimiser.set_params_for_weight("ftf", clipped);
         trainer.optimiser.set_params_for_weight("l12w", clipped);
 
         let settings = LocalSettings {

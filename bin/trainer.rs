@@ -320,13 +320,18 @@ impl Orchestrator {
                     .round()
                     .quantise::<i8>(HLS),
                 SavedFormat::id("l12b"),
-                SavedFormat::id("l12r").transpose(),
+                SavedFormat::id("r2o").transpose(),
                 SavedFormat::id("l23w").transpose(),
                 SavedFormat::id("l23b"),
                 SavedFormat::id("l34w").transpose(),
                 SavedFormat::id("l34b"),
-                SavedFormat::id("l4ow").transpose(),
-                SavedFormat::id("l4ob"),
+                SavedFormat::id("r4o").transpose(),
+                SavedFormat::id("l45w").transpose(),
+                SavedFormat::id("l45b"),
+                SavedFormat::id("l56w").transpose(),
+                SavedFormat::id("l56b"),
+                SavedFormat::id("l6ow").transpose(),
+                SavedFormat::id("l6ob"),
             ])
             .use_win_rate_model()
             .loss_fn(|output, pt| {
@@ -337,31 +342,42 @@ impl Orchestrator {
                 qf.squared_error(pt)
             })
             .build(|builder, stm, ntm, phase| {
-                let ftf_shape = Shape::new(Layer0::LEN, Feature::LEN / KingBuckets::LEN);
-                let ftf = builder.new_weights("ftf", ftf_shape, InitSettings::Zeroed);
+                let shape = Shape::new(Accumulator::LEN, Feature::LEN / KingBuckets::LEN);
+                let ftf = builder.new_weights("ftf", shape, InitSettings::Zeroed);
 
-                let mut ft = builder.new_affine("ft", Feature::LEN, Layer0::LEN);
+                let mut ft = builder.new_affine("ft", Feature::LEN, Accumulator::LEN);
                 ft.init_with_effective_input_size(32);
-                ft.weights = ft.weights + ftf.repeat(KingBuckets::LEN);
 
-                let shape = Shape::new(Phase::LEN, Layer2::LEN);
-                let l12r = builder.new_weights("l12r", shape, InitSettings::Zeroed);
-                let l12 = builder.new_affine("l12", Layer1::LEN, Phase::LEN * Layer2::LEN);
-                let l23 = builder.new_affine("l23", Layer2::LEN * 2, Phase::LEN * Layer3::LEN);
-                let l34 = builder.new_affine("l34", Layer3::LEN * 2, Phase::LEN * Layer4::LEN);
-                let l4o = builder.new_affine("l4o", Layer4::LEN, Phase::LEN);
+                ft.weights = (ft.weights + ftf.repeat(KingBuckets::LEN))
+                    .clip_pass_through_grad(-MAX_WEIGHT, MAX_WEIGHT);
+
+                let l12 = builder.new_affine("l12", L1::LEN, Phase::LEN * L2::LEN);
+                let l23 = builder.new_affine("l23", Ln::LEN, Phase::LEN * Ln::LEN);
+                let l34 = builder.new_affine("l34", Ln::LEN, Phase::LEN * Ln::LEN);
+                let l45 = builder.new_affine("l45", Ln::LEN, Phase::LEN * Ln::LEN);
+                let l56 = builder.new_affine("l56", Ln::LEN, Phase::LEN * Ln::LEN);
+                let l6o = builder.new_affine("l6o", Ln::LEN, Phase::LEN);
+
+                let shape = Shape::new(Phase::LEN, Ln::LEN);
+                let r2o = builder.new_weights("r2o", shape, InitSettings::Zeroed);
+                let r4o = builder.new_weights("r4o", shape, InitSettings::Zeroed);
 
                 let stm = ft.forward(stm).crelu().pairwise_mul();
                 let ntm = ft.forward(ntm).crelu().pairwise_mul();
 
                 let l1 = stm.concat(ntm);
                 let l2 = l12.forward(l1).select(phase);
-                let res = l12r.matmul(l2).select(phase);
                 let l2 = l2.concat(-l2).sqrrelu();
-                let l3 = l23.forward(l2).select(phase);
-                let l3 = l3.concat(-l3).sqrrelu();
+                let l3 = l23.forward(l2).select(phase).screlu();
                 let l4 = l34.forward(l3).select(phase).screlu();
-                res + l4o.forward(l4).select(phase)
+                let l5 = l45.forward(l4).select(phase).screlu();
+                let l6 = l56.forward(l5).select(phase).screlu();
+                let o = l6o.forward(l6).select(phase);
+
+                let r2 = r2o.matmul(l2).select(phase);
+                let r4 = r4o.matmul(l4).select(phase);
+
+                o + r2 + r4
             });
 
         let params = AdamWParams {
@@ -405,20 +421,20 @@ impl Orchestrator {
 
         if stage == 0 && superbatch < SB0 {
             let start = if stage == 0 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage0", start..=SB0, 1e-3..=4e-5, 0.0..=0.0);
+            let schedule = self.schedule("stage0", start..=SB0, 1e-3..=1e-4, 0.0..=0.0);
             let priming_dataloader = self.dataloader(&[priming_dataset], 0);
             trainer.run(&schedule, &settings, &priming_dataloader);
         }
 
         if stage < 1 || (stage == 1 && superbatch < SB1) {
             let start = if stage == 1 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage1", start..=SB1, 5e-4..=1e-5, 0.0..=self.wdl);
+            let schedule = self.schedule("stage1", start..=SB1, 1e-3..=1e-5, 0.0..=self.wdl);
             trainer.run(&schedule, &settings, &training_dataloader);
         }
 
         if stage < 2 || (stage == 2 && superbatch < SB2) {
             let start = if stage == 2 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage2", start..=SB2, 1e-5..=1e-7, self.wdl..=self.wdl);
+            let schedule = self.schedule("stage2", start..=SB2, 1e-5..=1e-6, self.wdl..=self.wdl);
             trainer.run(&schedule, &settings, &training_dataloader);
         }
 

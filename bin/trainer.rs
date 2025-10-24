@@ -200,7 +200,6 @@ impl TrainingDataFilter {
 const SB0: usize = 200;
 const SB1: usize = 700;
 const SB2: usize = 100;
-const MAX_WEIGHT: f32 = HLQ as f32 / HLS as f32;
 
 /// An efficiently updatable neural network (NNUE) trainer.
 #[derive(Debug, Parser)]
@@ -320,7 +319,7 @@ impl Orchestrator {
                     .round()
                     .quantise::<i8>(HLS),
                 SavedFormat::id("l12b"),
-                SavedFormat::id("l12r").transpose(),
+                SavedFormat::id("r2o").transpose(),
                 SavedFormat::id("l23w").transpose(),
                 SavedFormat::id("l23b"),
                 SavedFormat::id("l34w").transpose(),
@@ -337,31 +336,35 @@ impl Orchestrator {
                 qf.squared_error(pt)
             })
             .build(|builder, stm, ntm, phase| {
-                let ftf_shape = Shape::new(Layer0::LEN, Feature::LEN / KingBuckets::LEN);
-                let ftf = builder.new_weights("ftf", ftf_shape, InitSettings::Zeroed);
+                let shape = Shape::new(Accumulator::LEN, Feature::LEN / KingBuckets::LEN);
+                let ftf = builder.new_weights("ftf", shape, InitSettings::Zeroed);
 
-                let mut ft = builder.new_affine("ft", Feature::LEN, Layer0::LEN);
+                let mut ft = builder.new_affine("ft", Feature::LEN, Accumulator::LEN);
                 ft.init_with_effective_input_size(32);
-                ft.weights = ft.weights + ftf.repeat(KingBuckets::LEN);
 
-                let shape = Shape::new(Phase::LEN, Layer2::LEN);
-                let l12r = builder.new_weights("l12r", shape, InitSettings::Zeroed);
-                let l12 = builder.new_affine("l12", Layer1::LEN, Phase::LEN * Layer2::LEN);
-                let l23 = builder.new_affine("l23", Layer2::LEN * 2, Phase::LEN * Layer3::LEN);
-                let l34 = builder.new_affine("l34", Layer3::LEN * 2, Phase::LEN * Layer4::LEN);
-                let l4o = builder.new_affine("l4o", Layer4::LEN, Phase::LEN);
+                let max_weight = i16::MAX as f32 / 32. / FTQ as f32;
+                ft.weights = (ft.weights + ftf.repeat(KingBuckets::LEN))
+                    .clip_pass_through_grad(-max_weight, max_weight);
+
+                let l12 = builder.new_affine("l12", L1::LEN, Phase::LEN * L2::LEN);
+                let l23 = builder.new_affine("l23", Ln::LEN, Phase::LEN * Ln::LEN);
+                let l34 = builder.new_affine("l34", Ln::LEN, Phase::LEN * Ln::LEN);
+                let l4o = builder.new_affine("l4o", Ln::LEN, Phase::LEN);
+
+                let shape = Shape::new(Phase::LEN, Ln::LEN);
+                let r2o = builder.new_weights("r2o", shape, InitSettings::Zeroed);
 
                 let stm = ft.forward(stm).crelu().pairwise_mul();
                 let ntm = ft.forward(ntm).crelu().pairwise_mul();
 
                 let l1 = stm.concat(ntm);
                 let l2 = l12.forward(l1).select(phase);
-                let res = l12r.matmul(l2).select(phase);
                 let l2 = l2.concat(-l2).sqrrelu();
-                let l3 = l23.forward(l2).select(phase);
-                let l3 = l3.concat(-l3).sqrrelu();
-                let l4 = l34.forward(l3).select(phase).screlu();
-                res + l4o.forward(l4).select(phase)
+                let l3 = l23.forward(l2).select(phase).sqrrelu();
+                let l4 = l34.forward(l3).select(phase).sqrrelu();
+                let out = l4o.forward(l4).select(phase);
+
+                out + r2o.matmul(l2).select(phase)
             });
 
         let params = AdamWParams {
@@ -370,22 +373,21 @@ impl Orchestrator {
             ..AdamWParams::default()
         };
 
+        let max_weight = HLQ as f32 / HLS as f32;
         let clipped = AdamWParams {
-            min_weight: -MAX_WEIGHT,
-            max_weight: MAX_WEIGHT,
+            min_weight: -max_weight,
+            max_weight,
             ..params
         };
 
         trainer.optimiser.set_params(params);
-        trainer.optimiser.set_params_for_weight("ftw", clipped);
-        trainer.optimiser.set_params_for_weight("ftf", clipped);
         trainer.optimiser.set_params_for_weight("l12w", clipped);
 
         let settings = LocalSettings {
             threads: self.threads,
             test_set: None,
             output_directory: &self.checkpoints,
-            batch_queue_size: 64,
+            batch_queue_size: self.batches_per_superbatch,
         };
 
         let (stage, superbatch) = match self.mode {

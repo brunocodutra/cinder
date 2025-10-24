@@ -5,11 +5,11 @@ use std::slice;
 mod accumulator;
 mod evaluator;
 mod feature;
+mod hidden;
+mod input;
 mod layer;
-mod layer12;
-mod layer23;
-mod layer34;
-mod layer4o;
+mod output;
+mod residual;
 mod synapse;
 mod transformer;
 mod value;
@@ -17,11 +17,11 @@ mod value;
 pub use accumulator::*;
 pub use evaluator::*;
 pub use feature::*;
+pub use hidden::*;
+pub use input::*;
 pub use layer::*;
-pub use layer4o::*;
-pub use layer12::*;
-pub use layer23::*;
-pub use layer34::*;
+pub use output::*;
+pub use residual::*;
 pub use synapse::*;
 pub use transformer::*;
 pub use value::*;
@@ -95,7 +95,7 @@ const NNUE: Nnue = Nnue::new();
 #[derive(Debug, Zeroable)]
 pub struct Nnue {
     transformer: Transformer,
-    nn: [Layer12<Layer23<Layer34<Layer4o>>>; Phase::LEN],
+    nn: [Input<Residual<Hidden<Hidden<Output>>>>; Phase::LEN],
 }
 
 impl Nnue {
@@ -110,11 +110,11 @@ impl Nnue {
         let mut phase = 0;
         while phase < Phase::LEN {
             let nn = &mut nnue.nn[phase];
-            let mut weight = [[0i8; Layer1::LEN]; Layer2::LEN];
+            let mut weight = [[0i8; L1::LEN]; Ln::LEN / 2];
             cursor += unsafe { copy_bytes(&mut weight, &bytes[cursor..]) };
-            let mut blocks = [[0i8; 4]; Layer1::LEN * Layer2::LEN / 4];
+            let mut blocks = [[0i8; 4]; L1::LEN * Ln::LEN / 8];
             arrange_in_blocks(&weight, &mut blocks);
-            interleave(&blocks, &mut nn.weight.0, 2 * Layer2::LEN);
+            interleave(&blocks, &mut nn.weight.0, Ln::LEN);
             phase += 1;
         }
 
@@ -127,53 +127,53 @@ impl Nnue {
 
         let mut phase = 0;
         while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase];
-            cursor += unsafe { copy_bytes(&mut nn.bypass.0, &bytes[cursor..]) };
-            phase += 1;
-        }
-
-        let mut phase = 0;
-        while phase < Phase::LEN {
             let nn = &mut nnue.nn[phase].next;
-            let mut weight = [[0f32; 2 * Layer2::LEN]; Layer3::LEN];
-            cursor += unsafe { copy_bytes(&mut weight, &bytes[cursor..]) };
-            arrange_in_blocks(&weight, &mut nn.weight.0);
-            phase += 1;
-        }
-
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase].next;
-            cursor += unsafe { copy_bytes(&mut nn.bias.0, &bytes[cursor..]) };
-            phase += 1;
-        }
-
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase].next.next;
-            let mut weight = [[0f32; 2 * Layer3::LEN]; Layer4::LEN];
-            cursor += unsafe { copy_bytes(&mut weight, &bytes[cursor..]) };
-            arrange_in_blocks(&weight, &mut nn.weight.0);
-            phase += 1;
-        }
-
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase].next.next;
-            cursor += unsafe { copy_bytes(&mut nn.bias.0, &bytes[cursor..]) };
-            phase += 1;
-        }
-
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase].next.next.next;
             cursor += unsafe { copy_bytes(&mut nn.weight.0, &bytes[cursor..]) };
             phase += 1;
         }
 
         let mut phase = 0;
         while phase < Phase::LEN {
+            let nn = &mut nnue.nn[phase].next.next;
+            let mut weight = [[0f32; Ln::LEN]; Ln::LEN / 2];
+            cursor += unsafe { copy_bytes(&mut weight, &bytes[cursor..]) };
+            arrange_in_blocks(&weight, &mut nn.weight.0);
+            phase += 1;
+        }
+
+        let mut phase = 0;
+        while phase < Phase::LEN {
+            let nn = &mut nnue.nn[phase].next.next;
+            cursor += unsafe { copy_bytes(&mut nn.bias.0, &bytes[cursor..]) };
+            phase += 1;
+        }
+
+        let mut phase = 0;
+        while phase < Phase::LEN {
             let nn = &mut nnue.nn[phase].next.next.next;
+            let mut weight = [[0f32; Ln::LEN]; Ln::LEN / 2];
+            cursor += unsafe { copy_bytes(&mut weight, &bytes[cursor..]) };
+            arrange_in_blocks(&weight, &mut nn.weight.0);
+            phase += 1;
+        }
+
+        let mut phase = 0;
+        while phase < Phase::LEN {
+            let nn = &mut nnue.nn[phase].next.next.next;
+            cursor += unsafe { copy_bytes(&mut nn.bias.0, &bytes[cursor..]) };
+            phase += 1;
+        }
+
+        let mut phase = 0;
+        while phase < Phase::LEN {
+            let nn = &mut nnue.nn[phase].next.next.next.next;
+            cursor += unsafe { copy_bytes(&mut nn.weight.0, &bytes[cursor..]) };
+            phase += 1;
+        }
+
+        let mut phase = 0;
+        while phase < Phase::LEN {
+            let nn = &mut nnue.nn[phase].next.next.next.next;
             let mut bias = 0f32;
             cursor += unsafe { copy_bytes(&mut bias, &bytes[cursor..]) };
             nn.bias.0 = [bias / nn.bias.0.len() as f32; _];
@@ -189,7 +189,7 @@ impl Nnue {
     }
 
     #[inline(always)]
-    pub fn nn(phase: Phase) -> &'static Layer12<Layer23<Layer34<Layer4o>>> {
+    pub fn nn(phase: Phase) -> &'static Input<Residual<Hidden<Hidden<Output>>>> {
         let idx = phase.cast::<usize>();
         unsafe { NNUE.nn.get_unchecked(idx) }
     }

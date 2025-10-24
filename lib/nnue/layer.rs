@@ -24,22 +24,13 @@ impl<T: Layer> Layer for Aligned<T> {
     type Neuron = T::Neuron;
 }
 
-/// The perspective neuron layer.
-pub type Layer0<'a> = &'a Accumulator;
+/// The first hidden layer.
+pub type L1<'a> = (&'a Accumulator, &'a Accumulator);
 
-/// The first neuron layer.
-pub type Layer1<'a> = (Layer0<'a>, Layer0<'a>);
-
-/// The second neuron layer.
-pub type Layer2<'a> = &'a Aligned<[f32; 16]>;
-
-/// The third neuron layer.
-pub type Layer3<'a> = &'a Aligned<[f32; 16]>;
-
-/// The fourth neuron layer.
-pub type Layer4<'a> = &'a Aligned<[f32; 32]>;
-
-impl<'a> Layer for Layer1<'a> {
-    const LEN: usize = Layer0::<'a>::LEN;
-    type Neuron = <Layer0<'a> as Layer>::Neuron;
+impl<'a> Layer for L1<'a> {
+    const LEN: usize = Accumulator::LEN;
+    type Neuron = <Accumulator as Layer>::Neuron;
 }
+
+/// The n-th hidden layer.
+pub type Ln<'a> = &'a Aligned<[f32; 32]>;

@@ -320,13 +320,15 @@ impl Orchestrator {
                     .round()
                     .quantise::<i8>(HLS),
                 SavedFormat::id("l12b"),
-                SavedFormat::id("l12r").transpose(),
+                SavedFormat::id("r2o").transpose(),
                 SavedFormat::id("l23w").transpose(),
                 SavedFormat::id("l23b"),
                 SavedFormat::id("l34w").transpose(),
                 SavedFormat::id("l34b"),
-                SavedFormat::id("l4ow").transpose(),
-                SavedFormat::id("l4ob"),
+                SavedFormat::id("l45w").transpose(),
+                SavedFormat::id("l45b"),
+                SavedFormat::id("l5ow").transpose(),
+                SavedFormat::id("l5ob"),
             ])
             .use_win_rate_model()
             .loss_fn(|output, pt| {
@@ -337,31 +339,37 @@ impl Orchestrator {
                 qf.squared_error(pt)
             })
             .build(|builder, stm, ntm, phase| {
-                let ftf_shape = Shape::new(Layer0::LEN, Feature::LEN / KingBuckets::LEN);
-                let ftf = builder.new_weights("ftf", ftf_shape, InitSettings::Zeroed);
+                let shape = Shape::new(Accumulator::LEN, Feature::LEN / KingBuckets::LEN);
+                let ftf = builder.new_weights("ftf", shape, InitSettings::Zeroed);
 
-                let mut ft = builder.new_affine("ft", Feature::LEN, Layer0::LEN);
+                let mut ft = builder.new_affine("ft", Feature::LEN, Accumulator::LEN);
                 ft.init_with_effective_input_size(32);
-                ft.weights = ft.weights + ftf.repeat(KingBuckets::LEN);
 
-                let shape = Shape::new(Phase::LEN, Layer2::LEN);
-                let l12r = builder.new_weights("l12r", shape, InitSettings::Zeroed);
-                let l12 = builder.new_affine("l12", Layer1::LEN, Phase::LEN * Layer2::LEN);
-                let l23 = builder.new_affine("l23", Layer2::LEN * 2, Phase::LEN * Layer3::LEN);
-                let l34 = builder.new_affine("l34", Layer3::LEN * 2, Phase::LEN * Layer4::LEN);
-                let l4o = builder.new_affine("l4o", Layer4::LEN, Phase::LEN);
+                ft.weights = (ft.weights + ftf.repeat(KingBuckets::LEN))
+                    .clip_pass_through_grad(-MAX_WEIGHT, MAX_WEIGHT);
+
+                let l12 = builder.new_affine("l12", L1::LEN, Phase::LEN * Ln::LEN);
+                let l23 = builder.new_affine("l23", Ln::LEN * 2, Phase::LEN * Ln::LEN);
+                let l34 = builder.new_affine("l34", Ln::LEN * 2, Phase::LEN * Ln::LEN);
+                let l45 = builder.new_affine("l45", Ln::LEN * 2, Phase::LEN * Ln::LEN);
+                let l5o = builder.new_affine("l5o", Ln::LEN, Phase::LEN);
+
+                let shape = Shape::new(Phase::LEN, Ln::LEN);
+                let r2o = builder.new_weights("r2o", shape, InitSettings::Zeroed);
 
                 let stm = ft.forward(stm).crelu().pairwise_mul();
                 let ntm = ft.forward(ntm).crelu().pairwise_mul();
 
                 let l1 = stm.concat(ntm);
                 let l2 = l12.forward(l1).select(phase);
-                let res = l12r.matmul(l2).select(phase);
-                let l2 = l2.concat(-l2).sqrrelu();
-                let l3 = l23.forward(l2).select(phase);
-                let l3 = l3.concat(-l3).sqrrelu();
-                let l4 = l34.forward(l3).select(phase).screlu();
-                res + l4o.forward(l4).select(phase)
+                let l2a = l2.concat(-l2).sqrrelu();
+                let l3 = l23.forward(l2a).select(phase);
+                let l3a = l3.concat(-l3).sqrrelu();
+                let l4 = l34.forward(l3a).select(phase);
+                let l4a = l4.concat(-l4).sqrrelu();
+                let l5a = l45.forward(l4a).select(phase).screlu();
+
+                l5o.forward(l5a).select(phase) + r2o.matmul(l2).select(phase)
             });
 
         let params = AdamWParams {
@@ -378,14 +386,13 @@ impl Orchestrator {
 
         trainer.optimiser.set_params(params);
         trainer.optimiser.set_params_for_weight("ftw", clipped);
-        trainer.optimiser.set_params_for_weight("ftf", clipped);
         trainer.optimiser.set_params_for_weight("l12w", clipped);
 
         let settings = LocalSettings {
             threads: self.threads,
             test_set: None,
             output_directory: &self.checkpoints,
-            batch_queue_size: 64,
+            batch_queue_size: self.batches_per_superbatch,
         };
 
         let (stage, superbatch) = match self.mode {

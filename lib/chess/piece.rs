@@ -1,5 +1,5 @@
 use crate::chess::{Bitboard, Color, Flip, Magic, Perspective, Rank, Role, Square};
-use crate::util::{Assume, Integer};
+use crate::util::{Assume, Int};
 use bytemuck::{Zeroable, ZeroableInOption, zeroed};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
@@ -128,19 +128,19 @@ impl Piece {
     /// Constructs [`Piece`] from a pair of [`Color`] and [`Role`].
     #[inline(always)]
     pub fn new(r: Role, c: Color) -> Self {
-        Integer::new(c.get() | (r.get() << 1))
+        Int::new(c.get() | (r.get() << 1))
     }
 
     /// This piece's [`Role`].
     #[inline(always)]
     pub fn role(&self) -> Role {
-        Integer::new(self.get() >> 1)
+        Int::new(self.get() >> 1)
     }
 
     /// This piece's [`Color`].
     #[inline(always)]
     pub fn color(&self) -> Color {
-        Integer::new(self.get() & 0b1)
+        Int::new(self.get() & 0b1)
     }
 
     /// This piece's possible attacks from a given square.
@@ -195,7 +195,7 @@ impl Piece {
 
 unsafe impl ZeroableInOption for Piece {}
 
-unsafe impl Integer for Piece {
+unsafe impl Int for Piece {
     type Repr = u8;
     const MIN: Self::Repr = Piece::WhitePawn as _;
     const MAX: Self::Repr = Piece::BlackKing as _;
@@ -205,7 +205,7 @@ impl Flip for Piece {
     /// Mirrors this piece's [`Color`].
     #[inline(always)]
     fn flip(self) -> Self {
-        Integer::new(self.get() ^ Piece::BlackPawn.get())
+        Int::new(self.get() ^ Piece::BlackPawn.get())
     }
 }
 

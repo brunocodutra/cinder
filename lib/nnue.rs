@@ -1,4 +1,4 @@
-use crate::{chess::Phase, util::Integer};
+use crate::{chess::Phase, util::Int};
 use bytemuck::{Zeroable, zeroed};
 use std::slice;
 

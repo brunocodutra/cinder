@@ -1,5 +1,5 @@
 use crate::chess::Position;
-use crate::util::{Assume, Integer, Primitive};
+use crate::util::{Assume, Int, zero};
 use bytemuck::Zeroable;
 use derive_more::with_trait::Debug;
 use std::ptr::NonNull;
@@ -35,8 +35,7 @@ impl<C, T: Statistics<C>> Statistics<C> for Option<T> {
 
     #[inline(always)]
     fn get(&mut self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value {
-        self.as_mut()
-            .map_or_else(Default::default, |g| g.get(pos, ctx))
+        self.as_mut().map_or_else(zero, |g| g.get(pos, ctx))
     }
 
     #[inline(always)]
@@ -64,7 +63,7 @@ impl<C, T: Statistics<C>> Statistics<C> for NonNull<T> {
 /// A trait for statistics counters.
 pub trait Stat {
     /// The value type.
-    type Value: Primitive;
+    type Value: Int + Zeroable;
 
     /// Returns the current [`Self::Value`].
     fn get(&mut self) -> Self::Value;
@@ -92,7 +91,7 @@ impl<T: Stat> Stat for Option<T> {
 
     #[inline(always)]
     fn get(&mut self) -> Self::Value {
-        self.as_mut().map_or_else(Default::default, Stat::get)
+        self.as_mut().map_or_else(zero, Stat::get)
     }
 
     #[inline(always)]
@@ -123,14 +122,14 @@ impl<T: Stat> Stat for NonNull<T> {
 #[repr(transparent)]
 pub struct Graviton<const MIN: i16, const MAX: i16>(i16);
 
-unsafe impl<const MIN: i16, const MAX: i16> Integer for Graviton<MIN, MAX> {
+unsafe impl<const MIN: i16, const MAX: i16> Int for Graviton<MIN, MAX> {
     type Repr = i16;
     const MIN: Self::Repr = MIN;
     const MAX: Self::Repr = MAX;
 }
 
 impl<const MIN: i16, const MAX: i16> Stat for Graviton<MIN, MAX> {
-    type Value = <Self as Integer>::Repr;
+    type Value = <Self as Int>::Repr;
 
     #[inline(always)]
     fn get(&mut self) -> Self::Value {

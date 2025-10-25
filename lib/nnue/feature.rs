@@ -1,18 +1,18 @@
 use crate::chess::{Color, File, Perspective, Piece, Side, Square};
-use crate::util::Integer;
+use crate::util::Int;
 use bytemuck::Zeroable;
 
 /// The king's bucket.
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct Bucket(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Bucket as Integer>::Repr);
+pub struct Bucket(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Bucket as Int>::Repr);
 
 impl Bucket {
     pub const LEN: usize = Self::MAX as usize + 1;
 }
 
-unsafe impl Integer for Bucket {
+unsafe impl Int for Bucket {
     type Repr = u8;
     const MIN: Self::Repr = 0;
     const MAX: Self::Repr = 31;
@@ -22,9 +22,9 @@ unsafe impl Integer for Bucket {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct Feature(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Feature as Integer>::Repr);
+pub struct Feature(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Feature as Int>::Repr);
 
-unsafe impl Integer for Feature {
+unsafe impl Int for Feature {
     type Repr = u16;
     const MIN: Self::Repr = 0;
     const MAX: Self::Repr = Self::LEN as Self::Repr - 1;
@@ -42,7 +42,7 @@ impl Feature {
         let psq = 64 * piece.perspective(side).cast::<u16>()
             + sq.perspective(side).perspective(chirality).cast::<u16>();
 
-        Integer::new(psq + 768 * bucket)
+        Int::new(psq + 768 * bucket)
     }
 
     /// Constructs a [`Feature`].
@@ -60,7 +60,7 @@ impl Feature {
             28, 29, 30, 31, 15, 14, 13, 12,
         ];
 
-        Integer::new(BUCKETS[ksq.perspective(side).cast::<usize>()])
+        Int::new(BUCKETS[ksq.perspective(side).cast::<usize>()])
     }
 }
 

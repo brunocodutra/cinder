@@ -1,6 +1,7 @@
 use crate::chess::{Move, Position};
+use crate::params::Params;
 use crate::search::{Attention, Depth, Limits, Nodes, Ply, Pv};
-use crate::{params::Params, util::Integer};
+use crate::util::{Float, Int};
 use derive_more::with_trait::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -23,27 +24,27 @@ pub struct GlobalControl {
     abort: AtomicBool,
     nodes: AtomicU64,
     timestamp: Instant,
-    time: Range<f64>,
+    time: Range<f32>,
     limits: Limits,
 }
 
 impl GlobalControl {
     #[inline(always)]
-    fn time_to_search(pos: &Position, limits: &Limits) -> Range<f64> {
+    fn time_to_search(pos: &Position, limits: &Limits) -> Range<f32> {
         let (clock, inc) = match limits.clock {
-            Some((clock, inc)) => (clock.as_secs_f64(), inc.as_secs_f64()),
-            None => return f64::INFINITY..limits.max_time().as_secs_f64(),
+            Some((clock, inc)) => (clock.as_secs_f32(), inc.as_secs_f32()),
+            None => return f32::INFINITY..limits.max_time().as_secs_f32(),
         };
 
         let time_left = clock - inc;
-        let moves_left_start = Params::moves_left_start()[0] as f64 / Params::BASE as f64;
-        let moves_left_end = Params::moves_left_end()[0] as f64 / Params::BASE as f64;
+        let moves_left_start = Params::moves_left_start()[0];
+        let moves_left_end = Params::moves_left_end()[0];
         let max_fullmoves = moves_left_start / moves_left_end;
         let moves_left = moves_left_start / max_fullmoves.min(pos.fullmoves().get() as _);
         let time_per_move = inc + time_left / moves_left;
 
-        let soft_time_fraction = Params::soft_time_fraction()[0] as f64 / Params::BASE as f64;
-        let hard_time_fraction = Params::hard_time_fraction()[0] as f64 / Params::BASE as f64;
+        let soft_time_fraction = Params::soft_time_fraction()[0];
+        let hard_time_fraction = Params::hard_time_fraction()[0];
         soft_time_fraction * time_per_move..clock * hard_time_fraction
     }
 
@@ -91,7 +92,7 @@ pub struct Active<'a> {
     global: &'a GlobalControl,
     attention: Attention,
     peak_depth: Depth,
-    score_trend: f64,
+    score_trend: f32,
     global_nodes: u64,
     nodes: u64,
 }
@@ -103,7 +104,7 @@ impl<'a> Active<'a> {
             global,
             attention: Default::default(),
             peak_depth: Depth::lower(),
-            score_trend: f64::NAN,
+            score_trend: f32::NAN,
             global_nodes: 0,
             nodes: 0,
         }
@@ -111,7 +112,7 @@ impl<'a> Active<'a> {
 
     #[inline(always)]
     fn check(&mut self, depth: Depth, ply: Ply, pv: &Pv) -> ControlFlow {
-        let score = pv.score().get() as f64;
+        let score = pv.score().get() as f32;
         let Some(head) = pv.head() else {
             return ControlFlow::Continue;
         };
@@ -123,26 +124,25 @@ impl<'a> Active<'a> {
         if self.score_trend.is_nan() {
             self.score_trend = score;
         } else if ply == 0 && depth > self.peak_depth {
-            let inertia = Params::score_trend_inertia()[0] as f64 / Params::BASE as f64;
-            self.score_trend = (self.score_trend * inertia + score) / (inertia + 1.);
+            self.score_trend = Params::score_trend_inertia()[0].lerp(self.score_trend, score);
             self.peak_depth = depth;
         }
 
         if self.nodes.is_multiple_of(2048) || ply == 0 {
-            let time = self.elapsed().as_secs_f64();
+            let time = self.elapsed().as_secs_f32();
             if time >= self.time.end {
                 return ControlFlow::Abort;
             } else if ply == 0 {
-                let gamma = Params::pv_focus_gamma()[0] as f64 / Params::BASE as f64;
-                let delta = Params::pv_focus_delta()[0] as f64 / Params::BASE as f64;
-                let pivot = Params::score_trend_pivot()[0] as f64 / Params::BASE as f64;
-                let magnitude = Params::score_trend_magnitude()[0] as f64 / Params::BASE as f64;
+                let gamma = Params::pv_focus_gamma()[0];
+                let delta = Params::pv_focus_delta()[0];
+                let pivot = Params::score_trend_pivot()[0];
+                let magnitude = Params::score_trend_magnitude()[0];
 
-                let nodes = self.nodes.max(1000) as f64;
-                let diff = self.score_trend - pv.score().get() as f64;
-                let focus = self.attention.nodes(head).get() as f64 / nodes;
+                let nodes = self.nodes.max(1000) as f32;
+                let diff = self.score_trend - pv.score().get() as f32;
+                let focus = self.attention.nodes(head).get() as f32 / nodes;
                 let scale = 1. + magnitude * diff / (diff.abs() + pivot);
-                if time >= self.time.start * scale * (delta - gamma * focus) {
+                if time >= self.time.start * scale * focus.mul_add(gamma, delta) {
                     return ControlFlow::Stop;
                 }
             }

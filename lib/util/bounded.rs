@@ -1,4 +1,4 @@
-use crate::util::{Integer, Signed};
+use crate::util::{Int, Signed};
 use bytemuck::{NoUninit, Zeroable};
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter};
@@ -10,21 +10,21 @@ use std::{cmp::Ordering, mem::size_of, num::Saturating as S, str::FromStr};
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, arbitrary(bound(T, Self: Debug)))]
 #[debug("Bounded({self})")]
-#[debug(bounds(T: Integer<Repr: Signed>, T::Repr: Display))]
+#[debug(bounds(T: Int<Repr: Signed>, T::Repr: Display))]
 #[repr(transparent)]
 pub struct Bounded<T>(T);
 
 unsafe impl<T: NoUninit> NoUninit for Bounded<T> {}
 
-unsafe impl<T: Integer<Repr: Signed>> Integer for Bounded<T> {
+unsafe impl<T: Int<Repr: Signed>> Int for Bounded<T> {
     type Repr = T::Repr;
     const MIN: Self::Repr = T::MIN;
     const MAX: Self::Repr = T::MAX;
 }
 
-impl<T: Integer<Repr: Signed>> Eq for Bounded<T> where Self: PartialEq<Self> {}
+impl<T: Int<Repr: Signed>> Eq for Bounded<T> where Self: PartialEq<Self> {}
 
-impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> PartialEq<U> for Bounded<T> {
+impl<T: Int<Repr: Signed>, U: Int<Repr: Signed>> PartialEq<U> for Bounded<T> {
     #[inline(always)]
     fn eq(&self, other: &U) -> bool {
         if size_of::<T>() > size_of::<U>() {
@@ -35,14 +35,14 @@ impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> PartialEq<U> for Bounde
     }
 }
 
-impl<T: Integer<Repr: Signed>> Ord for Bounded<T> {
+impl<T: Int<Repr: Signed>> Ord for Bounded<T> {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
         self.get().cmp(&other.get())
     }
 }
 
-impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> PartialOrd<U> for Bounded<T> {
+impl<T: Int<Repr: Signed>, U: Int<Repr: Signed>> PartialOrd<U> for Bounded<T> {
     #[inline(always)]
     fn partial_cmp(&self, other: &U) -> Option<Ordering> {
         if size_of::<T>() > size_of::<U>() {
@@ -53,7 +53,7 @@ impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> PartialOrd<U> for Bound
     }
 }
 
-impl<T: Integer<Repr: Signed>> Neg for Bounded<T>
+impl<T: Int<Repr: Signed>> Neg for Bounded<T>
 where
     S<T::Repr>: Neg<Output = S<T::Repr>>,
 {
@@ -65,7 +65,7 @@ where
     }
 }
 
-impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> Add<U> for Bounded<T>
+impl<T: Int<Repr: Signed>, U: Int<Repr: Signed>> Add<U> for Bounded<T>
 where
     S<T::Repr>: Add<Output = S<T::Repr>>,
     S<U::Repr>: Add<Output = S<U::Repr>>,
@@ -82,7 +82,7 @@ where
     }
 }
 
-impl<T: Integer<Repr: Signed>, U> AddAssign<U> for Bounded<T>
+impl<T: Int<Repr: Signed>, U> AddAssign<U> for Bounded<T>
 where
     Self: Add<U, Output = Self>,
 {
@@ -92,7 +92,7 @@ where
     }
 }
 
-impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> Sub<U> for Bounded<T>
+impl<T: Int<Repr: Signed>, U: Int<Repr: Signed>> Sub<U> for Bounded<T>
 where
     S<T::Repr>: Sub<Output = S<T::Repr>>,
     S<U::Repr>: Sub<Output = S<U::Repr>>,
@@ -109,7 +109,7 @@ where
     }
 }
 
-impl<T: Integer<Repr: Signed>, U> SubAssign<U> for Bounded<T>
+impl<T: Int<Repr: Signed>, U> SubAssign<U> for Bounded<T>
 where
     Self: Sub<U, Output = Self>,
 {
@@ -119,7 +119,7 @@ where
     }
 }
 
-impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> Mul<U> for Bounded<T>
+impl<T: Int<Repr: Signed>, U: Int<Repr: Signed>> Mul<U> for Bounded<T>
 where
     S<T::Repr>: Mul<Output = S<T::Repr>>,
     S<U::Repr>: Mul<Output = S<U::Repr>>,
@@ -136,7 +136,7 @@ where
     }
 }
 
-impl<T: Integer<Repr: Signed>, U> MulAssign<U> for Bounded<T>
+impl<T: Int<Repr: Signed>, U> MulAssign<U> for Bounded<T>
 where
     Self: Mul<U, Output = Self>,
 {
@@ -146,7 +146,7 @@ where
     }
 }
 
-impl<T: Integer<Repr: Signed>, U: Integer<Repr: Signed>> Div<U> for Bounded<T>
+impl<T: Int<Repr: Signed>, U: Int<Repr: Signed>> Div<U> for Bounded<T>
 where
     S<T::Repr>: Div<Output = S<T::Repr>>,
     S<U::Repr>: Div<Output = S<U::Repr>>,
@@ -163,7 +163,7 @@ where
     }
 }
 
-impl<T: Integer<Repr: Signed>, U> DivAssign<U> for Bounded<T>
+impl<T: Int<Repr: Signed>, U> DivAssign<U> for Bounded<T>
 where
     Self: Div<U, Output = Self>,
 {
@@ -173,7 +173,7 @@ where
     }
 }
 
-impl<T: Integer<Repr: Signed>> Display for Bounded<T>
+impl<T: Int<Repr: Signed>> Display for Bounded<T>
 where
     T::Repr: Display,
 {
@@ -187,7 +187,7 @@ where
 #[display("failed to parse bounded integer")]
 pub struct ParseBoundedIntegerError;
 
-impl<T: Integer<Repr: Signed>> FromStr for Bounded<T>
+impl<T: Int<Repr: Signed>> FromStr for Bounded<T>
 where
     T::Repr: FromStr,
 {
@@ -197,7 +197,7 @@ where
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<T::Repr>()
             .ok()
-            .and_then(Integer::convert)
+            .and_then(Int::convert)
             .ok_or(ParseBoundedIntegerError)
     }
 }
@@ -211,9 +211,9 @@ mod tests {
     #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
     #[cfg_attr(test, derive(test_strategy::Arbitrary))]
     #[repr(transparent)]
-    struct Asymmetric(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as Integer>::Repr);
+    struct Asymmetric(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as Int>::Repr);
 
-    unsafe impl Integer for Asymmetric {
+    unsafe impl Int for Asymmetric {
         type Repr = i16;
         const MIN: Self::Repr = -89;
         const MAX: Self::Repr = 131;

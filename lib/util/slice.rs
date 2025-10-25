@@ -1,6 +1,6 @@
 use bytemuck::{Zeroable, fill_zeroes};
 use memmap2::{MmapMut, MmapOptions};
-use std::mem::{needs_drop, size_of};
+use std::mem::needs_drop;
 use std::ops::{Deref, DerefMut};
 use std::thread::{self, available_parallelism};
 use std::{alloc::Layout, io, num::NonZero, slice};

@@ -1,4 +1,4 @@
-use crate::util::{Assume, Integer};
+use crate::util::{Assume, Int};
 use crate::{chess::*, search::Depth};
 use arrayvec::ArrayVec;
 use bytemuck::Zeroable;

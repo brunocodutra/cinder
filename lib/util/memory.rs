@@ -1,4 +1,4 @@
-use crate::util::{Assume, Binary, Bits, Integer, Slice, Unsigned};
+use crate::util::{Assume, Binary, Bits, Int, Slice, Unsigned};
 use atomic::Atomic;
 use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Deref, DerefMut};
@@ -100,8 +100,8 @@ unsafe impl<T: Zeroable> Zeroable for Slot<T> {}
 #[derive(Debug)]
 #[debug("Memory")]
 pub struct Memory<
-    T: Binary<Bits: Integer<Repr: Binary>>,
-    U: Binary = <<T as Binary>::Bits as Integer>::Repr,
+    T: Binary<Bits: Int<Repr: Binary>>,
+    U: Binary = <<T as Binary>::Bits as Int>::Repr,
 > where
     Option<Vault<T, U>>: Binary,
 {
@@ -227,7 +227,7 @@ mod tests {
         Greater = 3,
     }
 
-    unsafe impl Integer for Order {
+    unsafe impl Int for Order {
         type Repr = u8;
         const MIN: Self::Repr = 1;
         const MAX: Self::Repr = 3;

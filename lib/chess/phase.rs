@@ -1,17 +1,17 @@
-use crate::util::Integer;
+use crate::util::Int;
 use bytemuck::Zeroable;
 
 /// The game phase.
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct Phase(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Phase as Integer>::Repr);
+pub struct Phase(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Phase as Int>::Repr);
 
 impl Phase {
     pub const LEN: usize = Phase::MAX as usize + 1;
 }
 
-unsafe impl Integer for Phase {
+unsafe impl Int for Phase {
     type Repr = u8;
     const MIN: Self::Repr = 0;
     const MAX: Self::Repr = 7;

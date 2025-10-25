@@ -1,4 +1,4 @@
-use crate::util::Integer;
+use crate::util::Int;
 use nom::{branch::*, bytes::complete::*, character::complete::*, combinator::*, multi::*};
 use nom::{error::*, sequence::*, *};
 use std::time::Duration;

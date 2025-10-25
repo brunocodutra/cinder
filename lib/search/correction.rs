@@ -1,6 +1,6 @@
 use crate::chess::{Position, Zobrist};
 use crate::search::{Graviton, Stat, Statistics};
-use crate::util::Integer;
+use crate::util::Int;
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 

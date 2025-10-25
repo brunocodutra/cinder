@@ -1,4 +1,4 @@
-use crate::{chess::Flip, util::Integer};
+use crate::{chess::Flip, util::Int};
 use bytemuck::{Zeroable, ZeroableInOption};
 use derive_more::with_trait::Display;
 use std::ops::Not;
@@ -16,7 +16,7 @@ pub enum Color {
 
 unsafe impl ZeroableInOption for Color {}
 
-unsafe impl Integer for Color {
+unsafe impl Int for Color {
     type Repr = u8;
     const MIN: Self::Repr = Color::White as _;
     const MAX: Self::Repr = Color::Black as _;
@@ -44,7 +44,7 @@ impl Not for Color {
 impl From<bool> for Color {
     #[inline(always)]
     fn from(b: bool) -> Self {
-        Integer::new(b as _)
+        Int::new(b as _)
     }
 }
 

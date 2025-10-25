@@ -1,6 +1,6 @@
 use crate::chess::{Color, Move, Position, Square};
 use crate::search::{HashSize, Info, Limits, Mate, ThreadCount};
-use crate::util::{Assume, Integer, parsers::*};
+use crate::util::{Assume, Int, parsers::*};
 use derive_more::with_trait::{Display, Error, From};
 use futures::{pin_mut, prelude::*, select_biased as select, stream::FusedStream};
 use nom::error::Error as ParseError;
@@ -403,7 +403,7 @@ mod tests {
     use std::{collections::VecDeque, path::PathBuf, pin::Pin};
     use test_strategy::proptest;
 
-    #[derive(Debug, Default, Clone, Eq, PartialEq)]
+    #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
     struct StaticStream(VecDeque<String>);
 
     impl StaticStream {

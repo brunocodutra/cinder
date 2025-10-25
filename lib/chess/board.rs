@@ -1,5 +1,5 @@
 use crate::chess::*;
-use crate::util::{Assume, Integer};
+use crate::util::{Assume, Int};
 use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter, Write};
@@ -53,7 +53,7 @@ pub struct Board {
         let mut roles = [Bitboard::empty(); 6];
         for (i, o) in #pieces.iter().enumerate() {
             if let Some(p) = o {
-                roles[p.role() as usize] |= <Square as Integer>::new(i as _).bitboard();
+                roles[p.role() as usize] |= <Square as Int>::new(i as _).bitboard();
             }
         }
 
@@ -64,7 +64,7 @@ pub struct Board {
         let mut colors = [Bitboard::empty(); 2];
         for (i, o) in #pieces.iter().enumerate() {
             if let Some(p) = o {
-                colors[p.color() as usize] |= <Square as Integer>::new(i as _).bitboard();
+                colors[p.color() as usize] |= <Square as Int>::new(i as _).bitboard();
             }
         }
 

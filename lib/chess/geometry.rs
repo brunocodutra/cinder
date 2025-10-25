@@ -1,4 +1,4 @@
-use crate::{chess::Color, util::Integer};
+use crate::{chess::Color, util::Int};
 use bytemuck::{Zeroable, ZeroableInOption};
 
 /// Trait for types that can be seen from a different perspective.
@@ -34,7 +34,7 @@ pub enum Side {
 
 unsafe impl ZeroableInOption for Side {}
 
-unsafe impl Integer for Side {
+unsafe impl Int for Side {
     type Repr = u8;
     const MIN: Self::Repr = Side::Left as _;
     const MAX: Self::Repr = Side::Right as _;
@@ -43,7 +43,7 @@ unsafe impl Integer for Side {
 impl From<bool> for Side {
     #[inline(always)]
     fn from(b: bool) -> Self {
-        Integer::new(b as _)
+        Int::new(b as _)
     }
 }
 

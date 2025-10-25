@@ -1,5 +1,5 @@
 use crate::search::{Ply, Score};
-use crate::{syzygy::Dtz, util::Integer};
+use crate::{syzygy::Dtz, util::Int};
 use bytemuck::{Zeroable, ZeroableInOption};
 use std::ops::Neg;
 
@@ -22,7 +22,7 @@ pub enum Wdl {
 
 unsafe impl ZeroableInOption for Wdl {}
 
-unsafe impl Integer for Wdl {
+unsafe impl Int for Wdl {
     type Repr = i8;
     const MIN: Self::Repr = Self::Loss as _;
     const MAX: Self::Repr = Self::Win as _;

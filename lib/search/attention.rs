@@ -1,5 +1,5 @@
 use crate::chess::{Butterfly, Move};
-use crate::{search::Stat, util::Integer};
+use crate::{search::Stat, util::Int};
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 
@@ -9,12 +9,12 @@ use derive_more::with_trait::Debug;
 #[repr(transparent)]
 pub struct Nodes(usize);
 
-unsafe impl Integer for Nodes {
+unsafe impl Int for Nodes {
     type Repr = usize;
 }
 
 impl Stat for Nodes {
-    type Value = <Self as Integer>::Repr;
+    type Value = <Self as Int>::Repr;
 
     #[inline(always)]
     fn get(&mut self) -> Self::Value {

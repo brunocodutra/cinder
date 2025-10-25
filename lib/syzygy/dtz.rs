@@ -1,14 +1,14 @@
 use crate::syzygy::Wdl;
-use crate::util::{Binary, Bits, Bounded, Integer};
+use crate::util::{Binary, Bits, Bounded, Int};
 use bytemuck::Zeroable;
 use derive_more::with_trait::{Constructor, Neg};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Constructor, Neg, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct DtzRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <DtzRepr as Integer>::Repr);
+pub struct DtzRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <DtzRepr as Int>::Repr);
 
-unsafe impl Integer for DtzRepr {
+unsafe impl Int for DtzRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
     const MAX: Self::Repr = 1023;

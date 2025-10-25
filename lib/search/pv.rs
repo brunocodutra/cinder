@@ -1,6 +1,6 @@
 use crate::chess::Move;
 use crate::search::{Depth, Line, Score};
-use crate::util::{Assume, Integer};
+use crate::util::{Assume, Int};
 use derive_more::with_trait::{Constructor, Deref};
 use std::{cmp::Ordering, hash::Hash};
 use std::{hash::Hasher, ops::Neg};

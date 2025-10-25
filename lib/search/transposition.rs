@@ -1,6 +1,6 @@
 use crate::chess::Move;
 use crate::search::{Depth, Line, Ply, Pv, Score};
-use crate::util::{Assume, Binary, Bits, Integer};
+use crate::util::{Assume, Binary, Bits, Int};
 use derive_more::with_trait::Debug;
 use std::hint::unreachable_unchecked;
 use std::ops::{Range, RangeInclusive};

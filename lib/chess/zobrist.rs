@@ -1,5 +1,4 @@
-use crate::chess::*;
-use crate::util::{Bits, Integer};
+use crate::{chess::*, util::Bits};
 use bytemuck::{Zeroable, zeroed};
 use rand::prelude::*;
 use std::cell::SyncUnsafeCell;

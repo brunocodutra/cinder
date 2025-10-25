@@ -1,5 +1,5 @@
 use crate::chess::{Color, Move, Perspective, Piece, Role, Square};
-use crate::util::{Assume, Bits, Integer, bits};
+use crate::util::{Assume, Bits, Int};
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::{Debug, *};
 use std::fmt::{self, Formatter};
@@ -31,13 +31,13 @@ impl Castles {
     /// No castling rights.
     #[inline(always)]
     pub fn none() -> Self {
-        Castles(bits(0b0000))
+        Castles(Bits::new(0b0000))
     }
 
     /// All castling rights.
     #[inline(always)]
     pub fn all() -> Self {
-        Castles(bits(0b1111))
+        Castles(Bits::new(0b1111))
     }
 
     /// The rook's [`Move`] given the king's castling [`Square`].

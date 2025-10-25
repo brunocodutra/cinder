@@ -1,5 +1,5 @@
 use crate::chess::*;
-use crate::util::{Assume, Binary, Bits, Integer};
+use crate::util::{Assume, Binary, Bits, Int};
 use bytemuck::{Zeroable, ZeroableInOption};
 use derive_more::with_trait::{Display, Error, From};
 use std::fmt::{self, Formatter};
@@ -26,7 +26,7 @@ impl Square {
     /// Constructs [`Square`] from a pair of [`File`] and [`Rank`].
     #[inline(always)]
     pub fn new(f: File, r: Rank) -> Self {
-        Integer::new(f.get() | (r.get() << 3))
+        Int::new(f.get() | (r.get() << 3))
     }
 
     /// This square's [`File`].
@@ -50,7 +50,7 @@ impl Square {
 
 unsafe impl ZeroableInOption for Square {}
 
-unsafe impl Integer for Square {
+unsafe impl Int for Square {
     type Repr = i8;
     const MIN: Self::Repr = Square::A1 as _;
     const MAX: Self::Repr = Square::H8 as _;
@@ -60,7 +60,7 @@ impl Mirror for Square {
     /// Horizontally mirrors this square.
     #[inline(always)]
     fn mirror(self) -> Self {
-        Integer::new(self.get() ^ Square::H1.get())
+        Int::new(self.get() ^ Square::H1.get())
     }
 }
 
@@ -68,7 +68,7 @@ impl Flip for Square {
     /// Flips this square's [`Rank`].
     #[inline(always)]
     fn flip(self) -> Self {
-        Integer::new(self.get() ^ Square::A8.get())
+        Int::new(self.get() ^ Square::A8.get())
     }
 }
 
@@ -78,7 +78,7 @@ impl Transpose for Square {
     /// Diagonally flips this square.
     #[inline(always)]
     fn transpose(self) -> Self::Transposition {
-        Integer::new((self.cast::<u32>().wrapping_mul(0x2080_0000) >> 26) as _)
+        Int::new((self.cast::<u32>().wrapping_mul(0x2080_0000) >> 26) as _)
     }
 }
 
@@ -110,7 +110,7 @@ impl Sub<i8> for Square {
 
     #[inline(always)]
     fn sub(self, rhs: i8) -> Self::Output {
-        Integer::new(self.get() - rhs)
+        Int::new(self.get() - rhs)
     }
 }
 
@@ -119,7 +119,7 @@ impl Add<i8> for Square {
 
     #[inline(always)]
     fn add(self, rhs: i8) -> Self::Output {
-        Integer::new(self.get() + rhs)
+        Int::new(self.get() + rhs)
     }
 }
 

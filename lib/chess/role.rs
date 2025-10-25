@@ -1,4 +1,4 @@
-use crate::util::Integer;
+use crate::util::Int;
 use bytemuck::{Zeroable, ZeroableInOption};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
@@ -19,7 +19,7 @@ pub enum Role {
 
 unsafe impl ZeroableInOption for Role {}
 
-unsafe impl Integer for Role {
+unsafe impl Int for Role {
     type Repr = u8;
     const MIN: Self::Repr = Role::Pawn as _;
     const MAX: Self::Repr = Role::King as _;

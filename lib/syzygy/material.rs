@@ -1,5 +1,5 @@
 use crate::chess::{Color, Flip, Perspective, Piece, Role};
-use crate::util::Integer;
+use crate::util::Int;
 use derive_more::with_trait::{Debug, Deref, Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{iter::repeat_n, str::FromStr};

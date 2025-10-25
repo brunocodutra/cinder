@@ -1,23 +1,23 @@
-use crate::util::Assume;
-use bytemuck::{NoUninit, Zeroable};
+use crate::util::{Assume, Float};
+use bytemuck::{Pod, Zeroable, zeroed};
 use std::fmt::{Binary, Debug, LowerHex, Octal, UpperHex};
 use std::{cmp::Ordering, hash::Hash, hint::unreachable_unchecked, mem::transmute_copy};
 use std::{num::*, ops::*};
 
-/// Trait for types that can be represented by a contiguous range of primitive integers.
+/// Trait for types that can be represented by a int range of primitive integers.
 ///
 /// # Safety
 ///
-/// Must only be implemented for types that can be safely transmuted to and from [`Integer::Repr`].
-pub unsafe trait Integer: Send + Sync + Copy {
-    /// The equivalent primitive integer type.
-    type Repr: Primitive;
+/// Must only be implemented for types that can be safely transmuted to and from [`Int::Repr`].
+pub unsafe trait Int: Send + Sync + Copy {
+    /// The primitive integer representation.
+    type Repr: IntRepr;
 
     /// The minimum repr.
-    const MIN: Self::Repr = <Self::Repr as Integer>::MIN;
+    const MIN: Self::Repr = <Self::Repr as Int>::MIN;
 
     /// The maximum repr.
-    const MAX: Self::Repr = <Self::Repr as Integer>::MAX;
+    const MAX: Self::Repr = <Self::Repr as Int>::MAX;
 
     /// The minimum value.
     #[inline(always)]
@@ -31,16 +31,18 @@ pub unsafe trait Integer: Send + Sync + Copy {
         Self::new(Self::MAX)
     }
 
-    /// Casts from [`Integer::Repr`].
+    /// Casts from [`Int::Repr`].
     #[track_caller]
     #[inline(always)]
     fn new(i: Self::Repr) -> Self {
         const { assert!(size_of::<Self>() == size_of::<Self::Repr>()) }
+        const { assert!(align_of::<Self>() == align_of::<Self::Repr>()) }
+
         (Self::MIN..=Self::MAX).contains(&i).assume();
         unsafe { transmute_copy(&i) }
     }
 
-    /// Casts to [`Integer::Repr`].
+    /// Casts to [`Int::Repr`].
     #[track_caller]
     #[inline(always)]
     fn get(self) -> Self::Repr {
@@ -57,35 +59,42 @@ pub unsafe trait Integer: Send + Sync + Copy {
     #[track_caller]
     #[inline(always)]
     fn signum(self) -> Self::Repr {
-        self.get().cmp(&Self::Repr::zero()).cast()
+        self.get().cmp(&zero()).cast()
     }
 
-    /// Casts to a [`Primitive`].
+    /// Casts to a [`IntRepr`].
     ///
     /// This is equivalent to the operator `as`.
     #[track_caller]
     #[inline(always)]
-    fn cast<I: Primitive>(self) -> I {
+    fn cast<I: IntRepr>(self) -> I {
         self.get().cast()
     }
 
-    /// Converts to another [`Integer`] if possible without data loss.
+    /// Casts to [`Float`].
     #[track_caller]
     #[inline(always)]
-    fn convert<I: Integer>(self) -> Option<I> {
+    fn to_float<F: Float>(self) -> F {
+        self.get().to_float()
+    }
+
+    /// Converts to another [`Int`], if not out of range.
+    #[track_caller]
+    #[inline(always)]
+    fn convert<I: Int>(self) -> Option<I> {
         self.get().convert()
     }
 
-    /// Converts to another [`Integer`] with saturation.
+    /// Converts to another [`Int`] with saturation.
     #[track_caller]
     #[inline(always)]
-    fn saturate<I: Integer>(self) -> I {
+    fn saturate<I: Int>(self) -> I {
         let min = I::MIN.convert().unwrap_or(Self::MIN);
         let max = I::MAX.convert().unwrap_or(Self::MAX);
         I::new(self.get().clamp(min, max).cast::<I::Repr>())
     }
 
-    /// An iterator over all values in the range [`Integer::MIN`]..=[`Integer::MAX`].
+    /// An iterator over all values in the range [`Int::MIN`]..=[`Int::MAX`].
     #[track_caller]
     #[inline(always)]
     fn iter() -> impl ExactSizeIterator<Item = Self> + DoubleEndedIterator
@@ -96,9 +105,22 @@ pub unsafe trait Integer: Send + Sync + Copy {
     }
 }
 
-/// Trait for primitive integer types.
-pub trait Primitive:
-    Integer<Repr = Self>
+#[inline(always)]
+pub const fn zero<U: Zeroable>() -> U {
+    zeroed()
+}
+
+#[inline(always)]
+pub const fn ones<U: Unsigned>(n: u32) -> U {
+    match n {
+        0 => zero(),
+        n => unsafe { transmute_copy(&(u128::MAX >> (u128::BITS - n))) },
+    }
+}
+
+/// Marker trait for primitive integers.
+pub trait IntRepr:
+    Int<Repr = Self>
     + Debug
     + Binary
     + Octal
@@ -110,8 +132,8 @@ pub trait Primitive:
     + Ord
     + PartialOrd
     + Hash
-    + NoUninit
     + Zeroable
+    + Pod
     + Add<Output = Self>
     + AddAssign
     + Sub<Output = Self>
@@ -132,40 +154,35 @@ pub trait Primitive:
     + ShrAssign
     + Not<Output = Self>
 {
-    /// The bit width.
-    const BITS: u32;
-
-    /// The constant `0`.
-    #[inline(always)]
-    fn zero() -> Self {
-        Self::ones(0)
-    }
-
-    /// A value with `n` trailing `1`s.
-    fn ones(n: u32) -> Self;
 }
 
 /// Marker trait for signed primitive integers.
-pub trait Signed: Primitive {}
+pub trait Signed: IntRepr {}
 
 /// Marker trait for unsigned primitive integers.
-pub trait Unsigned: Primitive {}
+pub trait Unsigned: IntRepr {}
 
-unsafe impl<I: Primitive> Integer for Saturating<I> {
+unsafe impl<I: IntRepr> Int for Saturating<I> {
     type Repr = I;
     const MIN: Self::Repr = I::MIN;
     const MAX: Self::Repr = I::MAX;
 }
 
-unsafe impl Integer for Ordering {
+unsafe impl Int for bool {
+    type Repr = u8;
+    const MIN: Self::Repr = 0x00;
+    const MAX: Self::Repr = 0x01;
+}
+
+unsafe impl Int for Ordering {
     type Repr = i8;
     const MIN: Self::Repr = Ordering::Less as _;
     const MAX: Self::Repr = Ordering::Greater as _;
 }
 
-macro_rules! impl_integer_for_non_zero {
+macro_rules! impl_int_for_non_zero {
     ($nz: ty, $repr: ty) => {
-        unsafe impl Integer for $nz {
+        unsafe impl Int for $nz {
             type Repr = $repr;
             const MIN: Self::Repr = Self::MIN.get();
             const MAX: Self::Repr = Self::MAX.get();
@@ -173,28 +190,18 @@ macro_rules! impl_integer_for_non_zero {
     };
 }
 
-impl_integer_for_non_zero!(NonZeroU8, u8);
-impl_integer_for_non_zero!(NonZeroU16, u16);
-impl_integer_for_non_zero!(NonZeroU32, u32);
-impl_integer_for_non_zero!(NonZeroU64, u64);
-impl_integer_for_non_zero!(NonZeroU128, u128);
-impl_integer_for_non_zero!(NonZeroUsize, usize);
+impl_int_for_non_zero!(NonZeroU8, u8);
+impl_int_for_non_zero!(NonZeroU16, u16);
+impl_int_for_non_zero!(NonZeroU32, u32);
+impl_int_for_non_zero!(NonZeroU64, u64);
+impl_int_for_non_zero!(NonZeroU128, u128);
+impl_int_for_non_zero!(NonZeroUsize, usize);
 
-macro_rules! impl_primitive_for {
+macro_rules! impl_int_repr_for {
     ($i: ty) => {
-        impl Primitive for $i {
-            const BITS: u32 = <$i>::BITS;
+        impl IntRepr for $i {}
 
-            #[inline(always)]
-            fn ones(n: u32) -> Self {
-                match n {
-                    0 => 0,
-                    n => Self::MAX >> (Self::BITS - n),
-                }
-            }
-        }
-
-        unsafe impl Integer for $i {
+        unsafe impl Int for $i {
             type Repr = $i;
 
             const MIN: Self::Repr = <$i>::MIN;
@@ -202,15 +209,16 @@ macro_rules! impl_primitive_for {
 
             #[track_caller]
             #[inline(always)]
-            fn cast<I: Primitive>(self) -> I {
-                if I::BITS <= Self::BITS {
+            fn cast<I: IntRepr>(self) -> I {
+                if size_of::<I>() == size_of::<Self>() {
                     unsafe { transmute_copy(&self) }
                 } else {
-                    match I::BITS {
-                        16 => (self as u16).cast(),
-                        32 => (self as u32).cast(),
-                        64 => (self as u64).cast(),
-                        128 => (self as u128).cast(),
+                    match size_of::<I>() {
+                        1 => (self as u8).cast(),
+                        2 => (self as u16).cast(),
+                        4 => (self as u32).cast(),
+                        8 => (self as u64).cast(),
+                        16 => (self as u128).cast(),
                         _ => unsafe { unreachable_unchecked() },
                     }
                 }
@@ -218,12 +226,22 @@ macro_rules! impl_primitive_for {
 
             #[track_caller]
             #[inline(always)]
-            fn convert<I: Integer>(self) -> Option<I> {
+            fn to_float<F: Float>(self) -> F {
+                match size_of::<F>() {
+                    4 => unsafe { transmute_copy(&(self as f32)) },
+                    8 => unsafe { transmute_copy(&(self as f64)) },
+                    _ => unsafe { unreachable_unchecked() },
+                }
+            }
+
+            #[track_caller]
+            #[inline(always)]
+            fn convert<I: Int>(self) -> Option<I> {
                 let i = self.cast();
 
                 if (I::MIN..=I::MAX).contains(&i)
                     && i.cast::<Self>() == self
-                    && (i < I::Repr::zero()) == (self < Self::zero())
+                    && (i < zero()) == (self < zero())
                 {
                     Some(I::new(i))
                 } else {
@@ -236,7 +254,7 @@ macro_rules! impl_primitive_for {
 
 macro_rules! impl_signed_for {
     ($i: ty) => {
-        impl_primitive_for!($i);
+        impl_int_repr_for!($i);
         impl Signed for $i {}
     };
 }
@@ -250,7 +268,7 @@ impl_signed_for!(isize);
 
 macro_rules! impl_unsigned_for {
     ($i: ty) => {
-        impl_primitive_for!($i);
+        impl_int_repr_for!($i);
         impl Unsigned for $i {}
     };
 }
@@ -281,49 +299,54 @@ mod tests {
         Nine,
     }
 
-    unsafe impl Integer for Digit {
+    unsafe impl Int for Digit {
         type Repr = u16;
         const MIN: Self::Repr = Digit::One as _;
         const MAX: Self::Repr = Digit::Nine as _;
     }
 
     #[proptest]
-    fn integer_can_be_cast_from_repr(#[strategy(1u16..10)] i: u16) {
+    fn int_can_be_cast_from_repr(#[strategy(1u16..10)] i: u16) {
         assert_eq!(Digit::new(i).get(), i);
     }
 
     #[proptest]
-    fn integer_can_be_cast_to_repr(d: Digit) {
+    fn int_can_be_cast_to_repr(d: Digit) {
         assert_eq!(Digit::new(d.get()), d);
     }
 
     #[proptest]
-    fn integer_can_be_cast_to_primitive(d: Digit) {
+    fn int_can_be_cast_to_primitive(d: Digit) {
         assert_eq!(d.cast::<i8>(), d.get() as i8);
     }
 
     #[proptest]
-    fn integer_can_be_converted_to_another_integer_within_bounds(#[strategy(1i8..10)] i: i8) {
+    fn int_can_be_cast_to_float(d: Digit) {
+        assert_eq!(d.to_float::<f32>(), d.get() as f32);
+    }
+
+    #[proptest]
+    fn int_can_be_converted_if_within_bounds(#[strategy(1i8..10)] i: i8) {
         assert_eq!(i.convert(), Some(Digit::new(i as u16)));
     }
 
     #[proptest]
-    fn integer_conversion_fails_if_smaller_than_min(#[strategy(..1i8)] i: i8) {
+    fn int_conversion_fails_if_smaller_than_min(#[strategy(..1i8)] i: i8) {
         assert_eq!(i.convert::<Digit>(), None);
     }
 
     #[proptest]
-    fn integer_conversion_fails_if_greater_than_max(#[strategy(10i8..)] i: i8) {
+    fn int_conversion_fails_if_greater_than_max(#[strategy(10i8..)] i: i8) {
         assert_eq!(i.convert::<Digit>(), None);
     }
 
     #[proptest]
-    fn integer_can_be_converted_to_another_integer_with_saturation(i: u8) {
+    fn int_can_be_converted_with_saturation(i: u8) {
         assert_eq!(i.saturate::<Digit>(), Digit::new(i.clamp(1, 9).into()));
     }
 
     #[test]
-    fn integer_can_be_iterated_in_order() {
+    fn int_can_be_iterated_in_order() {
         assert_eq!(
             Vec::from_iter(Digit::iter()),
             vec![
@@ -341,18 +364,13 @@ mod tests {
     }
 
     #[proptest]
-    fn integer_is_eq_by_repr(a: Digit, b: Digit) {
+    fn int_is_eq_by_repr(a: Digit, b: Digit) {
         assert_eq!(a == b, a.get() == b.get());
     }
 
     #[proptest]
-    fn integer_is_ord_by_repr(a: Digit, b: Digit) {
+    fn int_is_ord_by_repr(a: Digit, b: Digit) {
         assert_eq!(a < b, a.get() < b.get());
-    }
-
-    #[proptest]
-    fn primitive_can_be_constructed_with_trailing_ones(#[strategy(..=64u32)] n: u32) {
-        assert_eq!(u64::ones(n).trailing_ones(), n);
     }
 
     #[proptest]
@@ -380,7 +398,7 @@ mod tests {
     }
 
     #[proptest]
-    fn integer_can_be_converted_to_another_primitive_with_saturation(i: u16) {
+    fn primitive_can_be_converted_with_saturation(i: u16) {
         assert_eq!(i.saturate::<i8>(), i.min(i8::MAX as _) as i8);
         assert_eq!(i.saturate::<u32>(), u32::from(i));
     }

@@ -1,8 +1,8 @@
 use crate::chess::{Move, Position};
 use crate::nnue::{Evaluator, Value};
-use crate::util::{Assume, Bounded, Integer, Memory};
+use crate::util::{Assume, Bounded, Integer, Memory, Slice};
 use crate::{params::Params, search::*, syzygy::Syzygy};
-use bytemuck::{Zeroable, try_zeroed_slice_box};
+use bytemuck::Zeroable;
 use derive_more::with_trait::{Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
@@ -1041,7 +1041,7 @@ pub struct Engine {
     tt: Memory<Transposition>,
     syzygy: Syzygy,
     executor: Executor,
-    searchers: Box<[Searcher]>,
+    searchers: Slice<Searcher>,
 }
 
 #[cfg(test)]
@@ -1074,7 +1074,7 @@ impl Engine {
             tt: Memory::new(options.hash.get()),
             syzygy: Syzygy::new(&options.syzygy),
             executor: Executor::new(options.threads),
-            searchers: try_zeroed_slice_box(options.threads.cast()).assume(),
+            searchers: Slice::new(options.threads.cast()).unwrap(),
         }
     }
 

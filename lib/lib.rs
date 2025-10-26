@@ -12,6 +12,7 @@
     coverage_attribute,
     gen_blocks,
     iter_array_chunks,
+    pointer_is_aligned_to,
     portable_simd,
     ptr_as_ref_unchecked,
     slice_swap_unchecked,

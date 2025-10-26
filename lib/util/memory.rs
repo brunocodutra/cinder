@@ -1,6 +1,6 @@
-use crate::util::{Assume, Binary, Bits, Integer, Unsigned};
+use crate::util::{Assume, Binary, Bits, Integer, Slice, Unsigned};
 use atomic::Atomic;
-use bytemuck::{Zeroable, try_zeroed_slice_box};
+use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Deref, DerefMut};
 use std::ops::{Index, IndexMut};
 use std::{marker::PhantomData, mem::size_of, sync::atomic::Ordering};
@@ -86,7 +86,7 @@ pub struct Memory<
     Option<Latch<T, U>>: Binary,
 {
     #[allow(clippy::type_complexity)]
-    data: Box<[Slot<<Option<Latch<T, U>> as Binary>::Bits>]>,
+    data: Slice<Slot<<Option<Latch<T, U>> as Binary>::Bits>>,
 }
 
 #[cfg(test)]
@@ -105,8 +105,8 @@ where
                 let cap = map.len().next_power_of_two();
 
                 #[allow(clippy::type_complexity)]
-                let mut data: Box<[Slot<<Option<Latch<T, U>> as Binary>::Bits>]> =
-                    try_zeroed_slice_box(cap).assume();
+                let mut data: Slice<Slot<<Option<Latch<T, U>> as Binary>::Bits>> =
+                    Slice::new(cap).unwrap();
 
                 if cap > 0 {
                     for (k, v) in map {
@@ -132,7 +132,7 @@ where
         let cap = (1 + size / 2).next_power_of_two() / size_of::<Latch<T, U>>();
 
         Memory {
-            data: try_zeroed_slice_box(cap).assume(),
+            data: Slice::new(cap).unwrap(),
         }
     }
 

@@ -5,6 +5,7 @@ mod bits;
 mod bounded;
 mod integer;
 mod memory;
+mod slice;
 
 pub mod parsers;
 pub mod thread;
@@ -16,3 +17,4 @@ pub use bits::*;
 pub use bounded::*;
 pub use integer::*;
 pub use memory::*;
+pub use slice::*;

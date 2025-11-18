@@ -1,9 +1,12 @@
-use bytemuck::Zeroable;
+use bytemuck::{Zeroable, fill_zeroes};
 use memmap2::{MmapMut, MmapOptions};
+use std::mem::{needs_drop, size_of};
 use std::ops::{Deref, DerefMut};
-use std::{alloc::Layout, io, slice};
+use std::thread::{self, available_parallelism};
+use std::{alloc::Layout, io, num::NonZero, slice};
 
-const HUGEPAGE_SIZE: usize = 1 << 21;
+const HUGEPAGE_SIZE: usize = 2 << 20;
+const PREFAULT_BLOCK_MIN_SIZE: usize = 128 << 20;
 
 /// A hugepage-backed slice of `T`.
 ///
@@ -18,13 +21,16 @@ pub struct Slice<T> {
 unsafe impl<T: Send> Send for Slice<T> {}
 unsafe impl<T: Sync> Sync for Slice<T> {}
 
-impl<T: Zeroable> Slice<T> {
+impl<T: Send + Zeroable> Slice<T> {
     /// Allocates hugepage-backed block of memory for `len` instances of `T`.
     pub fn new(len: usize) -> io::Result<Self> {
+        const { assert!(size_of::<T>() > 0) }
+        const { assert!(!needs_drop::<T>()) }
+
         let layout = Layout::array::<T>(len).map_err(|_| io::ErrorKind::OutOfMemory)?;
         let align = layout.align().max(64); // align to cache line
         let size = (layout.size() + align - 1).next_multiple_of(HUGEPAGE_SIZE);
-        let mmap = MmapOptions::new().len(size).populate().map_anon()?;
+        let mmap = MmapOptions::new().len(size).map_anon()?;
 
         #[cfg(target_os = "linux")]
         mmap.advise(memmap2::Advice::HugePage)?;
@@ -32,11 +38,22 @@ impl<T: Zeroable> Slice<T> {
         let ptr = mmap.as_ptr();
         let offset = ptr.align_offset(align);
 
-        Ok(Slice {
+        let mut slice = Slice {
             ptr: ptr.wrapping_add(offset) as _,
             len,
             _mmap: mmap,
-        })
+        };
+
+        let chunk_size = len.div_ceil(available_parallelism().map_or(1, NonZero::get));
+        let min_chunk_size = PREFAULT_BLOCK_MIN_SIZE.div_ceil(size_of::<T>());
+
+        thread::scope(|s| {
+            for chunk in slice.chunks_mut(chunk_size.max(min_chunk_size)) {
+                s.spawn(|| fill_zeroes(chunk));
+            }
+        });
+
+        Ok(slice)
     }
 }
 

@@ -9,7 +9,7 @@ use std::{num::*, ops::*};
 /// # Safety
 ///
 /// Must only be implemented for types that can be safely transmuted to and from [`Integer::Repr`].
-pub unsafe trait Integer: Copy {
+pub unsafe trait Integer: Send + Sync + Copy {
     /// The equivalent primitive integer type.
     type Repr: Primitive;
 

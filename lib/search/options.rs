@@ -2,6 +2,9 @@ use crate::util::Int;
 use derive_more::with_trait::{Debug, Display, Error, Shl, Shr};
 use std::{cmp::Ordering, collections::HashSet, path::PathBuf, str::FromStr};
 
+#[cfg(test)]
+use proptest::strategy::LazyJust;
+
 /// The hash size in bytes.
 #[derive(Debug, Display, Copy, Clone, Eq, Ord, Hash, Shl, Shr)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
@@ -132,6 +135,7 @@ pub struct Options {
     pub threads: ThreadCount,
 
     /// The paths where Syzygy tablebase files are located.
+    #[cfg_attr(test, strategy(LazyJust::new(Default::default)))]
     pub syzygy: HashSet<PathBuf>,
 }
 

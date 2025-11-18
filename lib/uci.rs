@@ -6,8 +6,9 @@ use futures::{pin_mut, prelude::*, select_biased as select, stream::FusedStream}
 use nom::error::Error as ParseError;
 use nom::{branch::*, bytes::complete::*, combinator::*, sequence::*, *};
 use std::fmt::{self, Debug, Formatter};
+use std::io::{self, Write};
 use std::str::{self, FromStr};
-use std::{collections::HashSet, io::Write, time::Instant};
+use std::{collections::HashSet, time::Instant};
 
 #[cfg(test)]
 use proptest::{prelude::*, strategy::LazyJust};
@@ -20,29 +21,39 @@ mod mock {
     use std::path::Path;
     use test_strategy::Arbitrary;
 
-    #[derive(Debug, Default, Deref, DerefMut, Arbitrary)]
+    #[derive(Debug, Deref, DerefMut, Arbitrary)]
     pub struct MockEngine {
         #[deref]
         #[deref_mut]
-        #[strategy(LazyJust::new(move || Engine::with_options(&#options)))]
+        #[strategy(LazyJust::new(move || Engine::with_options(&#options).unwrap()))]
         delegate: Engine,
         pub options: Options,
     }
 
     impl MockEngine {
-        pub fn set_hash(&mut self, hash: HashSize) {
+        pub fn new() -> io::Result<Self> {
+            Ok(MockEngine {
+                delegate: Engine::new()?,
+                options: Default::default(),
+            })
+        }
+
+        pub fn set_hash(&mut self, hash: HashSize) -> io::Result<()> {
             self.options.hash = hash;
-            self.delegate.set_hash(hash);
+            self.delegate.set_hash(hash)
         }
 
-        pub fn set_threads(&mut self, threads: ThreadCount) {
+        pub fn set_threads(&mut self, threads: ThreadCount) -> io::Result<()> {
             self.options.threads = threads;
-            self.delegate.set_threads(threads);
+            self.delegate.set_threads(threads)
         }
 
-        pub fn set_syzygy<I: IntoIterator<Item: AsRef<Path>>>(&mut self, paths: I) {
+        pub fn set_syzygy<I: IntoIterator<Item: AsRef<Path>>>(
+            &mut self,
+            paths: I,
+        ) -> io::Result<()> {
             self.options.syzygy = paths.into_iter().map(|p| p.as_ref().into()).collect();
-            self.delegate.set_syzygy(&self.options.syzygy);
+            self.delegate.set_syzygy(&self.options.syzygy)
         }
     }
 }
@@ -103,24 +114,27 @@ impl Display for UciBestMove {
     }
 }
 
-#[derive(Debug, Display, Clone, Eq, PartialEq, Error)]
-enum UciError<E> {
+#[derive(Debug, Display, Error, From)]
+enum UciError {
     #[display("failed to parse the uci command")]
     ParseError,
-    Fatal(E),
+    #[display("the uci server encountered a fatal error")]
+    Fatal(io::Error),
 }
 
-impl<E> From<ParseError<&str>> for UciError<E> {
+impl From<ParseError<&str>> for UciError {
     fn from(_: ParseError<&str>) -> Self {
         UciError::ParseError
     }
 }
 
 /// A basic UCI server.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
-#[cfg_attr(test, arbitrary(args = I,
-    bound(I: 'static + Debug + Default + Clone, O: 'static + Debug + Default + Clone)))]
+#[cfg_attr(test, arbitrary(args = I, bound(
+    I: 'static + Debug + Default + Clone,
+    O: 'static + Debug + Default + Clone,
+)))]
 pub struct Uci<I, O> {
     #[cfg_attr(test, strategy(Just(args.clone())))]
     input: I,
@@ -138,18 +152,18 @@ impl<I, O> Uci<I, O> {
     const PATH_DELIMITER: char = ';';
 
     /// Constructs a new uci server instance.
-    pub fn new(input: I, output: O) -> Self {
-        Self {
+    pub fn new(input: I, output: O) -> io::Result<Self> {
+        Ok(Self {
             input,
             output,
-            engine: Default::default(),
+            engine: Engine::new()?,
             position: Default::default(),
-        }
+        })
     }
 }
 
-impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
-    async fn go(&mut self, limits: Limits) -> Result<bool, UciError<O::Error>> {
+impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> + Unpin> Uci<I, O> {
+    async fn go(&mut self, limits: Limits) -> Result<bool, UciError> {
         let mut best = UciBestMove(None);
         let search = self.engine.search(&self.position, limits);
         pin_mut!(search);
@@ -162,7 +176,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                         Some(i) => {
                             best = UciBestMove(i.head());
                             let info = UciSearchInfo(i).to_string();
-                            self.output.send(info).await.map_err(UciError::Fatal)?;
+                            self.output.send(info).await?;
                         }
                     }
                 },
@@ -179,12 +193,12 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
         }
 
         let bestmove = best.to_string();
-        self.output.send(bestmove).await.map_err(UciError::Fatal)?;
+        self.output.send(bestmove).await?;
 
         Ok(true)
     }
 
-    async fn execute(&mut self, input: &str) -> Result<bool, UciError<O::Error>> {
+    async fn execute(&mut self, input: &str) -> Result<bool, UciError> {
         let mut cmd = t(alt((
             tag("position"),
             tag("go"),
@@ -288,7 +302,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                     nodes as u128 * 1000 / millis.max(1)
                 );
 
-                self.output.send(info).await.map_err(UciError::Fatal)?;
+                self.output.send(info).await?;
 
                 Ok(true)
             }
@@ -306,15 +320,15 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                 let (_, (hash, threads, syzygy)) = setoption.parse(args).finish()?;
 
                 if let Some(h) = hash {
-                    self.engine.set_hash(h);
+                    self.engine.set_hash(h)?;
                 }
 
                 if let Some(t) = threads {
-                    self.engine.set_threads(t);
+                    self.engine.set_threads(t)?;
                 }
 
                 if let Some(p) = syzygy {
-                    self.engine.set_syzygy::<HashSet<_>>(p);
+                    self.engine.set_syzygy::<HashSet<_>>(p)?;
                 }
 
                 Ok(true)
@@ -322,7 +336,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
 
             ("", "isready") => {
                 let readyok = "readyok".to_string();
-                self.output.send(readyok).await.map_err(UciError::Fatal)?;
+                self.output.send(readyok).await?;
                 Ok(true)
             }
 
@@ -353,12 +367,12 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
 
                 let syzygy = "option name SyzygyPath type string default <empty>".to_string();
 
-                self.output.send(name).await.map_err(UciError::Fatal)?;
-                self.output.send(author).await.map_err(UciError::Fatal)?;
-                self.output.send(hash).await.map_err(UciError::Fatal)?;
-                self.output.send(threads).await.map_err(UciError::Fatal)?;
-                self.output.send(syzygy).await.map_err(UciError::Fatal)?;
-                self.output.send(uciok).await.map_err(UciError::Fatal)?;
+                self.output.send(name).await?;
+                self.output.send(author).await?;
+                self.output.send(hash).await?;
+                self.output.send(threads).await?;
+                self.output.send(syzygy).await?;
+                self.output.send(uciok).await?;
 
                 Ok(true)
             }
@@ -395,6 +409,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
 mod tests {
     use super::*;
     use crate::{chess::Position, search::Depth};
+    use derive_more::Deref;
     use futures::executor::block_on;
     use nom::{character::complete::line_ending, multi::separated_list1};
     use proptest::sample::Selector;
@@ -404,15 +419,15 @@ mod tests {
     use test_strategy::proptest;
 
     #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
-    struct StaticStream(VecDeque<String>);
+    struct MockStream(VecDeque<String>);
 
-    impl StaticStream {
+    impl MockStream {
         fn new(items: impl IntoIterator<Item = impl ToString>) -> Self {
             Self(items.into_iter().map(|s| s.to_string()).collect())
         }
     }
 
-    impl Stream for StaticStream {
+    impl Stream for MockStream {
         type Item = String;
 
         fn poll_next(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -420,13 +435,45 @@ mod tests {
         }
     }
 
-    impl FusedStream for StaticStream {
+    impl FusedStream for MockStream {
         fn is_terminated(&self) -> bool {
             self.0.is_empty()
         }
     }
 
-    type MockUci = Uci<StaticStream, Vec<String>>;
+    #[derive(Debug, Default, Clone, Eq, PartialEq, Deref)]
+    struct MockSink(Vec<String>);
+
+    impl Sink<String> for MockSink {
+        type Error = io::Error;
+
+        fn poll_ready(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            self.0.poll_ready_unpin(cx).map_err(|_| unreachable!())
+        }
+
+        fn start_send(mut self: Pin<&mut Self>, item: String) -> Result<(), Self::Error> {
+            self.0.start_send_unpin(item).map_err(|_| unreachable!())
+        }
+
+        fn poll_flush(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            self.0.poll_flush_unpin(cx).map_err(|_| unreachable!())
+        }
+
+        fn poll_close(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            self.0.poll_close_unpin(cx).map_err(|_| unreachable!())
+        }
+    }
+
+    type MockUci = Uci<MockStream, MockSink>;
 
     fn info(input: &str) -> IResult<&str, &str, ParseError<&str>> {
         let depth = field("depth", int);
@@ -441,9 +488,9 @@ mod tests {
 
     #[proptest]
     fn handles_position_with_startpos(
-        #[any(StaticStream::new(["position startpos"]))] mut uci: MockUci,
+        #[any(MockStream::new(["position startpos"]))] mut uci: MockUci,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.position, Default::default());
         assert_eq!(uci.output.join("\n"), "");
     }
@@ -468,18 +515,18 @@ mod tests {
             pos.play(m);
         }
 
-        uci.input = StaticStream::new([input]);
-        assert_eq!(block_on(uci.run()), Ok(()));
+        uci.input = MockStream::new([input]);
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.position, pos);
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
     fn handles_position_with_fen(
-        #[any(StaticStream::new([format!("position fen {}", #pos)]))] mut uci: MockUci,
+        #[any(MockStream::new([format!("position fen {}", #pos)]))] mut uci: MockUci,
         pos: Position,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.position.to_string(), pos.to_string());
         assert_eq!(uci.output.join("\n"), "");
     }
@@ -505,41 +552,41 @@ mod tests {
             pos.play(m);
         }
 
-        uci.input = StaticStream::new([input]);
-        assert_eq!(block_on(uci.run()), Ok(()));
+        uci.input = MockStream::new([input]);
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.position.to_string(), pos.to_string());
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
     fn ignores_position_with_invalid_fen(
-        #[any(StaticStream::new([format!("position fen {}", #_s)]))] mut uci: MockUci,
+        #[any(MockStream::new([format!("position fen {}", #_s)]))] mut uci: MockUci,
         #[filter(#_s.parse::<Position>().is_err())] _s: String,
     ) {
         let pos = uci.position.clone();
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.position, pos);
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
     fn ignores_position_with_invalid_move(
-        #[any(StaticStream::new([format!("position startpos moves {}", #_s)]))] mut uci: MockUci,
+        #[any(MockStream::new([format!("position startpos moves {}", #_s)]))] mut uci: MockUci,
         #[strategy("[^[:ascii:]]+")] _s: String,
     ) {
         let pos = uci.position.clone();
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.position, pos);
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
     fn handles_position_with_illegal_move(
-        #[any(StaticStream::new([format!("position startpos moves {}", #_m)]))] mut uci: MockUci,
+        #[any(MockStream::new([format!("position startpos moves {}", #_m)]))] mut uci: MockUci,
         #[filter(!Position::default().moves().unpack().any(|m| UciMove(m) == *#_m.to_string()))] _m: Move,
     ) {
         let pos = uci.position.clone();
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.position, pos);
         assert_eq!(uci.output.join("\n"), "");
     }
@@ -564,8 +611,8 @@ mod tests {
         ];
 
         input[1..].shuffle(&mut rand::rng());
-        uci.input = StaticStream::new([input[..=(idx % input.len())].join(" ")]);
-        assert_eq!(block_on(uci.run()), Ok(()));
+        uci.input = MockStream::new([input[..=(idx % input.len())].join(" ")]);
+        assert!(block_on(uci.run()).is_ok());
 
         let output = uci.output.join("\n");
 
@@ -577,11 +624,11 @@ mod tests {
     #[proptest]
     fn handles_go_depth(
         #[filter(#uci.position.outcome().is_none())]
-        #[any(StaticStream::new([format!("go depth {}", #_d)]))]
+        #[any(MockStream::new([format!("go depth {}", #_d)]))]
         mut uci: MockUci,
         _d: Depth,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
 
         let output = uci.output.join("\n");
 
@@ -593,11 +640,11 @@ mod tests {
     #[proptest]
     fn handles_go_nodes(
         #[filter(#uci.position.outcome().is_none())]
-        #[any(StaticStream::new([format!("go nodes {}", #_n)]))]
+        #[any(MockStream::new([format!("go nodes {}", #_n)]))]
         mut uci: MockUci,
         #[strategy(..1000u64)] _n: u64,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
 
         let output = uci.output.join("\n");
 
@@ -609,11 +656,11 @@ mod tests {
     #[proptest]
     fn handles_go_time(
         #[filter(#uci.position.outcome().is_none())]
-        #[any(StaticStream::new([format!("go movetime {}", #_ms)]))]
+        #[any(MockStream::new([format!("go movetime {}", #_ms)]))]
         mut uci: MockUci,
         #[strategy(..10u8)] _ms: u8,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
 
         let output = uci.output.join("\n");
 
@@ -626,10 +673,10 @@ mod tests {
     fn handles_go_infinite(
         #[by_ref]
         #[filter(#uci.position.outcome().is_none())]
-        #[any(StaticStream::new(["go infinite"]))]
+        #[any(MockStream::new(["go infinite"]))]
         mut uci: MockUci,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
 
         let output = uci.output.join("\n");
 
@@ -642,10 +689,10 @@ mod tests {
     fn handles_go_with_no_move(
         #[by_ref]
         #[filter(#uci.position.moves().is_empty())]
-        #[any(StaticStream::new(["go"]))]
+        #[any(MockStream::new(["go"]))]
         mut uci: MockUci,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
 
         let output = uci.output.join("\n");
 
@@ -658,11 +705,11 @@ mod tests {
     fn handles_go_with_moves_to_go(
         #[by_ref]
         #[filter(#uci.position.outcome().is_none())]
-        #[any(StaticStream::new([format!("go movestogo {}", #_mtg)]))]
+        #[any(MockStream::new([format!("go movestogo {}", #_mtg)]))]
         mut uci: MockUci,
         _mtg: i8,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
 
         let output = uci.output.join("\n");
 
@@ -675,11 +722,11 @@ mod tests {
     fn handles_go_with_mate(
         #[by_ref]
         #[filter(#uci.position.outcome().is_none())]
-        #[any(StaticStream::new([format!("go mate {}", #_mate)]))]
+        #[any(MockStream::new([format!("go mate {}", #_mate)]))]
         mut uci: MockUci,
         _mate: i8,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
 
         let output = uci.output.join("\n");
 
@@ -692,10 +739,10 @@ mod tests {
     fn handles_stop_during_search(
         #[by_ref]
         #[filter(#uci.position.outcome().is_none())]
-        #[any(StaticStream::new(["go", "stop"]))]
+        #[any(MockStream::new(["go", "stop"]))]
         mut uci: MockUci,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
 
         let output = uci.output.join("\n");
 
@@ -708,30 +755,30 @@ mod tests {
     fn handles_quit_during_search(
         #[by_ref]
         #[filter(#uci.position.outcome().is_none())]
-        #[any(StaticStream::new(["go", "quit"]))]
+        #[any(MockStream::new(["go", "quit"]))]
         mut uci: MockUci,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
     }
 
     #[proptest]
-    fn handles_stop(#[any(StaticStream::new(["stop"]))] mut uci: MockUci) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+    fn handles_stop(#[any(MockStream::new(["stop"]))] mut uci: MockUci) {
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
-    fn handles_quit(#[any(StaticStream::new(["quit"]))] mut uci: MockUci) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+    fn handles_quit(#[any(MockStream::new(["quit"]))] mut uci: MockUci) {
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
     fn handles_perft(
-        #[any(StaticStream::new([format!("perft {}", #_d)]))] mut uci: MockUci,
+        #[any(MockStream::new([format!("perft {}", #_d)]))] mut uci: MockUci,
         #[strategy(..4u8)] _d: u8,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
 
         let output = uci.output.join("\n");
 
@@ -744,91 +791,90 @@ mod tests {
     }
 
     #[proptest]
-    fn handles_uci(#[any(StaticStream::new(["uci"]))] mut uci: MockUci) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+    fn handles_uci(#[any(MockStream::new(["uci"]))] mut uci: MockUci) {
+        assert!(block_on(uci.run()).is_ok());
         assert!(uci.output.concat().ends_with("uciok"));
     }
 
     #[proptest]
-    fn handles_new_game(#[any(StaticStream::new(["ucinewgame"]))] mut uci: MockUci) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+    fn handles_new_game(#[any(MockStream::new(["ucinewgame"]))] mut uci: MockUci) {
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.position, Default::default());
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
-    fn handles_ready(#[any(StaticStream::new(["isready"]))] mut uci: MockUci) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+    fn handles_ready(#[any(MockStream::new(["isready"]))] mut uci: MockUci) {
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.output.concat(), "readyok");
     }
 
     #[proptest]
     fn handles_option_hash(
-        #[any(StaticStream::new([format!("setoption name Hash value {}", #h)]))] mut uci: MockUci,
+        #[any(MockStream::new([format!("setoption name Hash value {}", #h)]))] mut uci: MockUci,
         h: HashSize,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.engine.options.hash, h >> 20 << 20);
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
     fn ignores_invalid_hash_size(
-        #[any(StaticStream::new([format!("setoption name Hash value {}", #_s)]))] mut uci: MockUci,
+        #[any(MockStream::new([format!("setoption name Hash value {}", #_s)]))] mut uci: MockUci,
         #[filter(#_s.trim().parse::<HashSize>().is_err())] _s: String,
     ) {
         let o = uci.engine.options.clone();
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.engine.options, o);
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
     fn handles_option_threads(
-        #[any(StaticStream::new([format!("setoption name Threads value {}", #t)]))]
-        mut uci: MockUci,
+        #[any(MockStream::new([format!("setoption name Threads value {}", #t)]))] mut uci: MockUci,
         t: ThreadCount,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.engine.options.threads, t);
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
     fn ignores_invalid_thread_count(
-        #[any(StaticStream::new([format!("setoption name Threads value {}", #_s)]))]
-        mut uci: MockUci,
+        #[any(MockStream::new([format!("setoption name Threads value {}", #_s)]))] mut uci: MockUci,
         #[filter(#_s.trim().parse::<ThreadCount>().is_err())] _s: String,
     ) {
         let o = uci.engine.options.clone();
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.engine.options, o);
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
     fn handles_option_syzygy_path(
-        #[any(StaticStream::new([format!("setoption name SyzygyPath value {}", #s)]))]
+        #[any(MockStream::new([format!("setoption name SyzygyPath value {}", #s)]))]
         mut uci: MockUci,
         #[filter(!#s.trim_ascii().is_empty())] s: String,
     ) {
-        let paths = s
-            .trim_ascii()
-            .split(MockUci::PATH_DELIMITER)
-            .map(PathBuf::from)
-            .collect();
+        let mut paths = HashSet::new();
+        for s in s.trim_ascii().split(MockUci::PATH_DELIMITER) {
+            let path = PathBuf::from(s);
+            prop_assume!(!path.exists());
+            paths.insert(path);
+        }
 
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.engine.options.syzygy, paths);
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
     fn ignores_unsupported_messages(
-        #[any(StaticStream::new([#_s]))] mut uci: MockUci,
+        #[any(MockStream::new([#_s]))] mut uci: MockUci,
         #[strategy("[^[:ascii:]]*")] _s: String,
     ) {
-        assert_eq!(block_on(uci.run()), Ok(()));
+        assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.output.join("\n"), "");
     }
 }

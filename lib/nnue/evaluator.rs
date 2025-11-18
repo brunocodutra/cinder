@@ -126,7 +126,7 @@ impl Arbitrary for Evaluator {
 }
 
 #[ctor::ctor]
-static VALUES: Memory<Value, u64> = { Memory::new(1 << 22) };
+static VALUES: Memory<Value, u64> = { Memory::new(1 << 22).unwrap() };
 
 impl Evaluator {
     /// Constructs the evaluator from a [`Position`].

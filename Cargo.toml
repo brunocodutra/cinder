@@ -32,7 +32,7 @@ clap = { version = "4.5.51", default-features = false, features = [
     "help",
     "std",
 ] }
-ctor = { version = "0.6.0", default-features = false, features = [
+ctor = { version = "0.6.1", default-features = false, features = [
     "proc_macro",
 ] }
 derive_more = { version = "2.0.1", default-features = false, features = [

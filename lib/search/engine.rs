@@ -9,7 +9,7 @@ use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
 use std::cell::SyncUnsafeCell;
 use std::task::{Context, Poll};
-use std::{mem::swap, ops::Range, path::Path, pin::Pin, ptr::NonNull, slice, time::Duration};
+use std::{io, mem::swap, ops::Range, path::Path, pin::Pin, ptr::NonNull, slice, time::Duration};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -1037,50 +1037,47 @@ impl Arbitrary for Engine {
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         any::<Options>()
-            .prop_map(|o| Engine::with_options(&o))
+            .prop_map(|o| Engine::with_options(&o).unwrap())
             .boxed()
-    }
-}
-
-impl Default for Engine {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
 impl Engine {
     /// Initializes the engine with the default [`Options`].
-    pub fn new() -> Self {
+    pub fn new() -> io::Result<Self> {
         Self::with_options(&Options::default())
     }
 
     /// Initializes the engine with the given [`Options`].
-    pub fn with_options(options: &Options) -> Self {
-        Engine {
-            tt: Memory::new(options.hash.get()),
-            syzygy: Syzygy::new(&options.syzygy),
-            executor: Executor::new(options.threads),
-            searchers: Slice::new(options.threads.cast()).unwrap(),
-        }
+    pub fn with_options(options: &Options) -> io::Result<Self> {
+        Ok(Engine {
+            tt: Memory::new(options.hash.get())?,
+            syzygy: Syzygy::new(&options.syzygy)?,
+            executor: Executor::new(options.threads)?,
+            searchers: Slice::new(options.threads.cast())?,
+        })
     }
 
     /// Resets the hash size.
-    pub fn set_hash(&mut self, hash: HashSize) {
-        let mut to_drop = Memory::new(0);
+    pub fn set_hash(&mut self, hash: HashSize) -> io::Result<()> {
+        let mut to_drop = Memory::new(0)?;
         swap(&mut self.tt, &mut to_drop);
         drop(to_drop); // IMPORTANT: deallocate before reallocating
-        self.tt = Memory::new(hash.get());
+        self.tt = Memory::new(hash.get())?;
+        Ok(())
     }
 
     /// Resets the thread count.
-    pub fn set_threads(&mut self, threads: ThreadCount) {
-        self.executor = Executor::new(threads);
-        self.searchers = Slice::new(threads.cast()).unwrap();
+    pub fn set_threads(&mut self, threads: ThreadCount) -> io::Result<()> {
+        self.executor = Executor::new(threads)?;
+        self.searchers = Slice::new(threads.cast())?;
+        Ok(())
     }
 
     /// Resets the Syzygy path.
-    pub fn set_syzygy<I: IntoIterator<Item: AsRef<Path>>>(&mut self, paths: I) {
-        self.syzygy = Syzygy::new(paths);
+    pub fn set_syzygy<I: IntoIterator<Item: AsRef<Path>>>(&mut self, paths: I) -> io::Result<()> {
+        self.syzygy = Syzygy::new(paths)?;
+        Ok(())
     }
 
     /// Resets the engine state.
@@ -1116,7 +1113,7 @@ mod tests {
 
     #[proptest]
     fn hash_is_an_upper_limit_for_table_size(o: Options) {
-        let e = Engine::with_options(&o);
+        let e = Engine::with_options(&o)?;
         prop_assume!(e.tt.capacity() > 1);
         assert!(e.tt.size() <= o.hash.get());
     }

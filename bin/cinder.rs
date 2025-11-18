@@ -39,13 +39,13 @@ fn main() -> Result<(), Failure> {
                 break;
             }
         }
-    });
+    })?;
 
     let handle = thread::spawn(move || {
         let mut stdout = stdout().lock();
         let output = sink((), |_, line: String| ready(writeln!(stdout, "{line}")));
-        Ok(block_on(Uci::new(input, output).run())?)
-    });
+        Ok(block_on(Uci::new(input, output)?.run())?)
+    })?;
 
     handle.join()
 }

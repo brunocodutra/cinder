@@ -1,6 +1,6 @@
 use crate::search::{Line, Ply, Pv};
 use crate::{chess::Position, util::Int};
-use std::{fs::read_dir, path::Path};
+use std::{fs::read_dir, io, path::Path};
 
 mod dtz;
 mod fs;
@@ -24,20 +24,18 @@ pub struct Syzygy {
 
 impl Syzygy {
     /// Initializes the the tablebase from the files in `path`.
-    pub fn new<P: AsRef<Path>, I: IntoIterator<Item = P>>(paths: I) -> Self {
+    pub fn new<P: AsRef<Path>, I: IntoIterator<Item = P>>(paths: I) -> io::Result<Self> {
         let mut syzygy = Self::default();
 
         for path in paths {
             if let Ok(directory) = read_dir(path) {
                 for entry in directory.flatten() {
-                    if syzygy.tablebase.load(&entry.path()).is_err() {
-                        continue;
-                    };
+                    syzygy.tablebase.load(&entry.path())?;
                 }
             }
         }
 
-        syzygy
+        Ok(syzygy)
     }
 
     /// The maximum number of pieces available in the tablebase.
@@ -140,13 +138,13 @@ mod tests {
     ];
 
     #[proptest(cases = 1)]
-    fn new_with_empty_paths() {
-        let syzygy = Syzygy::new::<&PathBuf, _>(&[]);
+    fn new_with_empty_paths_succeeds() {
+        let syzygy = Syzygy::new::<&PathBuf, _>(&[])?;
         assert_eq!(syzygy.max_pieces(), 0);
     }
 
     #[proptest(cases = 1)]
-    fn new_with_single_directory() {
+    fn new_with_single_directory_succeeds() {
         let tmp = TempDir::new()?;
 
         let file = tmp.path().join("KNvK.rtbw");
@@ -155,12 +153,12 @@ mod tests {
         let file = tmp.path().join("KNvKN.rtbz");
         File::create(&file)?.write_all(KNVKN_RTBZ)?;
 
-        let syzygy = Syzygy::new(&[tmp.path().to_owned()]);
+        let syzygy = Syzygy::new(&[tmp.path().to_owned()])?;
         assert_eq!(syzygy.max_pieces(), 4);
     }
 
     #[proptest(cases = 1)]
-    fn new_with_multiple_directories() {
+    fn new_with_multiple_directories_succeeds() {
         let tmp = TempDir::new()?;
 
         let wdl = tmp.path().join("wdl");
@@ -173,44 +171,45 @@ mod tests {
         let file = dtz.join("KNvKN.rtbz");
         File::create(&file)?.write_all(KNVKN_RTBZ)?;
 
-        let syzygy = Syzygy::new(&[wdl, dtz]);
+        let syzygy = Syzygy::new(&[wdl, dtz])?;
         assert_eq!(syzygy.max_pieces(), 4);
     }
 
     #[proptest]
-    fn new_with_nonexistent_directory(#[strategy("[A-Za-z0-9_]{1,10}")] dir: String) {
+    fn new_with_nonexistent_directory_succeeds(#[strategy("[A-Za-z0-9_]{1,10}")] dir: String) {
         let tmp = TempDir::new()?;
-        let syzygy = Syzygy::new(&[tmp.path().join(dir)]);
+        let syzygy = Syzygy::new(&[tmp.path().join(dir)])?;
         assert_eq!(syzygy.max_pieces(), 0);
     }
 
     #[proptest]
-    fn new_with_empty_directory(#[strategy("[A-Za-z0-9_]{1,10}")] dir: String) {
+    fn new_with_empty_directory_succeeds(#[strategy("[A-Za-z0-9_]{1,10}")] dir: String) {
         let tmp = TempDir::new()?;
         let dir = tmp.path().join(dir);
         create_dir_all(&dir)?;
 
-        let syzygy = Syzygy::new(&[dir]);
+        let syzygy = Syzygy::new(&[dir])?;
         assert_eq!(syzygy.max_pieces(), 0);
     }
 
     #[proptest]
-    fn new_with_not_a_directory(#[strategy("[A-Za-z0-9_]{1,10}")] file: String) {
+    fn new_with_not_a_directory_succeeds(#[strategy("[A-Za-z0-9_]{1,10}")] file: String) {
         let tmp = TempDir::new()?;
         let file = tmp.path().join(file);
         File::create(&file)?;
 
-        let syzygy = Syzygy::new(&[file]);
+        let syzygy = Syzygy::new(&[file])?;
         assert_eq!(syzygy.max_pieces(), 0);
     }
 
     #[proptest]
-    fn new_with_directory_containing_invalid_file(#[strategy("[A-Za-z0-9_]{1,10}")] file: String) {
+    fn new_with_directory_containing_invalid_file_fails(
+        #[strategy("[A-Za-z0-9_]{1,10}")] file: String,
+    ) {
         let tmp = TempDir::new()?;
         let file = tmp.path().join(file);
         File::create(file)?;
 
-        let syzygy = Syzygy::new(&[tmp.path().to_owned()]);
-        assert_eq!(syzygy.max_pieces(), 0);
+        assert!(Syzygy::new(&[tmp.path().to_owned()]).is_err());
     }
 }

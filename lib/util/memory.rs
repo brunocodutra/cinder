@@ -4,7 +4,7 @@ use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Deref, DerefMut};
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
-use std::{mem::size_of, sync::atomic::Ordering};
+use std::{io, mem::size_of, sync::atomic::Ordering};
 
 #[cfg(test)]
 use proptest::{collection::*, prelude::*};
@@ -179,12 +179,12 @@ where
 {
     /// Constructs a memoization data of at most `size` many bytes.
     #[inline(always)]
-    pub fn new(size: usize) -> Self {
+    pub fn new(size: usize) -> io::Result<Self> {
         let cap = size / size_of::<Padlock<T, U>>();
 
-        Memory {
-            data: Slice::new(cap).unwrap(),
-        }
+        Ok(Memory {
+            data: Slice::new(cap)?,
+        })
     }
 
     /// The actual size of this memoization data in bytes.
@@ -285,7 +285,7 @@ mod tests {
 
     #[proptest]
     fn input_size_is_an_upper_limit(#[strategy(..1024usize)] s: usize) {
-        assert!(MockMemory::new(s).size() <= s);
+        assert!(MockMemory::new(s)?.size() <= s);
     }
 
     #[proptest]
@@ -295,7 +295,7 @@ mod tests {
 
     #[proptest]
     fn get_does_nothing_if_capacity_is_zero(k: Key) {
-        assert_eq!(MockMemory::new(0).get(k), None);
+        assert_eq!(MockMemory::new(0)?.get(k), None);
     }
 
     #[proptest]
@@ -335,7 +335,7 @@ mod tests {
 
     #[proptest]
     fn set_does_nothing_if_capacity_is_zero(k: Key, v: Order) {
-        MockMemory::new(0).set(k, v);
+        MockMemory::new(0)?.set(k, v);
     }
 
     #[proptest]

@@ -2,7 +2,7 @@ use crate::search::ThreadCount;
 use crate::util::{Assume, Int, thread};
 use derive_more::with_trait::Debug;
 use std::sync::{Arc, Condvar, Mutex};
-use std::{cell::SyncUnsafeCell, iter::repeat_n};
+use std::{cell::SyncUnsafeCell, io, iter::repeat_n};
 
 struct Barrier {
     lap: u16,
@@ -76,7 +76,7 @@ impl Drop for Executor {
 impl Executor {
     /// Initializes a broadcast executor with the requested number of threads.
     #[inline(always)]
-    pub fn new(threads: ThreadCount) -> Self {
+    pub fn new(threads: ThreadCount) -> io::Result<Self> {
         let shared = Arc::new(Shared {
             barrier: Barrier::new(threads.get() + 1),
             job: SyncUnsafeCell::new(None),
@@ -92,11 +92,11 @@ impl Executor {
                         None => return,
                     }
                 }
-            });
+            })?;
         }
 
         shared.barrier.wait();
-        Executor { shared }
+        Ok(Executor { shared })
     }
 
     /// Executes `f` on every thread.
@@ -137,7 +137,7 @@ mod tests {
 
     #[proptest]
     fn executor_runs_job_on_all_threads(c: ThreadCount) {
-        let mut executor = Executor::new(c);
+        let mut executor = Executor::new(c)?;
         let count = Arc::new(AtomicU16::new(0));
 
         let task = {
@@ -153,7 +153,7 @@ mod tests {
 
     #[proptest]
     fn executor_runs_exactly_one_job_per_thread(c: ThreadCount) {
-        let mut executor = Executor::new(c);
+        let mut executor = Executor::new(c)?;
         let count = Arc::new(Vec::from_iter((0..c.get()).map(|_| AtomicUsize::new(0))));
 
         let task = {

@@ -6,7 +6,6 @@ use std::thread::{self, available_parallelism};
 use std::{alloc::Layout, io, num::NonZero, slice};
 
 const HUGEPAGE_SIZE: usize = 2 << 20;
-const PREFAULT_BLOCK_MIN_SIZE: usize = 128 << 20;
 
 /// A hugepage-backed slice of `T`.
 ///
@@ -44,16 +43,24 @@ impl<T: Send + Zeroable> Slice<T> {
             _mmap: mmap,
         };
 
-        let chunk_size = len.div_ceil(available_parallelism().map_or(1, NonZero::get));
+        slice.clear();
+
+        Ok(slice)
+    }
+
+    /// Zeroes out the memory.
+    #[inline(always)]
+    pub fn clear(&mut self) {
+        const PREFAULT_BLOCK_MIN_SIZE: usize = 128 << 20;
         let min_chunk_size = PREFAULT_BLOCK_MIN_SIZE.div_ceil(size_of::<T>());
+        let available_parallelism = available_parallelism().map_or(1, NonZero::get);
+        let chunk_size = self.len.div_ceil(available_parallelism);
 
         thread::scope(|s| {
-            for chunk in slice.chunks_mut(chunk_size.max(min_chunk_size)) {
+            for chunk in self.chunks_mut(chunk_size.max(min_chunk_size)) {
                 s.spawn(|| fill_zeroes(chunk));
             }
         });
-
-        Ok(slice)
     }
 }
 

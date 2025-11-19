@@ -1,6 +1,6 @@
 use crate::search::{Line, Ply, Pv};
 use crate::{chess::Position, util::Integer};
-use std::{fs::read_dir, path::PathBuf};
+use std::{fs::read_dir, path::Path};
 
 mod dtz;
 mod fs;
@@ -24,7 +24,7 @@ pub struct Syzygy {
 
 impl Syzygy {
     /// Initializes the the tablebase from the files in `path`.
-    pub fn new<'a, I: IntoIterator<Item = &'a PathBuf>>(paths: I) -> Self {
+    pub fn new<P: AsRef<Path>, I: IntoIterator<Item = P>>(paths: I) -> Self {
         let mut syzygy = Self::default();
 
         for path in paths {
@@ -117,7 +117,7 @@ impl Syzygy {
 mod tests {
     use super::*;
     use std::fs::{File, create_dir_all};
-    use std::io::Write;
+    use std::{io::Write, path::PathBuf};
     use tempfile::TempDir;
     use test_strategy::proptest;
 
@@ -141,7 +141,7 @@ mod tests {
 
     #[proptest(cases = 1)]
     fn new_with_empty_paths() {
-        let syzygy = Syzygy::new(&[]);
+        let syzygy = Syzygy::new::<&PathBuf, _>(&[]);
         assert_eq!(syzygy.max_pieces(), 0);
     }
 

@@ -34,6 +34,9 @@ impl<T: Send + Zeroable> Slice<T> {
         #[cfg(target_os = "linux")]
         mmap.advise(memmap2::Advice::HugePage)?;
 
+        #[cfg(unix)]
+        mmap.advise(memmap2::Advice::Random)?;
+
         let ptr = mmap.as_ptr();
         let offset = ptr.align_offset(align);
 

@@ -186,6 +186,12 @@ where
         let bits = self.data[key].load(Ordering::Relaxed);
         Option::<Latch<T, U>>::decode(bits)?.open(key)
     }
+
+    /// Clears all entries.
+    #[inline(always)]
+    pub fn clear(&mut self) {
+        self.data.clear();
+    }
 }
 
 impl<T> Index<Key> for [Slot<T>] {

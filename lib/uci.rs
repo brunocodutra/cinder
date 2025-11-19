@@ -1,5 +1,5 @@
 use crate::chess::{Color, Move, Position, Square};
-use crate::search::{Engine, HashSize, Info, Limits, Mate, Options, ThreadCount};
+use crate::search::{HashSize, Info, Limits, Mate, ThreadCount};
 use crate::util::{Assume, Integer, parsers::*};
 use derive_more::with_trait::{Display, Error, From};
 use futures::{prelude::*, select_biased as select, stream::FusedStream};
@@ -7,10 +7,51 @@ use nom::error::Error as ParseError;
 use nom::{branch::*, bytes::complete::*, combinator::*, sequence::*, *};
 use std::fmt::{self, Debug, Formatter};
 use std::str::{self, FromStr};
-use std::{io::Write, path::PathBuf, time::Instant};
+use std::{collections::HashSet, io::Write, time::Instant};
 
 #[cfg(test)]
 use proptest::{prelude::*, strategy::LazyJust};
+
+#[cfg(test)]
+mod mock {
+    use super::*;
+    use crate::search::{Engine, Options};
+    use derive_more::{Deref, DerefMut};
+    use std::path::Path;
+    use test_strategy::Arbitrary;
+
+    #[derive(Debug, Default, Deref, DerefMut, Arbitrary)]
+    pub struct MockEngine {
+        #[deref]
+        #[deref_mut]
+        #[strategy(LazyJust::new(move || Engine::with_options(&#options)))]
+        delegate: Engine,
+        pub options: Options,
+    }
+
+    impl MockEngine {
+        pub fn set_hash(&mut self, hash: HashSize) {
+            self.options.hash = hash;
+            self.delegate.set_hash(hash);
+        }
+
+        pub fn set_threads(&mut self, threads: ThreadCount) {
+            self.options.threads = threads;
+            self.delegate.set_threads(threads);
+        }
+
+        pub fn set_syzygy<I: IntoIterator<Item: AsRef<Path>>>(&mut self, paths: I) {
+            self.options.syzygy = paths.into_iter().map(|p| p.as_ref().into()).collect();
+            self.delegate.set_syzygy(&self.options.syzygy);
+        }
+    }
+}
+
+#[cfg(test)]
+use mock::MockEngine as Engine;
+
+#[cfg(not(test))]
+use crate::search::Engine;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 struct UciMove(Move);
@@ -85,9 +126,7 @@ pub struct Uci<I, O> {
     input: I,
     #[cfg_attr(test, strategy(LazyJust::new(O::default)))]
     output: O,
-    #[cfg_attr(test, strategy(LazyJust::new(move || Engine::with_options(&#options))))]
     engine: Engine,
-    options: Options,
     position: Position,
 }
 
@@ -104,7 +143,6 @@ impl<I, O> Uci<I, O> {
             input,
             output,
             engine: Default::default(),
-            options: Default::default(),
             position: Default::default(),
         }
     }
@@ -260,26 +298,23 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
                 let options = gather3((
                     option("hash").map_res(|s| s.parse()),
                     option("threads").map_res(|s| s.parse()),
-                    option("syzygypath")
-                        .map(|s| s.split(Self::PATH_DELIMITER).map(PathBuf::from).collect()),
+                    option("syzygypath").map(|s| s.split(Self::PATH_DELIMITER).collect()),
                 ));
 
                 let mut setoption = terminated(options, eof);
                 let (_, (hash, threads, syzygy)) = setoption.parse(args).finish()?;
 
                 if let Some(h) = hash {
-                    self.options.hash = h;
+                    self.engine.set_hash(h);
                 }
 
                 if let Some(t) = threads {
-                    self.options.threads = t;
+                    self.engine.set_threads(t);
                 }
 
                 if let Some(p) = syzygy {
-                    self.options.syzygy = p;
+                    self.engine.set_syzygy::<HashSet<_>>(p);
                 }
-
-                self.engine = Engine::with_options(&self.options);
 
                 Ok(true)
             }
@@ -287,14 +322,12 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
             ("", "isready") => {
                 let readyok = "readyok".to_string();
                 self.output.send(readyok).await.map_err(UciError::Fatal)?;
-
                 Ok(true)
             }
 
             ("", "ucinewgame") => {
-                self.engine = Engine::with_options(&self.options);
                 self.position = Default::default();
-
+                self.engine.reset();
                 Ok(true)
             }
 
@@ -366,7 +399,7 @@ mod tests {
     use proptest::sample::Selector;
     use rand::seq::SliceRandom;
     use std::task::{Context, Poll};
-    use std::{collections::VecDeque, pin::Pin};
+    use std::{collections::VecDeque, path::PathBuf, pin::Pin};
     use test_strategy::proptest;
 
     #[derive(Debug, Default, Clone, Eq, PartialEq)]
@@ -734,7 +767,7 @@ mod tests {
         h: HashSize,
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert_eq!(uci.options.hash, h >> 20 << 20);
+        assert_eq!(uci.engine.options.hash, h >> 20 << 20);
         assert_eq!(uci.output.join("\n"), "");
     }
 
@@ -743,9 +776,9 @@ mod tests {
         #[any(StaticStream::new([format!("setoption name Hash value {}", #_s)]))] mut uci: MockUci,
         #[filter(#_s.trim().parse::<HashSize>().is_err())] _s: String,
     ) {
-        let o = uci.options.clone();
+        let o = uci.engine.options.clone();
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert_eq!(uci.options, o);
+        assert_eq!(uci.engine.options, o);
         assert_eq!(uci.output.join("\n"), "");
     }
 
@@ -756,7 +789,7 @@ mod tests {
         t: ThreadCount,
     ) {
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert_eq!(uci.options.threads, t);
+        assert_eq!(uci.engine.options.threads, t);
         assert_eq!(uci.output.join("\n"), "");
     }
 
@@ -766,9 +799,9 @@ mod tests {
         mut uci: MockUci,
         #[filter(#_s.trim().parse::<ThreadCount>().is_err())] _s: String,
     ) {
-        let o = uci.options.clone();
+        let o = uci.engine.options.clone();
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert_eq!(uci.options, o);
+        assert_eq!(uci.engine.options, o);
         assert_eq!(uci.output.join("\n"), "");
     }
 
@@ -785,7 +818,7 @@ mod tests {
             .collect();
 
         assert_eq!(block_on(uci.run()), Ok(()));
-        assert_eq!(uci.options.syzygy, paths);
+        assert_eq!(uci.engine.options.syzygy, paths);
         assert_eq!(uci.output.join("\n"), "");
     }
 

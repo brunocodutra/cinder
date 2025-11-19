@@ -6,8 +6,9 @@ use bytemuck::Zeroable;
 use derive_more::with_trait::{Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
+use std::cell::SyncUnsafeCell;
 use std::task::{Context, Poll};
-use std::{cell::SyncUnsafeCell, ops::Range, pin::Pin, ptr::NonNull, time::Duration};
+use std::{mem::swap, ops::Range, path::Path, pin::Pin, ptr::NonNull, time::Duration};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -1076,6 +1077,31 @@ impl Engine {
             executor: Executor::new(options.threads),
             searchers: Slice::new(options.threads.cast()).unwrap(),
         }
+    }
+
+    /// Resets the hash size.
+    pub fn set_hash(&mut self, hash: HashSize) {
+        let mut to_drop = Memory::new(0);
+        swap(&mut self.tt, &mut to_drop);
+        drop(to_drop); // IMPORTANT: deallocate before reallocating
+        self.tt = Memory::new(hash.get());
+    }
+
+    /// Resets the thread count.
+    pub fn set_threads(&mut self, threads: ThreadCount) {
+        self.executor = Executor::new(threads);
+        self.searchers = Slice::new(threads.cast()).unwrap();
+    }
+
+    /// Resets the Syzygy path.
+    pub fn set_syzygy<I: IntoIterator<Item: AsRef<Path>>>(&mut self, paths: I) {
+        self.syzygy = Syzygy::new(paths);
+    }
+
+    /// Resets the engine state.
+    pub fn reset(&mut self) {
+        self.tt.clear();
+        self.searchers.clear();
     }
 
     /// Initiates a [`Search`].

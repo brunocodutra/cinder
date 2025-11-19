@@ -1132,10 +1132,10 @@ mod tests {
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
-        #[filter(#b.mate() == Mate::None)] b: Score,
+        #[filter(!#b.is_winning() && !#b.is_losing())] b: Score,
         was_pv: bool,
         d: Depth,
-        #[filter(#s.mate() == Mate::None && #s >= #b)] s: Score,
+        #[filter(!#s.is_winning() && #s >= #b)] s: Score,
         cut: bool,
     ) {
         let tpos = Transposition::new(ScoreBound::Lower(s), Depth::upper(), Some(m), was_pv);
@@ -1159,10 +1159,10 @@ mod tests {
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
-        #[filter(#b.mate() == Mate::None)] b: Score,
+        #[filter(!#b.is_winning() && !#b.is_losing())] b: Score,
         was_pv: bool,
         d: Depth,
-        #[filter(#s.mate() == Mate::None && #s < #b)] s: Score,
+        #[filter(!#s.is_losing() && #s < #b)] s: Score,
         cut: bool,
     ) {
         let tpos = Transposition::new(ScoreBound::Upper(s), Depth::upper(), Some(m), was_pv);
@@ -1186,10 +1186,10 @@ mod tests {
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
-        #[filter(#b.mate() == Mate::None)] b: Score,
+        #[filter(!#b.is_winning() && !#b.is_losing())] b: Score,
         was_pv: bool,
         d: Depth,
-        #[filter(#s.mate() == Mate::None)] s: Score,
+        #[filter(!#s.is_winning() && !#s.is_losing())] s: Score,
         cut: bool,
     ) {
         let tpos = Transposition::new(ScoreBound::Exact(s), Depth::upper(), Some(m), was_pv);

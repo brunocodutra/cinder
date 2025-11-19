@@ -83,8 +83,10 @@ impl Score {
     /// Normalizes mate scores from `ply` relative to the root node.
     #[inline(always)]
     pub fn relative_to_root(&self, ply: Ply) -> Self {
-        if self.is_decisive() {
-            *self + ply.cast::<i16>() * self.signum()
+        if self.is_winning() {
+            *self + ply.cast::<i16>()
+        } else if self.is_losing() {
+            *self - ply.cast::<i16>()
         } else {
             *self
         }
@@ -93,8 +95,10 @@ impl Score {
     /// Normalizes mate scores from the root node relative to `ply`.
     #[inline(always)]
     pub fn relative_to_ply(&self, ply: Ply) -> Self {
-        if self.is_decisive() {
-            *self - ply.cast::<i16>() * self.signum()
+        if self.is_winning() {
+            *self - ply.cast::<i16>()
+        } else if self.is_losing() {
+            *self + ply.cast::<i16>()
         } else {
             *self
         }
@@ -102,20 +106,26 @@ impl Score {
 
     /// Returns true if the score represents a winning position.
     #[inline(always)]
-    pub fn is_win(&self) -> bool {
+    pub fn is_winning(&self) -> bool {
         *self > Value::MAX
     }
 
     /// Returns true if the score represents a losing position.
     #[inline(always)]
-    pub fn is_loss(&self) -> bool {
+    pub fn is_losing(&self) -> bool {
         *self < Value::MIN
     }
 
-    /// Returns true if the score represents a decisive position (win or loss).
+    /// Returns true if the score represents a won position.
     #[inline(always)]
-    pub fn is_decisive(&self) -> bool {
-        self.is_win() || self.is_loss()
+    pub fn is_win(&self) -> bool {
+        *self > Self::winning(Ply::new(0))
+    }
+
+    /// Returns true if the score represents a lost position.
+    #[inline(always)]
+    pub fn is_loss(&self) -> bool {
+        *self < Self::losing(Ply::new(0))
     }
 }
 
@@ -146,16 +156,16 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
-    fn relative_to_root_ignores_non_mate_scores(
-        #[filter(#s.mate() == Mate::None)] s: Score,
+    fn relative_to_root_ignores_undecided_scores(
+        #[filter(!#s.is_winning() && !#s.is_losing())] s: Score,
         p: Ply,
     ) {
         assert_eq!(s.relative_to_root(p), s);
     }
 
     #[proptest]
-    fn relative_to_ply_ignores_non_mate_scores(
-        #[filter(#s.mate() == Mate::None)] s: Score,
+    fn relative_to_ply_ignores_undecided_scores(
+        #[filter(!#s.is_winning() && !#s.is_losing())] s: Score,
         p: Ply,
     ) {
         assert_eq!(s.relative_to_ply(p), s);
@@ -179,16 +189,6 @@ mod tests {
     #[proptest]
     fn mated_implies_is_loss(p: Ply) {
         assert!(Score::mated(p).is_loss());
-    }
-
-    #[proptest]
-    fn mating_implies_is_decisive(p: Ply) {
-        assert!(Score::mating(p).is_decisive());
-    }
-
-    #[proptest]
-    fn mated_implies_is_decisive(p: Ply) {
-        assert!(Score::mated(p).is_decisive());
     }
 
     #[proptest]

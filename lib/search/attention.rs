@@ -1,6 +1,5 @@
-use crate::chess::{Butterfly, Move, Position};
-use crate::search::{Stat, Statistics};
-use crate::util::Integer;
+use crate::chess::{Butterfly, Move};
+use crate::{search::Stat, util::Integer};
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 
@@ -42,21 +41,7 @@ impl Default for Attention {
 
 impl Attention {
     #[inline(always)]
-    pub fn nodes(&mut self, _: &Position, m: Move) -> &mut Nodes {
+    pub fn nodes(&mut self, m: Move) -> &mut Nodes {
         &mut self.0[m.whence() as usize][m.whither() as usize]
-    }
-}
-
-impl Statistics<Move> for Attention {
-    type Stat = Nodes;
-
-    #[inline(always)]
-    fn get(&mut self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
-        self.nodes(pos, m).get()
-    }
-
-    #[inline(always)]
-    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
-        self.nodes(pos, m).update(delta);
     }
 }

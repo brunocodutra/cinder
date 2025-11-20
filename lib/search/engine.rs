@@ -444,11 +444,11 @@ impl<'a> Stack<'a> {
         mut cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
         self.nodes.update(1);
-        if self.ctrl.check(&self.pv, &self.pos) == ControlFlow::Abort {
+        let ply = self.pos.ply();
+        if self.ctrl.check(ply, &self.pv) == ControlFlow::Abort {
             return Err(Interrupted);
         }
 
-        let ply = self.pos.ply();
         let (alpha, beta) = match self.pos.outcome() {
             None => self.mdp(&bounds),
             Some(o) if o.is_draw() => return Ok(Pv::empty(Score::new(0))),
@@ -766,7 +766,7 @@ impl<'a> Stack<'a> {
         bounds: Range<Score>,
     ) -> Result<Pv, Interrupted> {
         let (alpha, beta) = (bounds.start, bounds.end);
-        match self.ctrl.check(&self.pv, &self.pos) {
+        match self.ctrl.check(Ply::new(0), &self.pv) {
             ControlFlow::Stop if self.index == 0 => return Err(Interrupted),
             ControlFlow::Abort => return Err(Interrupted),
             _ => {}
@@ -802,9 +802,7 @@ impl<'a> Stack<'a> {
 
         let mut sorted_moves = moves.sorted();
         let mut head = sorted_moves.next().assume();
-        self.nodes = Some(NonNull::from_mut(
-            self.ctrl.attention().nodes(&self.pos, head),
-        ));
+        self.nodes = Some(NonNull::from_mut(self.ctrl.attention().nodes(head)));
 
         let mut tail = -self.next(Some(head)).ab(depth - 1, -beta..-alpha, false)?;
 
@@ -822,9 +820,8 @@ impl<'a> Stack<'a> {
                 break;
             }
 
-            let pos = &self.pos;
-            let history = self.searcher.history.get(pos, m).cast::<i64>();
-            self.nodes = Some(NonNull::from_mut(self.ctrl.attention().nodes(pos, m)));
+            let history = self.searcher.history.get(&self.pos, m).cast::<i64>();
+            self.nodes = Some(NonNull::from_mut(self.ctrl.attention().nodes(m)));
 
             let mut next = self.next(Some(m));
             let gives_check = next.pos.is_check();
@@ -1142,10 +1139,7 @@ mod tests {
 
         let ctrl = GlobalControl::new(&pos, Limits::none());
         let mut stack = Stack::new(0, &mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
-        stack.nodes = Some(NonNull::from_mut(
-            stack.ctrl.attention().nodes(&stack.pos, m),
-        ));
-
+        stack.nodes = Some(NonNull::from_mut(stack.ctrl.attention().nodes(m)));
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(d, b, cut), Ok(Pv::empty(s)));
     }
@@ -1168,10 +1162,7 @@ mod tests {
 
         let ctrl = GlobalControl::new(&pos, Limits::none());
         let mut stack = Stack::new(0, &mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
-        stack.nodes = Some(NonNull::from_mut(
-            stack.ctrl.attention().nodes(&stack.pos, m),
-        ));
-
+        stack.nodes = Some(NonNull::from_mut(stack.ctrl.attention().nodes(m)));
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(d, b, cut), Ok(Pv::empty(s)));
     }
@@ -1194,10 +1185,7 @@ mod tests {
 
         let ctrl = GlobalControl::new(&pos, Limits::none());
         let mut stack = Stack::new(0, &mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
-        stack.nodes = Some(NonNull::from_mut(
-            stack.ctrl.attention().nodes(&stack.pos, m),
-        ));
-
+        stack.nodes = Some(NonNull::from_mut(stack.ctrl.attention().nodes(m)));
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.nw::<1>(d, b, cut), Ok(Pv::empty(s)));
     }
@@ -1213,10 +1201,7 @@ mod tests {
     ) {
         let ctrl = GlobalControl::new(&pos, Limits::nodes(0));
         let mut stack = Stack::new(0, &mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
-        stack.nodes = Some(NonNull::from_mut(
-            stack.ctrl.attention().nodes(&stack.pos, m),
-        ));
-
+        stack.nodes = Some(NonNull::from_mut(stack.ctrl.attention().nodes(m)));
         stack.pv = stack.pv.transpose(m);
         assert_eq!(stack.ab::<1>(d, b, cut), Err(Interrupted));
     }
@@ -1232,10 +1217,7 @@ mod tests {
     ) {
         let ctrl = GlobalControl::new(&pos, Limits::time(Duration::ZERO));
         let mut stack = Stack::new(0, &mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
-        stack.nodes = Some(NonNull::from_mut(
-            stack.ctrl.attention().nodes(&stack.pos, m),
-        ));
-
+        stack.nodes = Some(NonNull::from_mut(stack.ctrl.attention().nodes(m)));
         stack.pv = stack.pv.transpose(m);
         thread::sleep(Duration::from_millis(1));
         assert_eq!(stack.ab::<1>(d, b, cut), Err(Interrupted));
@@ -1252,10 +1234,7 @@ mod tests {
     ) {
         let ctrl = GlobalControl::new(&pos, Limits::none());
         let mut stack = Stack::new(0, &mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
-        stack.nodes = Some(NonNull::from_mut(
-            stack.ctrl.attention().nodes(&stack.pos, m),
-        ));
-
+        stack.nodes = Some(NonNull::from_mut(stack.ctrl.attention().nodes(m)));
         stack.pv = stack.pv.transpose(m);
         ctrl.abort();
         assert_eq!(stack.ab::<1>(d, b, cut), Err(Interrupted));
@@ -1272,9 +1251,7 @@ mod tests {
     ) {
         let ctrl = GlobalControl::new(&pos, Limits::none());
         let mut stack = Stack::new(0, &mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
-        stack.nodes = Some(NonNull::from_mut(
-            stack.ctrl.attention().nodes(&stack.pos, m),
-        ));
+        stack.nodes = Some(NonNull::from_mut(stack.ctrl.attention().nodes(m)));
 
         assert_eq!(stack.ab::<1>(d, b, cut), Ok(Pv::empty(Score::new(0))));
     }
@@ -1291,9 +1268,7 @@ mod tests {
         let ply = pos.ply();
         let ctrl = GlobalControl::new(&pos, Limits::none());
         let mut stack = Stack::new(0, &mut e.searchers[0], &e.syzygy, &e.tt, &ctrl, pos);
-        stack.nodes = Some(NonNull::from_mut(
-            stack.ctrl.attention().nodes(&stack.pos, m),
-        ));
+        stack.nodes = Some(NonNull::from_mut(stack.ctrl.attention().nodes(m)));
 
         assert_eq!(stack.ab::<1>(d, b, cut), Ok(Pv::empty(Score::mated(ply))));
     }

@@ -965,7 +965,7 @@ impl<'e> Drop for Search<'e> {
     }
 }
 
-impl<'e> FusedStream for Search<'e> {
+impl<'e> FusedStream for Pin<&mut Search<'e>> {
     fn is_terminated(&self) -> bool {
         self.channel
             .as_ref()
@@ -973,7 +973,7 @@ impl<'e> FusedStream for Search<'e> {
     }
 }
 
-impl<'e> Stream for Search<'e> {
+impl<'e> Stream for Pin<&mut Search<'e>> {
     type Item = Info;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -1011,7 +1011,6 @@ impl<'e> Stream for Search<'e> {
 
             if idx == 0 {
                 tx.close_channel();
-                ctrl.abort();
             }
         }));
 
@@ -1113,7 +1112,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::executor::block_on_stream;
+    use futures::{executor::block_on_stream, pin_mut};
     use proptest::{prop_assume, sample::Selector};
     use std::{thread, time::Duration};
     use test_strategy::proptest;
@@ -1339,7 +1338,10 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Position,
         d: Depth,
     ) {
-        let infos = block_on_stream(e.search(&pos, Limits::depth(d)));
+        let search = e.search(&pos, Limits::depth(d));
+        pin_mut!(search);
+
+        let infos = block_on_stream(search);
         assert!(infos.map(|i| (i.depth(), i.score())).is_sorted());
     }
 }

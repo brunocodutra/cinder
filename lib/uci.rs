@@ -2,7 +2,7 @@ use crate::chess::{Color, Move, Position, Square};
 use crate::search::{HashSize, Info, Limits, Mate, ThreadCount};
 use crate::util::{Assume, Integer, parsers::*};
 use derive_more::with_trait::{Display, Error, From};
-use futures::{prelude::*, select_biased as select, stream::FusedStream};
+use futures::{pin_mut, prelude::*, select_biased as select, stream::FusedStream};
 use nom::error::Error as ParseError;
 use nom::{branch::*, bytes::complete::*, combinator::*, sequence::*, *};
 use std::fmt::{self, Debug, Formatter};
@@ -150,8 +150,9 @@ impl<I, O> Uci<I, O> {
 
 impl<I: FusedStream<Item = String> + Unpin, O: Sink<String> + Unpin> Uci<I, O> {
     async fn go(&mut self, limits: Limits) -> Result<bool, UciError<O::Error>> {
-        let mut search = self.engine.search(&self.position, limits);
         let mut best = UciBestMove(None);
+        let search = self.engine.search(&self.position, limits);
+        pin_mut!(search);
 
         loop {
             select! {

@@ -7,7 +7,7 @@ use std::{alloc::Layout, io, num::NonZero, slice};
 
 const HUGEPAGE_SIZE: usize = 2 << 20;
 
-/// A hugepage-backed slice of `T`.
+/// A memory mapped slice of `T`.
 ///
 /// Memory is guaranteed to be zero-initialized on all platforms.
 #[derive(Debug)]
@@ -21,7 +21,9 @@ unsafe impl<T: Send> Send for Slice<T> {}
 unsafe impl<T: Sync> Sync for Slice<T> {}
 
 impl<T: Send + Zeroable> Slice<T> {
-    /// Allocates hugepage-backed block of memory for `len` instances of `T`.
+    /// Allocates a memory mapped block of memory for `len` instances of `T`.
+    ///
+    /// Advises the operating system to use huge pages and optimize for random access order where possible.
     pub fn new(len: usize) -> io::Result<Self> {
         const { assert!(size_of::<T>() > 0) }
         const { assert!(!needs_drop::<T>()) }
@@ -32,7 +34,7 @@ impl<T: Send + Zeroable> Slice<T> {
         let mmap = MmapOptions::new().len(size).map_anon()?;
 
         #[cfg(target_os = "linux")]
-        mmap.advise(memmap2::Advice::HugePage)?;
+        mmap.advise(memmap2::Advice::HugePage).ok(); // best-effort
 
         #[cfg(unix)]
         mmap.advise(memmap2::Advice::Random)?;

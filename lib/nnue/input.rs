@@ -88,7 +88,7 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Input
             }
         }
 
-        for nz in nzs.into_remainder().into_iter().flatten() {
+        for nz in nzs.into_remainder() {
             let x = xs.get(nz as usize).assume();
             for (j, a) in acc.iter_mut().enumerate() {
                 let w = ws.get(nz as usize).assume()[j];

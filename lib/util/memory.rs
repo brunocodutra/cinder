@@ -2,41 +2,61 @@ use crate::util::{Assume, Binary, Bits, Integer, Slice, Unsigned};
 use atomic::Atomic;
 use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Deref, DerefMut};
+use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
-use std::{marker::PhantomData, mem::size_of, sync::atomic::Ordering};
+use std::{mem::size_of, sync::atomic::Ordering};
 
 #[cfg(test)]
 use proptest::{collection::*, prelude::*};
 
-type Key = Bits<u64, 64>;
+/// The key to a [`Vault`].
+pub type Key = Bits<u64, 64>;
 
-/// A [`Memory`] slot.
+impl<T> Index<Key> for [T] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, key: Key) -> &Self::Output {
+        let idx = ((key.cast::<u128>() * self.len().cast::<u128>()) >> 64) as usize;
+        self.get(idx).assume()
+    }
+}
+
+impl<T> IndexMut<Key> for [T] {
+    #[inline(always)]
+    fn index_mut(&mut self, key: Key) -> &mut Self::Output {
+        let idx = ((key.cast::<u128>() * self.len().cast::<u128>()) >> 64) as usize;
+        self.get_mut(idx).assume()
+    }
+}
+
+/// A checksum-guarded container.
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Latch<T: Binary, U: Binary> {
+pub struct Vault<T: Binary, U: Binary> {
     bits: U::Bits,
     phantom: PhantomData<T>,
 }
 
-impl<T, U, R, const M: u32, const N: u32> Latch<T, U>
+impl<T, U, R, const M: u32, const N: u32> Vault<T, U>
 where
     T: Binary<Bits = Bits<R, M>>,
     U: Unsigned + Binary<Bits = Bits<U, N>>,
     R: Unsigned + Binary,
 {
     #[inline(always)]
-    fn close(key: Key, value: T) -> Self {
+    pub fn close(key: Key, value: T) -> Self {
         let mut bits = Bits::new(key.cast());
         bits.push(value.encode());
 
-        Latch {
+        Vault {
             bits,
             phantom: PhantomData,
         }
     }
 
     #[inline(always)]
-    fn open(mut self, key: Key) -> Option<T> {
+    pub fn open(mut self, key: Key) -> Option<T> {
         const { assert!(N >= M) }
 
         let bits: T::Bits = self.bits.pop();
@@ -48,7 +68,7 @@ where
     }
 }
 
-impl<T, U, R, const M: u32, const N: u32> Binary for Latch<T, U>
+impl<T, U, R, const M: u32, const N: u32> Binary for Vault<T, U>
 where
     T: Binary<Bits = Bits<R, M>>,
     U: Unsigned + Binary<Bits = Bits<U, N>>,
@@ -63,7 +83,7 @@ where
 
     #[inline(always)]
     fn decode(bits: Self::Bits) -> Self {
-        Latch {
+        Vault {
             bits,
             phantom: PhantomData,
         }
@@ -83,10 +103,10 @@ pub struct Memory<
     T: Binary<Bits: Integer<Repr: Binary>>,
     U: Binary = <<T as Binary>::Bits as Integer>::Repr,
 > where
-    Option<Latch<T, U>>: Binary,
+    Option<Vault<T, U>>: Binary,
 {
     #[allow(clippy::type_complexity)]
-    data: Slice<Slot<<Option<Latch<T, U>> as Binary>::Bits>>,
+    data: Slice<Slot<<Option<Vault<T, U>> as Binary>::Bits>>,
 }
 
 #[cfg(test)]
@@ -100,17 +120,15 @@ where
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        hash_map(any::<Key>(), any::<T>(), ..32)
-            .prop_map(|map| {
-                let cap = map.len().next_power_of_two();
-
+        (hash_map(any::<Key>(), any::<T>(), ..32), ..128usize)
+            .prop_map(|(map, size)| {
                 #[allow(clippy::type_complexity)]
-                let mut data: Slice<Slot<<Option<Latch<T, U>> as Binary>::Bits>> =
-                    Slice::new(cap).unwrap();
+                let mut data: Slice<Slot<<Option<Vault<T, U>> as Binary>::Bits>> =
+                    Slice::new(size * size_of::<T>()).unwrap();
 
-                if cap > 0 {
+                if size > 0 {
                     for (k, v) in map {
-                        *data[k].get_mut() = Some(Latch::<T, U>::close(k, v)).encode();
+                        *data[k].get_mut() = Some(Vault::<T, U>::close(k, v)).encode();
                     }
                 }
 
@@ -129,7 +147,7 @@ where
     /// Constructs a memoization data of at most `size` many bytes.
     #[inline(always)]
     pub fn new(size: usize) -> Self {
-        let cap = (1 + size / 2).next_power_of_two() / size_of::<Latch<T, U>>();
+        let cap = size / size_of::<Vault<T, U>>();
 
         Memory {
             data: Slice::new(cap).unwrap(),
@@ -139,7 +157,7 @@ where
     /// The actual size of this memoization data in bytes.
     #[inline(always)]
     pub fn size(&self) -> usize {
-        self.capacity() * size_of::<Latch<T, U>>()
+        self.capacity() * size_of::<Vault<T, U>>()
     }
 
     /// The actual size of this memoization data in number of entries.
@@ -171,7 +189,7 @@ where
     #[inline(always)]
     pub fn set(&self, key: Key, value: T) {
         if self.capacity() > 0 {
-            let bits = Some(Latch::close(key, value)).encode();
+            let bits = Some(Vault::close(key, value)).encode();
             self.data[key].store(bits, Ordering::Relaxed);
         }
     }
@@ -184,7 +202,7 @@ where
         }
 
         let bits = self.data[key].load(Ordering::Relaxed);
-        Option::<Latch<T, U>>::decode(bits)?.open(key)
+        Option::<Vault<T, U>>::decode(bits)?.open(key)
     }
 
     /// Clears all entries.
@@ -194,53 +212,28 @@ where
     }
 }
 
-impl<T> Index<Key> for [Slot<T>] {
-    type Output = Slot<T>;
-
-    #[inline(always)]
-    fn index(&self, key: Key) -> &Self::Output {
-        let idx = match Key::BITS - self.len().trailing_zeros() {
-            Key::BITS => 0,
-            w => key.slice(w..).cast(),
-        };
-
-        self.get(idx).assume()
-    }
-}
-
-impl<T> IndexMut<Key> for [Slot<T>] {
-    #[inline(always)]
-    fn index_mut(&mut self, key: Key) -> &mut Self::Output {
-        let idx = match Key::BITS - self.len().trailing_zeros() {
-            Key::BITS => 0,
-            w => key.slice(w..).cast(),
-        };
-
-        self.get_mut(idx).assume()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::Assume;
     use std::fmt::Debug;
     use test_strategy::{Arbitrary, proptest};
 
     #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Arbitrary)]
     #[repr(u8)]
-    enum Alignment {
-        Left = 1,
-        Center = 2,
-        Right = 3,
+    enum Order {
+        Less = 1,
+        Equal = 2,
+        Greater = 3,
     }
 
-    unsafe impl Integer for Alignment {
+    unsafe impl Integer for Order {
         type Repr = u8;
         const MIN: Self::Repr = 1;
         const MAX: Self::Repr = 3;
     }
 
-    impl Binary for Alignment {
+    impl Binary for Order {
         type Bits = Bits<u8, 2>;
 
         fn encode(&self) -> Self::Bits {
@@ -252,8 +245,18 @@ mod tests {
         }
     }
 
-    type MockLatch = Latch<Alignment, u16>;
-    type MockMemory = Memory<Alignment, u16>;
+    type MockVault = Vault<Order, u64>;
+    type MockMemory = Memory<Order, u64>;
+
+    #[proptest]
+    fn opening_vault_with_correct_key_succeeds(k: Key, v: Order) {
+        assert_eq!(MockVault::close(k, v).open(k), Some(v));
+    }
+
+    #[proptest]
+    fn opening_vault_with_wrong_key_fails(k: Key, #[filter(#l != #k)] l: Key, v: Order) {
+        assert_eq!(MockVault::close(k, v).open(l), None);
+    }
 
     #[proptest]
     fn input_size_is_an_upper_limit(#[strategy(..1024usize)] s: usize) {
@@ -261,16 +264,8 @@ mod tests {
     }
 
     #[proptest]
-    fn size_is_exact_if_input_is_power_of_two(
-        #[strategy(size_of::<MockLatch>().trailing_zeros()..=10)] bits: u32,
-    ) {
-        let size: usize = 1usize << bits;
-        assert_eq!(MockMemory::new(size).size(), size);
-    }
-
-    #[proptest]
     fn capacity_returns_maximum_number_of_elements(m: MockMemory) {
-        assert_eq!(m.size() / size_of::<MockLatch>(), m.capacity());
+        assert_eq!(m.size() / size_of::<MockVault>(), m.capacity());
     }
 
     #[proptest]
@@ -279,41 +274,72 @@ mod tests {
     }
 
     #[proptest]
-    fn get_returns_none_if_slot_is_empty(m: MockMemory, k: Key) {
-        m.data[k].store(None::<MockLatch>.encode(), Ordering::Relaxed);
+    fn get_returns_none_if_slot_is_empty(
+        #[by_ref]
+        #[filter(#m.capacity() > 0)]
+        m: MockMemory,
+        k: Key,
+    ) {
+        m.data[k].store(None::<MockVault>.encode(), Ordering::Relaxed);
         assert_eq!(m.get(k), None);
     }
 
     #[proptest]
-    fn get_returns_none_if_key_does_not_match(m: MockMemory, k: Key, v: Alignment) {
-        let latch = Some(Latch::close(!k, v));
-        m.data[k].store(latch.encode(), Ordering::Relaxed);
+    fn get_returns_none_if_key_does_not_match(
+        #[by_ref]
+        #[filter(#m.capacity() > 0)]
+        m: MockMemory,
+        k: Key,
+        v: Order,
+    ) {
+        let vault = Some(Vault::close(!k, v));
+        m.data[k].store(vault.encode(), Ordering::Relaxed);
         assert_eq!(m.get(k), None);
     }
 
     #[proptest]
-    fn get_returns_some_if_key_matches(m: MockMemory, k: Key, v: Alignment) {
-        let latch = Some(Latch::close(k, v));
-        m.data[k].store(latch.encode(), Ordering::Relaxed);
+    fn get_returns_some_if_key_matches(
+        #[by_ref]
+        #[filter(#m.capacity() > 0)]
+        m: MockMemory,
+        k: Key,
+        v: Order,
+    ) {
+        let vault = Some(Vault::close(k, v));
+        m.data[k].store(vault.encode(), Ordering::Relaxed);
         assert_eq!(m.get(k), Some(v));
     }
 
     #[proptest]
-    fn set_does_nothing_if_capacity_is_zero(k: Key, v: Alignment) {
+    fn set_does_nothing_if_capacity_is_zero(k: Key, v: Order) {
         MockMemory::new(0).set(k, v);
     }
 
     #[proptest]
-    fn set_stores_value_if_slot_is_empty(m: MockMemory, k: Key, v: Alignment) {
-        m.data[k].store(None::<MockLatch>.encode(), Ordering::Relaxed);
+    fn set_stores_value_if_slot_is_empty(
+        #[by_ref]
+        #[filter(#m.capacity() > 0)]
+        m: MockMemory,
+        k: Key,
+        v: Order,
+    ) {
+        m.data[k].store(None::<MockVault>.encode(), Ordering::Relaxed);
         m.set(k, v);
         assert_eq!(m.get(k), Some(v));
     }
 
     #[proptest]
-    fn set_replaces_value_if_one_exists(m: MockMemory, k: Key, u: Alignment, l: Key, v: Alignment) {
-        let latch = Some(Latch::close(l, v));
-        m.data[k].store(latch.encode(), Ordering::Relaxed);
+    fn set_replaces_value_if_one_exists(
+        #[by_ref]
+        #[filter(#m.capacity() > 0)]
+        m: MockMemory,
+        k: Key,
+        u: Order,
+        l: Key,
+        v: Order,
+    ) {
+        let vault = Some(Vault::close(l, v));
+        m.data[k].store(vault.encode(), Ordering::Relaxed);
         m.set(k, u);
         assert_eq!(m.get(k), Some(u));
     }

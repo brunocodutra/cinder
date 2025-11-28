@@ -1,5 +1,5 @@
 use crate::chess::{Bitboard, File, Flip, Transpose};
-use crate::util::{Assume, Integer};
+use crate::util::{Assume, Int};
 use bytemuck::{Zeroable, ZeroableInOption};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
@@ -30,7 +30,7 @@ impl Rank {
 
 unsafe impl ZeroableInOption for Rank {}
 
-unsafe impl Integer for Rank {
+unsafe impl Int for Rank {
     type Repr = i8;
     const MIN: Self::Repr = Rank::First as _;
     const MAX: Self::Repr = Rank::Eighth as _;
@@ -84,7 +84,7 @@ impl FromStr for Rank {
         };
 
         c.checked_sub(b'1')
-            .and_then(Integer::convert)
+            .and_then(Int::convert)
             .ok_or(ParseRankError)
     }
 }

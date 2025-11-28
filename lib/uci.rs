@@ -1,6 +1,6 @@
 use crate::chess::{Color, Move, Position, Square};
 use crate::search::{HashSize, Info, Limits, Mate, ThreadCount};
-use crate::util::{Assume, Integer, parsers::*};
+use crate::util::{Assume, Int, parsers::*};
 use derive_more::with_trait::{Display, Error, From};
 use futures::{pin_mut, prelude::*, select_biased as select, stream::FusedStream};
 use nom::error::Error as ParseError;

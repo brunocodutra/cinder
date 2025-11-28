@@ -1,5 +1,5 @@
 use crate::chess::{Butterfly, File, Flip, Rank, Square};
-use crate::util::{Assume, Integer};
+use crate::util::{Assume, Int};
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::{Debug, *};
 use std::cell::SyncUnsafeCell;

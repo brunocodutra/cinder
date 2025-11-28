@@ -1,6 +1,6 @@
-use crate::nnue::{FTQ, HLS, L1, Layer, Ln, Synapse};
+use crate::nnue::{FTQ, HLS, L1, Layer, Ln, Synapse, Value};
 use crate::simd::*;
-use crate::util::{Aligned, Assume};
+use crate::util::{Aligned, Assume, Float};
 use bytemuck::Zeroable;
 use std::{array::from_fn as each, ops::Mul};
 
@@ -38,7 +38,7 @@ pub struct Input<S> {
 
 impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Input<S> {
     type Input<'a> = L1<'a>;
-    type Output = i32;
+    type Output = Value;
 
     #[inline(always)]
     fn forward<'a>(&self, (us, them): Self::Input<'a>) -> Self::Output {
@@ -110,6 +110,6 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Input
         ]);
 
         let result = self.next.forward(active.cast()).reduce_sum();
-        result.mul(HLS as f32).round_ties_even() as _
+        result.mul(HLS as f32).round_ties_even().to_int()
     }
 }

@@ -1,5 +1,5 @@
 use crate::search::{Line, Ply, Pv};
-use crate::{chess::Position, util::Integer};
+use crate::{chess::Position, util::Int};
 use std::{fs::read_dir, path::Path};
 
 mod dtz;

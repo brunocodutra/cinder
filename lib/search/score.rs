@@ -1,5 +1,5 @@
 use crate::nnue::Value;
-use crate::util::{Binary, Bits, Bounded, Integer};
+use crate::util::{Binary, Bits, Bounded, Int};
 use crate::{chess::Flip, search::Ply};
 use bytemuck::Zeroable;
 
@@ -27,9 +27,9 @@ impl Mate {
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct ScoreRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Score as Integer>::Repr);
+pub struct ScoreRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Score as Int>::Repr);
 
-unsafe impl Integer for ScoreRepr {
+unsafe impl Int for ScoreRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
     const MAX: Self::Repr = 4095;

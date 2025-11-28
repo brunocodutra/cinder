@@ -1,4 +1,4 @@
-use crate::util::Integer;
+use crate::util::Int;
 use derive_more::with_trait::{Debug, Display, Error, Shl, Shr};
 use std::{cmp::Ordering, collections::HashSet, path::PathBuf, str::FromStr};
 
@@ -10,7 +10,7 @@ use std::{cmp::Ordering, collections::HashSet, path::PathBuf, str::FromStr};
 #[repr(transparent)]
 pub struct HashSize(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] usize);
 
-unsafe impl Integer for HashSize {
+unsafe impl Int for HashSize {
     type Repr = usize;
 
     const MIN: Self::Repr = 0;
@@ -28,13 +28,13 @@ impl Default for HashSize {
     }
 }
 
-impl<I: Integer<Repr = usize>> PartialEq<I> for HashSize {
+impl<I: Int<Repr = usize>> PartialEq<I> for HashSize {
     fn eq(&self, other: &I) -> bool {
         self.get().eq(&other.get())
     }
 }
 
-impl<I: Integer<Repr = usize>> PartialOrd<I> for HashSize {
+impl<I: Int<Repr = usize>> PartialOrd<I> for HashSize {
     fn partial_cmp(&self, other: &I) -> Option<Ordering> {
         self.get().partial_cmp(&other.get())
     }
@@ -69,7 +69,7 @@ impl FromStr for HashSize {
 #[repr(transparent)]
 pub struct ThreadCount(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] u16);
 
-unsafe impl Integer for ThreadCount {
+unsafe impl Int for ThreadCount {
     type Repr = u16;
 
     const MIN: Self::Repr = 1;
@@ -87,13 +87,13 @@ impl Default for ThreadCount {
     }
 }
 
-impl<I: Integer<Repr = u16>> PartialEq<I> for ThreadCount {
+impl<I: Int<Repr = u16>> PartialEq<I> for ThreadCount {
     fn eq(&self, other: &I) -> bool {
         self.get().eq(&other.get())
     }
 }
 
-impl<I: Integer<Repr = u16>> PartialOrd<I> for ThreadCount {
+impl<I: Int<Repr = u16>> PartialOrd<I> for ThreadCount {
     fn partial_cmp(&self, other: &I) -> Option<Ordering> {
         self.get().partial_cmp(&other.get())
     }
@@ -114,7 +114,7 @@ impl FromStr for ThreadCount {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<usize>()
             .ok()
-            .and_then(Integer::convert)
+            .and_then(Int::convert)
             .ok_or(ParseThreadCountError)
     }
 }

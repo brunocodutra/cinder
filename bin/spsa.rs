@@ -20,23 +20,23 @@ use std::{fs::File, num::NonZero, ops::Div, process::Command, thread::available_
 struct SpsaConfig {
     /// A ratio coefficient.
     #[clap(long, default_value_t = 0.1)]
-    ratio: f64,
+    ratio: f32,
 
     /// Alpha coefficient.
     #[clap(long, default_value_t = 0.602)]
-    alpha: f64,
+    alpha: f32,
 
     /// Gamma coefficient.
     #[clap(long, default_value_t = 0.101)]
-    gamma: f64,
+    gamma: f32,
 
     /// Final step size as a fraction of parameter range.
     #[clap(long, default_value_t = 0.05)]
-    grain: f64,
+    grain: f32,
 
     /// Final learning rate.
     #[clap(long, default_value_t = 0.002)]
-    lr: f64,
+    lr: f32,
 }
 
 /// Result of a chess game series.
@@ -175,15 +175,15 @@ struct SpsaTuner {
 }
 
 impl SpsaTuner {
-    fn gradient(&self, left: &Params, right: &Params) -> Result<f64, Failure> {
+    fn gradient(&self, left: &Params, right: &Params) -> Result<f32, Failure> {
         let result = self.runner.run(left, right)?;
-        Ok(result.losses as f64 - result.wins as f64)
+        Ok(result.losses as f32 - result.wins as f32)
     }
 
     fn step(&mut self) -> Result<(), Failure> {
-        let games_per_step = 2. * self.runner.pairs_per_match() as f64;
-        let n = games_per_step * self.iters as f64;
-        let k = games_per_step * self.step as f64;
+        let games_per_step = 2. * self.runner.pairs_per_match() as f32;
+        let n = games_per_step * self.iters as f32;
+        let k = games_per_step * self.step as f32;
         let a = n * self.config.ratio;
 
         let a0 = self.config.lr * self.config.grain.powf(2.) * (n + a).powf(self.config.alpha);
@@ -207,7 +207,7 @@ impl SpsaTuner {
     }
 
     fn run<P: AsRef<Path>>(&mut self, filename: P) -> Result<(), Failure> {
-        let content = serialize(self, PrettyConfig::default())?;
+        let content = serialize(self, PrettyConfig::default().compact_arrays(true))?;
         let mut file = File::create(&filename)?;
         write!(file, "{content}")?;
 
@@ -219,7 +219,7 @@ impl SpsaTuner {
             let elapsed = timer.elapsed();
             self.period = (self.period.saturating_mul(self.step - 1) + elapsed) / self.step;
 
-            let content = serialize(self, PrettyConfig::default())?;
+            let content = serialize(self, PrettyConfig::default().compact_arrays(true))?;
             let mut file = File::create(&filename)?;
             write!(file, "{content}")?;
 
@@ -231,7 +231,7 @@ impl SpsaTuner {
             writeln!(stdout, "estimated time remaining: {remaining}")?;
         }
 
-        let params = serialize(&self.params, PrettyConfig::default())?;
+        let params = serialize(&self.params, PrettyConfig::default().compact_arrays(true))?;
         writeln!(stdout, "optimized parameters: {params}")?;
 
         Ok(())

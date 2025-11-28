@@ -1,7 +1,6 @@
-use crate::util::{Integer, Unsigned};
+use crate::util::{Int, Unsigned, ones, zero};
 use bytemuck::{NoUninit, Zeroable};
 use derive_more::with_trait::{Debug, *};
-use std::mem::transmute_copy;
 use std::ops::{Bound, Not, RangeBounds};
 
 #[cfg(test)]
@@ -22,6 +21,7 @@ use std::ops::RangeInclusive;
     PartialOrd,
     Hash,
     Zeroable,
+    Constructor,
     BitAnd,
     BitAndAssign,
     BitOr,
@@ -34,19 +34,14 @@ use std::ops::RangeInclusive;
 #[debug("Bits({_0:b})")]
 #[display("{_0:b}")]
 #[repr(transparent)]
-pub struct Bits<T, const W: u32>(#[cfg_attr(test, strategy(T::zero()..=T::ones(W)))] T);
-
-/// Workaround to https://github.com/rust-lang/rfcs/pull/3762.
-pub const fn bits<U: Integer<Repr: Unsigned>>(i: u128) -> U {
-    unsafe { transmute_copy(&i) }
-}
+pub struct Bits<T, const W: u32>(#[cfg_attr(test, strategy(zero()..=ones(W)))] T);
 
 unsafe impl<T: NoUninit, const W: u32> NoUninit for Bits<T, W> {}
 
-unsafe impl<T: Unsigned + 'static, const W: u32> Integer for Bits<T, W> {
+unsafe impl<T: Unsigned + 'static, const W: u32> Int for Bits<T, W> {
     type Repr = T;
-    const MIN: Self::Repr = bits(0);
-    const MAX: Self::Repr = bits(u128::MAX >> (u128::BITS - W));
+    const MIN: Self::Repr = zero();
+    const MAX: Self::Repr = ones(W);
 }
 
 impl<T: Unsigned, const W: u32> Bits<T, W> {
@@ -77,19 +72,19 @@ impl<T: Unsigned, const W: u32> Bits<T, W> {
             Bound::Unbounded => W,
         };
 
-        Bits::new((self.get() & T::ones(b)) >> a.cast())
+        Bits::new((self.get() & ones(b)) >> a.cast())
     }
 
     /// Shifts bits into the collection.
     #[inline(always)]
     pub fn push<U: Unsigned, const N: u32>(&mut self, bits: Bits<U, N>) {
-        *self = Bits::new((self.get() << N.cast()) & T::ones(W) ^ bits.cast());
+        *self = Bits::new((self.get() << N.cast()) & ones(W) ^ bits.cast());
     }
 
     /// Shifts bits out of the collection.
     #[inline(always)]
     pub fn pop<U: Unsigned, const N: u32>(&mut self) -> Bits<U, N> {
-        let bits = Bits::new(self.cast::<U>() & U::ones(N));
+        let bits = Bits::new(self.cast::<U>() & ones(N));
         *self = Bits::new(self.get() >> N.cast());
         bits
     }
@@ -98,7 +93,7 @@ impl<T: Unsigned, const W: u32> Bits<T, W> {
 impl<T: Unsigned, const W: u32> Default for Bits<T, W> {
     #[inline(always)]
     fn default() -> Self {
-        Bits::new(T::zero())
+        Bits::new(zero())
     }
 }
 
@@ -107,14 +102,13 @@ impl<T: Unsigned, const W: u32> Not for Bits<T, W> {
 
     #[inline(always)]
     fn not(self) -> Self::Output {
-        self ^ Bits::new(T::ones(W))
+        self ^ Bits::new(ones(W))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::Primitive;
     use std::fmt::Debug;
     use test_strategy::proptest;
 
@@ -190,6 +184,6 @@ mod tests {
     #[proptest]
     fn not_inverts_bits(b: Bits<u8, 5>) {
         assert_ne!((!b).get(), !b.get());
-        assert_eq!((!b).get(), !b.get() & u8::ones(5));
+        assert_eq!((!b).get(), !b.get() & ones::<u8>(5));
     }
 }

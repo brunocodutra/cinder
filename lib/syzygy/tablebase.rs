@@ -1,6 +1,6 @@
 use crate::chess::{Castles, MovePack, MoveSet, Position};
 use crate::syzygy::{Dtz, DtzTable, Material, NormalizedMaterial, TableDescriptor, Wdl, WdlTable};
-use crate::util::Integer;
+use crate::util::Int;
 use derive_more::with_trait::Debug;
 use rustc_hash::FxHashMap;
 use std::{collections::hash_map::Entry, ffi::OsStr, io, path::Path, str::FromStr};

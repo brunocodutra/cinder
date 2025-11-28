@@ -1,9 +1,20 @@
 use bytemuck::Zeroable;
 use derive_more::with_trait::{Deref, DerefMut, IntoIterator};
-use std::mem::transmute;
+use std::{marker::ConstParamTy, mem::transmute};
 
 #[derive(
-    Debug, Default, Copy, Clone, Eq, PartialEq, Hash, Zeroable, Deref, DerefMut, IntoIterator,
+    Debug,
+    Default,
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Hash,
+    ConstParamTy,
+    Zeroable,
+    Deref,
+    DerefMut,
+    IntoIterator,
 )]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(align(64))]

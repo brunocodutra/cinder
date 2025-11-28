@@ -1,5 +1,5 @@
 use crate::syzygy::{Dtz, MAX_PIECES, Material, RandomAccessFile, Wdl};
-use crate::util::{Assume, Bits, Integer, bits};
+use crate::util::{Assume, Bits, Int};
 use crate::{chess::*, syzygy::NormalizedMaterial};
 use arrayvec::ArrayVec;
 use byteorder::{BE, ByteOrder, LE, ReadBytesExt};
@@ -41,15 +41,15 @@ impl TableDescriptor for Dtz {
 #[repr(transparent)]
 struct Layout(Bits<u8, 8>);
 
-unsafe impl Integer for Layout {
+unsafe impl Int for Layout {
     type Repr = u8;
 }
 
 impl Layout {
     /// Two sided table for non-symmetrical material configuration.
-    const SPLIT: Self = Layout(bits(0b01));
+    const SPLIT: Self = Layout(Bits::new(0b01));
     /// Table with pawns. Has sub-tables for each leading pawn file (a-d).
-    const HAS_PAWNS: Self = Layout(bits(0b10));
+    const HAS_PAWNS: Self = Layout(Bits::new(0b10));
 }
 
 /// Sub-table format flags.
@@ -57,26 +57,26 @@ impl Layout {
 #[repr(transparent)]
 struct Flag(Bits<u8, 8>);
 
-unsafe impl Integer for Flag {
+unsafe impl Int for Flag {
     type Repr = u8;
 }
 
 impl Flag {
     /// DTZ table stores black to move.
-    const STM: Self = Self(bits(0b00000001));
+    const STM: Self = Self(Bits::new(0b00000001));
     /// Use `DtzMap`.
-    const MAPPED: Self = Self(bits(0b00000010));
+    const MAPPED: Self = Self(Bits::new(0b00000010));
     /// DTZ table has winning positions on the edge of the 50-move rule and
     /// therefore stores exact plies rather than just full moves.
-    const WIN_PLIES: Self = Self(bits(0b00000100));
+    const WIN_PLIES: Self = Self(Bits::new(0b00000100));
     /// DTZ table has losing positions on the edge of the 50-move rule and
     /// therefore stores exact plies rather than just full moves.
-    const LOSS_PLIES: Self = Self(bits(0b00001000));
+    const LOSS_PLIES: Self = Self(Bits::new(0b00001000));
     /// DTZ table contains very long endgames, so that values require 16
     /// bits rather than just 8.
-    const WIDE_DTZ: Self = Self(bits(0b00010000));
+    const WIDE_DTZ: Self = Self(Bits::new(0b00010000));
     /// Table stores only a single value.
-    const SINGLE_VALUE: Self = Self(bits(0b10000000));
+    const SINGLE_VALUE: Self = Self(Bits::new(0b10000000));
 }
 
 /// Maximum size in bytes of a compressed block.

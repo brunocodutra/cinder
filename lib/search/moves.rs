@@ -1,5 +1,5 @@
 use crate::chess::Move;
-use crate::util::{Assume, Bounded, Integer};
+use crate::util::{Assume, Bounded, Int};
 use arrayvec::ArrayVec;
 
 #[cfg(test)]

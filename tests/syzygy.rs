@@ -1,5 +1,5 @@
 use cinder::syzygy::{Dtz, Syzygy, Wdl};
-use cinder::{chess::Position, search::Ply, util::Integer};
+use cinder::{chess::Position, search::Ply, util::Int};
 use proptest::sample::select;
 use reqwest::blocking::get as fetch;
 use std::{env, fmt::Debug, fs, io::Write, path::PathBuf, sync::LazyLock};

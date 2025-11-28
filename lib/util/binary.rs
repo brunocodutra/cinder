@@ -1,9 +1,9 @@
-use crate::util::{Assume, Bits, Integer, Unsigned};
+use crate::util::{Assume, Bits, Int, Unsigned};
 
 /// Trait for types that can be encoded to binary.
 pub trait Binary: Sized {
     /// A fixed width collection of bits.
-    type Bits: Integer<Repr: Unsigned>;
+    type Bits: Int<Repr: Unsigned>;
 
     /// Encodes `Self` to its binary representation.
     fn encode(&self) -> Self::Bits;

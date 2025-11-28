@@ -1,5 +1,5 @@
 use crate::chess::{Bitboard, Mirror, Rank, Transpose};
-use crate::util::{Assume, Integer};
+use crate::util::{Assume, Int};
 use bytemuck::{Zeroable, ZeroableInOption};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
@@ -30,7 +30,7 @@ impl File {
     }
 }
 
-unsafe impl Integer for File {
+unsafe impl Int for File {
     type Repr = i8;
     const MIN: Self::Repr = File::A as _;
     const MAX: Self::Repr = File::H as _;
@@ -84,7 +84,7 @@ impl FromStr for File {
         };
 
         c.checked_sub(b'a')
-            .and_then(Integer::convert)
+            .and_then(Int::convert)
             .ok_or(ParseFileError)
     }
 }

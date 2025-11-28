@@ -1,5 +1,5 @@
 use crate::search::ThreadCount;
-use crate::util::{Assume, Integer, thread};
+use crate::util::{Assume, Int, thread};
 use derive_more::with_trait::Debug;
 use std::sync::{Arc, Condvar, Mutex};
 use std::{cell::SyncUnsafeCell, iter::repeat_n};

@@ -19,7 +19,7 @@ pub struct Slice<T> {
 unsafe impl<T: Send> Send for Slice<T> {}
 unsafe impl<T: Sync> Sync for Slice<T> {}
 
-impl<T: Send + Zeroable> Slice<T> {
+impl<T: Zeroable> Slice<T> {
     /// Allocates a memory mapped block of memory for `len` instances of `T`.
     ///
     /// Advises the operating system to use huge pages and optimize for random access order where possible.

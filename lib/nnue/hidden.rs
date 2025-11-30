@@ -19,6 +19,7 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>>> Synapse for Hidden<S> {
     type Output = S::Output;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn forward<'a>(&self, input: Self::Input<'a>) -> Self::Output {
         const { assert!(I.is_multiple_of(W2)) }
         const { assert!(O.is_multiple_of(W2)) }

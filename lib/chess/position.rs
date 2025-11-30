@@ -89,6 +89,7 @@ enum EvasionGenerator {}
 
 impl EvasionGenerator {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn generate<T: MovePacker>(pos: &Position, packer: &mut T) -> Result<(), CapacityError> {
         let turn = pos.turn();
         let ours = pos.material(turn);
@@ -168,6 +169,7 @@ enum MoveGenerator {}
 
 impl MoveGenerator {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn generate<T: MovePacker>(pos: &Position, packer: &mut T) -> Result<(), CapacityError> {
         let turn = pos.turn();
         let ours = pos.material(turn);
@@ -572,6 +574,7 @@ impl Position {
 
     /// Whether a [`Move`] is legal in this position.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn is_legal(&self, m: Move) -> bool {
         let turn = self.turn();
         let ours = self.material(turn);
@@ -641,6 +644,7 @@ impl Position {
 
     /// The legal moves that can be played in this position.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn moves(&self) -> MovePack {
         let mut moves = MovePack::default();
 
@@ -732,6 +736,7 @@ impl Position {
 
     /// Play a [`Move`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn play(&mut self, m: Move) {
         debug_assert!(self.is_legal(m), "{self} {m}");
 
@@ -812,6 +817,7 @@ impl Position {
 
     /// Play a null-move.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn pass(&mut self) {
         debug_assert!(!self.is_check());
 

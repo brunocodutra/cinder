@@ -36,6 +36,7 @@ impl Feature {
 
     /// Constructs a [`Feature`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn new(side: Color, ksq: Square, piece: Piece, sq: Square) -> Self {
         let chirality = Side::from(ksq.file() < File::E);
         let bucket = Self::bucket(side, ksq.perspective(chirality)).cast::<u16>();
@@ -47,6 +48,7 @@ impl Feature {
 
     /// Constructs a [`Feature`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn bucket(side: Color, ksq: Square) -> Bucket {
         #[rustfmt::skip]
         const BUCKETS: [u8; 64] = [

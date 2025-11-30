@@ -16,6 +16,7 @@ impl<T> Index<Key> for [T] {
     type Output = T;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn index(&self, key: Key) -> &Self::Output {
         let idx = ((key.cast::<u128>() * self.len().cast::<u128>()) >> 64) as usize;
         self.get(idx).assume()
@@ -24,6 +25,7 @@ impl<T> Index<Key> for [T] {
 
 impl<T> IndexMut<Key> for [T] {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn index_mut(&mut self, key: Key) -> &mut Self::Output {
         let idx = ((key.cast::<u128>() * self.len().cast::<u128>()) >> 64) as usize;
         self.get_mut(idx).assume()
@@ -45,6 +47,7 @@ where
     R: Unsigned + Binary,
 {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn close(key: Key, value: T) -> Self {
         let mut bits = Bits::new(key.cast());
         bits.push(value.encode());
@@ -56,6 +59,7 @@ where
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn open(mut self, key: Key) -> Option<T> {
         const { assert!(N >= M) }
 
@@ -112,18 +116,21 @@ where
     R: Unsigned + Binary,
 {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn clear(&self) {
         let bits = None::<Padlock<T, U>>.encode();
         self.slot.store(bits, Ordering::Relaxed);
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn store(&self, key: Key, value: T) {
         let bits = Some(Padlock::close(key, value)).encode();
         self.slot.store(bits, Ordering::Relaxed);
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn load(&self, key: Key) -> Option<T> {
         let bits = self.slot.load(Ordering::Relaxed);
         Option::<Padlock<T, U>>::decode(bits)?.open(key)
@@ -180,27 +187,28 @@ where
     /// Constructs a memoization data of at most `size` many bytes.
     #[inline(always)]
     pub fn new(size: usize) -> io::Result<Self> {
-        let cap = size / size_of::<Padlock<T, U>>();
-
         Ok(Memory {
-            data: Slice::new(cap)?,
+            data: Slice::new(size / size_of::<Padlock<T, U>>())?,
         })
     }
 
     /// The actual size of this memoization data in bytes.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn size(&self) -> usize {
         self.capacity() * size_of::<Padlock<T, U>>()
     }
 
     /// The actual size of this memoization data in number of entries.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn capacity(&self) -> usize {
         self.data.len()
     }
 
     /// Instructs the CPU to load the slot associated with `key`.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn prefetch(&self, key: Key) {
         if self.capacity() > 0 {
             #[cfg(target_arch = "x86_64")]
@@ -220,6 +228,7 @@ where
 
     /// Stores a value in the slot associated with `key`.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn set(&self, key: Key, value: T) {
         if self.capacity() > 0 {
             self.data[key].store(key, value);
@@ -228,6 +237,7 @@ where
 
     /// Loads the value from the slot associated with `key`.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn get(&self, key: Key) -> Option<T> {
         if self.capacity() > 0 {
             self.data[key].load(key)

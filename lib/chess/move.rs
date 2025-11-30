@@ -224,6 +224,7 @@ impl Iterator for MoveSetIter {
     type Item = Move;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn next(&mut self) -> Option<Self::Item> {
         if self.base.is_promotion() {
             let mask = 0b1111111111111100;
@@ -241,6 +242,7 @@ impl Iterator for MoveSetIter {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len(), Some(self.len()))
     }

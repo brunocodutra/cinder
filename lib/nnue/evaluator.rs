@@ -4,9 +4,10 @@ use crate::util::{Assume, Float, Int, Memory};
 use crate::{chess::*, search::Ply};
 use bytemuck::{Zeroable, ZeroableInOption, zeroed};
 use derive_more::with_trait::Debug;
+use std::cell::SyncUnsafeCell;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, Index, Range};
-use std::{array, hint::unreachable_unchecked, str::FromStr};
+use std::{array, hint::unreachable_unchecked, mem::MaybeUninit, str::FromStr};
 
 #[cfg(test)]
 use proptest::{prelude::*, sample::*};
@@ -96,7 +97,7 @@ impl Index<Ply> for Evaluator {
 
     #[inline(always)]
     fn index(&self, ply: Ply) -> &Self::Output {
-        &self.positions[ply.cast::<usize>()]
+        self.positions.get(ply.cast::<usize>()).assume()
     }
 }
 
@@ -125,8 +126,16 @@ impl Arbitrary for Evaluator {
     }
 }
 
+static VALUES: SyncUnsafeCell<MaybeUninit<Memory<Value, u64>>> =
+    SyncUnsafeCell::new(MaybeUninit::uninit());
+
+#[cold]
 #[ctor::ctor]
-static VALUES: Memory<Value, u64> = { Memory::new(1 << 22).unwrap() };
+#[inline(never)]
+unsafe fn init() {
+    let values = unsafe { VALUES.get().as_mut_unchecked() };
+    values.write(Memory::new(1 << 22).unwrap());
+}
 
 impl Evaluator {
     /// Constructs the evaluator from a [`Position`].
@@ -154,6 +163,7 @@ impl Evaluator {
     }
 
     /// Pushes a [`Position`] into the evaluator stack.
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn push(&mut self, m: Option<Move>) {
         (self.ply < Ply::MAX).assume();
 
@@ -178,18 +188,23 @@ impl Evaluator {
             }
         }
 
-        VALUES.prefetch(self.zobrists().hash);
+        let cache = unsafe { VALUES.get().as_ref_unchecked().assume_init_ref() };
+        cache.prefetch(self.zobrists().hash);
     }
 
     /// Pops a [`Position`] from the evaluator stack.
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn pop(&mut self) {
         (self.ply > 0).assume();
         self.ply -= 1;
-        VALUES.prefetch(self.zobrists().hash);
+        let cache = unsafe { VALUES.get().as_ref_unchecked().assume_init_ref() };
+        cache.prefetch(self.zobrists().hash);
     }
 
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn evaluate(&mut self) -> Value {
-        if let Some(value) = VALUES.get(self.zobrists().hash) {
+        let cache = unsafe { VALUES.get().as_ref_unchecked().assume_init_ref() };
+        if let Some(value) = cache.get(self.zobrists().hash) {
             return value;
         }
 
@@ -199,9 +214,8 @@ impl Evaluator {
                 continue;
             }
 
-            (self.ply > 0).assume();
             while self.pending[side.cast::<usize>()][idx] == Some(Pending::Update) {
-                idx -= 1;
+                idx = idx.checked_sub(1).assume();
             }
 
             match self.pending[side.cast::<usize>()][idx] {
@@ -225,7 +239,7 @@ impl Evaluator {
         let us = self.turn() as usize;
         let them = self.turn().flip() as usize;
         let value = nn.forward((&self.accumulator[idx][us], &self.accumulator[idx][them]));
-        VALUES.set(self.zobrists().hash, value);
+        cache.set(self.zobrists().hash, value);
         value
     }
 
@@ -234,11 +248,11 @@ impl Evaluator {
         let phase = self.phase().cast::<usize>();
 
         [
-            Params::pawn_values()[phase],
-            Params::knight_values()[phase],
-            Params::bishop_values()[phase],
-            Params::rook_values()[phase],
-            Params::queen_values()[phase],
+            *Params::pawn_values(phase),
+            *Params::knight_values(phase),
+            *Params::bishop_values(phase),
+            *Params::rook_values(phase),
+            *Params::queen_values(phase),
             0.,
         ]
     }
@@ -320,6 +334,7 @@ impl Evaluator {
         }
     }
 
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn refresh(&mut self, side: Color, ply: Ply) {
         let idx = ply.cast::<usize>();
         let ksq = self.positions[idx].king(side);
@@ -358,15 +373,17 @@ impl Evaluator {
             Nnue::transformer().accumulate_in_place(&mut cache.accumulator, sub, add);
         }
 
-        self.cache[side.cast::<usize>()][bucket.cast::<usize>()].roles = self.roles();
-        self.cache[side.cast::<usize>()][bucket.cast::<usize>()].colors = self.colors();
-        self.cache[side.cast::<usize>()][bucket.cast::<usize>()].pieces = self.pieces();
+        let (roles, colors, pieces) = (self.roles(), self.colors(), self.pieces());
+        self.cache[side.cast::<usize>()][bucket.cast::<usize>()].roles = roles;
+        self.cache[side.cast::<usize>()][bucket.cast::<usize>()].colors = colors;
+        self.cache[side.cast::<usize>()][bucket.cast::<usize>()].pieces = pieces;
 
         let cache = &self.cache[side.cast::<usize>()][bucket.cast::<usize>()];
         self.accumulator[idx][side.cast::<usize>()] = cache.accumulator.clone();
         self.pending[side.cast::<usize>()][idx] = None;
     }
 
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn update(&mut self, side: Color, ply: Ply) {
         (ply > 0).assume();
 

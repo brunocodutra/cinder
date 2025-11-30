@@ -59,7 +59,7 @@ pub struct Board {
 
         roles
     })))]
-    roles: [Bitboard; 6],
+    roles: [Bitboard; Role::MAX as usize + 1],
     #[cfg_attr(test, strategy(LazyJust::new(move || {
         let mut colors = [Bitboard::empty(); 2];
         for (i, o) in #pieces.iter().enumerate() {
@@ -70,8 +70,8 @@ pub struct Board {
 
         colors
     })))]
-    colors: [Bitboard; 2],
-    pieces: [Option<Piece>; 64],
+    colors: [Bitboard; Color::MAX as usize + 1],
+    pieces: [Option<Piece>; Square::MAX as usize + 1],
     pub turn: Color,
     pub castles: Castles,
     pub en_passant: Option<Square>,
@@ -134,7 +134,7 @@ impl Board {
 
     /// The [`Piece`]s table.
     #[inline(always)]
-    pub fn pieces(&self) -> [Option<Piece>; 64] {
+    pub fn pieces(&self) -> [Option<Piece>; Square::MAX as usize + 1] {
         self.pieces
     }
 
@@ -158,6 +158,7 @@ impl Board {
 
     /// Squares occupied by pinned [`Piece`]s of a [`Color`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn pinned(&self, c: Color, mask: Bitboard) -> Bitboard {
         let ours = mask & self.material(c);
         let theirs = mask & self.material(!c);
@@ -182,6 +183,7 @@ impl Board {
 
     /// Squares occupied by [`Piece`]s checking the king of a [`Color`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn checkers(&self, c: Color) -> Bitboard {
         let ours = self.material(c);
         let theirs = self.material(!c);
@@ -211,6 +213,7 @@ impl Board {
 
     /// Squares occupied by [`Square`]s threatened by [`Piece`]s of a [`Color`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn threats(&self, c: Color) -> Bitboard {
         let ours = self.material(!c);
         let theirs = self.material(c);
@@ -386,9 +389,9 @@ impl FromStr for Board {
             return Err(ParseFenError::InvalidPlacement);
         };
 
-        let mut pieces: [_; 64] = [None; 64];
-        let mut roles: [_; 6] = Default::default();
-        let mut colors: [_; 2] = Default::default();
+        let mut pieces: [_; Square::MAX as usize + 1] = [None; _];
+        let mut roles: [_; Role::MAX as usize + 1] = Default::default();
+        let mut colors: [_; Color::MAX as usize + 1] = Default::default();
         for (rank, segment) in board.split('/').rev().enumerate() {
             let mut file = 0;
             for c in segment.chars() {

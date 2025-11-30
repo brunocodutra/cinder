@@ -41,6 +41,7 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Input
     type Output = Value;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn forward<'a>(&self, (us, them): Self::Input<'a>) -> Self::Output {
         const { assert!(I.is_multiple_of(2 * W8)) }
         const { assert!(O.is_multiple_of(W2)) }
@@ -66,7 +67,9 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Input
             for i in 0..2 * W2 / 8 {
                 let idx = (mask >> (i * 8)) & 0xFF;
                 let indices = base + NNZ_OFFSETS.get(idx as usize).assume();
-                indices.copy_to_slice(nzs.get_mut(nzs_len..).assume());
+                let slice = nzs.get_mut(nzs_len..).assume();
+                (slice.len() >= u16x8::LEN).assume();
+                indices.copy_to_slice(slice);
                 nzs_len += idx.count_ones() as usize;
                 base += u16x8::splat(8);
             }

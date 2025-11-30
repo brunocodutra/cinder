@@ -17,12 +17,14 @@ pub struct Transformer {
 impl Transformer {
     /// Refreshes `accumulator`.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn refresh(&self, accumulator: &mut Aligned<[i16; N]>) {
         *accumulator = self.bias;
     }
 
     /// Updates `acc` by adding and removing features.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn accumulate_in_place(
         &self,
         acc: &mut Aligned<[i16; N]>,
@@ -110,6 +112,7 @@ impl Transformer {
 
     /// Updates `dst` by adding and removing features from `src`.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn accumulate(
         &self,
         src: &Aligned<[i16; N]>,

@@ -37,14 +37,14 @@ impl GlobalControl {
         };
 
         let time_left = clock - inc;
-        let moves_left_start = Params::moves_left_start()[0];
-        let moves_left_end = Params::moves_left_end()[0];
+        let moves_left_start = *Params::moves_left_start(0);
+        let moves_left_end = *Params::moves_left_end(0);
         let max_fullmoves = moves_left_start / moves_left_end;
         let moves_left = moves_left_start / max_fullmoves.min(pos.fullmoves().get() as _);
         let time_per_move = inc + time_left / moves_left;
 
-        let soft_time_fraction = Params::soft_time_fraction()[0];
-        let hard_time_fraction = Params::hard_time_fraction()[0];
+        let soft_time_fraction = *Params::soft_time_fraction(0);
+        let hard_time_fraction = *Params::hard_time_fraction(0);
         soft_time_fraction * time_per_move..clock * hard_time_fraction
     }
 
@@ -124,7 +124,7 @@ impl<'a> Active<'a> {
         if self.score_trend.is_nan() {
             self.score_trend = score;
         } else if ply == 0 && depth > self.peak_depth {
-            self.score_trend = Params::score_trend_inertia()[0].lerp(self.score_trend, score);
+            self.score_trend = Params::score_trend_inertia(0).lerp(self.score_trend, score);
             self.peak_depth = depth;
         }
 
@@ -133,10 +133,10 @@ impl<'a> Active<'a> {
             if time >= self.time.end {
                 return ControlFlow::Abort;
             } else if ply == 0 {
-                let gamma = Params::pv_focus_gamma()[0];
-                let delta = Params::pv_focus_delta()[0];
-                let pivot = Params::score_trend_pivot()[0];
-                let magnitude = Params::score_trend_magnitude()[0];
+                let gamma = *Params::pv_focus_gamma(0);
+                let delta = *Params::pv_focus_delta(0);
+                let pivot = *Params::score_trend_pivot(0);
+                let magnitude = *Params::score_trend_magnitude(0);
 
                 let nodes = self.nodes.max(1000) as f32;
                 let diff = self.score_trend - pv.score().get() as f32;

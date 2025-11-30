@@ -93,6 +93,7 @@ impl Bitboard {
     /// );
     /// ```
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn fill(sq: Square, steps: &[(i8, i8)], occupied: Bitboard) -> Self {
         let mut bitboard = sq.bitboard();
 
@@ -124,6 +125,7 @@ impl Bitboard {
     /// );
     /// ```
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn line(whence: Square, whither: Square) -> Self {
         pub static LINES: SyncUnsafeCell<Butterfly<Bitboard>> = SyncUnsafeCell::new(zeroed());
 
@@ -166,6 +168,7 @@ impl Bitboard {
     /// );
     /// ```
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn segment(whence: Square, whither: Square) -> Self {
         pub static SEGMENTS: SyncUnsafeCell<Butterfly<Bitboard>> = SyncUnsafeCell::new(zeroed());
 
@@ -299,6 +302,7 @@ impl Iterator for Squares {
     type Item = Square;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn next(&mut self) -> Option<Self::Item> {
         if self.0.is_empty() {
             None
@@ -310,6 +314,7 @@ impl Iterator for Squares {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len(), Some(self.len()))
     }
@@ -337,6 +342,7 @@ impl Iterator for Subsets {
     type Item = Bitboard;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn next(&mut self) -> Option<Self::Item> {
         let bits = self.1?;
         self.1 = match bits.wrapping_sub(self.0) & self.0 {

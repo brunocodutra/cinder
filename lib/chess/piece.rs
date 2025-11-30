@@ -26,6 +26,7 @@ pub enum Piece {
 
 impl Piece {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn forks(wc: Square, color: Color) -> Bitboard {
         pub static FORKS: SyncUnsafeCell<[[Bitboard; 64]; 2]> = SyncUnsafeCell::new(zeroed());
 
@@ -48,6 +49,7 @@ impl Piece {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn jumps(wc: Square) -> Bitboard {
         pub static JUMPS: SyncUnsafeCell<[Bitboard; 64]> = SyncUnsafeCell::new(zeroed());
 
@@ -69,6 +71,7 @@ impl Piece {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn steps(wc: Square) -> Bitboard {
         pub static SLIDES: SyncUnsafeCell<[Bitboard; 64]> = SyncUnsafeCell::new(zeroed());
 
@@ -90,6 +93,7 @@ impl Piece {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn slides(idx: usize) -> Bitboard {
         pub static BITBOARDS: SyncUnsafeCell<[Bitboard; 88772]> = SyncUnsafeCell::new(zeroed());
 
@@ -127,24 +131,28 @@ impl Piece {
 
     /// Constructs [`Piece`] from a pair of [`Color`] and [`Role`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn new(r: Role, c: Color) -> Self {
         Int::new(c.get() | (r.get() << 1))
     }
 
     /// This piece's [`Role`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn role(&self) -> Role {
         Int::new(self.get() >> 1)
     }
 
     /// This piece's [`Color`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn color(&self) -> Color {
         Int::new(self.get() & 0b1)
     }
 
     /// This piece's possible attacks from a given square.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn attacks(&self, wc: Square, occupied: Bitboard) -> Bitboard {
         match self.role() {
             Role::Pawn => Self::forks(wc, self.color()),
@@ -179,6 +187,7 @@ impl Piece {
 
     /// This piece's possible moves from a given square.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn moves(&self, wc: Square, ours: Bitboard, theirs: Bitboard) -> Bitboard {
         let occ = ours ^ theirs;
         if self.role() != Role::Pawn {

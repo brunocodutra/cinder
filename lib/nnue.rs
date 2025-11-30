@@ -184,11 +184,13 @@ impl Nnue {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn transformer() -> &'static Transformer {
         &NNUE.transformer
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn nn(phase: Phase) -> &'static Input<Residual<Hidden<Hidden<Output>>>> {
         let idx = phase.cast::<usize>();
         unsafe { NNUE.nn.get_unchecked(idx) }

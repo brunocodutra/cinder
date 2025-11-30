@@ -15,6 +15,7 @@ impl Pack for i16x32 {
     type Output = u8x64;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn pack(self, x: Self) -> Self::Output {
         debug_assert!(x.simd_lt(Simd::splat(255)).all());
 
@@ -32,6 +33,7 @@ impl Pack for i16x16 {
     type Output = u8x32;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn pack(self, x: Self) -> Self::Output {
         debug_assert!(x.simd_lt(Simd::splat(255)).all());
 
@@ -49,6 +51,7 @@ impl Pack for i16x8 {
 
     #[inline(always)]
     #[cfg(target_feature = "sse2")]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn pack(self, x: Self) -> Self::Output {
         debug_assert!(x.simd_lt(Simd::splat(255)).all());
 
@@ -62,6 +65,7 @@ impl Pack for i16x8 {
 
     #[inline(always)]
     #[cfg(target_feature = "neon")]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn pack(self, x: Self) -> Self::Output {
         debug_assert!(x.simd_lt(Simd::splat(255)).all());
 
@@ -76,6 +80,7 @@ impl Pack for i16x8 {
     #[inline(always)]
     #[cfg(not(target_feature = "sse2"))]
     #[cfg(not(target_feature = "neon"))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn pack(self, x: Self) -> Self::Output {
         fallback(self, x)
     }
@@ -83,6 +88,7 @@ impl Pack for i16x8 {
 
 #[allow(unused)]
 #[inline(always)]
+#[cfg_attr(feature = "no_panic", no_panic::no_panic)]
 fn fallback(a: i16x8, b: i16x8) -> u8x16 {
     debug_assert!(b.simd_lt(Simd::splat(255)).all());
     let a = a.simd_max(Simd::splat(0)).cast::<u8>();

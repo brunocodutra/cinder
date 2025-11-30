@@ -17,6 +17,7 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Resid
     type Output = V2<f32>;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn forward<'a>(&self, input: Self::Input<'a>) -> Self::Output {
         const { assert!(N.is_multiple_of(W2)) }
 

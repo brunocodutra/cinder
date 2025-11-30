@@ -3,7 +3,7 @@ use crate::{syzygy::Dtz, util::Int};
 use bytemuck::{Zeroable, ZeroableInOption};
 use std::ops::Neg;
 
-/// The possible outcomes of a final [`Position`].
+/// The possible outcomes of a final [`Position`](`crate::chess::Position`).
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(i8)]

@@ -1,5 +1,5 @@
 use crate::util::{ByteBuffer, TypedByteBuffer};
-use std::{cell::SyncUnsafeCell, ops::Deref};
+use std::{cell::SyncUnsafeCell, ops::Deref, slice::SliceIndex};
 
 #[cfg(feature = "spsa")]
 use derive_more::with_trait::Display;
@@ -157,8 +157,9 @@ macro_rules! params {
 
         $(impl Params {
             /// This parameter's current value.
-            pub fn $name() -> &'static [f32] {
-                unsafe { &PARAMS.get().as_ref_unchecked().$name }
+            #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+            pub fn $name<R: SliceIndex<[f32]>>(idx: R) -> &'static R::Output {
+                unsafe { PARAMS.get().as_ref_unchecked().$name.get_unchecked(idx) }
             }
         })*
 
@@ -167,7 +168,7 @@ macro_rules! params {
             /// Total number of parameters.
             pub const LEN: usize = len!($($value,)*);
 
-            /// Initializes the global [`PARAMS`].
+            /// Initializes the global params.
             pub fn init(self) {
                 unsafe { *PARAMS.get().as_mut_unchecked() = self }
             }

@@ -20,6 +20,7 @@ impl History {
     pub const LIMIT: i16 = 256;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn graviton(&mut self, pos: &Position, m: Move) -> &mut <Self as Statistics<Move>>::Stat {
         let (wc, wt) = (m.whence(), m.whither());
         let threats = [pos.threats().contains(wc), pos.threats().contains(wt)];

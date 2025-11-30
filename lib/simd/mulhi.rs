@@ -10,6 +10,7 @@ pub trait MulHigh: SimdInt<Scalar = i16> {
 #[cfg(target_feature = "avx512bw")]
 impl MulHigh for i16x32 {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_high<const B: usize>(self, x: Self) -> Self {
         const { assert!(8 < B && B <= 16) };
 
@@ -28,6 +29,7 @@ impl MulHigh for i16x32 {
 #[cfg(target_feature = "avx2")]
 impl MulHigh for i16x16 {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_high<const B: usize>(self, x: Self) -> Self {
         const { assert!(8 < B && B <= 16) };
 
@@ -46,6 +48,7 @@ impl MulHigh for i16x16 {
 impl MulHigh for i16x8 {
     #[inline(always)]
     #[cfg(target_feature = "sse2")]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_high<const B: usize>(self, x: Self) -> Self {
         const { assert!(8 < B && B <= 16) };
 
@@ -62,6 +65,7 @@ impl MulHigh for i16x8 {
 
     #[inline(always)]
     #[cfg(target_feature = "neon")]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_high<const B: usize>(self, x: Self) -> Self {
         const { assert!(8 < B && B <= 16) };
 
@@ -79,6 +83,7 @@ impl MulHigh for i16x8 {
     #[inline(always)]
     #[cfg(not(target_feature = "sse2"))]
     #[cfg(not(target_feature = "neon"))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_high<const B: usize>(self, x: Self) -> Self {
         fallback::<B>(self, x)
     }
@@ -86,6 +91,7 @@ impl MulHigh for i16x8 {
 
 #[allow(unused)]
 #[inline(always)]
+#[cfg_attr(feature = "no_panic", no_panic::no_panic)]
 fn fallback<const B: usize>(a: i16x8, b: i16x8) -> i16x8 {
     const { assert!(8 < B && B <= 16) };
     debug_assert!(b.simd_lt(Simd::splat(256)).all());

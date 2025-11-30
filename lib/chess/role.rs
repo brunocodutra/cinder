@@ -4,7 +4,7 @@ use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::str::FromStr;
 
-/// The type of a chess [`Piece`][`crate::Piece`].
+/// The type of a chess [`Piece`][`crate::chess::Piece`].
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(u8)]

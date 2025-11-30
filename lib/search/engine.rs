@@ -15,6 +15,7 @@ use std::{io, mem::swap, ops::Range, path::Path, pin::Pin, ptr::NonNull, slice, 
 use proptest::prelude::*;
 
 #[inline(always)]
+#[cfg_attr(feature = "no_panic", no_panic::no_panic)]
 fn convolve<const N: usize>(data: [(f32, &[f32]); N]) -> f32 {
     let mut acc = [0.; N];
 
@@ -90,6 +91,7 @@ impl<'a> Stack<'a> {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn transposition(&self) -> Option<Transposition> {
         let tpos = self.tt.get(self.pos.zobrists().hash)?;
         if tpos.best().is_none_or(|m| self.pos.is_legal(m)) {
@@ -101,6 +103,7 @@ impl<'a> Stack<'a> {
 
     /// The mate distance pruning.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mdp(&self, bounds: &Range<Score>) -> (Score, Score) {
         let ply = self.pos.ply();
         let lower = Score::mated(ply);
@@ -109,6 +112,7 @@ impl<'a> Stack<'a> {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn correction(&mut self) -> f32 {
         let pos = &self.pos;
         let zbs = pos.zobrists();
@@ -120,15 +124,16 @@ impl<'a> Stack<'a> {
         let black = self.searcher.corrections.black.get(pos, zbs.black) as f32;
 
         let mut correction = 0.;
-        correction = Params::pawns_correction()[phase].mul_add(pawns, correction);
-        correction = Params::minor_correction()[phase].mul_add(minor, correction);
-        correction = Params::major_correction()[phase].mul_add(major, correction);
-        correction = Params::pieces_correction()[phase].mul_add(white, correction);
-        correction = Params::pieces_correction()[phase].mul_add(black, correction);
+        correction = Params::pawns_correction(phase).mul_add(pawns, correction);
+        correction = Params::minor_correction(phase).mul_add(minor, correction);
+        correction = Params::major_correction(phase).mul_add(major, correction);
+        correction = Params::pieces_correction(phase).mul_add(white, correction);
+        correction = Params::pieces_correction(phase).mul_add(black, correction);
         correction / Correction::LIMIT as f32
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn update_correction(&mut self, depth: Depth, score: ScoreBound) {
         let pos = &self.pos;
         let ply = pos.ply();
@@ -137,50 +142,55 @@ impl<'a> Stack<'a> {
         let error = diff.to_float::<f32>() * depth.get().max(1).ilog2().to_float::<f32>();
 
         let corrections = &mut self.searcher.corrections;
-        let bonus = Params::pawns_correction_bonus()[0] * error;
+        let bonus = Params::pawns_correction_bonus(0) * error;
         corrections.pawns.update(pos, zbs.pawns, bonus.to_int());
-        let bonus = Params::minor_correction_bonus()[0] * error;
+        let bonus = Params::minor_correction_bonus(0) * error;
         corrections.minor.update(pos, zbs.minor, bonus.to_int());
-        let bonus = Params::major_correction_bonus()[0] * error;
+        let bonus = Params::major_correction_bonus(0) * error;
         corrections.major.update(pos, zbs.major, bonus.to_int());
-        let bonus = Params::pieces_correction_bonus()[0] * error;
+        let bonus = Params::pieces_correction_bonus(0) * error;
         corrections.white.update(pos, zbs.white, bonus.to_int());
         corrections.black.update(pos, zbs.black, bonus.to_int());
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn history_bonus(depth: Depth) -> f32 {
         convolve([
-            (depth.to_float(), Params::history_bonus_depth()),
-            (1., Params::history_bonus_scalar()),
+            (depth.to_float(), Params::history_bonus_depth(..)),
+            (1., Params::history_bonus_scalar(..)),
         ])
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn continuation_bonus(depth: Depth) -> f32 {
         convolve([
-            (depth.to_float(), Params::continuation_bonus_depth()),
-            (1., Params::continuation_bonus_scalar()),
+            (depth.to_float(), Params::continuation_bonus_depth(..)),
+            (1., Params::continuation_bonus_scalar(..)),
         ])
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn history_penalty(depth: Depth) -> f32 {
         convolve([
-            (depth.to_float(), Params::history_penalty_depth()),
-            (1., Params::history_penalty_scalar()),
+            (depth.to_float(), Params::history_penalty_depth(..)),
+            (1., Params::history_penalty_scalar(..)),
         ])
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn continuation_penalty(depth: Depth) -> f32 {
         convolve([
-            (depth.to_float(), Params::continuation_penalty_depth()),
-            (1., Params::continuation_penalty_scalar()),
+            (depth.to_float(), Params::continuation_penalty_depth(..)),
+            (1., Params::continuation_penalty_scalar(..)),
         ])
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn update_history(&mut self, depth: Depth, best: Move, moves: &Moves) {
         let pos = &self.pos;
         let ply = pos.ply();
@@ -208,6 +218,7 @@ impl<'a> Stack<'a> {
 
     /// A measure for how much the position is improving.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn improving(&self) -> f32 {
         if self.pos.is_check() {
             return 0.;
@@ -217,28 +228,29 @@ impl<'a> Stack<'a> {
         let idx = ply.cast::<usize>();
         let value = self.value[idx];
 
-        let a = ply >= 2 && !self.pos[ply - 2].is_check() && value > self.value[idx - 2];
-        let b = ply >= 4 && !self.pos[ply - 4].is_check() && value > self.value[idx - 4];
+        let a = idx >= 2 && !self.pos[ply - 2].is_check() && value > self.value[idx - 2];
+        let b = idx >= 4 && !self.pos[ply - 4].is_check() && value > self.value[idx - 4];
 
         let mut idx = Bits::<u8, 2>::new(0);
         idx.push(Bits::<u8, 1>::new(b.cast()));
         idx.push(Bits::<u8, 1>::new(a.cast()));
-        *Params::improving().get(idx.cast::<usize>()).assume()
+        *Params::improving(idx.cast::<usize>())
     }
 
     /// Computes the null move reduction.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn nmr(depth: Depth, surplus: Score) -> Option<f32> {
         match depth.get() {
             ..3 => None,
             d @ 3.. => match surplus.get() {
                 ..1 => None,
                 s @ 1.. => {
-                    let gamma = Params::nmr_gamma()[0];
-                    let delta = Params::nmr_delta()[0];
-                    let limit = Params::nmr_limit()[0];
+                    let gamma = *Params::nmr_gamma(0);
+                    let delta = *Params::nmr_delta(0);
+                    let limit = *Params::nmr_limit(0);
                     let flat = gamma.mul_add(s.to_float(), delta).min(limit);
-                    Some(Params::nmr_fraction()[0].mul_add(d.to_float(), flat))
+                    Some(Params::nmr_fraction(0).mul_add(d.to_float(), flat))
                 }
             },
         }
@@ -246,152 +258,167 @@ impl<'a> Stack<'a> {
 
     /// Computes the null move pruning margin.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn nmp(depth: Depth) -> Option<f32> {
         match depth.get() {
             ..1 | 5.. => None,
             d @ 1..5 => Some(convolve([
-                (d.to_float(), Params::nmp_margin_depth()),
-                (1., Params::nmp_margin_scalar()),
+                (d.to_float(), Params::nmp_margin_depth(..)),
+                (1., Params::nmp_margin_scalar(..)),
             ])),
         }
     }
 
     /// Computes the fail-low pruning reduction.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn flp(depth: Depth) -> Option<f32> {
         match depth.get() {
             5.. => None,
             ..1 => Some(0.),
             d @ 1..5 => Some(convolve([
-                (d.to_float(), Params::flp_margin_depth()),
-                (1., Params::flp_margin_scalar()),
+                (d.to_float(), Params::flp_margin_depth(..)),
+                (1., Params::flp_margin_scalar(..)),
             ])),
         }
     }
 
     /// Computes fail-high pruning reduction.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn fhp(depth: Depth) -> Option<f32> {
         match depth.get() {
             7.. => None,
             ..1 => Some(0.),
             d @ 1..7 => Some(convolve([
-                (d.to_float(), Params::fhp_margin_depth()),
-                (1., Params::fhp_margin_scalar()),
+                (d.to_float(), Params::fhp_margin_depth(..)),
+                (1., Params::fhp_margin_scalar(..)),
             ])),
         }
     }
 
     /// Computes the razoring margin.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn razoring(depth: Depth) -> Option<f32> {
         match depth.get() {
             ..1 | 5.. => None,
             d @ 1..5 => Some(convolve([
-                (d.to_float(), Params::razoring_depth()),
-                (1., Params::razoring_scalar()),
+                (d.to_float(), Params::razoring_depth(..)),
+                (1., Params::razoring_scalar(..)),
             ])),
         }
     }
 
     /// Computes the reverse futility margin.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn rfp(depth: Depth) -> Option<f32> {
         match depth.get() {
             ..1 | 9.. => None,
             d @ 1..9 => Some(convolve([
-                (d.to_float(), Params::rfp_margin_depth()),
-                (1., Params::rfp_margin_scalar()),
+                (d.to_float(), Params::rfp_margin_depth(..)),
+                (1., Params::rfp_margin_scalar(..)),
             ])),
         }
     }
 
     /// Computes the futility margin.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn futility(depth: Depth) -> f32 {
         convolve([
-            (depth.to_float(), Params::fut_margin_depth()),
-            (1., Params::fut_margin_scalar()),
+            (depth.to_float(), Params::fut_margin_depth(..)),
+            (1., Params::fut_margin_scalar(..)),
         ])
     }
 
     /// Computes the probcut margin.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn probcut(depth: Depth) -> f32 {
         convolve([
-            (depth.to_float(), Params::probcut_margin_depth()),
-            (1., Params::probcut_margin_scalar()),
+            (depth.to_float(), Params::probcut_margin_depth(..)),
+            (1., Params::probcut_margin_scalar(..)),
         ])
     }
 
     /// Computes the singular extension margin.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn single(depth: Depth) -> f32 {
         convolve([
-            (depth.to_float(), Params::single_extension_margin_depth()),
-            (1., Params::single_extension_margin_scalar()),
+            (depth.to_float(), Params::single_extension_margin_depth(..)),
+            (1., Params::single_extension_margin_scalar(..)),
         ])
     }
 
     /// Computes the double extension margin.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn double(depth: Depth) -> f32 {
         convolve([
-            (depth.to_float(), Params::double_extension_margin_depth()),
-            (1., Params::double_extension_margin_scalar()),
+            (depth.to_float(), Params::double_extension_margin_depth(..)),
+            (1., Params::double_extension_margin_scalar(..)),
         ])
     }
 
     /// Computes the triple extension margin.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn triple(depth: Depth) -> f32 {
         convolve([
-            (depth.to_float(), Params::triple_extension_margin_depth()),
-            (1., Params::triple_extension_margin_scalar()),
+            (depth.to_float(), Params::triple_extension_margin_depth(..)),
+            (1., Params::triple_extension_margin_scalar(..)),
         ])
     }
 
     /// Computes the noisy SEE pruning margin.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn nsp(depth: Depth) -> f32 {
         convolve([
-            (depth.to_float(), Params::nsp_margin_depth()),
-            (1., Params::nsp_margin_scalar()),
+            (depth.to_float(), Params::nsp_margin_depth(..)),
+            (1., Params::nsp_margin_scalar(..)),
         ])
     }
 
     /// Computes the quiet SEE pruning margin.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn qsp(depth: Depth) -> f32 {
         convolve([
-            (depth.to_float(), Params::qsp_margin_depth()),
-            (1., Params::qsp_margin_scalar()),
+            (depth.to_float(), Params::qsp_margin_depth(..)),
+            (1., Params::qsp_margin_scalar(..)),
         ])
     }
 
     /// Computes the late move pruning threshold.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn lmp(depth: Depth) -> f32 {
         convolve([
-            (depth.to_float(), Params::lmp_depth()),
-            (1., Params::lmp_scalar()),
+            (depth.to_float(), Params::lmp_depth(..)),
+            (1., Params::lmp_scalar(..)),
         ])
     }
 
     /// Computes the late move reduction.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn lmr(depth: Depth, index: usize) -> f32 {
         let log_depth = depth.get().max(1).ilog2();
         let log_index = index.max(1).ilog2();
 
         convolve([
-            (log_depth.to_float(), Params::lmr_depth()),
-            (log_index.to_float(), Params::lmr_index()),
-            (1., Params::lmr_scalar()),
+            (log_depth.to_float(), Params::lmr_depth(..)),
+            (log_index.to_float(), Params::lmr_index(..)),
+            (1., Params::lmr_scalar(..)),
         ])
     }
 
     #[must_use]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn next(&mut self, m: Option<Move>) -> StackGuard<'_, 'a> {
         self.replies[self.pos.ply().cast::<usize>()] = m.map(|m| {
             let reply = self.searcher.continuation.reply(&self.pos, m);
@@ -473,7 +500,7 @@ impl<'a> Stack<'a> {
             t.best().is_some_and(|m| !m.is_quiet()) && !matches!(t.score(), ScoreBound::Upper(_))
         });
 
-        if !is_pv && self.pos.halfmoves() as f32 <= Params::tt_cut_halfmove_limit()[0] {
+        if !is_pv && self.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
             if let Some(t) = transposition {
                 let (lower, upper) = t.score().range(ply).into_inner();
 
@@ -501,7 +528,7 @@ impl<'a> Stack<'a> {
                     let score = ScoreBound::new(bounds, wdl.to_score(ply), ply);
                     let (lower, upper) = score.range(ply).into_inner();
                     if lower >= upper || upper <= alpha || lower >= beta {
-                        let bonus = Params::tb_cut_depth_bonus()[0].to_int::<i8>();
+                        let bonus = Params::tb_cut_depth_bonus(0).to_int::<i8>();
                         let tpos = Transposition::new(score, depth + bonus, None, was_pv);
                         self.tt.set(self.pos.zobrists().hash, tpos);
                         return Ok(tpos.transpose(ply).truncate());
@@ -528,7 +555,7 @@ impl<'a> Stack<'a> {
             }
 
             if let Some(mut margin) = Self::rfp(depth) {
-                margin = Params::rfp_margin_improving()[0].mul_add(improving, margin);
+                margin = Params::rfp_margin_improving(0).mul_add(improving, margin);
                 if transposed.score() - margin.to_int::<i16>() >= beta {
                     return Ok(transposed.truncate());
                 }
@@ -562,20 +589,20 @@ impl<'a> Stack<'a> {
             }
 
             let pos = &self.pos;
-            let mut rating = killer.contains(m).to_float::<f32>() * Params::killer_rating()[0];
+            let mut rating = *Params::killer_rating(0) * killer.contains(m).to_float::<f32>();
 
             let history = self.searcher.history.get(pos, m).to_float::<f32>();
-            rating = Params::history_rating()[0].mul_add(history / History::LIMIT as f32, rating);
+            rating = Params::history_rating(0).mul_add(history / History::LIMIT as f32, rating);
 
             let mut reply = self.replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
             let counter = reply.get(pos, m).to_float::<f32>();
-            rating = Params::counter_rating()[0].mul_add(counter / History::LIMIT as f32, rating);
+            rating = Params::counter_rating(0).mul_add(counter / History::LIMIT as f32, rating);
 
             if !m.is_quiet() {
-                if pos.winning(m, Params::winning_rating_margin()[0].to_int()) {
+                if pos.winning(m, Params::winning_rating_margin(0).to_int()) {
                     rating += convolve([
-                        (pos.gain(m).to_float(), Params::winning_rating_gain()),
-                        (1., Params::winning_rating_scalar()),
+                        (pos.gain(m).to_float(), Params::winning_rating_gain(..)),
+                        (1., Params::winning_rating_scalar(..)),
                     ]);
                 }
             }
@@ -662,11 +689,11 @@ impl<'a> Stack<'a> {
                 s => s.max(alpha),
             };
 
-            let mut lmp = Params::lmp_baseline()[0];
-            lmp = Params::lmp_is_pv()[0].mul_add(is_pv.to_float(), lmp);
-            lmp = Params::lmp_was_pv()[0].mul_add(was_pv.to_float(), lmp);
-            lmp = Params::lmp_is_check()[0].mul_add(is_check.to_float(), lmp);
-            lmp = Params::lmp_improving()[0].mul_add(improving, lmp);
+            let mut lmp = *Params::lmp_baseline(0);
+            lmp = Params::lmp_is_pv(0).mul_add(is_pv.to_float(), lmp);
+            lmp = Params::lmp_was_pv(0).mul_add(was_pv.to_float(), lmp);
+            lmp = Params::lmp_is_check(0).mul_add(is_check.to_float(), lmp);
+            lmp = Params::lmp_improving(0).mul_add(improving, lmp);
             if index.to_float::<f32>() > Self::lmp(depth) * lmp {
                 break;
             }
@@ -682,12 +709,12 @@ impl<'a> Stack<'a> {
             let is_quiet = m.is_quiet();
 
             let mut fut = Self::futility(lmr_depth);
-            fut = Params::fut_margin_is_pv()[0].mul_add(is_pv.to_float(), fut);
-            fut = Params::fut_margin_was_pv()[0].mul_add(was_pv.to_float(), fut);
-            fut = Params::fut_margin_is_check()[0].mul_add(is_check.to_float(), fut);
-            fut = Params::fut_margin_is_killer()[0].mul_add(is_killer.to_float(), fut);
-            fut = Params::fut_margin_improving()[0].mul_add(improving, fut);
-            fut = Params::fut_margin_gain()[0].mul_add(gain, fut);
+            fut = Params::fut_margin_is_pv(0).mul_add(is_pv.to_float(), fut);
+            fut = Params::fut_margin_was_pv(0).mul_add(was_pv.to_float(), fut);
+            fut = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), fut);
+            fut = Params::fut_margin_is_killer(0).mul_add(is_killer.to_float(), fut);
+            fut = Params::fut_margin_improving(0).mul_add(improving, fut);
+            fut = Params::fut_margin_gain(0).mul_add(gain, fut);
             if self.value[ply.cast::<usize>()] + fut.to_int::<i16>().max(0) <= alpha {
                 continue;
             }
@@ -698,7 +725,7 @@ impl<'a> Stack<'a> {
                 Self::nsp(depth)
             };
 
-            spt = Params::sp_margin_is_killer()[0].mul_add(is_killer.to_float(), spt);
+            spt = Params::sp_margin_is_killer(0).mul_add(is_killer.to_float(), spt);
             if !pos.winning(m, spt.to_int()) {
                 continue;
             }
@@ -706,16 +733,16 @@ impl<'a> Stack<'a> {
             let mut next = self.next(Some(m));
             let gives_check = next.pos.is_check();
 
-            lmr += Params::lmr_baseline()[0];
-            lmr = Params::lmr_is_pv()[0].mul_add(is_pv.to_float(), lmr);
-            lmr = Params::lmr_was_pv()[0].mul_add(was_pv.to_float(), lmr);
-            lmr = Params::lmr_gives_check()[0].mul_add(gives_check.to_float(), lmr);
-            lmr = Params::lmr_is_noisy_pv()[0].mul_add(is_noisy_pv.to_float(), lmr);
-            lmr = Params::lmr_is_killer()[0].mul_add(is_killer.to_float(), lmr);
-            lmr = Params::lmr_cut()[0].mul_add(cut.to_float(), lmr);
-            lmr = Params::lmr_improving()[0].mul_add(improving, lmr);
-            lmr = Params::lmr_history()[0].mul_add(history / History::LIMIT as f32, lmr);
-            lmr = Params::lmr_counter()[0].mul_add(counter / History::LIMIT as f32, lmr);
+            lmr += *Params::lmr_baseline(0);
+            lmr = Params::lmr_is_pv(0).mul_add(is_pv.to_float(), lmr);
+            lmr = Params::lmr_was_pv(0).mul_add(was_pv.to_float(), lmr);
+            lmr = Params::lmr_gives_check(0).mul_add(gives_check.to_float(), lmr);
+            lmr = Params::lmr_is_noisy_pv(0).mul_add(is_noisy_pv.to_float(), lmr);
+            lmr = Params::lmr_is_killer(0).mul_add(is_killer.to_float(), lmr);
+            lmr = Params::lmr_cut(0).mul_add(cut.to_float(), lmr);
+            lmr = Params::lmr_improving(0).mul_add(improving, lmr);
+            lmr = Params::lmr_history(0).mul_add(history / History::LIMIT as f32, lmr);
+            lmr = Params::lmr_counter(0).mul_add(counter / History::LIMIT as f32, lmr);
 
             let pv = match -next.nw(depth - lmr.to_int::<i8>().max(0) - 1, -alpha, !cut)? {
                 pv if pv <= alpha || (pv >= beta && lmr < 1.) => pv,
@@ -772,13 +799,13 @@ impl<'a> Stack<'a> {
             let mut rating = 0.;
             let pos = &self.pos;
             let history = self.searcher.history.get(pos, m).to_float::<f32>();
-            rating = Params::history_rating()[0].mul_add(history / History::LIMIT as f32, rating);
+            rating = Params::history_rating(0).mul_add(history / History::LIMIT as f32, rating);
 
             if !m.is_quiet() {
-                if pos.winning(m, Params::winning_rating_margin()[0].to_int()) {
+                if pos.winning(m, Params::winning_rating_margin(0).to_int()) {
                     rating += convolve([
-                        (pos.gain(m).to_float(), Params::winning_rating_gain()),
-                        (1., Params::winning_rating_scalar()),
+                        (pos.gain(m).to_float(), Params::winning_rating_gain(..)),
+                        (1., Params::winning_rating_scalar(..)),
                     ]);
                 }
             }
@@ -799,8 +826,8 @@ impl<'a> Stack<'a> {
                 s => s.max(alpha),
             };
 
-            let mut lmp = Params::lmp_is_root()[0];
-            lmp = Params::lmp_is_check()[0].mul_add(is_check.to_float(), lmp);
+            let mut lmp = *Params::lmp_is_root(0);
+            lmp = Params::lmp_is_check(0).mul_add(is_check.to_float(), lmp);
             if index.to_float::<f32>() > Self::lmp(depth) * lmp {
                 break;
             }
@@ -812,10 +839,10 @@ impl<'a> Stack<'a> {
             let gives_check = next.pos.is_check();
 
             let mut lmr = Self::lmr(depth, index);
-            lmr += Params::lmr_is_root()[0];
-            lmr = Params::lmr_gives_check()[0].mul_add(gives_check.to_float(), lmr);
-            lmr = Params::lmr_is_noisy_pv()[0].mul_add(is_noisy_pv.to_float(), lmr);
-            lmr = Params::lmr_history()[0].mul_add(history / History::LIMIT as f32, lmr);
+            lmr += *Params::lmr_is_root(0);
+            lmr = Params::lmr_gives_check(0).mul_add(gives_check.to_float(), lmr);
+            lmr = Params::lmr_is_noisy_pv(0).mul_add(is_noisy_pv.to_float(), lmr);
+            lmr = Params::lmr_history(0).mul_add(history / History::LIMIT as f32, lmr);
 
             let pv = match -next.nw(depth - lmr.to_int::<i8>().max(0) - 1, -alpha, false)? {
                 pv if pv <= alpha || (pv >= beta && lmr < 1.) => pv,
@@ -872,7 +899,7 @@ impl<'a> Stack<'a> {
 
                 depth += 1;
                 let mut reduction = 0.;
-                let mut window = Params::aw_baseline()[0];
+                let mut window = *Params::aw_baseline(0);
                 let (mut lower, mut upper) = match depth.get() {
                     ..=4 => (Score::lower(), Score::upper()),
                     _ => (
@@ -883,7 +910,7 @@ impl<'a> Stack<'a> {
 
                 loop {
                     let depth = depth - reduction.to_int::<i8>();
-                    window = window.mul_add(Params::aw_gamma()[0], Params::aw_delta()[0]);
+                    window = window.mul_add(*Params::aw_gamma(0), *Params::aw_delta(0));
                     let partial = match self.root(&mut moves, depth, lower..upper) {
                         Err(_) => break stop = true,
                         Ok(pv) => pv,
@@ -891,7 +918,7 @@ impl<'a> Stack<'a> {
 
                     match partial.score() {
                         score if (-lower..Score::upper()).contains(&-score) => {
-                            let blend = Params::aw_fail_low_blend()[0];
+                            let blend = *Params::aw_fail_low_blend(0);
                             upper = blend.lerp(lower.to_float(), upper.to_float()).to_int();
                             lower = score - window.to_int::<i16>();
                             reduction = 0.;
@@ -899,7 +926,7 @@ impl<'a> Stack<'a> {
 
                         score if (upper..Score::upper()).contains(&score) => {
                             upper = score + window.to_int::<i16>();
-                            reduction += Params::aw_fail_high_reduction()[0];
+                            reduction += *Params::aw_fail_high_reduction(0);
                             self.pv = partial;
                         }
 

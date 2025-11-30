@@ -86,6 +86,7 @@ impl<T: NoUninit, const N: usize> Deref for TypedByteBuffer<T, N> {
     type Target = [T];
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn deref(&self) -> &Self::Target {
         unsafe {
             slice::from_raw_parts(
@@ -98,6 +99,7 @@ impl<T: NoUninit, const N: usize> Deref for TypedByteBuffer<T, N> {
 
 impl<T: NoUninit, const N: usize> DerefMut for TypedByteBuffer<T, N> {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe {
             slice::from_raw_parts_mut(

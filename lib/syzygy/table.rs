@@ -16,7 +16,7 @@ pub enum Metric {
 }
 
 pub trait TableDescriptor {
-    /// One of [`Metric::WDL`] or [`Metric::Dtz`].
+    /// One of [`Metric::Wdl`] or [`Metric::Dtz`].
     const METRIC: Metric;
     /// File extension, i.e. `rtbw` or `rtbz`.
     const EXTENSION: &'static str;

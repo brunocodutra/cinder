@@ -15,12 +15,14 @@ impl Mul4x8 for i8x64 {
 
     #[inline(always)]
     #[cfg(target_feature = "avx512vnni")]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_4x8(self, x: Self::Unsigned) -> Self::Output {
         crate::simd::MulAdd4x8::mul_add_4x8(self, x, Simd::splat(0))
     }
 
     #[inline(always)]
     #[cfg(not(target_feature = "avx512vnni"))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_4x8(self, x: Self::Unsigned) -> Self::Output {
         debug_assert!(x.simd_lt(Simd::splat(128)).all());
 
@@ -42,12 +44,14 @@ impl Mul4x8 for i8x32 {
 
     #[inline(always)]
     #[cfg(all(target_feature = "avx512vnni", target_feature = "avx512vl"))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_4x8(self, x: Self::Unsigned) -> Self::Output {
         crate::simd::MulAdd4x8::mul_add_4x8(self, x, Simd::splat(0))
     }
 
     #[inline(always)]
     #[cfg(not(all(target_feature = "avx512vnni", target_feature = "avx512vl")))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_4x8(self, x: Self::Unsigned) -> Self::Output {
         debug_assert!(x.simd_lt(Simd::splat(128)).all());
 
@@ -68,6 +72,7 @@ impl Mul4x8 for i8x16 {
 
     #[inline(always)]
     #[cfg(all(target_feature = "avx512vnni", target_feature = "avx512vl"))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_4x8(self, x: Self::Unsigned) -> Self::Output {
         crate::simd::MulAdd4x8::mul_add_4x8(self, x, Simd::splat(0))
     }
@@ -75,6 +80,7 @@ impl Mul4x8 for i8x16 {
     #[inline(always)]
     #[cfg(not(all(target_feature = "avx512vnni", target_feature = "avx512vl")))]
     #[cfg(target_feature = "ssse3")]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_4x8(self, x: Self::Unsigned) -> Self::Output {
         debug_assert!(x.simd_lt(Simd::splat(128)).all());
 
@@ -91,6 +97,7 @@ impl Mul4x8 for i8x16 {
 
     #[inline(always)]
     #[cfg(target_feature = "dotprod")]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_4x8(self, x: Self::Unsigned) -> Self::Output {
         crate::simd::MulAdd4x8::mul_add_4x8(self, x, Simd::splat(0))
     }
@@ -98,6 +105,7 @@ impl Mul4x8 for i8x16 {
     #[inline(always)]
     #[cfg(not(target_feature = "dotprod"))]
     #[cfg(target_feature = "neon")]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_4x8(self, x: Self::Unsigned) -> Self::Output {
         debug_assert!(x.simd_lt(Simd::splat(128)).all());
 
@@ -119,6 +127,7 @@ impl Mul4x8 for i8x16 {
     #[cfg(not(target_feature = "ssse3"))]
     #[cfg(not(target_feature = "dotprod"))]
     #[cfg(not(target_feature = "neon"))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_4x8(self, x: Self::Unsigned) -> Self::Output {
         fallback(self, x)
     }
@@ -126,6 +135,7 @@ impl Mul4x8 for i8x16 {
 
 #[allow(unused)]
 #[inline(always)]
+#[cfg_attr(feature = "no_panic", no_panic::no_panic)]
 fn fallback(w: i8x16, x: u8x16) -> i32x4 {
     debug_assert!(x.simd_lt(Simd::splat(128)).all());
 

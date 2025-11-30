@@ -30,24 +30,28 @@ unsafe fn init() {
 
 impl ZobristNumbers {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn psq(piece: Piece, sq: Square) -> Zobrist {
         let psq = unsafe { &ZOBRIST.get().as_ref_unchecked().pieces };
         Zobrist::new(psq[piece as usize][sq as usize])
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn castling(castles: Castles) -> Zobrist {
         let castling = unsafe { &ZOBRIST.get().as_ref_unchecked().castles };
         Zobrist::new(castling[castles.index() as usize])
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn en_passant(file: File) -> Zobrist {
         let en_passant = unsafe { &ZOBRIST.get().as_ref_unchecked().en_passant };
         Zobrist::new(en_passant[file as usize])
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn turn() -> Zobrist {
         Zobrist::new(unsafe { ZOBRIST.get().as_ref_unchecked().turn })
     }

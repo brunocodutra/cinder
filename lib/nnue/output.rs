@@ -17,6 +17,7 @@ impl Synapse for Output {
     type Output = V2<f32>;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn forward<'a>(&self, input: Self::Input<'a>) -> Self::Output {
         const { assert!(N.is_multiple_of(W2)) }
 

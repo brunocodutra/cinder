@@ -16,6 +16,7 @@ impl Default for Reply {
 
 impl Reply {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn graviton(&mut self, pos: &Position, m: Move) -> &mut <Self as Statistics<Move>>::Stat {
         let (wc, wt) = (m.whence(), m.whither());
         let role = pos.role_on(wc).assume() as usize;
@@ -50,6 +51,7 @@ impl Default for Continuation {
 
 impl Continuation {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn reply(&mut self, pos: &Position, m: Move) -> &mut Reply {
         let (wc, wt) = (m.whence(), m.whither());
         let piece = pos.piece_on(wc).assume();

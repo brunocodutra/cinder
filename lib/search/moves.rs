@@ -58,6 +58,7 @@ impl Moves {
 
 impl FromIterator<Move> for Moves {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn from_iter<I: IntoIterator<Item = Move>>(iter: I) -> Self {
         let mut moves = Self::default();
 
@@ -94,12 +95,14 @@ impl<'a> Iterator for SortedMovesIter<'a> {
     type Item = Move;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn next(&mut self) -> Option<Self::Item> {
         let mut idx = self.index;
         let mut next = *self.moves.entries.get(idx)?;
 
         if idx >= self.moves.unsorted as usize {
-            for (i, &entry) in self.moves.entries[self.index + 1..].iter().enumerate() {
+            let unsorted = self.moves.entries.get(self.index + 1..).assume();
+            for (i, &entry) in unsorted.iter().enumerate() {
                 if entry.1 > next.1 {
                     idx = i + self.index + 1;
                     next = entry;
@@ -117,6 +120,7 @@ impl<'a> Iterator for SortedMovesIter<'a> {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len(), Some(self.len()))
     }

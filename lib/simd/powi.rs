@@ -14,6 +14,7 @@ where
     Self: MulAssign,
 {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn powi<const E: u32>(mut self) -> Self {
         let mut result = Self::splat(1.into());
 

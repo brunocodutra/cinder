@@ -33,19 +33,12 @@ You should prefer the most performant binary that runs on your machine.
 
 ### Building from source
 
-Building Cinder from source currently requires a recent nightly Rust compiler, and [cargo-pgo].
+Building Cinder from source currently requires a recent nightly Rust compiler.
 
 #### Installing the latest nightly Rust toolchain
 
 ```sh
 rustup toolchain install nightly
-rustup component add llvm-tools-preview
-```
-
-#### Installing `cargo-pgo`
-
-```sh
-cargo install cargo-pgo
 ```
 
 #### Building Cinder optimized for your CPU architecture
@@ -83,8 +76,6 @@ Cinder is distributed under the terms of the GPL-3.0 license, see [LICENSE] for 
 [issues]:                   https://github.com/brunocodutra/cinder/issues
 [pulls]:                    https://github.com/brunocodutra/cinder/pulls
 [releases]:                 https://github.com/brunocodutra/cinder/releases/latest
-
-[cargo-pgo]:                https://crates.io/crates/cargo-pgo
 
 [LICENSE]:                  https://github.com/brunocodutra/cinder/blob/master/LICENSE
 [CONTRIBUTING]:             https://github.com/brunocodutra/cinder/blob/master/CONTRIBUTING.md

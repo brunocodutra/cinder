@@ -1,9 +1,8 @@
-use bytemuck::{Zeroable, fill_zeroes};
+use bytemuck::Zeroable;
 use memmap2::{MmapMut, MmapOptions};
 use std::mem::needs_drop;
 use std::ops::{Deref, DerefMut};
-use std::thread::{self, available_parallelism};
-use std::{alloc::Layout, io, num::NonZero, slice};
+use std::{alloc::Layout, io, slice};
 
 const HUGEPAGE_SIZE: usize = 2 << 20;
 
@@ -29,43 +28,24 @@ impl<T: Send + Zeroable> Slice<T> {
         const { assert!(!needs_drop::<T>()) }
 
         let layout = Layout::array::<T>(len).map_err(|_| io::ErrorKind::OutOfMemory)?;
-        let align = layout.align().max(64); // align to cache line
-        let size = (layout.size() + align - 1).next_multiple_of(HUGEPAGE_SIZE);
+        let alignment = layout.align().max(HUGEPAGE_SIZE);
+        let size = (layout.size() + alignment - 1).next_multiple_of(HUGEPAGE_SIZE);
         let mmap = MmapOptions::new().len(size).map_anon()?;
-
-        #[cfg(target_os = "linux")]
-        mmap.advise(memmap2::Advice::HugePage).ok(); // best-effort
 
         #[cfg(unix)]
         mmap.advise(memmap2::Advice::Random)?;
 
-        let ptr = mmap.as_ptr();
-        let offset = ptr.align_offset(align);
+        #[cfg(target_os = "linux")]
+        mmap.advise(memmap2::Advice::HugePage).ok(); // best-effort
 
-        let mut slice = Slice {
+        let ptr = mmap.as_ptr();
+        let offset = ptr.align_offset(alignment);
+
+        Ok(Slice {
             ptr: ptr.wrapping_add(offset) as _,
             len,
             _mmap: mmap,
-        };
-
-        slice.clear();
-
-        Ok(slice)
-    }
-
-    /// Zeroes out the memory.
-    #[inline(always)]
-    pub fn clear(&mut self) {
-        const PREFAULT_BLOCK_MIN_SIZE: usize = 128 << 20;
-        let min_chunk_size = PREFAULT_BLOCK_MIN_SIZE.div_ceil(size_of::<T>());
-        let available_parallelism = available_parallelism().map_or(1, NonZero::get);
-        let chunk_size = self.len.div_ceil(available_parallelism);
-
-        thread::scope(|s| {
-            for chunk in self.chunks_mut(chunk_size.max(min_chunk_size)) {
-                s.spawn(|| fill_zeroes(chunk));
-            }
-        });
+        })
     }
 }
 
@@ -104,11 +84,11 @@ mod tests {
     }
 
     #[proptest]
-    fn is_aligned_to_cache_line(#[strategy(1usize..1024)] n: usize) {
+    fn is_aligned_to_page(#[strategy(1usize..1024)] n: usize) {
         let slice: Slice<u32> = Slice::new(n)?;
 
         assert_eq!(slice.len(), n);
-        assert!(slice.as_ptr().is_aligned_to(64));
+        assert!(slice.as_ptr().is_aligned_to(HUGEPAGE_SIZE));
         assert!(slice._mmap.len().is_multiple_of(HUGEPAGE_SIZE));
     }
 

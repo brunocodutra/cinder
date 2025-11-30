@@ -1,14 +1,15 @@
 use crate::chess::{Move, Position};
 use crate::nnue::{Evaluator, Value};
-use crate::util::{Assume, Bits, Bounded, Float, Int, Memory, Slice};
-use crate::{params::Params, search::*, syzygy::Syzygy};
-use bytemuck::Zeroable;
+use crate::search::{ControlFlow::*, *};
+use crate::util::{Assume, Bits, Bounded, Float, Int, Memory, Slice, Vault};
+use crate::{params::Params, syzygy::Syzygy};
+use bytemuck::{Zeroable, fill_zeroes, zeroed};
 use derive_more::with_trait::{Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
 use std::cell::SyncUnsafeCell;
 use std::task::{Context, Poll};
-use std::{mem::swap, ops::Range, path::Path, pin::Pin, ptr::NonNull, time::Duration};
+use std::{mem::swap, ops::Range, path::Path, pin::Pin, ptr::NonNull, slice, time::Duration};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -436,7 +437,7 @@ impl<'a> Stack<'a> {
     ) -> Result<Pv<N>, Interrupted> {
         self.nodes.update(1);
         let ply = self.pos.ply();
-        if self.ctrl.check(depth, ply, &self.pv) == ControlFlow::Abort {
+        if self.ctrl.check(depth, ply, &self.pv) == Abort {
             return Err(Interrupted);
         }
 
@@ -755,7 +756,7 @@ impl<'a> Stack<'a> {
         bounds: Range<Score>,
     ) -> Result<Pv, Interrupted> {
         let (alpha, beta) = (bounds.start, bounds.end);
-        if self.ctrl.check(depth, Ply::new(0), &self.pv) != ControlFlow::Continue {
+        if self.ctrl.check(depth, Ply::new(0), &self.pv) != Continue {
             return Err(Interrupted);
         }
 
@@ -864,7 +865,7 @@ impl<'a> Stack<'a> {
 
             loop {
                 yield (depth, self.pv.clone().truncate());
-                stop |= self.ctrl.check(depth + 1, Ply::new(0), &self.pv) != ControlFlow::Continue;
+                stop |= self.ctrl.check(depth + 1, Ply::new(0), &self.pv) != Continue;
                 if stop || depth >= Depth::upper() {
                     return;
                 }
@@ -966,12 +967,12 @@ impl<'e> Stream for Pin<&mut Search<'e>> {
         }
 
         let executor: &mut Executor = unsafe { &mut *(&mut self.engine.executor as *mut _) };
-        let syzygy: &'static Syzygy = unsafe { &*(&self.engine.syzygy as *const _) };
-        let tt: &'static Memory<Transposition> = unsafe { &*(&self.engine.tt as *const _) };
-        let ctrl: &'static GlobalControl = unsafe { &*(&self.ctrl as *const _) };
-        let pos: &'static Evaluator = unsafe { &*(&self.pos as *const _) };
-        let searchers: &'static [SyncUnsafeCell<Searcher>] =
-            unsafe { &*(&*self.engine.searchers as *const _ as *const [SyncUnsafeCell<Searcher>]) };
+        let syzygy: &Syzygy = unsafe { &*(&self.engine.syzygy as *const _) };
+        let tt: &Memory<Transposition> = unsafe { &*(&self.engine.tt as *const _) };
+        let ctrl: &GlobalControl = unsafe { &*(&self.ctrl as *const _) };
+        let pos: &Evaluator = unsafe { &*(&self.pos as *const _) };
+        let searchers: &[SyncUnsafeCell<Searcher>] =
+            unsafe { &*(&mut *self.engine.searchers as *mut _ as *const _) };
 
         let (tx, rx) = unbounded();
         self.channel = Some(rx);
@@ -1084,8 +1085,19 @@ impl Engine {
 
     /// Resets the engine state.
     pub fn reset(&mut self) {
-        self.tt.clear();
-        self.searchers.clear();
+        let tt: &[SyncUnsafeCell<Vault<Transposition>>] =
+            unsafe { &*(&mut *self.tt as *mut _ as *const _) };
+        let searchers: &[SyncUnsafeCell<Searcher>] =
+            unsafe { &*(&mut *self.searchers as *mut _ as *const _) };
+
+        let tt_chunk_size = tt.len().div_ceil(searchers.len());
+        self.executor.execute(move |idx| unsafe {
+            let offset = idx * tt_chunk_size;
+            let len = tt.len().saturating_sub(offset).min(tt_chunk_size);
+            let ptr = tt.as_ptr() as *mut Vault<Transposition>;
+            fill_zeroes(slice::from_raw_parts_mut(ptr.add(offset), len));
+            *searchers.get(idx).assume().get() = zeroed();
+        });
     }
 
     /// Initiates a [`Search`].

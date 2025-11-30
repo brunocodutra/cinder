@@ -9,7 +9,7 @@ use std::{mem::size_of, sync::atomic::Ordering};
 #[cfg(test)]
 use proptest::{collection::*, prelude::*};
 
-/// The key to a [`Vault`].
+/// The key to a [`Padlock`].
 pub type Key = Bits<u64, 64>;
 
 impl<T> Index<Key> for [T] {
@@ -33,12 +33,12 @@ impl<T> IndexMut<Key> for [T] {
 /// A checksum-guarded container.
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Vault<T: Binary, U: Binary> {
+pub struct Padlock<T: Binary, U: Binary> {
     bits: U::Bits,
     phantom: PhantomData<T>,
 }
 
-impl<T, U, R, const M: u32, const N: u32> Vault<T, U>
+impl<T, U, R, const M: u32, const N: u32> Padlock<T, U>
 where
     T: Binary<Bits = Bits<R, M>>,
     U: Unsigned + Binary<Bits = Bits<U, N>>,
@@ -49,7 +49,7 @@ where
         let mut bits = Bits::new(key.cast());
         bits.push(value.encode());
 
-        Vault {
+        Padlock {
             bits,
             phantom: PhantomData,
         }
@@ -68,7 +68,7 @@ where
     }
 }
 
-impl<T, U, R, const M: u32, const N: u32> Binary for Vault<T, U>
+impl<T, U, R, const M: u32, const N: u32> Binary for Padlock<T, U>
 where
     T: Binary<Bits = Bits<R, M>>,
     U: Unsigned + Binary<Bits = Bits<U, N>>,
@@ -83,30 +83,65 @@ where
 
     #[inline(always)]
     fn decode(bits: Self::Bits) -> Self {
-        Vault {
+        Padlock {
             bits,
             phantom: PhantomData,
         }
     }
 }
 
-#[derive(Debug, Deref, DerefMut)]
+#[derive(Debug)]
 #[repr(transparent)]
-struct Slot<T>(Atomic<T>);
+pub struct Vault<T: Binary<Bits: Int<Repr: Binary>>, U: Binary = <<T as Binary>::Bits as Int>::Repr>
+where
+    Option<Padlock<T, U>>: Binary,
+{
+    #[allow(clippy::type_complexity)]
+    slot: Atomic<<Option<Padlock<T, U>> as Binary>::Bits>,
+}
 
-unsafe impl<T: Zeroable> Zeroable for Slot<T> {}
+unsafe impl<T: Binary<Bits: Int<Repr: Binary>>, U: Binary> Zeroable for Vault<T, U> where
+    Option<Padlock<T, U>>: Binary
+{
+}
+
+impl<T, U, R, const M: u32, const N: u32> Vault<T, U>
+where
+    T: Binary<Bits = Bits<R, M>>,
+    U: Unsigned + Binary<Bits = Bits<U, N>>,
+    R: Unsigned + Binary,
+{
+    #[inline(always)]
+    pub fn clear(&self) {
+        let bits = None::<Padlock<T, U>>.encode();
+        self.slot.store(bits, Ordering::Relaxed);
+    }
+
+    #[inline(always)]
+    pub fn store(&self, key: Key, value: T) {
+        let bits = Some(Padlock::close(key, value)).encode();
+        self.slot.store(bits, Ordering::Relaxed);
+    }
+
+    #[inline(always)]
+    pub fn load(&self, key: Key) -> Option<T> {
+        let bits = self.slot.load(Ordering::Relaxed);
+        Option::<Padlock<T, U>>::decode(bits)?.open(key)
+    }
+}
 
 /// A generic memoization data.
-#[derive(Debug)]
+#[derive(Debug, Deref, DerefMut)]
 #[debug("Memory")]
 pub struct Memory<
     T: Binary<Bits: Int<Repr: Binary>>,
     U: Binary = <<T as Binary>::Bits as Int>::Repr,
 > where
-    Option<Vault<T, U>>: Binary,
+    Option<Padlock<T, U>>: Binary,
 {
-    #[allow(clippy::type_complexity)]
-    data: Slice<Slot<<Option<Vault<T, U>> as Binary>::Bits>>,
+    #[deref(forward)]
+    #[deref_mut(forward)]
+    data: Slice<Vault<T, U>>,
 }
 
 #[cfg(test)]
@@ -122,13 +157,11 @@ where
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         (hash_map(any::<Key>(), any::<T>(), ..32), ..128usize)
             .prop_map(|(map, size)| {
-                #[allow(clippy::type_complexity)]
-                let mut data: Slice<Slot<<Option<Vault<T, U>> as Binary>::Bits>> =
-                    Slice::new(size * size_of::<T>()).unwrap();
+                let data: Slice<Vault<T, U>> = Slice::new(size * size_of::<T>()).unwrap();
 
                 if size > 0 {
                     for (k, v) in map {
-                        *data[k].get_mut() = Some(Vault::<T, U>::close(k, v)).encode();
+                        data[k].store(k, v);
                     }
                 }
 
@@ -147,7 +180,7 @@ where
     /// Constructs a memoization data of at most `size` many bytes.
     #[inline(always)]
     pub fn new(size: usize) -> Self {
-        let cap = size / size_of::<Vault<T, U>>();
+        let cap = size / size_of::<Padlock<T, U>>();
 
         Memory {
             data: Slice::new(cap).unwrap(),
@@ -157,7 +190,7 @@ where
     /// The actual size of this memoization data in bytes.
     #[inline(always)]
     pub fn size(&self) -> usize {
-        self.capacity() * size_of::<Vault<T, U>>()
+        self.capacity() * size_of::<Padlock<T, U>>()
     }
 
     /// The actual size of this memoization data in number of entries.
@@ -189,26 +222,18 @@ where
     #[inline(always)]
     pub fn set(&self, key: Key, value: T) {
         if self.capacity() > 0 {
-            let bits = Some(Vault::close(key, value)).encode();
-            self.data[key].store(bits, Ordering::Relaxed);
+            self.data[key].store(key, value);
         }
     }
 
     /// Loads the value from the slot associated with `key`.
     #[inline(always)]
     pub fn get(&self, key: Key) -> Option<T> {
-        if self.capacity() == 0 {
-            return None;
+        if self.capacity() > 0 {
+            self.data[key].load(key)
+        } else {
+            None
         }
-
-        let bits = self.data[key].load(Ordering::Relaxed);
-        Option::<Vault<T, U>>::decode(bits)?.open(key)
-    }
-
-    /// Clears all entries.
-    #[inline(always)]
-    pub fn clear(&mut self) {
-        self.data.clear();
     }
 }
 
@@ -245,17 +270,17 @@ mod tests {
         }
     }
 
-    type MockVault = Vault<Order, u64>;
+    type MockPadlock = Padlock<Order, u64>;
     type MockMemory = Memory<Order, u64>;
 
     #[proptest]
     fn opening_vault_with_correct_key_succeeds(k: Key, v: Order) {
-        assert_eq!(MockVault::close(k, v).open(k), Some(v));
+        assert_eq!(MockPadlock::close(k, v).open(k), Some(v));
     }
 
     #[proptest]
     fn opening_vault_with_wrong_key_fails(k: Key, #[filter(#l != #k)] l: Key, v: Order) {
-        assert_eq!(MockVault::close(k, v).open(l), None);
+        assert_eq!(MockPadlock::close(k, v).open(l), None);
     }
 
     #[proptest]
@@ -265,7 +290,7 @@ mod tests {
 
     #[proptest]
     fn capacity_returns_maximum_number_of_elements(m: MockMemory) {
-        assert_eq!(m.size() / size_of::<MockVault>(), m.capacity());
+        assert_eq!(m.size() / size_of::<MockPadlock>(), m.capacity());
     }
 
     #[proptest]
@@ -280,7 +305,7 @@ mod tests {
         m: MockMemory,
         k: Key,
     ) {
-        m.data[k].store(None::<MockVault>.encode(), Ordering::Relaxed);
+        m.data[k].clear();
         assert_eq!(m.get(k), None);
     }
 
@@ -292,8 +317,7 @@ mod tests {
         k: Key,
         v: Order,
     ) {
-        let vault = Some(Vault::close(!k, v));
-        m.data[k].store(vault.encode(), Ordering::Relaxed);
+        m.data[k].store(!k, v);
         assert_eq!(m.get(k), None);
     }
 
@@ -305,8 +329,7 @@ mod tests {
         k: Key,
         v: Order,
     ) {
-        let vault = Some(Vault::close(k, v));
-        m.data[k].store(vault.encode(), Ordering::Relaxed);
+        m.data[k].store(k, v);
         assert_eq!(m.get(k), Some(v));
     }
 
@@ -323,7 +346,7 @@ mod tests {
         k: Key,
         v: Order,
     ) {
-        m.data[k].store(None::<MockVault>.encode(), Ordering::Relaxed);
+        m.data[k].clear();
         m.set(k, v);
         assert_eq!(m.get(k), Some(v));
     }
@@ -338,8 +361,7 @@ mod tests {
         l: Key,
         v: Order,
     ) {
-        let vault = Some(Vault::close(l, v));
-        m.data[k].store(vault.encode(), Ordering::Relaxed);
+        m.data[k].store(l, v);
         m.set(k, u);
         assert_eq!(m.get(k), Some(u));
     }

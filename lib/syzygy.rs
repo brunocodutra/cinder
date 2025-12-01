@@ -1,4 +1,4 @@
-use crate::search::{Line, Ply, Pv};
+use crate::search::{Line, Moves, Ply, Pv};
 use crate::{chess::Position, util::Int};
 use std::{fs::read_dir, io, path::Path};
 
@@ -71,7 +71,7 @@ impl Syzygy {
     }
 
     /// This [`Position`]'s best [`Pv`].
-    pub fn best(&self, pos: &Position) -> Option<Pv<1>> {
+    pub fn best(&self, pos: &Position, moves: &Moves) -> Option<Pv<1>> {
         if pos.occupied().len() > self.max_pieces() {
             return None;
         }
@@ -81,7 +81,7 @@ impl Syzygy {
         let mut best_gaining = false;
         let mut best_move = None;
 
-        for m in pos.moves().unpack() {
+        for m in moves.iter() {
             let mut next = pos.clone();
             next.play(m);
 

@@ -431,7 +431,7 @@ fn probing_syzygy_tablebase_finds_best_move(
 
     assert_eq!(
         SYZYGY
-            .best(&pos)
+            .best(&pos, &pos.moves().unpack().collect())
             .and_then(|pv| Some((pv.score(), pv.head()?.to_string()))),
         if !m.is_empty() {
             Some((wdl.to_score(Ply::new(0)), m.to_string()))

@@ -164,7 +164,6 @@ impl<I, O> Uci<I, O> {
 
 impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> + Unpin> Uci<I, O> {
     async fn go(&mut self, limits: Limits) -> Result<bool, UciError> {
-        let mut best = UciBestMove(None);
         let search = self.engine.search(&self.position, limits);
         pin_mut!(search);
 
@@ -172,12 +171,8 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> +
             select! {
                 info = search.next() => {
                     match info {
+                        Some(i) => self.output.send(UciSearchInfo(i).to_string()).await?,
                         None => break,
-                        Some(i) => {
-                            best = UciBestMove(i.head());
-                            let info = UciSearchInfo(i).to_string();
-                            self.output.send(info).await?;
-                        }
                     }
                 },
 
@@ -192,7 +187,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> +
             }
         }
 
-        let bestmove = best.to_string();
+        let bestmove = UciBestMove(search.bestmove()).to_string();
         self.output.send(bestmove).await?;
 
         Ok(true)
@@ -617,7 +612,7 @@ mod tests {
         let output = uci.output.join("\n");
 
         let bestmove = field("bestmove", word);
-        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        let mut pattern = recognize(terminated((opt((info, line_ending)), bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
@@ -633,7 +628,7 @@ mod tests {
         let output = uci.output.join("\n");
 
         let bestmove = field("bestmove", word);
-        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        let mut pattern = recognize(terminated((opt((info, line_ending)), bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
@@ -649,7 +644,7 @@ mod tests {
         let output = uci.output.join("\n");
 
         let bestmove = field("bestmove", word);
-        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        let mut pattern = recognize(terminated((opt((info, line_ending)), bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
@@ -665,7 +660,7 @@ mod tests {
         let output = uci.output.join("\n");
 
         let bestmove = field("bestmove", word);
-        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        let mut pattern = recognize(terminated((opt((info, line_ending)), bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
@@ -681,7 +676,7 @@ mod tests {
         let output = uci.output.join("\n");
 
         let bestmove = field("bestmove", word);
-        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        let mut pattern = recognize(terminated((opt((info, line_ending)), bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
@@ -697,7 +692,7 @@ mod tests {
         let output = uci.output.join("\n");
 
         let bestmove = field("bestmove", tag("0000"));
-        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        let mut pattern = recognize(terminated((opt((info, line_ending)), bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
@@ -714,7 +709,7 @@ mod tests {
         let output = uci.output.join("\n");
 
         let bestmove = field("bestmove", word);
-        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        let mut pattern = recognize(terminated((opt((info, line_ending)), bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
@@ -731,7 +726,7 @@ mod tests {
         let output = uci.output.join("\n");
 
         let bestmove = field("bestmove", word);
-        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        let mut pattern = recognize(terminated((opt((info, line_ending)), bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 
@@ -747,7 +742,7 @@ mod tests {
         let output = uci.output.join("\n");
 
         let bestmove = field("bestmove", word);
-        let mut pattern = recognize(terminated((info, line_ending, bestmove), eof));
+        let mut pattern = recognize(terminated((opt((info, line_ending)), bestmove), eof));
         assert_eq!(pattern.parse(&*output).finish(), Ok(("", &*output)));
     }
 

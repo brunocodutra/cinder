@@ -427,6 +427,7 @@ impl<'a> Stack<'a> {
     }
 
     /// The zero-window alpha-beta search.
+    #[inline(always)]
     fn nw<const N: usize>(
         &mut self,
         depth: Depth,
@@ -437,6 +438,7 @@ impl<'a> Stack<'a> {
     }
 
     /// The alpha-beta search.
+    #[inline(always)]
     fn ab<const N: usize>(
         &mut self,
         depth: Depth,
@@ -444,14 +446,16 @@ impl<'a> Stack<'a> {
         cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
         if self.pos.ply() < N as i32 && depth > 0 && bounds.start + 1 < bounds.end {
-            self.pvs(depth, bounds, cut)
+            self.pvs::<true, N>(depth, bounds, cut)
+        } else if bounds.start + 1 < bounds.end {
+            Ok(self.pvs::<true, 0>(depth, bounds, cut)?.truncate())
         } else {
-            Ok(self.pvs::<0>(depth, bounds, cut)?.truncate())
+            Ok(self.pvs::<false, 0>(depth, bounds, cut)?.truncate())
         }
     }
 
     /// The principal variation search.
-    fn pvs<const N: usize>(
+    fn pvs<const IS_PV: bool, const N: usize>(
         &mut self,
         mut depth: Depth,
         bounds: Range<Score>,
@@ -489,13 +493,12 @@ impl<'a> Stack<'a> {
             depth -= transposition.is_none() as i8;
         }
 
-        let is_pv = alpha + 1 < beta;
-        let was_pv = is_pv || transposition.as_ref().is_some_and(Transposition::was_pv);
+        let was_pv = IS_PV || transposition.as_ref().is_some_and(Transposition::was_pv);
         let is_noisy_pv = transposition.is_some_and(|t| {
             t.best().is_some_and(|m| !m.is_quiet()) && !matches!(t.score(), ScoreBound::Upper(_))
         });
 
-        if !is_pv && self.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
+        if !IS_PV && self.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
             if let Some(t) = transposition {
                 let (lower, upper) = t.score().range(ply).into_inner();
 
@@ -539,7 +542,7 @@ impl<'a> Stack<'a> {
         let transposed = transposed.clamp(lower, upper);
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
-        } else if !is_pv && !is_check && depth > 0 {
+        } else if !IS_PV && !is_check && depth > 0 {
             if let Some(margin) = Self::razoring(depth) {
                 if self.value[ply.cast::<usize>()] + margin.to_int::<i16>() <= alpha {
                     let pv = self.nw(Depth::new(0), beta, cut)?;
@@ -685,7 +688,7 @@ impl<'a> Stack<'a> {
             };
 
             let mut lmp = *Params::lmp_baseline(0);
-            lmp = Params::lmp_is_pv(0).mul_add(is_pv.to_float(), lmp);
+            lmp = Params::lmp_is_pv(0).mul_add(IS_PV.to_float(), lmp);
             lmp = Params::lmp_was_pv(0).mul_add(was_pv.to_float(), lmp);
             lmp = Params::lmp_is_check(0).mul_add(is_check.to_float(), lmp);
             lmp = Params::lmp_improving(0).mul_add(improving, lmp);
@@ -704,7 +707,7 @@ impl<'a> Stack<'a> {
             let is_quiet = m.is_quiet();
 
             let mut fut = Self::futility(lmr_depth);
-            fut = Params::fut_margin_is_pv(0).mul_add(is_pv.to_float(), fut);
+            fut = Params::fut_margin_is_pv(0).mul_add(IS_PV.to_float(), fut);
             fut = Params::fut_margin_was_pv(0).mul_add(was_pv.to_float(), fut);
             fut = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), fut);
             fut = Params::fut_margin_is_killer(0).mul_add(is_killer.to_float(), fut);
@@ -729,7 +732,7 @@ impl<'a> Stack<'a> {
             let gives_check = next.pos.is_check();
 
             lmr += *Params::lmr_baseline(0);
-            lmr = Params::lmr_is_pv(0).mul_add(is_pv.to_float(), lmr);
+            lmr = Params::lmr_is_pv(0).mul_add(IS_PV.to_float(), lmr);
             lmr = Params::lmr_was_pv(0).mul_add(was_pv.to_float(), lmr);
             lmr = Params::lmr_gives_check(0).mul_add(gives_check.to_float(), lmr);
             lmr = Params::lmr_is_noisy_pv(0).mul_add(is_noisy_pv.to_float(), lmr);

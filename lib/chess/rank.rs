@@ -1,6 +1,6 @@
 use crate::chess::{Bitboard, File, Flip, Transpose};
 use crate::util::{Assume, Int};
-use bytemuck::{Zeroable, ZeroableInOption};
+use bytemuck::Zeroable;
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{ops::Sub, str::FromStr};
@@ -27,8 +27,6 @@ impl Rank {
         Bitboard::new(0x000000000000FF << (self.get() * 8))
     }
 }
-
-unsafe impl ZeroableInOption for Rank {}
 
 unsafe impl Int for Rank {
     type Repr = i8;

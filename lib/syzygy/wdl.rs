@@ -1,6 +1,6 @@
 use crate::search::{Ply, Score};
 use crate::{syzygy::Dtz, util::Int};
-use bytemuck::{Zeroable, ZeroableInOption};
+use bytemuck::Zeroable;
 use std::ops::Neg;
 
 /// The possible outcomes of a final [`Position`](`crate::chess::Position`).
@@ -19,8 +19,6 @@ pub enum Wdl {
     /// Unconditional win.
     Win = 2,
 }
-
-unsafe impl ZeroableInOption for Wdl {}
 
 unsafe impl Int for Wdl {
     type Repr = i8;

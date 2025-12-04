@@ -1,5 +1,5 @@
 use crate::chess::*;
-use crate::util::{Assume, Int};
+use crate::util::{Aligned, Assume, Int};
 use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter, Write};
@@ -45,7 +45,7 @@ impl Zobrists {
 }
 
 /// The chess board.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Board({self})")]
 pub struct Board {
@@ -71,7 +71,7 @@ pub struct Board {
         colors
     })))]
     colors: [Bitboard; Color::MAX as usize + 1],
-    pieces: [Option<Piece>; Square::MAX as usize + 1],
+    pieces: Aligned<[Option<Piece>; Square::MAX as usize + 1]>,
     pub turn: Color,
     pub castles: Castles,
     pub en_passant: Option<Square>,
@@ -85,7 +85,7 @@ impl Default for Board {
         use Piece::*;
 
         #[rustfmt::skip]
-        let pieces = [
+        let pieces = Aligned([
             Some(WhiteRook), Some(WhiteKnight), Some(WhiteBishop), Some(WhiteQueen), Some(WhiteKing), Some(WhiteBishop), Some(WhiteKnight), Some(WhiteRook),
             Some(WhitePawn), Some(WhitePawn),   Some(WhitePawn),   Some(WhitePawn),  Some(WhitePawn), Some(WhitePawn),   Some(WhitePawn),   Some(WhitePawn),
             None,            None,              None,              None,             None,            None,              None,              None,
@@ -94,7 +94,7 @@ impl Default for Board {
             None,            None,              None,              None,             None,            None,              None,              None,
             Some(BlackPawn), Some(BlackPawn),   Some(BlackPawn),   Some(BlackPawn),  Some(BlackPawn), Some(BlackPawn),   Some(BlackPawn),   Some(BlackPawn),
             Some(BlackRook), Some(BlackKnight), Some(BlackBishop), Some(BlackQueen), Some(BlackKing), Some(BlackBishop), Some(BlackKnight), Some(BlackRook),
-        ];
+        ]);
 
         Self {
             roles: [
@@ -134,13 +134,19 @@ impl Board {
 
     /// The [`Piece`]s table.
     #[inline(always)]
-    pub fn pieces(&self) -> [Option<Piece>; Square::MAX as usize + 1] {
-        self.pieces
+    pub fn pieces(&self) -> &Aligned<[Option<Piece>; Square::MAX as usize + 1]> {
+        &self.pieces
+    }
+
+    /// [`Square`]s occupied.
+    #[inline(always)]
+    pub fn occupied(&self) -> Bitboard {
+        self.colors[Color::White as usize] ^ self.colors[Color::Black as usize]
     }
 
     /// [`Square`]s occupied by [`Piece`]s of a [`Color`].
     #[inline(always)]
-    pub fn material(&self, c: Color) -> Bitboard {
+    pub fn by_color(&self, c: Color) -> Bitboard {
         self.colors[c as usize]
     }
 
@@ -153,15 +159,15 @@ impl Board {
     /// [`Square`]s occupied by a [`Piece`].
     #[inline(always)]
     pub fn by_piece(&self, p: Piece) -> Bitboard {
-        self.material(p.color()) & self.by_role(p.role())
+        self.by_color(p.color()) & self.by_role(p.role())
     }
 
     /// Squares occupied by pinned [`Piece`]s of a [`Color`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn pinned(&self, c: Color, mask: Bitboard) -> Bitboard {
-        let ours = mask & self.material(c);
-        let theirs = mask & self.material(!c);
+        let ours = mask & self.by_color(c);
+        let theirs = mask & self.by_color(!c);
         let occ = ours ^ theirs;
 
         let king = self.king(c).assume();
@@ -185,8 +191,8 @@ impl Board {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn checkers(&self, c: Color) -> Bitboard {
-        let ours = self.material(c);
-        let theirs = self.material(!c);
+        let ours = self.by_color(c);
+        let theirs = self.by_color(!c);
         let occ = ours ^ theirs;
 
         let king = self.king(c).assume();
@@ -215,8 +221,8 @@ impl Board {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn threats(&self, c: Color) -> Bitboard {
-        let ours = self.material(!c);
-        let theirs = self.material(c);
+        let ours = self.by_color(!c);
+        let theirs = self.by_color(c);
         let occ = ours ^ theirs;
 
         let king = self.king(!c).assume();
@@ -303,8 +309,10 @@ impl Board {
     pub fn toggle(&mut self, p: Piece, sq: Square) {
         debug_assert!(self.piece_on(sq).is_none_or(|q| p == q));
         self.pieces[sq as usize] = self.pieces[sq as usize].xor(Some(p));
-        self.colors[p.color() as usize] ^= sq.bitboard();
-        self.roles[p.role() as usize] ^= sq.bitboard();
+
+        let bit = sq.bitboard();
+        self.roles[p.role() as usize] ^= bit;
+        self.colors[p.color() as usize] ^= bit;
     }
 }
 
@@ -389,7 +397,7 @@ impl FromStr for Board {
             return Err(ParseFenError::InvalidPlacement);
         };
 
-        let mut pieces: [_; Square::MAX as usize + 1] = [None; _];
+        let mut pieces: Aligned<[_; Square::MAX as usize + 1]> = Aligned([None; _]);
         let mut roles: [_; Role::MAX as usize + 1] = Default::default();
         let mut colors: [_; Color::MAX as usize + 1] = Default::default();
         for (rank, segment) in board.split('/').rev().enumerate() {
@@ -477,7 +485,7 @@ mod tests {
 
     #[proptest]
     fn by_color_returns_squares_occupied_by_pieces_of_a_color(b: Board, c: Color) {
-        for sq in b.material(c) {
+        for sq in b.by_color(c) {
             assert_eq!(b.piece_on(sq).map(|p| p.color()), Some(c));
         }
     }

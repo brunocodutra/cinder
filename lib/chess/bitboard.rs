@@ -30,7 +30,7 @@ use std::fmt::{self, Formatter, Write};
 )]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct Bitboard(u64);
+pub struct Bitboard(pub u64);
 
 impl Debug for Bitboard {
     #[coverage(off)]

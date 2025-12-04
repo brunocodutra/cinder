@@ -1,6 +1,6 @@
 use crate::chess::*;
 use crate::util::{Assume, Binary, Bits, Int};
-use bytemuck::{Zeroable, ZeroableInOption};
+use bytemuck::Zeroable;
 use derive_more::with_trait::{Display, Error, From};
 use std::fmt::{self, Formatter};
 use std::ops::{Add, AddAssign, Sub, SubAssign};
@@ -47,8 +47,6 @@ impl Square {
         Bitboard::new(1 << self.get())
     }
 }
-
-unsafe impl ZeroableInOption for Square {}
 
 unsafe impl Int for Square {
     type Repr = i8;

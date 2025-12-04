@@ -1,54 +1,45 @@
 use crate::nnue::{Accumulator, Bucket, Feature, Nnue, Synapse, Value};
-use crate::params::Params;
-use crate::util::{Assume, Float, Int, Memory};
-use crate::{chess::*, search::Ply};
-use bytemuck::{Zeroable, ZeroableInOption, zeroed};
+use crate::util::{Aligned, Assume, Float, Int, Memory};
+use crate::{chess::*, params::Params, search::Ply};
+use bytemuck::zeroed;
 use derive_more::with_trait::Debug;
 use std::cell::SyncUnsafeCell;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, Index, Range};
-use std::{array, hint::unreachable_unchecked, mem::MaybeUninit, str::FromStr};
+use std::{array, hint::unreachable_unchecked, mem::MaybeUninit, simd::prelude::*, str::FromStr};
 
 #[cfg(test)]
 use proptest::{prelude::*, sample::*};
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 struct CachedAccumulator {
-    roles: [Bitboard; 6],
-    colors: [Bitboard; 2],
-    pieces: [Option<Piece>; 64],
     accumulator: Accumulator,
+    pieces: Aligned<[Option<Piece>; Square::MAX as usize + 1]>,
+    occupied: Bitboard,
 }
 
 impl Default for CachedAccumulator {
     fn default() -> Self {
-        let mut cache: Self = zeroed();
+        let mut cache = CachedAccumulator {
+            accumulator: zeroed(),
+            pieces: Aligned([None; Square::MAX as usize + 1]),
+            occupied: Bitboard::empty(),
+        };
+
         Nnue::transformer().refresh(&mut cache.accumulator);
         cache
     }
 }
 
-impl CachedAccumulator {
-    fn by_piece(&self, p: Piece) -> Bitboard {
-        self.colors[p.color().cast::<usize>()] & self.roles[p.role().cast::<usize>()]
-    }
-
-    pub fn piece_on(&self, sq: Square) -> Option<Piece> {
-        self.pieces[sq.cast::<usize>()]
-    }
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Zeroable)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[repr(u8)]
 enum Pending {
     Update,
     Refresh,
 }
 
-unsafe impl ZeroableInOption for Pending {}
-
 /// A [`Position`] evaluation stack.
-#[derive(Debug, Clone, Zeroable)]
+#[derive(Debug, Clone)]
 #[debug("Evaluator({})", self.deref())]
 pub struct Evaluator {
     ply: Ply,
@@ -142,7 +133,7 @@ impl Evaluator {
     pub fn new(pos: Position) -> Self {
         let mut evaluator = Evaluator {
             ply: Ply::new(0),
-            positions: zeroed(),
+            positions: array::from_fn(|_| Default::default()),
             accumulator: zeroed(),
             pending: [[None; Ply::MAX as usize + 1]; 2],
             moves: [None; Ply::MAX as usize],
@@ -151,7 +142,7 @@ impl Evaluator {
 
         evaluator.positions[0] = pos;
         for side in Color::iter() {
-            evaluator.refresh(side, evaluator.ply());
+            evaluator.refresh(side);
         }
 
         evaluator
@@ -220,7 +211,7 @@ impl Evaluator {
 
             match self.pending[side.cast::<usize>()][idx] {
                 Some(Pending::Update) => unsafe { unreachable_unchecked() },
-                Some(Pending::Refresh) => self.refresh(side, self.ply),
+                Some(Pending::Refresh) => self.refresh(side),
                 None => {
                     for i in idx + 1..=self.ply.cast::<usize>() {
                         self.update(side, i.convert().assume());
@@ -335,29 +326,24 @@ impl Evaluator {
     }
 
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn refresh(&mut self, side: Color, ply: Ply) {
-        let idx = ply.cast::<usize>();
-        let ksq = self.positions[idx].king(side);
-        let bucket = Feature::bucket(side, ksq);
+    fn refresh(&mut self, side: Color) {
+        let ksq = self.king(side);
+        let bucket = Feature::bucket(side, ksq).cast::<usize>();
 
-        let mut to_sub = Bitboard::empty();
-        let mut to_add = Bitboard::empty();
+        const N: usize = Square::MAX as usize + 1;
+        let cache = &self.cache[side.cast::<usize>()][bucket];
+        let current: &Simd<u8, N> = cache.pieces.cast();
+        let target: &Simd<u8, N> = self.pieces().cast();
+        let diff = Bitboard(current.simd_ne(*target).to_bitmask());
 
-        for piece in Piece::iter() {
-            let current = self.cache[side.cast::<usize>()][bucket.cast::<usize>()].by_piece(piece);
-            let target = self.by_piece(piece);
-            to_sub |= current & !target;
-            to_add |= target & !current;
-        }
-
-        let mut to_sub = Squares::new(to_sub);
-        let mut to_add = Squares::new(to_add);
+        let mut to_sub = Squares::new(cache.occupied & diff);
+        let mut to_add = Squares::new(self.occupied() & diff);
 
         while to_sub.len() > 0 || to_add.len() > 0 {
             let sub = array::from_fn(|_| {
                 to_sub.next().map(|sq| {
-                    let cache = &self.cache[side.cast::<usize>()][bucket.cast::<usize>()];
-                    let piece = cache.piece_on(sq).assume();
+                    let cache = &self.cache[side.cast::<usize>()][bucket];
+                    let piece = cache.pieces[sq.cast::<usize>()].assume();
                     Feature::new(side, ksq, piece, sq)
                 })
             });
@@ -369,18 +355,17 @@ impl Evaluator {
                 })
             });
 
-            let cache = &mut self.cache[side.cast::<usize>()][bucket.cast::<usize>()];
+            let cache = &mut self.cache[side.cast::<usize>()][bucket];
             Nnue::transformer().accumulate_in_place(&mut cache.accumulator, sub, add);
         }
 
-        let (roles, colors, pieces) = (self.roles(), self.colors(), self.pieces());
-        self.cache[side.cast::<usize>()][bucket.cast::<usize>()].roles = roles;
-        self.cache[side.cast::<usize>()][bucket.cast::<usize>()].colors = colors;
-        self.cache[side.cast::<usize>()][bucket.cast::<usize>()].pieces = pieces;
+        self.cache[side.cast::<usize>()][bucket].occupied = self.occupied();
+        self.cache[side.cast::<usize>()][bucket].pieces = *self.pieces();
 
-        let cache = &self.cache[side.cast::<usize>()][bucket.cast::<usize>()];
-        self.accumulator[idx][side.cast::<usize>()] = cache.accumulator.clone();
+        let idx = self.ply().cast::<usize>();
         self.pending[side.cast::<usize>()][idx] = None;
+        self.accumulator[idx][side.cast::<usize>()] =
+            self.cache[side.cast::<usize>()][bucket].accumulator.clone();
     }
 
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]

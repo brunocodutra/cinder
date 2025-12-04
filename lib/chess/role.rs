@@ -1,5 +1,5 @@
 use crate::util::Int;
-use bytemuck::{Zeroable, ZeroableInOption};
+use bytemuck::Zeroable;
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::str::FromStr;
@@ -16,8 +16,6 @@ pub enum Role {
     Queen,
     King,
 }
-
-unsafe impl ZeroableInOption for Role {}
 
 unsafe impl Int for Role {
     type Repr = u8;

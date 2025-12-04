@@ -1,6 +1,6 @@
 use crate::chess::{Bitboard, Mirror, Rank, Transpose};
 use crate::util::{Assume, Int};
-use bytemuck::{Zeroable, ZeroableInOption};
+use bytemuck::Zeroable;
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{ops::Sub, str::FromStr};
@@ -19,8 +19,6 @@ pub enum File {
     G,
     H,
 }
-
-unsafe impl ZeroableInOption for File {}
 
 impl File {
     /// Returns a [`Bitboard`] that only contains this file.

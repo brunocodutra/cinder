@@ -1,5 +1,5 @@
 use crate::{chess::Flip, util::Int};
-use bytemuck::{Zeroable, ZeroableInOption};
+use bytemuck::Zeroable;
 use derive_more::with_trait::Display;
 use std::ops::Not;
 
@@ -13,8 +13,6 @@ pub enum Color {
     #[display("black")]
     Black,
 }
-
-unsafe impl ZeroableInOption for Color {}
 
 unsafe impl Int for Color {
     type Repr = u8;

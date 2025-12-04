@@ -1,6 +1,6 @@
 use crate::chess::{Bitboard, Color, Flip, Magic, Perspective, Rank, Role, Square};
 use crate::util::{Assume, Int};
-use bytemuck::{Zeroable, ZeroableInOption, zeroed};
+use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{cell::SyncUnsafeCell, ops::Shl, str::FromStr};
@@ -201,8 +201,6 @@ impl Piece {
         }
     }
 }
-
-unsafe impl ZeroableInOption for Piece {}
 
 unsafe impl Int for Piece {
     type Repr = u8;

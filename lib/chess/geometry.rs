@@ -1,5 +1,5 @@
 use crate::{chess::Color, util::Int};
-use bytemuck::{Zeroable, ZeroableInOption};
+use bytemuck::Zeroable;
 
 /// Trait for types that can be seen from a different perspective.
 pub trait Perspective<T>: Sized {
@@ -31,8 +31,6 @@ pub enum Side {
     Left,
     Right,
 }
-
-unsafe impl ZeroableInOption for Side {}
 
 unsafe impl Int for Side {
     type Repr = u8;

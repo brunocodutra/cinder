@@ -579,7 +579,7 @@ impl<'a> Searcher<'a> {
 
             let turn = self.stack.pos.turn();
             let pawns = self.stack.pos.pawns(turn);
-            if (self.stack.pos.material(turn) ^ pawns).len() > 1 {
+            if (self.stack.pos.by_color(turn) ^ pawns).len() > 1 {
                 if let Some(margin) = Self::nmp(depth) {
                     if transposed.score() - margin.to_int::<i16>() >= beta {
                         return Ok(transposed.truncate());

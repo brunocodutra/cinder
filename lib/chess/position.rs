@@ -1,7 +1,6 @@
-use crate::util::{Assume, Int};
+use crate::util::{Aligned, Assume, Int};
 use crate::{chess::*, search::Depth};
 use arrayvec::ArrayVec;
-use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Deref, DerefMut, Display, Error, From, IntoIterator};
 use std::fmt::{self, Formatter};
 use std::hash::{Hash, Hasher};
@@ -92,8 +91,8 @@ impl EvasionGenerator {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn generate<T: MovePacker>(pos: &Position, packer: &mut T) -> Result<(), CapacityError> {
         let turn = pos.turn();
-        let ours = pos.material(turn);
-        let theirs = pos.material(!turn);
+        let ours = pos.by_color(turn);
+        let theirs = pos.by_color(!turn);
         let occ = ours ^ theirs;
         let king = pos.king(turn);
 
@@ -172,8 +171,8 @@ impl MoveGenerator {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn generate<T: MovePacker>(pos: &Position, packer: &mut T) -> Result<(), CapacityError> {
         let turn = pos.turn();
-        let ours = pos.material(turn);
-        let theirs = pos.material(!turn);
+        let ours = pos.by_color(turn);
+        let theirs = pos.by_color(!turn);
         let occ = ours ^ theirs;
         let king = pos.king(turn);
 
@@ -267,7 +266,7 @@ impl MoveGenerator {
 /// The current position on the board.
 ///
 /// This type guarantees that it only holds valid positions.
-#[derive(Debug, Clone, Eq, Zeroable)]
+#[derive(Debug, Clone, Eq)]
 #[debug("Position({self})")]
 pub struct Position {
     board: Board,
@@ -374,34 +373,22 @@ impl Position {
         Phase::new((self.occupied().len() - 1) as u8 / 4)
     }
 
-    /// The [`Color`] bitboards.
-    #[inline(always)]
-    pub fn colors(&self) -> [Bitboard; 2] {
-        self.board.colors()
-    }
-
-    /// The [`Role`] bitboards.
-    #[inline(always)]
-    pub fn roles(&self) -> [Bitboard; 6] {
-        self.board.roles()
-    }
-
     /// The [`Piece`]s table.
     #[inline(always)]
-    pub fn pieces(&self) -> [Option<Piece>; 64] {
+    pub fn pieces(&self) -> &Aligned<[Option<Piece>; Square::MAX as usize + 1]> {
         self.board.pieces()
     }
 
     /// [`Square`]s occupied.
     #[inline(always)]
     pub fn occupied(&self) -> Bitboard {
-        self.material(Color::White) ^ self.material(Color::Black)
+        self.board.occupied()
     }
 
     /// [`Square`]s occupied by pieces of a [`Color`].
     #[inline(always)]
-    pub fn material(&self, side: Color) -> Bitboard {
-        self.board.material(side)
+    pub fn by_color(&self, side: Color) -> Bitboard {
+        self.board.by_color(side)
     }
 
     /// [`Square`]s occupied by pieces of a [`Role`].
@@ -491,7 +478,7 @@ impl Position {
     /// Whether a [`Square`] is threatened by a slider of a [`Color`].
     #[inline(always)]
     pub fn is_discovered(&self, sq: Square, side: Color, occ: Bitboard) -> bool {
-        let theirs = self.material(side);
+        let theirs = self.by_color(side);
         let queens = self.by_role(Role::Queen);
         for role in [Role::Bishop, Role::Rook] {
             let candidates = occ & theirs & (queens | self.by_role(role));
@@ -577,8 +564,8 @@ impl Position {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn is_legal(&self, m: Move) -> bool {
         let turn = self.turn();
-        let ours = self.material(turn);
-        let theirs = self.material(!turn);
+        let ours = self.by_color(turn);
+        let theirs = self.by_color(!turn);
         let occ = ours ^ theirs;
         let king = self.king(turn);
         let (wc, wt) = (m.whence(), m.whither());
@@ -695,7 +682,7 @@ impl Position {
                 turn = !turn;
 
                 let pinned = self.board.pinned(turn, occ);
-                let mut candidates = attackers & self.material(turn);
+                let mut candidates = attackers & self.by_color(turn);
                 candidates &= !pinned | (pinned & Bitboard::line(self.king(turn), sq));
 
                 if candidates.is_empty() {
@@ -724,7 +711,7 @@ impl Position {
                 }
 
                 attackers &= occ;
-                if captor == King && !self.material(!turn).intersection(attackers).is_empty() {
+                if captor == King && !self.by_color(!turn).intersection(attackers).is_empty() {
                     break;
                 }
 
@@ -1009,7 +996,7 @@ mod tests {
     ) {
         let prev = pos.clone();
         pos.play(m);
-        assert!(pos.material(pos.turn()).len() < prev.material(pos.turn()).len());
+        assert!(pos.by_color(pos.turn()).len() < prev.by_color(pos.turn()).len());
     }
 
     #[proptest]
@@ -1023,8 +1010,8 @@ mod tests {
         assert!(pos.pawns(prev.turn()).len() < prev.pawns(prev.turn()).len());
 
         assert_eq!(
-            pos.material(prev.turn()).len(),
-            prev.material(prev.turn()).len()
+            pos.by_color(prev.turn()).len(),
+            prev.by_color(prev.turn()).len()
         );
     }
 
@@ -1058,7 +1045,7 @@ mod tests {
         );
 
         assert_eq!(
-            pos.material(Color::White) & pos.material(Color::Black),
+            pos.by_color(Color::White) & pos.by_color(Color::Black),
             Bitboard::empty()
         );
 
@@ -1071,13 +1058,13 @@ mod tests {
         }
 
         assert_eq!(
-            pos.material(prev.turn()).len(),
-            prev.material(prev.turn()).len()
+            pos.by_color(prev.turn()).len(),
+            prev.by_color(prev.turn()).len()
         );
 
         assert_eq!(
-            pos.material(pos.turn()).len(),
-            prev.material(pos.turn()).len() - m.is_capture() as usize
+            pos.by_color(pos.turn()).len(),
+            prev.by_color(pos.turn()).len() - m.is_capture() as usize
         );
 
         if let Some(ep) = pos.en_passant() {

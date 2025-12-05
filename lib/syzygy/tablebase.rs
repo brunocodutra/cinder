@@ -38,11 +38,11 @@ impl Tablebase {
             return Err(io::ErrorKind::InvalidData.into());
         }
 
-        if ext.to_lowercase() == Wdl::EXTENSION {
+        if ext.eq_ignore_ascii_case(Wdl::EXTENSION) {
             if let Entry::Vacant(e) = self.wdl.entry(material) {
                 e.insert(WdlTable::new(file, material)?);
             }
-        } else if ext.to_lowercase() == Dtz::EXTENSION {
+        } else if ext.eq_ignore_ascii_case(Dtz::EXTENSION) {
             if let Entry::Vacant(e) = self.dtz.entry(material) {
                 e.insert(DtzTable::new(file, material)?);
             }

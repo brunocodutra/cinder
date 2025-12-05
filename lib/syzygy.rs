@@ -30,7 +30,14 @@ impl Syzygy {
         for path in paths {
             if let Ok(directory) = read_dir(path) {
                 for entry in directory.flatten() {
-                    syzygy.tablebase.load(&entry.path())?;
+                    let file = entry.path();
+                    if let Some(ext) = file.extension() {
+                        if ext.eq_ignore_ascii_case(Wdl::EXTENSION)
+                            || ext.eq_ignore_ascii_case(Dtz::EXTENSION)
+                        {
+                            syzygy.tablebase.load(&file)?;
+                        }
+                    }
                 }
             }
         }
@@ -153,7 +160,7 @@ mod tests {
         let file = tmp.path().join("KNvKN.rtbz");
         File::create(&file)?.write_all(KNVKN_RTBZ)?;
 
-        let syzygy = Syzygy::new(&[tmp.path().to_owned()])?;
+        let syzygy = Syzygy::new(&[tmp])?;
         assert_eq!(syzygy.max_pieces(), 4);
     }
 
@@ -204,12 +211,24 @@ mod tests {
 
     #[proptest]
     fn new_with_directory_containing_invalid_file_fails(
-        #[strategy("[A-Za-z0-9_]{1,10}")] file: String,
+        #[strategy("[A-Za-z0-9_]{1,10}[.](rtbw|rtbz|RTBW|RTBZ)")] file: String,
     ) {
         let tmp = TempDir::new()?;
         let file = tmp.path().join(file);
         File::create(file)?;
 
-        assert!(Syzygy::new(&[tmp.path().to_owned()]).is_err());
+        assert!(Syzygy::new(&[tmp]).is_err());
+    }
+
+    #[proptest]
+    fn new_with_directory_containing_invalid_file_extension_succeeds(
+        #[strategy("KNvK[.]([A-Za-z0-9_]{0,3})?")] file: String,
+    ) {
+        let tmp = TempDir::new()?;
+        let file = tmp.path().join(file);
+        File::create(file)?;
+
+        let syzygy = Syzygy::new(&[tmp])?;
+        assert_eq!(syzygy.max_pieces(), 0);
     }
 }

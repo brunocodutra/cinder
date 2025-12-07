@@ -133,24 +133,37 @@ impl Evaluator {
     pub fn new(pos: Position) -> Self {
         let mut evaluator = Evaluator {
             ply: Ply::new(0),
-            positions: array::from_fn(|_| Default::default()),
+            positions: array::from_fn(|_| pos.clone()),
             accumulator: zeroed(),
             pending: [[None; Ply::MAX as usize + 1]; 2],
             moves: [None; Ply::MAX as usize],
             cache: Default::default(),
         };
 
-        evaluator.positions[0] = pos;
-        for side in Color::iter() {
-            evaluator.refresh(side);
-        }
-
+        evaluator.reset();
         evaluator
     }
 
     /// The current [`Ply`].
     pub fn ply(&self) -> Ply {
         self.ply
+    }
+
+    /// Resets the evaluator stack from the current [`Position`].
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn reset(&mut self) {
+        for side in Color::iter() {
+            self.refresh(side);
+        }
+
+        if self.ply > 0 {
+            let idx = self.ply.cast::<usize>();
+            unsafe { self.positions.swap_unchecked(0, idx) };
+            unsafe { self.accumulator.swap_unchecked(0, idx) };
+            self.pending = [[None; Ply::MAX as usize + 1]; 2];
+            self.moves = [None; Ply::MAX as usize];
+            self.ply = Ply::lower();
+        }
     }
 
     /// Pushes a [`Position`] into the evaluator stack.
@@ -192,6 +205,7 @@ impl Evaluator {
         cache.prefetch(self.zobrists().hash);
     }
 
+    /// Evaluates the [`Position`] at the current [`Ply`].
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn evaluate(&mut self) -> Value {
         let cache = unsafe { VALUES.get().as_ref_unchecked().assume_init_ref() };
@@ -327,17 +341,19 @@ impl Evaluator {
 
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn refresh(&mut self, side: Color) {
-        let ksq = self.king(side);
+        let idx = self.ply.cast::<usize>();
+        let pos = &self.positions[idx];
+        let ksq = pos.king(side);
         let bucket = Feature::bucket(side, ksq).cast::<usize>();
 
         const N: usize = Square::MAX as usize + 1;
         let cache = &self.cache[side.cast::<usize>()][bucket];
         let current: &Simd<u8, N> = cache.pieces.cast();
-        let target: &Simd<u8, N> = self.pieces().cast();
+        let target: &Simd<u8, N> = pos.pieces().cast();
         let diff = Bitboard(current.simd_ne(*target).to_bitmask());
 
         let mut to_sub = Squares::new(cache.occupied & diff);
-        let mut to_add = Squares::new(self.occupied() & diff);
+        let mut to_add = Squares::new(pos.occupied() & diff);
 
         while to_sub.len() > 0 || to_add.len() > 0 {
             let sub = array::from_fn(|_| {
@@ -350,7 +366,7 @@ impl Evaluator {
 
             let add = array::from_fn(|_| {
                 to_add.next().map(|sq| {
-                    let piece = self.piece_on(sq).assume();
+                    let piece = pos.piece_on(sq).assume();
                     Feature::new(side, ksq, piece, sq)
                 })
             });
@@ -359,10 +375,9 @@ impl Evaluator {
             Nnue::transformer().accumulate_in_place(&mut cache.accumulator, sub, add);
         }
 
-        self.cache[side.cast::<usize>()][bucket].occupied = self.occupied();
-        self.cache[side.cast::<usize>()][bucket].pieces = *self.pieces();
+        self.cache[side.cast::<usize>()][bucket].occupied = pos.occupied();
+        self.cache[side.cast::<usize>()][bucket].pieces = *pos.pieces();
 
-        let idx = self.ply().cast::<usize>();
         self.pending[side.cast::<usize>()][idx] = None;
         self.accumulator[idx][side.cast::<usize>()] =
             self.cache[side.cast::<usize>()][bucket].accumulator.clone();

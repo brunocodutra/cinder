@@ -1,4 +1,5 @@
-use crate::chess::{Color, Move, Position, Square};
+use crate::chess::{Color, Move, Square};
+use crate::nnue::Evaluator;
 use crate::search::{HashSize, Info, Limits, Mate, ThreadCount};
 use crate::util::{Assume, Int, parsers::*};
 use derive_more::with_trait::{Display, Error, From};
@@ -141,7 +142,8 @@ pub struct Uci<I, O> {
     #[cfg_attr(test, strategy(LazyJust::new(O::default)))]
     output: O,
     engine: Engine,
-    position: Position,
+    #[cfg_attr(test, map(Evaluator::new))]
+    pos: Evaluator,
 }
 
 impl<I, O> Uci<I, O> {
@@ -157,14 +159,14 @@ impl<I, O> Uci<I, O> {
             input,
             output,
             engine: Engine::new()?,
-            position: Default::default(),
+            pos: Default::default(),
         })
     }
 }
 
 impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> + Unpin> Uci<I, O> {
     async fn go(&mut self, limits: Limits) -> Result<bool, UciError> {
-        let search = self.engine.search(&self.position, limits);
+        let search = self.engine.search(&mut self.pos, limits);
         pin_mut!(search);
 
         loop {
@@ -209,8 +211,8 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> +
         match cmd.parse(input).finish()? {
             (args, "position") => {
                 let word6 = (word, t(word), t(word), t(word), t(word), word);
-                let fen = field("fen", t(recognize(word6))).map_res(Position::from_str);
-                let startpos = t(tag("startpos")).map(|_| Default::default());
+                let fen = field("fen", t(recognize(word6))).map_res(Evaluator::from_str);
+                let startpos = t(tag("startpos")).map(|_| Evaluator::default());
                 let moves = opt(field("moves", rest));
 
                 let mut position = terminated((alt((startpos, fen)), moves), eof);
@@ -227,16 +229,17 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> +
                             return Err(UciError::ParseError);
                         };
 
-                        pos.play(m);
+                        pos.push(Some(m));
+                        pos.reset();
                     }
                 }
 
-                self.position = pos;
+                self.pos = pos;
                 Ok(true)
             }
 
             (args, "go") => {
-                let turn = self.position.turn();
+                let turn = self.pos.turn();
 
                 let wtime = field("wtime", millis);
                 let winc = field("winc", millis);
@@ -289,7 +292,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> +
                 let (_, depth) = perft.parse(args).finish()?;
 
                 let timer = Instant::now();
-                let nodes = self.position.perft(depth);
+                let nodes = self.pos.perft(depth);
                 let millis = timer.elapsed().as_millis();
 
                 let info = format!(
@@ -336,7 +339,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> +
             }
 
             ("", "ucinewgame") => {
-                self.position = Default::default();
+                self.pos = Default::default();
                 self.engine.reset();
                 Ok(true)
             }
@@ -486,20 +489,20 @@ mod tests {
         #[any(MockStream::new(["position startpos"]))] mut uci: MockUci,
     ) {
         assert!(block_on(uci.run()).is_ok());
-        assert_eq!(uci.position, Default::default());
+        assert_eq!(uci.pos, Default::default());
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
     fn handles_position_with_startpos_and_moves(
         #[by_ref]
-        #[filter(#uci.position.outcome().is_none())]
+        #[filter(#uci.pos.outcome().is_none())]
         mut uci: MockUci,
         #[strategy(..=4usize)] n: usize,
         selector: Selector,
     ) {
         let mut input = String::new();
-        let mut pos = Position::default();
+        let mut pos = Evaluator::default();
 
         input.push_str("position startpos moves");
 
@@ -507,12 +510,12 @@ mod tests {
             let m = selector.select(pos.moves().unpack());
             input.push(' ');
             input.push_str(&m.to_string());
-            pos.play(m);
+            pos.push(Some(m));
         }
 
         uci.input = MockStream::new([input]);
         assert!(block_on(uci.run()).is_ok());
-        assert_eq!(uci.position, pos);
+        assert_eq!(uci.pos, pos);
         assert_eq!(uci.output.join("\n"), "");
     }
 
@@ -522,14 +525,14 @@ mod tests {
         pos: Position,
     ) {
         assert!(block_on(uci.run()).is_ok());
-        assert_eq!(uci.position.to_string(), pos.to_string());
+        assert_eq!(uci.pos.to_string(), pos.to_string());
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
     fn handles_position_with_fen_and_moves(
         #[by_ref]
-        #[filter(#uci.position.outcome().is_none())]
+        #[filter(#uci.pos.outcome().is_none())]
         mut uci: MockUci,
         mut pos: Position,
         #[strategy(..=4usize)] n: usize,
@@ -549,7 +552,7 @@ mod tests {
 
         uci.input = MockStream::new([input]);
         assert!(block_on(uci.run()).is_ok());
-        assert_eq!(uci.position.to_string(), pos.to_string());
+        assert_eq!(uci.pos.to_string(), pos.to_string());
         assert_eq!(uci.output.join("\n"), "");
     }
 
@@ -558,9 +561,9 @@ mod tests {
         #[any(MockStream::new([format!("position fen {}", #_s)]))] mut uci: MockUci,
         #[filter(#_s.parse::<Position>().is_err())] _s: String,
     ) {
-        let pos = uci.position.clone();
+        let pos = uci.pos.clone();
         assert!(block_on(uci.run()).is_ok());
-        assert_eq!(uci.position, pos);
+        assert_eq!(uci.pos, pos);
         assert_eq!(uci.output.join("\n"), "");
     }
 
@@ -569,9 +572,9 @@ mod tests {
         #[any(MockStream::new([format!("position startpos moves {}", #_s)]))] mut uci: MockUci,
         #[strategy("[^[:ascii:]]+")] _s: String,
     ) {
-        let pos = uci.position.clone();
+        let pos = uci.pos.clone();
         assert!(block_on(uci.run()).is_ok());
-        assert_eq!(uci.position, pos);
+        assert_eq!(uci.pos, pos);
         assert_eq!(uci.output.join("\n"), "");
     }
 
@@ -580,16 +583,16 @@ mod tests {
         #[any(MockStream::new([format!("position startpos moves {}", #_m)]))] mut uci: MockUci,
         #[filter(!Position::default().moves().unpack().any(|m| UciMove(m) == *#_m.to_string()))] _m: Move,
     ) {
-        let pos = uci.position.clone();
+        let pos = uci.pos.clone();
         assert!(block_on(uci.run()).is_ok());
-        assert_eq!(uci.position, pos);
+        assert_eq!(uci.pos, pos);
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
     fn handles_go_time_left(
         #[by_ref]
-        #[filter(#uci.position.outcome().is_none())]
+        #[filter(#uci.pos.outcome().is_none())]
         mut uci: MockUci,
         #[strategy(..10u8)] wt: u8,
         #[strategy(..10u8)] wi: u8,
@@ -618,7 +621,7 @@ mod tests {
 
     #[proptest]
     fn handles_go_depth(
-        #[filter(#uci.position.outcome().is_none())]
+        #[filter(#uci.pos.outcome().is_none())]
         #[any(MockStream::new([format!("go depth {}", #_d)]))]
         mut uci: MockUci,
         _d: Depth,
@@ -634,7 +637,7 @@ mod tests {
 
     #[proptest]
     fn handles_go_nodes(
-        #[filter(#uci.position.outcome().is_none())]
+        #[filter(#uci.pos.outcome().is_none())]
         #[any(MockStream::new([format!("go nodes {}", #_n)]))]
         mut uci: MockUci,
         #[strategy(..1000u64)] _n: u64,
@@ -650,7 +653,7 @@ mod tests {
 
     #[proptest]
     fn handles_go_time(
-        #[filter(#uci.position.outcome().is_none())]
+        #[filter(#uci.pos.outcome().is_none())]
         #[any(MockStream::new([format!("go movetime {}", #_ms)]))]
         mut uci: MockUci,
         #[strategy(..10u8)] _ms: u8,
@@ -667,7 +670,7 @@ mod tests {
     #[proptest]
     fn handles_go_infinite(
         #[by_ref]
-        #[filter(#uci.position.outcome().is_none())]
+        #[filter(#uci.pos.outcome().is_none())]
         #[any(MockStream::new(["go infinite"]))]
         mut uci: MockUci,
     ) {
@@ -683,7 +686,7 @@ mod tests {
     #[proptest]
     fn handles_go_with_no_move(
         #[by_ref]
-        #[filter(#uci.position.moves().is_empty())]
+        #[filter(#uci.pos.moves().is_empty())]
         #[any(MockStream::new(["go"]))]
         mut uci: MockUci,
     ) {
@@ -699,7 +702,7 @@ mod tests {
     #[proptest]
     fn handles_go_with_moves_to_go(
         #[by_ref]
-        #[filter(#uci.position.outcome().is_none())]
+        #[filter(#uci.pos.outcome().is_none())]
         #[any(MockStream::new([format!("go movestogo {}", #_mtg)]))]
         mut uci: MockUci,
         _mtg: i8,
@@ -716,7 +719,7 @@ mod tests {
     #[proptest]
     fn handles_go_with_mate(
         #[by_ref]
-        #[filter(#uci.position.outcome().is_none())]
+        #[filter(#uci.pos.outcome().is_none())]
         #[any(MockStream::new([format!("go mate {}", #_mate)]))]
         mut uci: MockUci,
         _mate: i8,
@@ -733,7 +736,7 @@ mod tests {
     #[proptest]
     fn handles_stop_during_search(
         #[by_ref]
-        #[filter(#uci.position.outcome().is_none())]
+        #[filter(#uci.pos.outcome().is_none())]
         #[any(MockStream::new(["go", "stop"]))]
         mut uci: MockUci,
     ) {
@@ -749,7 +752,7 @@ mod tests {
     #[proptest]
     fn handles_quit_during_search(
         #[by_ref]
-        #[filter(#uci.position.outcome().is_none())]
+        #[filter(#uci.pos.outcome().is_none())]
         #[any(MockStream::new(["go", "quit"]))]
         mut uci: MockUci,
     ) {
@@ -794,7 +797,7 @@ mod tests {
     #[proptest]
     fn handles_new_game(#[any(MockStream::new(["ucinewgame"]))] mut uci: MockUci) {
         assert!(block_on(uci.run()).is_ok());
-        assert_eq!(uci.position, Default::default());
+        assert_eq!(uci.pos, Default::default());
         assert_eq!(uci.output.join("\n"), "");
     }
 

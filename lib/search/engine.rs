@@ -1,8 +1,7 @@
-use crate::chess::{Move, Position};
 use crate::nnue::{Evaluator, Value};
 use crate::search::{ControlFlow::*, *};
 use crate::util::{Assume, Bits, Bounded, Float, Int, Memory, Slice, Vault};
-use crate::{params::Params, syzygy::Syzygy};
+use crate::{chess::Move, params::Params, syzygy::Syzygy};
 use bytemuck::{Zeroable, fill_zeroes, zeroed};
 use derive_more::with_trait::{Constructor, Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
@@ -948,7 +947,7 @@ impl<'a> Searcher<'a> {
 #[derive(Debug)]
 pub struct Search<'e, 'p> {
     engine: &'e mut Engine,
-    pos: &'p Position,
+    pos: &'p mut Evaluator,
     pv: Pv,
     ctrl: GlobalControl,
     channel: Option<UnboundedReceiver<Info>>,
@@ -956,14 +955,14 @@ pub struct Search<'e, 'p> {
 }
 
 impl<'e, 'p> Search<'e, 'p> {
-    fn new(engine: &'e mut Engine, pos: &'p Position, limits: Limits) -> Self {
+    fn new(engine: &'e mut Engine, pos: &'p mut Evaluator, limits: Limits) -> Self {
         Search {
-            engine,
-            pos,
             pv: Pv::empty(Score::lower()),
             ctrl: GlobalControl::new(pos, limits),
             channel: None,
             task: None,
+            engine,
+            pos,
         }
     }
 
@@ -1014,6 +1013,7 @@ impl<'e, 'p> Stream for Pin<&mut Search<'e, 'p>> {
         }
 
         let ctrl: &GlobalControl = unsafe { &*(&self.ctrl as *const _) };
+        let pos: &mut Evaluator = unsafe { &mut *(&mut *self.pos as *mut _) };
         let executor: &mut Executor = unsafe { &mut *(&mut self.engine.executor as *mut _) };
         let shared: &SharedState = unsafe { &*(&self.engine.shared as *const _) };
         let local: &[SyncUnsafeCell<LocalState>] =
@@ -1029,7 +1029,6 @@ impl<'e, 'p> Stream for Pin<&mut Search<'e, 'p>> {
             return Poll::Ready(Some(info));
         }
 
-        let mut pos = Evaluator::new(self.pos.clone());
         let tpos = shared.tt.get(pos.zobrists().hash);
         self.pv = if let Some(t) = tpos.filter(|t| t.best().is_some_and(|m| pos.is_legal(m))) {
             t.transpose(Ply::new(0)).truncate()
@@ -1149,7 +1148,7 @@ impl Engine {
     }
 
     /// Initiates a [`Search`].
-    pub fn search<'p>(&mut self, pos: &'p Position, limits: Limits) -> Search<'_, 'p> {
+    pub fn search<'p>(&mut self, pos: &'p mut Evaluator, limits: Limits) -> Search<'_, 'p> {
         Search::new(self, pos, limits)
     }
 }
@@ -1157,6 +1156,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chess::Position;
     use proptest::{prop_assume, sample::Selector};
     use std::{thread, time::Duration};
     use test_strategy::proptest;

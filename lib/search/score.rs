@@ -44,6 +44,12 @@ impl Score {
         assert!(Value::MIN + 2 * (Ply::MIN as i16 - 1) >= Self::MIN);
     };
 
+    /// The drawn score.
+    #[inline(always)]
+    pub fn drawn() -> Self {
+        Self::new(0)
+    }
+
     /// The tablebase loss score at `ply`.
     #[inline(always)]
     pub fn losing(ply: Ply) -> Self {

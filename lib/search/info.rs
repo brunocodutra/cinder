@@ -1,4 +1,5 @@
 use crate::search::{Depth, Pv};
+use crate::util::Int;
 use derive_more::with_trait::{Constructor, Deref};
 use std::time::Duration;
 
@@ -42,5 +43,12 @@ impl Info {
     #[inline(always)]
     pub fn pv(&self) -> &Pv {
         &self.pv
+    }
+}
+
+impl From<Pv> for Info {
+    #[inline(always)]
+    fn from(pv: Pv) -> Self {
+        Info::new(Depth::new(0), Duration::ZERO, 0, pv)
     }
 }

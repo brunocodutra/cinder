@@ -33,7 +33,7 @@ impl Wdl {
         match self {
             Wdl::Win => Score::winning(ply),
             Wdl::Loss => Score::losing(ply),
-            _ => Score::new(0),
+            _ => Score::drawn(),
         }
     }
 }

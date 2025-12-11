@@ -8,7 +8,7 @@ use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
 use std::cell::SyncUnsafeCell;
 use std::task::{Context, Poll};
-use std::{io, mem::swap, ops::Range, path::Path, pin::Pin, ptr::NonNull, slice, time::Duration};
+use std::{io, mem::swap, ops::Range, path::Path, pin::Pin, ptr::NonNull, slice};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -231,18 +231,17 @@ impl<'a> Searcher<'a> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn improving(&self) -> f32 {
-        if self.stack.pos.is_check() {
+        let pos = &self.stack.pos;
+        if pos.is_check() {
             return 0.;
         }
 
-        let ply = self.stack.pos.ply();
+        let ply = pos.ply();
         let idx = ply.cast::<usize>();
         let value = self.stack.value[idx];
 
-        let a =
-            idx >= 2 && !self.stack.pos[ply - 2].is_check() && value > self.stack.value[idx - 2];
-        let b =
-            idx >= 4 && !self.stack.pos[ply - 4].is_check() && value > self.stack.value[idx - 4];
+        let a = idx >= 2 && !pos[ply - 2].is_check() && value > self.stack.value[idx - 2];
+        let b = idx >= 4 && !pos[ply - 4].is_check() && value > self.stack.value[idx - 4];
 
         let mut idx = Bits::<u8, 2>::new(0);
         idx.push(Bits::<u8, 1>::new(b.cast()));
@@ -487,7 +486,7 @@ impl<'a> Searcher<'a> {
 
         let (alpha, beta) = match self.stack.pos.outcome() {
             None => self.mdp(&bounds),
-            Some(o) if o.is_draw() => return Ok(Pv::empty(Score::new(0))),
+            Some(o) if o.is_draw() => return Ok(Pv::empty(Score::drawn())),
             Some(_) => return Ok(Pv::empty(Score::mated(ply))),
         };
 
@@ -1012,6 +1011,9 @@ impl<'e, 'p> Stream for Pin<&mut Search<'e, 'p>> {
             return Poll::Ready(Some(info));
         }
 
+        let (tx, rx) = unbounded();
+        self.channel = Some(rx);
+
         let ctrl: &GlobalControl = unsafe { &*(&self.ctrl as *const _) };
         let pos: &mut Evaluator = unsafe { &mut *(&mut *self.pos as *mut _) };
         let executor: &mut Executor = unsafe { &mut *(&mut self.engine.executor as *mut _) };
@@ -1019,33 +1021,24 @@ impl<'e, 'p> Stream for Pin<&mut Search<'e, 'p>> {
         let local: &[SyncUnsafeCell<LocalState>] =
             unsafe { &*(&mut *self.engine.local as *mut _ as *const _) };
 
-        let (tx, rx) = unbounded();
-        self.channel = Some(rx);
-
-        let moves = Moves::from_iter(self.pos.moves().unpack());
-        if let Some(pv) = shared.syzygy.best(self.pos, &moves) {
+        let moves = Moves::from_iter(pos.moves().unpack());
+        if let Some(pv) = shared.syzygy.best(pos, &moves) {
             self.pv = pv.truncate();
-            let info = Info::new(Depth::new(0), Duration::ZERO, 0, self.pv.clone());
-            return Poll::Ready(Some(info));
+            return Poll::Ready(Some(self.pv.clone().into()));
         }
-
-        let tpos = shared.tt.get(pos.zobrists().hash);
-        self.pv = if let Some(t) = tpos.filter(|t| t.best().is_some_and(|m| pos.is_legal(m))) {
-            t.transpose(Ply::new(0)).truncate()
-        } else if let Some(m) = moves.iter().next() {
-            Pv::new(pos.evaluate().saturate(), Line::singular(m))
-        } else if pos.is_check() {
-            Pv::empty(Score::mated(Ply::new(0)))
-        } else {
-            Pv::empty(Score::new(0))
-        };
 
         if matches!((moves.len(), &ctrl.limits().clock), (0, _) | (1, Some(_))) {
-            let info = Info::new(Depth::new(0), Duration::ZERO, 0, self.pv.clone());
-            return Poll::Ready(Some(info));
+            self.pv = if let Some(m) = moves.iter().next() {
+                Pv::new(Score::drawn(), Line::singular(m))
+            } else if pos.is_check() {
+                Pv::empty(Score::mated(Ply::new(0)))
+            } else {
+                Pv::empty(Score::drawn())
+            };
+
+            return Poll::Ready(Some(self.pv.clone().into()));
         }
 
-        let pv = self.pv.clone();
         self.task = Some(executor.execute(move |idx| {
             let ctrl = if idx == 0 {
                 LocalControl::active(ctrl)
@@ -1054,7 +1047,7 @@ impl<'e, 'p> Stream for Pin<&mut Search<'e, 'p>> {
             };
 
             let local = unsafe { &mut *local.get(idx).assume().get() };
-            let stack = Stack::new(pos.clone(), pv.clone());
+            let stack = Stack::new(pos.clone(), Pv::empty(Score::drawn()));
             for info in Searcher::new(ctrl, shared, local, stack).aw(moves.clone()) {
                 if idx == 0 {
                     tx.unbounded_send(info).assume();
@@ -1296,7 +1289,7 @@ mod tests {
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         searcher.stack.nodes = searcher.ctrl.attention(m);
 
-        assert_eq!(searcher.ab::<1>(d, b, cut), Ok(Pv::empty(Score::new(0))));
+        assert_eq!(searcher.ab::<1>(d, b, cut), Ok(Pv::empty(Score::drawn())));
     }
 
     #[proptest]

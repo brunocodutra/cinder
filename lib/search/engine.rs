@@ -49,11 +49,46 @@ struct LocalData {
     corrections: Corrections,
 }
 
+#[derive(Debug, Deref, DerefMut)]
+struct TranspositionTable(Cache<Transposition>);
+
+impl TranspositionTable {
+    #[inline(always)]
+    fn new(size: HashSize) -> io::Result<Self> {
+        Ok(Self(Cache::new(size.get())?))
+    }
+
+    #[inline(always)]
+    fn resize(&mut self, size: HashSize) -> io::Result<()> {
+        self.0.resize(size.get())
+    }
+}
+
+#[derive(Debug, Deref, DerefMut)]
+struct ValuesTable(Cache<Value, u64>);
+
+impl ValuesTable {
+    #[inline(always)]
+    fn size(threads: ThreadCount) -> usize {
+        (2 + threads.cast::<usize>().next_multiple_of(2)) << 20
+    }
+
+    #[inline(always)]
+    fn new(threads: ThreadCount) -> io::Result<Self> {
+        Ok(Self(Cache::new(Self::size(threads))?))
+    }
+
+    #[inline(always)]
+    fn resize(&mut self, threads: ThreadCount) -> io::Result<()> {
+        self.0.resize(Self::size(threads))
+    }
+}
+
 #[derive(Debug)]
 struct SharedData {
     syzygy: Syzygy,
-    tt: Cache<Transposition>,
-    values: Cache<Value, u64>,
+    tt: TranspositionTable,
+    values: ValuesTable,
 }
 
 #[derive(Debug)]
@@ -1115,21 +1150,22 @@ impl Engine {
             local: Slice::new(options.threads.cast())?,
             shared: SharedData {
                 syzygy: Syzygy::new(&options.syzygy)?,
-                tt: Cache::new(options.hash.get())?,
-                values: Cache::new(1 << 22)?,
+                tt: TranspositionTable::new(options.hash)?,
+                values: ValuesTable::new(options.threads)?,
             },
         })
     }
 
     /// Resets the hash size.
     pub fn set_hash(&mut self, hash: HashSize) -> io::Result<()> {
-        self.shared.tt.resize(hash.get())
+        self.shared.tt.resize(hash)
     }
 
     /// Resets the thread count.
     pub fn set_threads(&mut self, threads: ThreadCount) -> io::Result<()> {
         self.executor = Executor::new(threads)?;
         self.local = Slice::new(threads.cast())?;
+        self.shared.values.resize(threads)?;
         Ok(())
     }
 
@@ -1142,9 +1178,9 @@ impl Engine {
     /// Resets the engine state.
     pub fn reset(&mut self) {
         let values: &[SyncUnsafeCell<Atomic<Vault<Value, u64>>>] =
-            unsafe { &*(&mut *self.shared.values as *mut _ as *const _) };
+            unsafe { &*(&mut **self.shared.values as *mut _ as *const _) };
         let tt: &[SyncUnsafeCell<Atomic<Vault<Transposition>>>] =
-            unsafe { &*(&mut *self.shared.tt as *mut _ as *const _) };
+            unsafe { &*(&mut **self.shared.tt as *mut _ as *const _) };
         let searchers: &[SyncUnsafeCell<LocalData>] =
             unsafe { &*(&mut *self.local as *mut _ as *const _) };
 
@@ -1179,6 +1215,20 @@ mod tests {
     use proptest::sample::Selector;
     use std::{thread, time::Duration};
     use test_strategy::proptest;
+
+    #[proptest]
+    fn tt_can_be_resized(s: HashSize, t: HashSize) {
+        let mut tt = TranspositionTable::new(s)?;
+        tt.resize(t)?;
+        assert_eq!(tt.len(), TranspositionTable::new(t)?.len());
+    }
+
+    #[proptest]
+    fn vt_can_be_resized(s: ThreadCount, t: ThreadCount) {
+        let mut vt = ValuesTable::new(s)?;
+        vt.resize(t)?;
+        assert_eq!(vt.len(), ValuesTable::new(t)?.len());
+    }
 
     #[proptest]
     fn nw_returns_transposition_if_beta_too_low(

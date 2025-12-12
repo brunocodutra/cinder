@@ -296,7 +296,7 @@ params! {
     winning_rating_margin: [-20.491241],
     winning_rating_gain: [0.0, 1.6685247],
     winning_rating_scalar: [15.832105],
-    aw_baseline: [4.9224224],
+    aw_baseline: [2048., 512., 128., 32., 8., 4.9224224, 4.9224224, 4.9224224],
     aw_gamma: [1.4124817],
     aw_delta: [1.2470169],
     aw_fail_low_blend: [0.51431525],

@@ -897,14 +897,9 @@ impl<'a> Searcher<'a> {
         gen move {
             for depth in Depth::iter() {
                 let mut reduction = 0.;
-                let mut window = *Params::aw_baseline(0);
-                let (mut lower, mut upper) = match depth.get() {
-                    ..=4 => (Score::lower(), Score::upper()),
-                    _ => (
-                        self.stack.pv.score() - window.to_int::<i16>(),
-                        self.stack.pv.score() + window.to_int::<i16>(),
-                    ),
-                };
+                let mut window = *Params::aw_baseline(depth.cast::<usize>().min(7));
+                let mut lower = self.stack.pv.score() - window.to_int::<i16>();
+                let mut upper = self.stack.pv.score() + window.to_int::<i16>();
 
                 loop {
                     let draft = depth - reduction.to_int::<i8>();

@@ -1,5 +1,5 @@
 use crate::util::{Int, Unsigned, ones, zero};
-use bytemuck::{NoUninit, Zeroable};
+use bytemuck::{Pod, Zeroable};
 use derive_more::with_trait::{Debug, *};
 use std::ops::{Bound, Not, RangeBounds};
 
@@ -21,6 +21,7 @@ use std::ops::RangeInclusive;
     PartialOrd,
     Hash,
     Zeroable,
+    Pod,
     Constructor,
     BitAnd,
     BitAndAssign,
@@ -35,8 +36,6 @@ use std::ops::RangeInclusive;
 #[display("{_0:b}")]
 #[repr(transparent)]
 pub struct Bits<T, const W: u32>(#[cfg_attr(test, strategy(zero()..=ones(W)))] T);
-
-unsafe impl<T: NoUninit, const W: u32> NoUninit for Bits<T, W> {}
 
 unsafe impl<T: Unsigned + 'static, const W: u32> Int for Bits<T, W> {
     type Repr = T;

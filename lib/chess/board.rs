@@ -1,5 +1,5 @@
-use crate::chess::*;
-use crate::util::{Aligned, Assume, Int};
+use crate::util::{Assume, Int};
+use crate::{chess::*, simd::Aligned};
 use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter, Write};

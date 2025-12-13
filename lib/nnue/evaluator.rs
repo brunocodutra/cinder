@@ -1,12 +1,11 @@
 use crate::nnue::{Accumulator, Bucket, Feature, Nnue, Synapse, Value};
-use crate::util::{Aligned, Assume, Float, Int, Memory};
-use crate::{chess::*, params::Params, search::Ply};
+use crate::util::{Assume, Float, Int};
+use crate::{chess::*, params::Params, search::Ply, simd::*};
 use bytemuck::zeroed;
 use derive_more::with_trait::Debug;
-use std::cell::SyncUnsafeCell;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, Index, Range};
-use std::{array, hint::unreachable_unchecked, mem::MaybeUninit, simd::prelude::*, str::FromStr};
+use std::{array, hint::unreachable_unchecked, str::FromStr};
 
 #[cfg(test)]
 use proptest::{prelude::*, sample::*};
@@ -117,17 +116,6 @@ impl Arbitrary for Evaluator {
     }
 }
 
-static VALUES: SyncUnsafeCell<MaybeUninit<Memory<Value, u64>>> =
-    SyncUnsafeCell::new(MaybeUninit::uninit());
-
-#[cold]
-#[ctor::ctor]
-#[inline(never)]
-unsafe fn init() {
-    let values = unsafe { VALUES.get().as_mut_unchecked() };
-    values.write(Memory::new(1 << 22).unwrap());
-}
-
 impl Evaluator {
     /// Constructs the evaluator from a [`Position`].
     pub fn new(pos: Position) -> Self {
@@ -191,9 +179,6 @@ impl Evaluator {
                 }
             }
         }
-
-        let cache = unsafe { VALUES.get().as_ref_unchecked().assume_init_ref() };
-        cache.prefetch(self.zobrists().hash);
     }
 
     /// Pops a [`Position`] from the evaluator stack.
@@ -201,18 +186,11 @@ impl Evaluator {
     pub fn pop(&mut self) {
         (self.ply > 0).assume();
         self.ply -= 1;
-        let cache = unsafe { VALUES.get().as_ref_unchecked().assume_init_ref() };
-        cache.prefetch(self.zobrists().hash);
     }
 
     /// Evaluates the [`Position`] at the current [`Ply`].
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn evaluate(&mut self) -> Value {
-        let cache = unsafe { VALUES.get().as_ref_unchecked().assume_init_ref() };
-        if let Some(value) = cache.get(self.zobrists().hash) {
-            return value;
-        }
-
         for side in Color::iter() {
             let mut idx = self.ply.cast::<usize>();
             if self.pending[side.cast::<usize>()][idx].is_none() {
@@ -243,9 +221,7 @@ impl Evaluator {
 
         let us = self.turn() as usize;
         let them = self.turn().flip() as usize;
-        let value = nn.forward((&self.accumulator[idx][us], &self.accumulator[idx][them]));
-        cache.set(self.zobrists().hash, value);
-        value
+        nn.forward((&self.accumulator[idx][us], &self.accumulator[idx][them]))
     }
 
     /// Piece values at this phase of the game.

@@ -1,5 +1,5 @@
-use crate::util::{Aligned, Assume, Int};
-use crate::{chess::*, search::Depth};
+use crate::util::{Assume, Int};
+use crate::{chess::*, simd::Aligned};
 use arrayvec::ArrayVec;
 use derive_more::with_trait::{Debug, Deref, DerefMut, Display, Error, From, IntoIterator};
 use std::fmt::{self, Formatter};
@@ -829,8 +829,8 @@ impl Position {
     }
 
     /// Counts the total number of reachable positions to the given depth.
-    pub fn perft(&self, depth: Depth) -> usize {
-        match depth.get() {
+    pub fn perft(&self, depth: u8) -> usize {
+        match depth {
             0 => 1,
             1 => self.moves().into_iter().map(|ms| ms.iter().len()).sum(),
             _ => self

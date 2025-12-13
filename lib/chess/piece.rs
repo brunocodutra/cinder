@@ -1,12 +1,12 @@
 use crate::chess::{Bitboard, Color, Flip, Magic, Perspective, Rank, Role, Square};
 use crate::util::{Assume, Int};
-use bytemuck::{Zeroable, zeroed};
+use bytemuck::zeroed;
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{cell::SyncUnsafeCell, ops::Shl, str::FromStr};
 
 /// A chess [piece][`Role`] of a certain [`Color`].
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(u8)]
 pub enum Piece {

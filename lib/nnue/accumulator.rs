@@ -1,11 +1,10 @@
-use crate::{nnue::Layer, util::Aligned};
+use crate::{nnue::Layer, simd::Aligned};
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::{Debug, Deref, DerefMut};
 
 /// The feature transformer accumulator.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable, Deref, DerefMut)]
 #[debug("Accumulator")]
-#[repr(transparent)]
 pub struct Accumulator(Aligned<[i16; Accumulator::LEN]>);
 
 impl Default for Accumulator {

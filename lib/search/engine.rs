@@ -1,14 +1,13 @@
 use crate::nnue::{Evaluator, Value};
 use crate::search::{ControlFlow::*, *};
-use crate::util::{Assume, Bits, Bounded, Float, Int, Memory, Slice, Vault};
+use crate::util::{Assume, Atomic, Bits, Bounded, Cache, Float, Int, Slice, Vault};
 use crate::{chess::Move, params::Params, syzygy::Syzygy};
 use bytemuck::{Zeroable, fill_zeroes, zeroed};
 use derive_more::with_trait::{Constructor, Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
-use std::cell::SyncUnsafeCell;
 use std::task::{Context, Poll};
-use std::{io, mem::swap, ops::Range, path::Path, pin::Pin, ptr::NonNull, slice};
+use std::{cell::SyncUnsafeCell, io, ops::Range, path::Path, pin::Pin, ptr::NonNull, slice};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -43,16 +42,17 @@ struct Corrections {
 }
 
 #[derive(Debug, Zeroable)]
-struct LocalState {
+struct LocalData {
     history: History,
     continuation: Continuation,
     corrections: Corrections,
 }
 
-#[derive(Debug, Constructor)]
-struct SharedState {
-    tt: Memory<Transposition>,
+#[derive(Debug)]
+struct SharedData {
     syzygy: Syzygy,
+    tt: Cache<Transposition>,
+    values: Cache<Value, u64>,
 }
 
 #[derive(Debug)]
@@ -93,8 +93,8 @@ impl<'e, 'a> Drop for RecursionGuard<'e, 'a> {
 #[derive(Debug, Constructor)]
 struct Searcher<'a> {
     ctrl: LocalControl<'a>,
-    shared: &'a SharedState,
-    local: &'a mut LocalState,
+    shared: &'a SharedData,
+    local: &'a mut LocalData,
     stack: Stack,
 }
 
@@ -102,12 +102,25 @@ impl<'a> Searcher<'a> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn transposition(&self) -> Option<Transposition> {
-        let tpos = self.shared.tt.get(self.stack.pos.zobrists().hash)?;
+        let tpos = self.shared.tt.load(self.stack.pos.zobrists().hash)?;
         if tpos.best().is_none_or(|m| self.stack.pos.is_legal(m)) {
             Some(tpos)
         } else {
             None
         }
+    }
+
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn evaluate(&mut self) -> Value {
+        let zobrist = self.stack.pos.zobrists().hash;
+        if let Some(value) = self.shared.values.load(zobrist) {
+            return value;
+        }
+
+        let value = self.stack.pos.evaluate();
+        self.shared.values.store(zobrist, value);
+        value
     }
 
     /// The mate distance pruning.
@@ -438,6 +451,7 @@ impl<'a> Searcher<'a> {
         });
 
         self.stack.pos.push(m);
+        self.shared.values.prefetch(self.stack.pos.zobrists().hash);
         self.shared.tt.prefetch(self.stack.pos.zobrists().hash);
 
         RecursionGuard::new(self)
@@ -495,7 +509,7 @@ impl<'a> Searcher<'a> {
         }
 
         let correction = self.correction().to_int::<i16>();
-        self.stack.value[ply.cast::<usize>()] = self.stack.pos.evaluate() + correction;
+        self.stack.value[ply.cast::<usize>()] = self.evaluate() + correction;
 
         let is_check = self.stack.pos.is_check();
         let transposition = self.transposition();
@@ -544,7 +558,7 @@ impl<'a> Searcher<'a> {
                     if lower >= upper || upper <= alpha || lower >= beta {
                         let bonus = Params::tb_cut_depth_bonus(0).to_int::<i8>();
                         let tpos = Transposition::new(score, depth + bonus, None, was_pv);
-                        self.shared.tt.set(self.stack.pos.zobrists().hash, tpos);
+                        self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
                         return Ok(tpos.transpose(ply).truncate());
                     }
 
@@ -655,7 +669,7 @@ impl<'a> Searcher<'a> {
                     if pv >= p_beta {
                         let score = ScoreBound::new(bounds, pv.score(), ply);
                         let tpos = Transposition::new(score, p_depth, Some(m), was_pv);
-                        self.shared.tt.set(self.stack.pos.zobrists().hash, tpos);
+                        self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
                         return Ok(pv.transpose(m));
                     }
                 }
@@ -774,7 +788,7 @@ impl<'a> Searcher<'a> {
         let tail = tail.clamp(lower, upper);
         let score = ScoreBound::new(bounds, tail.score(), ply);
         let tpos = Transposition::new(score, depth, Some(head), was_pv);
-        self.shared.tt.set(self.stack.pos.zobrists().hash, tpos);
+        self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
 
         if matches!(score, ScoreBound::Lower(_)) {
             self.update_history(depth, head, &moves);
@@ -803,10 +817,10 @@ impl<'a> Searcher<'a> {
             return Err(Interrupted);
         }
 
-        let correction = self.correction().to_int::<i16>();
-        self.stack.value[0] = self.stack.pos.evaluate() + correction;
-        let is_noisy_pv = self.stack.pv.head().is_some_and(|m| !m.is_quiet());
         let is_check = self.stack.pos.is_check();
+        let is_noisy_pv = self.stack.pv.head().is_some_and(|m| !m.is_quiet());
+        let correction = self.correction().to_int::<i16>();
+        self.stack.value[0] = self.evaluate() + correction;
 
         moves.sort(|m| {
             if Some(m) == self.stack.pv.head() {
@@ -875,7 +889,7 @@ impl<'a> Searcher<'a> {
 
         let score = ScoreBound::new(bounds, tail.score(), Ply::new(0));
         let tpos = Transposition::new(score, depth, Some(head), true);
-        self.shared.tt.set(self.stack.pos.zobrists().hash, tpos);
+        self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
 
         if matches!(score, ScoreBound::Lower(_)) {
             self.update_history(depth, head, moves);
@@ -1012,8 +1026,8 @@ impl<'e, 'p> Stream for Pin<&mut Search<'e, 'p>> {
         let ctrl: &GlobalControl = unsafe { &*(&self.ctrl as *const _) };
         let pos: &mut Evaluator = unsafe { &mut *(&mut *self.pos as *mut _) };
         let executor: &mut Executor = unsafe { &mut *(&mut self.engine.executor as *mut _) };
-        let shared: &SharedState = unsafe { &*(&self.engine.shared as *const _) };
-        let local: &[SyncUnsafeCell<LocalState>] =
+        let shared: &SharedData = unsafe { &*(&self.engine.shared as *const _) };
+        let local: &[SyncUnsafeCell<LocalData>] =
             unsafe { &*(&mut *self.engine.local as *mut _ as *const _) };
 
         let moves = Moves::from_iter(pos.moves().unpack());
@@ -1062,8 +1076,8 @@ impl<'e, 'p> Stream for Pin<&mut Search<'e, 'p>> {
 #[derive(Debug)]
 pub struct Engine {
     executor: Executor,
-    shared: SharedState,
-    local: Slice<LocalState>,
+    shared: SharedData,
+    local: Slice<LocalData>,
 }
 
 #[cfg(test)]
@@ -1089,26 +1103,23 @@ impl Engine {
         Ok(Engine {
             executor: Executor::new(options.threads)?,
             local: Slice::new(options.threads.cast())?,
-            shared: SharedState::new(
-                Memory::new(options.hash.get())?,
-                Syzygy::new(&options.syzygy)?,
-            ),
+            shared: SharedData {
+                syzygy: Syzygy::new(&options.syzygy)?,
+                tt: Cache::new(options.hash.get())?,
+                values: Cache::new(1 << 22)?,
+            },
         })
+    }
+
+    /// Resets the hash size.
+    pub fn set_hash(&mut self, hash: HashSize) -> io::Result<()> {
+        self.shared.tt.resize(hash.get())
     }
 
     /// Resets the thread count.
     pub fn set_threads(&mut self, threads: ThreadCount) -> io::Result<()> {
         self.executor = Executor::new(threads)?;
         self.local = Slice::new(threads.cast())?;
-        Ok(())
-    }
-
-    /// Resets the hash size.
-    pub fn set_hash(&mut self, hash: HashSize) -> io::Result<()> {
-        let mut to_drop = Memory::new(0)?;
-        swap(&mut self.shared.tt, &mut to_drop);
-        drop(to_drop); // IMPORTANT: deallocate before reallocating
-        self.shared.tt = Memory::new(hash.get())?;
         Ok(())
     }
 
@@ -1120,17 +1131,27 @@ impl Engine {
 
     /// Resets the engine state.
     pub fn reset(&mut self) {
-        let tt: &[SyncUnsafeCell<Vault<Transposition>>] =
+        let values: &[SyncUnsafeCell<Atomic<Vault<Value, u64>>>] =
+            unsafe { &*(&mut *self.shared.values as *mut _ as *const _) };
+        let tt: &[SyncUnsafeCell<Atomic<Vault<Transposition>>>] =
             unsafe { &*(&mut *self.shared.tt as *mut _ as *const _) };
-        let searchers: &[SyncUnsafeCell<LocalState>] =
+        let searchers: &[SyncUnsafeCell<LocalData>] =
             unsafe { &*(&mut *self.local as *mut _ as *const _) };
 
+        let values_chunk_size = values.len().div_ceil(searchers.len());
         let tt_chunk_size = tt.len().div_ceil(searchers.len());
+
         self.executor.execute(move |idx| unsafe {
+            let offset = idx * values_chunk_size;
+            let len = values.len().saturating_sub(offset).min(values_chunk_size);
+            let ptr = values.as_ptr().add(offset) as *mut Atomic<Vault<Value, u64>>;
+            fill_zeroes(slice::from_raw_parts_mut(ptr, len));
+
             let offset = idx * tt_chunk_size;
             let len = tt.len().saturating_sub(offset).min(tt_chunk_size);
-            let ptr = tt.as_ptr() as *mut Vault<Transposition>;
-            fill_zeroes(slice::from_raw_parts_mut(ptr.add(offset), len));
+            let ptr = tt.as_ptr().add(offset) as *mut Atomic<Vault<Transposition>>;
+            fill_zeroes(slice::from_raw_parts_mut(ptr, len));
+
             *searchers.get(idx).assume().get() = zeroed();
         });
     }
@@ -1145,21 +1166,14 @@ impl Engine {
 mod tests {
     use super::*;
     use crate::chess::Position;
-    use proptest::{prop_assume, sample::Selector};
+    use proptest::sample::Selector;
     use std::{thread, time::Duration};
     use test_strategy::proptest;
 
     #[proptest]
-    fn hash_is_an_upper_limit_for_table_size(o: Options) {
-        let e = Engine::with_options(&o)?;
-        prop_assume!(e.shared.tt.capacity() > 1);
-        assert!(e.shared.tt.size() <= o.hash.get());
-    }
-
-    #[proptest]
     fn nw_returns_transposition_if_beta_too_low(
         #[by_ref]
-        #[filter(#e.shared.tt.capacity() > 0)]
+        #[filter(#e.shared.tt.len() > 0)]
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
@@ -1170,7 +1184,7 @@ mod tests {
         cut: bool,
     ) {
         let tpos = Transposition::new(ScoreBound::Lower(s), Depth::upper(), Some(m), was_pv);
-        e.shared.tt.set(pos.zobrists().hash, tpos);
+        e.shared.tt.store(pos.zobrists().hash, tpos);
 
         let global = GlobalControl::new(&pos, Limits::none());
         let ctrl = LocalControl::active(&global);
@@ -1183,7 +1197,7 @@ mod tests {
     #[proptest]
     fn nw_returns_transposition_if_beta_too_high(
         #[by_ref]
-        #[filter(#e.shared.tt.capacity() > 0)]
+        #[filter(#e.shared.tt.len() > 0)]
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
@@ -1194,7 +1208,7 @@ mod tests {
         cut: bool,
     ) {
         let tpos = Transposition::new(ScoreBound::Upper(s), Depth::upper(), Some(m), was_pv);
-        e.shared.tt.set(pos.zobrists().hash, tpos);
+        e.shared.tt.store(pos.zobrists().hash, tpos);
 
         let global = GlobalControl::new(&pos, Limits::none());
         let ctrl = LocalControl::active(&global);
@@ -1207,7 +1221,7 @@ mod tests {
     #[proptest]
     fn nw_returns_transposition_if_exact(
         #[by_ref]
-        #[filter(#e.shared.tt.capacity() > 0)]
+        #[filter(#e.shared.tt.len() > 0)]
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
@@ -1218,7 +1232,7 @@ mod tests {
         cut: bool,
     ) {
         let tpos = Transposition::new(ScoreBound::Exact(s), Depth::upper(), Some(m), was_pv);
-        e.shared.tt.set(pos.zobrists().hash, tpos);
+        e.shared.tt.store(pos.zobrists().hash, tpos);
 
         let global = GlobalControl::new(&pos, Limits::none());
         let ctrl = LocalControl::active(&global);

@@ -1,5 +1,6 @@
 use crate::nnue::{Accumulator, Feature, Layer};
-use crate::util::{Aligned, Assume, Int};
+use crate::simd::Aligned;
+use crate::util::{Assume, Int};
 use bytemuck::Zeroable;
 use derive_more::with_trait::Debug;
 use std::hint::unreachable_unchecked;

@@ -7,7 +7,7 @@ use derive_more::with_trait::Debug;
 const BUCKETS: usize = 8192;
 
 /// Historical statistics about a [`Move`](`crate::chess::Move`).
-#[derive(Debug, Zeroable)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
 #[debug("Correction")]
 pub struct Correction([[<Correction as Statistics<Zobrist>>::Stat; BUCKETS]; 2]);
 

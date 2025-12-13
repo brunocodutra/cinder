@@ -1,3 +1,4 @@
+mod aligned;
 mod halve;
 mod mul4x8;
 mod muladd4x8;
@@ -5,6 +6,7 @@ mod mulhi;
 mod pack;
 mod powi;
 
+pub use aligned::*;
 pub use halve::*;
 pub use mul4x8::*;
 pub use muladd4x8::*;

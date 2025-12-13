@@ -1,5 +1,4 @@
 use crate::{chess::Color, util::Int};
-use bytemuck::Zeroable;
 
 /// Trait for types that can be seen from a different perspective.
 pub trait Perspective<T>: Sized {
@@ -24,7 +23,7 @@ impl<T: Flip> Perspective<Color> for T {
 }
 
 /// One of two horizontal perspectives.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Zeroable)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(u8)]
 pub enum Side {

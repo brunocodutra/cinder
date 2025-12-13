@@ -4,7 +4,7 @@ use crate::util::Assume;
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Zeroable)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
 pub struct Reply([[<Reply as Statistics<Move>>::Stat; 64]; 6]);
 
 impl Default for Reply {

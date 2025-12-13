@@ -7,7 +7,7 @@ use std::{fmt::Debug, hint::unreachable_unchecked, mem::transmute_copy, ops::*};
 /// # Safety
 ///
 /// Must only be implemented for types that can be safely transmuted to and from [`Float::Repr`].
-pub unsafe trait Float: Send + Sync + Copy {
+pub unsafe trait Float: 'static + Send + Sync + Copy {
     /// The primitive float representation.
     type Repr: FloatRepr;
 

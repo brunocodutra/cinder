@@ -111,8 +111,8 @@ impl Executor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU16, Ordering};
-    use std::{fmt::Debug, sync::atomic::AtomicUsize, thread};
+    use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
+    use std::{fmt::Debug, thread};
     use test_strategy::proptest;
 
     #[proptest]

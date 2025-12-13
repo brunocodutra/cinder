@@ -3,7 +3,9 @@ use crate::util::{Binary, Bits, Bounded, Int};
 use bytemuck::Zeroable;
 use derive_more::with_trait::{Constructor, Neg};
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Constructor, Neg, Zeroable)]
+#[derive(
+    Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Constructor, Neg, Zeroable,
+)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct DtzRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <DtzRepr as Int>::Repr);

@@ -1,5 +1,5 @@
 use crate::nnue::{Layer, Ln, Synapse};
-use crate::{simd::*, util::Aligned};
+use crate::simd::*;
 use bytemuck::Zeroable;
 use std::array::from_fn as each;
 

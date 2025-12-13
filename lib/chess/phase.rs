@@ -1,8 +1,7 @@
 use crate::util::Int;
-use bytemuck::Zeroable;
 
 /// The game phase.
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct Phase(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Phase as Int>::Repr);

@@ -1,11 +1,10 @@
 use crate::util::Int;
-use bytemuck::Zeroable;
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::str::FromStr;
 
 /// The type of a chess [`Piece`][`crate::chess::Piece`].
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(u8)]
 pub enum Role {

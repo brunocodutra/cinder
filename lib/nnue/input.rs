@@ -1,6 +1,6 @@
 use crate::nnue::{FTQ, HLS, L1, Layer, Ln, Synapse, Value};
 use crate::simd::*;
-use crate::util::{Aligned, Assume, Float};
+use crate::util::{Assume, Float};
 use bytemuck::Zeroable;
 use std::{array::from_fn as each, ops::Mul};
 

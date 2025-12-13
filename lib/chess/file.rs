@@ -1,12 +1,11 @@
 use crate::chess::{Bitboard, Mirror, Rank, Transpose};
 use crate::util::{Assume, Int};
-use bytemuck::Zeroable;
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{ops::Sub, str::FromStr};
 
 /// A column on the chess board.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(i8)]
 pub enum File {

@@ -4,7 +4,7 @@ use bytemuck::Zeroable;
 use std::ops::Neg;
 
 /// The possible outcomes of a final [`Position`](`crate::chess::Position`).
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(i8)]
 pub enum Wdl {
@@ -13,6 +13,7 @@ pub enum Wdl {
     /// Loss that can be saved by the 50-move rule.
     BlessedLoss = -1,
     /// Unconditional draw.
+    #[default]
     Draw = 0,
     /// Win that can be frustrated by the 50-move rule.
     CursedWin = 1,

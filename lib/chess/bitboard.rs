@@ -29,7 +29,6 @@ use std::fmt::{self, Formatter, Write};
     ShrAssign,
 )]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
-#[repr(transparent)]
 pub struct Bitboard(pub u64);
 
 impl Debug for Bitboard {

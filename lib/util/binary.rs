@@ -1,7 +1,7 @@
 use crate::util::{Assume, Bits, Int, Unsigned};
 
 /// Trait for types that can be encoded to binary.
-pub trait Binary: Sized {
+pub trait Binary: 'static + Sized {
     /// A fixed width collection of bits.
     type Bits: Int<Repr: Unsigned>;
 

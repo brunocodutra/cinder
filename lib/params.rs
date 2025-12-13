@@ -27,7 +27,6 @@ use proptest::{collection::vec, prelude::*};
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(feature = "spsa", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "spsa", serde(into = "Vec<f32>", from = "Vec<f32>"))]
-#[repr(transparent)]
 struct Param<const BYTES: ByteBuffer<32>> {
     #[cfg(feature = "spsa")]
     #[cfg_attr(test, strategy(vec(-1e3f32..=1e3f32, 8).prop_map(|vs| TypedByteBuffer::new(&vs))))]

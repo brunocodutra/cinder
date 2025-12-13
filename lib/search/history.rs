@@ -4,10 +4,12 @@ use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 
 /// Historical statistics about a [`Move`].
-#[derive(Debug, Zeroable)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
 #[debug("History")]
-#[allow(clippy::type_complexity)]
-pub struct History([[Butterfly<[[<History as Statistics<Move>>::Stat; 2]; 2]>; 2]; 2]);
+pub struct History(
+    #[allow(clippy::type_complexity)]
+    [[Butterfly<[[<History as Statistics<Move>>::Stat; 2]; 2]>; 2]; 2],
+);
 
 impl Default for History {
     #[inline(always)]

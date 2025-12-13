@@ -1,10 +1,10 @@
-use crate::{chess::*, util::Bits};
+use crate::{chess::*, util::Key};
 use bytemuck::{Zeroable, zeroed};
 use rand::prelude::*;
 use std::cell::SyncUnsafeCell;
 
 /// A type representing a [`Position`]'s [zobrist hashes](`Zobrists`)
-pub type Zobrist = Bits<u64, 64>;
+pub type Zobrist = Key;
 
 #[derive(Debug, Zeroable)]
 pub struct ZobristNumbers {

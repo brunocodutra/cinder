@@ -1,10 +1,9 @@
 use crate::{chess::Flip, util::Int};
-use bytemuck::Zeroable;
 use derive_more::with_trait::Display;
 use std::ops::Not;
 
 /// The color of a chess [`Piece`][`crate::chess::Piece`].
-#[derive(Debug, Display, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable)]
+#[derive(Debug, Display, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(u8)]
 pub enum Color {

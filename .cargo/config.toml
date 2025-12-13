@@ -1,6 +1,6 @@
 [env]
 RUST_BACKTRACE = "1"
-RUST_MIN_STACK = "33554432"
+RUST_MIN_STACK = "50331648"
 
 [build]
 rustflags = ["-Ctarget-cpu=native"]

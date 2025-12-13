@@ -24,7 +24,6 @@ use std::{cell::SyncUnsafeCell, str::FromStr};
 )]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Castles({self})")]
-#[repr(transparent)]
 pub struct Castles(Bits<u8, 4>);
 
 impl Castles {

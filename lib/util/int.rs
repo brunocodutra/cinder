@@ -9,7 +9,7 @@ use std::{num::*, ops::*};
 /// # Safety
 ///
 /// Must only be implemented for types that can be safely transmuted to and from [`Int::Repr`].
-pub unsafe trait Int: Send + Sync + Copy {
+pub unsafe trait Int: 'static + Send + Sync + Copy {
     /// The primitive integer representation.
     type Repr: IntRepr;
 
@@ -154,6 +154,8 @@ pub trait IntRepr:
     + ShrAssign
     + Not<Output = Self>
 {
+    /// This primitive's size in number of bits.
+    const BITS: u32;
 }
 
 /// Marker trait for signed primitive integers.
@@ -199,7 +201,9 @@ impl_int_for_non_zero!(NonZeroUsize, usize);
 
 macro_rules! impl_int_repr_for {
     ($i: ty) => {
-        impl IntRepr for $i {}
+        impl IntRepr for $i {
+            const BITS: u32 = <$i>::BITS;
+        }
 
         unsafe impl Int for $i {
             type Repr = $i;

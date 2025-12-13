@@ -1,20 +1,18 @@
 use crate::util::{Int, Signed};
-use bytemuck::{NoUninit, Zeroable};
+use bytemuck::{Pod, Zeroable};
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::{cmp::Ordering, mem::size_of, num::Saturating as S, str::FromStr};
 
 /// A saturating bounded integer.
-#[derive(Debug, Default, Copy, Clone, Hash, Zeroable)]
+#[derive(Debug, Default, Copy, Clone, Hash, Zeroable, Pod)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, arbitrary(bound(T, Self: Debug)))]
 #[debug("Bounded({self})")]
 #[debug(bounds(T: Int<Repr: Signed>, T::Repr: Display))]
 #[repr(transparent)]
 pub struct Bounded<T>(T);
-
-unsafe impl<T: NoUninit> NoUninit for Bounded<T> {}
 
 unsafe impl<T: Int<Repr: Signed>> Int for Bounded<T> {
     type Repr = T::Repr;

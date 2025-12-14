@@ -108,7 +108,7 @@ impl Display for Move {
     }
 }
 
-impl Binary for Move {
+impl const Binary for Move {
     type Bits = Bits<u16, 16>;
 
     #[inline(always)]

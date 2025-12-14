@@ -6,7 +6,8 @@ use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssi
 use std::{cmp::Ordering, mem::size_of, num::Saturating as S, str::FromStr};
 
 /// A saturating bounded integer.
-#[derive(Debug, Default, Copy, Clone, Hash, Zeroable, Pod)]
+#[derive(Debug, Copy, Hash, Zeroable, Pod)]
+#[derive_const( Default, Clone)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, arbitrary(bound(T, Self: Debug)))]
 #[debug("Bounded({self})")]
@@ -20,9 +21,13 @@ unsafe impl<T: Int<Repr: [const] Signed>> const Int for Bounded<T> {
     const MAX: Self::Repr = T::MAX;
 }
 
-impl<T: Int<Repr: Signed>> Eq for Bounded<T> where Self: PartialEq<Self> {}
+impl<T> const Eq for Bounded<T> where T: [const] Int<Repr: [const] Signed> {}
 
-impl<T: Int<Repr: Signed>, U: Int<Repr: Signed>> PartialEq<U> for Bounded<T> {
+impl<T, U> const PartialEq<U> for Bounded<T>
+where
+    T: [const] Int<Repr: [const] Signed>,
+    U: [const] Int<Repr: [const] Signed>,
+{
     #[inline(always)]
     fn eq(&self, other: &U) -> bool {
         if size_of::<T>() > size_of::<U>() {
@@ -33,14 +38,21 @@ impl<T: Int<Repr: Signed>, U: Int<Repr: Signed>> PartialEq<U> for Bounded<T> {
     }
 }
 
-impl<T: Int<Repr: Signed>> Ord for Bounded<T> {
+impl<T> const Ord for Bounded<T>
+where
+    T: [const] Int<Repr: [const] Signed>,
+{
     #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
         self.get().cmp(&other.get())
     }
 }
 
-impl<T: Int<Repr: Signed>, U: Int<Repr: Signed>> PartialOrd<U> for Bounded<T> {
+impl<T, U> const PartialOrd<U> for Bounded<T>
+where
+    T: [const] Int<Repr: [const] Signed>,
+    U: [const] Int<Repr: [const] Signed>,
+{
     #[inline(always)]
     fn partial_cmp(&self, other: &U) -> Option<Ordering> {
         if size_of::<T>() > size_of::<U>() {
@@ -51,9 +63,10 @@ impl<T: Int<Repr: Signed>, U: Int<Repr: Signed>> PartialOrd<U> for Bounded<T> {
     }
 }
 
-impl<T: Int<Repr: Signed>> Neg for Bounded<T>
+impl<T> const Neg for Bounded<T>
 where
-    S<T::Repr>: Neg<Output = S<T::Repr>>,
+    T: [const] Int<Repr: [const] Signed>,
+    S<T::Repr>: [const] Neg<Output = S<T::Repr>>,
 {
     type Output = Self;
 
@@ -63,10 +76,12 @@ where
     }
 }
 
-impl<T: Int<Repr: Signed>, U: Int<Repr: Signed>> Add<U> for Bounded<T>
+impl<T, U> const Add<U> for Bounded<T>
 where
-    S<T::Repr>: Add<Output = S<T::Repr>>,
-    S<U::Repr>: Add<Output = S<U::Repr>>,
+    T: [const] Int<Repr: [const] Signed>,
+    U: [const] Int<Repr: [const] Signed>,
+    S<T::Repr>: [const] Add<Output = S<T::Repr>>,
+    S<U::Repr>: [const] Add<Output = S<U::Repr>>,
 {
     type Output = Self;
 
@@ -80,9 +95,10 @@ where
     }
 }
 
-impl<T: Int<Repr: Signed>, U> AddAssign<U> for Bounded<T>
+impl<T, U> const AddAssign<U> for Bounded<T>
 where
-    Self: Add<U, Output = Self>,
+    T: [const] Int<Repr: [const] Signed>,
+    Self: [const] Add<U, Output = Self>,
 {
     #[inline(always)]
     fn add_assign(&mut self, rhs: U) {
@@ -90,10 +106,12 @@ where
     }
 }
 
-impl<T: Int<Repr: Signed>, U: Int<Repr: Signed>> Sub<U> for Bounded<T>
+impl<T, U> const Sub<U> for Bounded<T>
 where
-    S<T::Repr>: Sub<Output = S<T::Repr>>,
-    S<U::Repr>: Sub<Output = S<U::Repr>>,
+    T: [const] Int<Repr: [const] Signed>,
+    U: [const] Int<Repr: [const] Signed>,
+    S<T::Repr>: [const] Sub<Output = S<T::Repr>>,
+    S<U::Repr>: [const] Sub<Output = S<U::Repr>>,
 {
     type Output = Self;
 
@@ -107,9 +125,10 @@ where
     }
 }
 
-impl<T: Int<Repr: Signed>, U> SubAssign<U> for Bounded<T>
+impl<T, U> const SubAssign<U> for Bounded<T>
 where
-    Self: Sub<U, Output = Self>,
+    T: [const] Int<Repr: [const] Signed>,
+    Self: [const] Sub<U, Output = Self>,
 {
     #[inline(always)]
     fn sub_assign(&mut self, rhs: U) {
@@ -117,10 +136,12 @@ where
     }
 }
 
-impl<T: Int<Repr: Signed>, U: Int<Repr: Signed>> Mul<U> for Bounded<T>
+impl<T, U> const Mul<U> for Bounded<T>
 where
-    S<T::Repr>: Mul<Output = S<T::Repr>>,
-    S<U::Repr>: Mul<Output = S<U::Repr>>,
+    T: [const] Int<Repr: [const] Signed>,
+    U: [const] Int<Repr: [const] Signed>,
+    S<T::Repr>: [const] Mul<Output = S<T::Repr>>,
+    S<U::Repr>: [const] Mul<Output = S<U::Repr>>,
 {
     type Output = Self;
 
@@ -134,9 +155,10 @@ where
     }
 }
 
-impl<T: Int<Repr: Signed>, U> MulAssign<U> for Bounded<T>
+impl<T, U> const MulAssign<U> for Bounded<T>
 where
-    Self: Mul<U, Output = Self>,
+    T: [const] Int<Repr: [const] Signed>,
+    Self: [const] Mul<U, Output = Self>,
 {
     #[inline(always)]
     fn mul_assign(&mut self, rhs: U) {
@@ -144,10 +166,12 @@ where
     }
 }
 
-impl<T: Int<Repr: Signed>, U: Int<Repr: Signed>> Div<U> for Bounded<T>
+impl<T, U> const Div<U> for Bounded<T>
 where
-    S<T::Repr>: Div<Output = S<T::Repr>>,
-    S<U::Repr>: Div<Output = S<U::Repr>>,
+    T: [const] Int<Repr: [const] Signed>,
+    U: [const] Int<Repr: [const] Signed>,
+    S<T::Repr>: [const] Div<Output = S<T::Repr>>,
+    S<U::Repr>: [const] Div<Output = S<U::Repr>>,
 {
     type Output = Self;
 
@@ -161,9 +185,10 @@ where
     }
 }
 
-impl<T: Int<Repr: Signed>, U> DivAssign<U> for Bounded<T>
+impl<T, U> const DivAssign<U> for Bounded<T>
 where
-    Self: Div<U, Output = Self>,
+    T: [const] Int<Repr: [const] Signed>,
+    Self: [const] Div<U, Output = Self>,
 {
     #[inline(always)]
     fn div_assign(&mut self, rhs: U) {

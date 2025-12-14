@@ -39,44 +39,45 @@ unsafe impl const Int for ScoreRepr {
 pub type Score = Bounded<ScoreRepr>;
 
 impl Score {
-    const _CONDITION: () = const {
+    #[allow(dead_code)]
+    const ASSERT: () = const {
         assert!(Value::MAX + 2 * (Ply::MAX as i16 + 1) <= Self::MAX);
         assert!(Value::MIN + 2 * (Ply::MIN as i16 - 1) >= Self::MIN);
     };
 
     /// The drawn score.
     #[inline(always)]
-    pub fn drawn() -> Self {
+    pub const fn drawn() -> Self {
         Self::new(0)
     }
 
     /// The tablebase loss score at `ply`.
     #[inline(always)]
-    pub fn losing(ply: Ply) -> Self {
+    pub const fn losing(ply: Ply) -> Self {
         Self::mated(Ply::upper()).relative_to_ply(ply) + 1
     }
 
     /// The maximum value.
     #[inline(always)]
-    pub fn winning(ply: Ply) -> Self {
+    pub const fn winning(ply: Ply) -> Self {
         Self::mating(Ply::upper()).relative_to_ply(ply) - 1
     }
 
     /// Mated score at `ply`
     #[inline(always)]
-    pub fn mated(ply: Ply) -> Self {
+    pub const fn mated(ply: Ply) -> Self {
         Self::lower().relative_to_ply(ply)
     }
 
     /// Mating score at `ply`
     #[inline(always)]
-    pub fn mating(ply: Ply) -> Self {
+    pub const fn mating(ply: Ply) -> Self {
         Self::upper().relative_to_ply(ply)
     }
 
     /// Returns number of plies to mate, if one is in the horizon.
     #[inline(always)]
-    pub fn mate(&self) -> Mate {
+    pub const fn mate(&self) -> Mate {
         if self.is_loss() {
             Mate::Mated((*self - Score::lower()).saturate())
         } else if self.is_win() {
@@ -88,7 +89,7 @@ impl Score {
 
     /// Normalizes mate scores from `ply` relative to the root node.
     #[inline(always)]
-    pub fn relative_to_root(&self, ply: Ply) -> Self {
+    pub const fn relative_to_root(&self, ply: Ply) -> Self {
         if self.is_winning() {
             *self + ply.cast::<i16>()
         } else if self.is_losing() {
@@ -100,7 +101,7 @@ impl Score {
 
     /// Normalizes mate scores from the root node relative to `ply`.
     #[inline(always)]
-    pub fn relative_to_ply(&self, ply: Ply) -> Self {
+    pub const fn relative_to_ply(&self, ply: Ply) -> Self {
         if self.is_winning() {
             *self - ply.cast::<i16>()
         } else if self.is_losing() {
@@ -112,25 +113,25 @@ impl Score {
 
     /// Returns true if the score represents a winning position.
     #[inline(always)]
-    pub fn is_winning(&self) -> bool {
+    pub const fn is_winning(&self) -> bool {
         *self > Value::MAX
     }
 
     /// Returns true if the score represents a losing position.
     #[inline(always)]
-    pub fn is_losing(&self) -> bool {
+    pub const fn is_losing(&self) -> bool {
         *self < Value::MIN
     }
 
     /// Returns true if the score represents a won position.
     #[inline(always)]
-    pub fn is_win(&self) -> bool {
+    pub const fn is_win(&self) -> bool {
         *self > Self::winning(Ply::new(0))
     }
 
     /// Returns true if the score represents a lost position.
     #[inline(always)]
-    pub fn is_loss(&self) -> bool {
+    pub const fn is_loss(&self) -> bool {
         *self < Self::losing(Ply::new(0))
     }
 }
@@ -142,7 +143,7 @@ impl Flip for Score {
     }
 }
 
-impl Binary for Score {
+impl const Binary for Score {
     type Bits = Bits<u16, 13>;
 
     #[inline(always)]

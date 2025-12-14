@@ -6,6 +6,7 @@
 )]
 #![feature(
     adt_const_params,
+    const_clone,
     const_cmp,
     const_default,
     const_destruct,
@@ -16,6 +17,7 @@
     const_result_unwrap_unchecked,
     const_trait_impl,
     coverage_attribute,
+    derive_const,
     gen_blocks,
     iter_array_chunks,
     pointer_is_aligned_to,

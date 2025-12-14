@@ -61,7 +61,7 @@ impl From<Wdl> for Dtz {
     }
 }
 
-impl Binary for Dtz {
+impl const Binary for Dtz {
     type Bits = Bits<u16, 11>;
 
     #[inline(always)]

@@ -15,11 +15,6 @@ use std::ops::RangeInclusive;
     Debug,
     Display,
     Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
     Hash,
     Zeroable,
     Pod,
@@ -31,6 +26,7 @@ use std::ops::RangeInclusive;
     BitXor,
     BitXorAssign,
 )]
+#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, arbitrary(bound(T, T: Unsigned, Self: Debug, RangeInclusive<T>: Strategy<Value = T>)))]
 #[debug("Bits({_0:b})")]
@@ -90,7 +86,7 @@ impl<T: const Unsigned, const W: u32> Bits<T, W> {
     }
 }
 
-impl<T: Unsigned, const W: u32> Default for Bits<T, W> {
+impl<T: Unsigned, const W: u32> const Default for Bits<T, W> {
     #[inline(always)]
     fn default() -> Self {
         Bits::new(zero())

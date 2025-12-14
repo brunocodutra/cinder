@@ -21,7 +21,7 @@ unsafe impl const Int for DepthRepr {
 /// The search depth.
 pub type Depth = Bounded<DepthRepr>;
 
-impl Binary for Depth {
+impl const Binary for Depth {
     type Bits = Bits<u8, 6>;
 
     #[inline(always)]

@@ -202,7 +202,7 @@ impl Piece {
     }
 }
 
-unsafe impl Int for Piece {
+unsafe impl const Int for Piece {
     type Repr = u8;
     const MIN: Self::Repr = Piece::WhitePawn as _;
     const MAX: Self::Repr = Piece::BlackKing as _;

@@ -6,7 +6,7 @@ use bytemuck::{Pod, Zeroable};
 #[repr(transparent)]
 pub struct PlyRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <PlyRepr as Int>::Repr);
 
-unsafe impl Int for PlyRepr {
+unsafe impl const Int for PlyRepr {
     type Repr = i8;
 
     const MIN: Self::Repr = 0;

@@ -27,7 +27,7 @@ impl Rank {
     }
 }
 
-unsafe impl Int for Rank {
+unsafe impl const Int for Rank {
     type Repr = i8;
     const MIN: Self::Repr = Rank::First as _;
     const MAX: Self::Repr = Rank::Eighth as _;

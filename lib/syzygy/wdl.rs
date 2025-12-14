@@ -21,7 +21,7 @@ pub enum Wdl {
     Win = 2,
 }
 
-unsafe impl Int for Wdl {
+unsafe impl const Int for Wdl {
     type Repr = i8;
     const MIN: Self::Repr = Self::Loss as _;
     const MAX: Self::Repr = Self::Win as _;

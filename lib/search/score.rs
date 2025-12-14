@@ -29,7 +29,7 @@ impl Mate {
 #[repr(transparent)]
 pub struct ScoreRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Score as Int>::Repr);
 
-unsafe impl Int for ScoreRepr {
+unsafe impl const Int for ScoreRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
     const MAX: Self::Repr = 4095;

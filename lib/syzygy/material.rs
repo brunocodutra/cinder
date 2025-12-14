@@ -67,7 +67,7 @@ impl Material {
     }
 }
 
-impl Flip for Material {
+impl const Flip for Material {
     #[inline(always)]
     fn flip(self) -> Self {
         Material([self.0[1], self.0[0]])

@@ -33,7 +33,7 @@ unsafe impl const Int for File {
     const MAX: Self::Repr = File::H as _;
 }
 
-impl Mirror for File {
+impl const Mirror for File {
     /// Horizontally mirrors this file.
     #[inline(always)]
     fn mirror(self) -> Self {
@@ -41,7 +41,7 @@ impl Mirror for File {
     }
 }
 
-impl Transpose for File {
+impl const Transpose for File {
     type Transposition = Rank;
 
     /// This file's corresponding rank.

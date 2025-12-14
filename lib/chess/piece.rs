@@ -208,7 +208,7 @@ unsafe impl const Int for Piece {
     const MAX: Self::Repr = Piece::BlackKing as _;
 }
 
-impl Flip for Piece {
+impl const Flip for Piece {
     /// Mirrors this piece's [`Color`].
     #[inline(always)]
     fn flip(self) -> Self {

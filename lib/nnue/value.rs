@@ -16,7 +16,7 @@ unsafe impl const Int for ValueRepr {
 /// A position's static evaluation.
 pub type Value = Bounded<ValueRepr>;
 
-impl Flip for Value {
+impl const Flip for Value {
     #[inline(always)]
     fn flip(self) -> Self {
         -self

@@ -7,7 +7,7 @@ use std::{cmp::Ordering, mem::size_of, num::Saturating as S, str::FromStr};
 
 /// A saturating bounded integer.
 #[derive(Debug, Copy, Hash, Zeroable, Pod)]
-#[derive_const( Default, Clone)]
+#[derive_const(Default, Clone)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, arbitrary(bound(T, Self: Debug)))]
 #[debug("Bounded({self})")]

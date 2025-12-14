@@ -19,14 +19,14 @@ unsafe impl const Int for Color {
     const MAX: Self::Repr = Color::Black as _;
 }
 
-impl Flip for Color {
+impl const Flip for Color {
     #[inline(always)]
     fn flip(self) -> Self {
         self.not()
     }
 }
 
-impl Not for Color {
+impl const Not for Color {
     type Output = Self;
 
     #[inline(always)]

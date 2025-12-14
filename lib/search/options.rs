@@ -1,12 +1,13 @@
 use crate::util::Int;
-use derive_more::with_trait::{Debug, Display, Error, Shl, Shr};
+use derive_more::with_trait::{Debug, Display, Error};
+use std::ops::{Shl, Shr};
 use std::{cmp::Ordering, collections::HashSet, path::PathBuf, str::FromStr};
 
 #[cfg(test)]
 use proptest::strategy::LazyJust;
 
 /// The hash size in bytes.
-#[derive(Debug, Display, Copy, Clone, Eq, Ord, Hash, Shl, Shr)]
+#[derive(Debug, Display, Copy, Clone, Eq, Ord, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("HashSize({_0})")]
 #[display("{}", self.get() >> 20)]
@@ -25,26 +26,45 @@ unsafe impl const Int for HashSize {
     const MAX: usize = 16 << 20;
 }
 
-impl Default for HashSize {
+impl const Default for HashSize {
     fn default() -> Self {
         HashSize(16 << 20)
     }
 }
 
-impl<I: Int<Repr = usize>> PartialEq<I> for HashSize {
+impl<I: [const] Int<Repr = usize>> const PartialEq<I> for HashSize {
     fn eq(&self, other: &I) -> bool {
         self.get().eq(&other.get())
     }
 }
 
-impl<I: Int<Repr = usize>> PartialOrd<I> for HashSize {
+impl<I: [const] Int<Repr = usize>> const PartialOrd<I> for HashSize {
     fn partial_cmp(&self, other: &I) -> Option<Ordering> {
         self.get().partial_cmp(&other.get())
     }
 }
 
+impl const Shl<u32> for HashSize {
+    type Output = Self;
+
+    #[inline(always)]
+    fn shl(self, rhs: u32) -> Self::Output {
+        Self(self.0.shl(rhs))
+    }
+}
+
+impl const Shr<u32> for HashSize {
+    type Output = Self;
+
+    #[inline(always)]
+    fn shr(self, rhs: u32) -> Self::Output {
+        Self(self.0.shr(rhs))
+    }
+}
+
 /// The reason why parsing the hash size failed.
-#[derive(Debug, Display, Clone, Eq, PartialEq, Error)]
+#[derive(Debug, Display, Error)]
+#[derive_const(Default, Clone, Eq, PartialEq)]
 #[display(
     "failed to parse hash size, expected integer in the range `{}..={}`",
     HashSize::lower(),
@@ -84,26 +104,27 @@ unsafe impl const Int for ThreadCount {
     const MAX: Self::Repr = 4;
 }
 
-impl Default for ThreadCount {
+impl const Default for ThreadCount {
     fn default() -> Self {
         Self::new(1)
     }
 }
 
-impl<I: Int<Repr = u16>> PartialEq<I> for ThreadCount {
+impl<I: [const] Int<Repr = u16>> const PartialEq<I> for ThreadCount {
     fn eq(&self, other: &I) -> bool {
         self.get().eq(&other.get())
     }
 }
 
-impl<I: Int<Repr = u16>> PartialOrd<I> for ThreadCount {
+impl<I: [const] Int<Repr = u16>> const PartialOrd<I> for ThreadCount {
     fn partial_cmp(&self, other: &I) -> Option<Ordering> {
         self.get().partial_cmp(&other.get())
     }
 }
 
 /// The reason why parsing the thread count failed.
-#[derive(Debug, Display, Clone, Eq, PartialEq, Error)]
+#[derive(Debug, Display, Error)]
+#[derive_const(Default, Clone, Eq, PartialEq)]
 #[display(
     "failed to parse thread count, expected integer in the range `{}..={}`",
     ThreadCount::lower(),

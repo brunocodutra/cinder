@@ -206,7 +206,8 @@ where
 }
 
 /// The reason why parsing [`Bounded`] failed.
-#[derive(Debug, Display, Clone, Eq, PartialEq, Error)]
+#[derive(Debug, Display, Error)]
+#[derive_const(Default, Clone, Eq, PartialEq)]
 #[display("failed to parse bounded integer")]
 pub struct ParseBoundedIntegerError;
 
@@ -231,7 +232,8 @@ mod tests {
     use std::fmt::Debug;
     use test_strategy::proptest;
 
-    #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+    #[derive(Debug, Copy, Hash)]
+    #[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
     #[cfg_attr(test, derive(test_strategy::Arbitrary))]
     #[repr(transparent)]
     struct Asymmetric(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as Int>::Repr);

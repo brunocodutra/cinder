@@ -10,20 +10,18 @@ use proptest::{collection::*, prelude::*};
 /// The key to a [`Vault`].
 pub type Key = Bits<u64, 64>;
 
-impl<T> Index<Key> for [T] {
+impl<T> const Index<Key> for [T] {
     type Output = T;
 
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn index(&self, key: Key) -> &Self::Output {
         let idx = ((key.cast::<u128>() * self.len().cast::<u128>()) >> 64) as usize;
         self.get(idx).assume()
     }
 }
 
-impl<T> IndexMut<Key> for [T] {
+impl<T> const IndexMut<Key> for [T] {
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn index_mut(&mut self, key: Key) -> &mut Self::Output {
         let idx = ((key.cast::<u128>() * self.len().cast::<u128>()) >> 64) as usize;
         self.get_mut(idx).assume()

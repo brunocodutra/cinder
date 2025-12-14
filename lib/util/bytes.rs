@@ -5,14 +5,16 @@ use std::mem::needs_drop;
 use std::ops::{Deref, DerefMut};
 use std::slice;
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, ConstParamTy)]
+#[derive(Copy, Hash, ConstParamTy)]
+#[derive_const(Clone, Eq, PartialEq)]
 #[repr(align(4))]
 struct AlignedTo4<T>(T);
 
 /// A const allocated byte buffer.
 ///
 /// This buffer can hold up to `N` bytes in total.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, ConstParamTy)]
+#[derive(Debug, Copy, Hash, ConstParamTy)]
+#[derive_const(Clone, Eq, PartialEq)]
 #[debug("ByteBuffer({:04X?})", &buffer.0[..*len as usize])]
 #[repr(C)]
 pub struct ByteBuffer<const N: usize> {
@@ -82,11 +84,10 @@ impl<T: NoUninit, const N: usize> TypedByteBuffer<T, N> {
     }
 }
 
-impl<T: NoUninit, const N: usize> Deref for TypedByteBuffer<T, N> {
+impl<T: NoUninit, const N: usize> const Deref for TypedByteBuffer<T, N> {
     type Target = [T];
 
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn deref(&self) -> &Self::Target {
         unsafe {
             slice::from_raw_parts(
@@ -97,9 +98,8 @@ impl<T: NoUninit, const N: usize> Deref for TypedByteBuffer<T, N> {
     }
 }
 
-impl<T: NoUninit, const N: usize> DerefMut for TypedByteBuffer<T, N> {
+impl<T: NoUninit, const N: usize> const DerefMut for TypedByteBuffer<T, N> {
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe {
             slice::from_raw_parts_mut(

@@ -7,11 +7,12 @@ use derive_more::with_trait::Debug;
 const BUCKETS: usize = 8192;
 
 /// Historical statistics about a [`Move`](`crate::chess::Move`).
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Zeroable)]
+#[derive(Debug, Clone, Hash, Zeroable)]
+#[derive_const(Eq, PartialEq)]
 #[debug("Correction")]
 pub struct Correction([[<Correction as Statistics<Zobrist>>::Stat; BUCKETS]; 2]);
 
-impl Default for Correction {
+impl const Default for Correction {
     #[inline(always)]
     fn default() -> Self {
         zeroed()
@@ -22,8 +23,7 @@ impl Correction {
     pub const LIMIT: i16 = 1024;
 
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn graviton(
+    const fn graviton(
         &mut self,
         pos: &Position,
         key: Zobrist,
@@ -33,7 +33,7 @@ impl Correction {
     }
 }
 
-impl Statistics<Zobrist> for Correction {
+impl const Statistics<Zobrist> for Correction {
     type Stat = Graviton<{ -Self::LIMIT }, { Self::LIMIT }>;
 
     #[inline(always)]

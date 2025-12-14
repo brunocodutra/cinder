@@ -1,8 +1,7 @@
 use crate::util::{Int, Unsigned, ones, zero};
 use bytemuck::{Pod, Zeroable};
-use derive_more::with_trait::{Debug, *};
-use std::marker::Destruct;
-use std::ops::{Bound, Not, RangeBounds};
+use derive_more::with_trait::{Constructor, Debug, Display};
+use std::{marker::Destruct, ops::*};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -11,21 +10,7 @@ use proptest::prelude::*;
 use std::ops::RangeInclusive;
 
 /// A fixed width collection of bits.
-#[derive(
-    Debug,
-    Display,
-    Copy,
-    Hash,
-    Zeroable,
-    Pod,
-    Constructor,
-    BitAnd,
-    BitAndAssign,
-    BitOr,
-    BitOrAssign,
-    BitXor,
-    BitXorAssign,
-)]
+#[derive(Debug, Display, Copy, Hash, Zeroable, Pod, Constructor)]
 #[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, arbitrary(bound(T, T: Unsigned, Self: Debug, RangeInclusive<T>: Strategy<Value = T>)))]
@@ -93,12 +78,60 @@ impl<T: Unsigned, const W: u32> const Default for Bits<T, W> {
     }
 }
 
-impl<T: Unsigned, const W: u32> Not for Bits<T, W> {
+impl<T: [const] Unsigned, const W: u32> const Not for Bits<T, W> {
     type Output = Self;
 
     #[inline(always)]
     fn not(self) -> Self::Output {
         self ^ Bits::new(ones(W))
+    }
+}
+
+impl<T: [const] Unsigned, const W: u32> const BitAnd for Bits<T, W> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitand(self, rhs: Self) -> Self::Output {
+        Self(self.0.bitand(rhs.0))
+    }
+}
+
+impl<T: [const] Unsigned, const W: u32> const BitAndAssign for Bits<T, W> {
+    #[inline(always)]
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0.bitand_assign(rhs.0)
+    }
+}
+
+impl<T: [const] Unsigned, const W: u32> const BitOr for Bits<T, W> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0.bitor(rhs.0))
+    }
+}
+
+impl<T: [const] Unsigned, const W: u32> const BitOrAssign for Bits<T, W> {
+    #[inline(always)]
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0.bitor_assign(rhs.0)
+    }
+}
+
+impl<T: [const] Unsigned, const W: u32> const BitXor for Bits<T, W> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        Self(self.0.bitxor(rhs.0))
+    }
+}
+
+impl<T: [const] Unsigned, const W: u32> const BitXorAssign for Bits<T, W> {
+    #[inline(always)]
+    fn bitxor_assign(&mut self, rhs: Self) {
+        self.0.bitxor_assign(rhs.0)
     }
 }
 

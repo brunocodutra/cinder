@@ -6,7 +6,8 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 use std::str::FromStr;
 
 /// A square on the chess board.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(i8)]
 #[rustfmt::skip]
@@ -24,25 +25,25 @@ pub enum Square {
 impl Square {
     /// Constructs [`Square`] from a pair of [`File`] and [`Rank`].
     #[inline(always)]
-    pub fn new(f: File, r: Rank) -> Self {
+    pub const fn new(f: File, r: Rank) -> Self {
         Int::new(f.get() | (r.get() << 3))
     }
 
     /// This square's [`File`].
     #[inline(always)]
-    pub fn file(&self) -> File {
+    pub const fn file(&self) -> File {
         File::new(self.get() & 0b111)
     }
 
     /// This square's [`Rank`].
     #[inline(always)]
-    pub fn rank(&self) -> Rank {
+    pub const fn rank(&self) -> Rank {
         Rank::new(self.get() >> 3)
     }
 
     /// Returns a [`Bitboard`] that only contains this square.
     #[inline(always)]
-    pub fn bitboard(self) -> Bitboard {
+    pub const fn bitboard(self) -> Bitboard {
         Bitboard::new(1 << self.get())
     }
 }
@@ -143,7 +144,8 @@ impl Display for Square {
 }
 
 /// The reason why parsing [`Square`] failed.
-#[derive(Debug, Display, Clone, Eq, PartialEq, Error, From)]
+#[derive(Debug, Display, Error, From)]
+#[derive_const(Clone, Eq, PartialEq)]
 pub enum ParseSquareError {
     #[display("failed to parse square")]
     InvalidFile(ParseFileError),

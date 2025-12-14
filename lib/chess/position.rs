@@ -1,6 +1,7 @@
 use crate::util::{Assume, Int};
 use crate::{chess::*, simd::Aligned};
 use arrayvec::ArrayVec;
+use bytemuck::zeroed;
 use derive_more::with_trait::{Debug, Deref, DerefMut, Display, Error, From, IntoIterator};
 use std::fmt::{self, Formatter};
 use std::hash::{Hash, Hasher};
@@ -26,7 +27,8 @@ impl MovePack {
 }
 
 /// The [`MovePacker`] is out of capacity.
-#[derive(Debug, Display, Clone, Eq, PartialEq, Error, From)]
+#[derive(Debug, Display, Error, From)]
+#[derive_const(Default, Clone, Eq, PartialEq)]
 struct CapacityError;
 
 trait MovePacker {
@@ -266,7 +268,8 @@ impl MoveGenerator {
 /// The current position on the board.
 ///
 /// This type guarantees that it only holds valid positions.
-#[derive(Debug, Clone, Eq)]
+#[derive(Debug, Clone)]
+#[derive_const(Eq)]
 #[debug("Position({self})")]
 pub struct Position {
     board: Board,
@@ -303,7 +306,6 @@ impl Arbitrary for Position {
 }
 
 impl Default for Position {
-    #[inline(always)]
     fn default() -> Self {
         let board = Board::default();
 
@@ -312,7 +314,7 @@ impl Default for Position {
             checkers: Default::default(),
             threats: board.threats(!board.turn),
             zobrists: board.zobrists(),
-            history: Default::default(),
+            history: zeroed(),
             board,
         }
     }
@@ -325,7 +327,7 @@ impl Hash for Position {
     }
 }
 
-impl PartialEq for Position {
+impl const PartialEq for Position {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.board.eq(&other.board)
@@ -335,7 +337,7 @@ impl PartialEq for Position {
 impl Position {
     /// The side to move.
     #[inline(always)]
-    pub fn turn(&self) -> Color {
+    pub const fn turn(&self) -> Color {
         self.board.turn
     }
 
@@ -343,7 +345,7 @@ impl Position {
     ///
     /// It resets to 0 whenever a piece is captured or a pawn is moved.
     #[inline(always)]
-    pub fn halfmoves(&self) -> u8 {
+    pub const fn halfmoves(&self) -> u8 {
         self.board.halfmoves
     }
 
@@ -351,62 +353,104 @@ impl Position {
     ///
     /// It starts at 1, and is incremented after every move by black.
     #[inline(always)]
-    pub fn fullmoves(&self) -> NonZeroU32 {
+    pub const fn fullmoves(&self) -> NonZeroU32 {
         self.board.fullmoves.convert().assume()
     }
 
     /// The en passant square.
     #[inline(always)]
-    pub fn en_passant(&self) -> Option<Square> {
+    pub const fn en_passant(&self) -> Option<Square> {
         self.board.en_passant
     }
 
     /// The castle rights.
     #[inline(always)]
-    pub fn castles(&self) -> Castles {
+    pub const fn castles(&self) -> Castles {
         self.board.castles
     }
 
     /// Game [`Phase`].
     #[inline(always)]
-    pub fn phase(&self) -> Phase {
+    pub const fn phase(&self) -> Phase {
         Phase::new((self.occupied().len() - 1) as u8 / 4)
     }
 
     /// The [`Piece`]s table.
     #[inline(always)]
-    pub fn pieces(&self) -> &Aligned<[Option<Piece>; Square::MAX as usize + 1]> {
+    pub const fn pieces(&self) -> &Aligned<[Option<Piece>; Square::MAX as usize + 1]> {
         self.board.pieces()
     }
 
     /// [`Square`]s occupied.
     #[inline(always)]
-    pub fn occupied(&self) -> Bitboard {
+    pub const fn occupied(&self) -> Bitboard {
         self.board.occupied()
     }
 
     /// [`Square`]s occupied by pieces of a [`Color`].
     #[inline(always)]
-    pub fn by_color(&self, side: Color) -> Bitboard {
+    pub const fn by_color(&self, side: Color) -> Bitboard {
         self.board.by_color(side)
     }
 
     /// [`Square`]s occupied by pieces of a [`Role`].
     #[inline(always)]
-    pub fn by_role(&self, role: Role) -> Bitboard {
+    pub const fn by_role(&self, role: Role) -> Bitboard {
         self.board.by_role(role)
     }
 
     /// [`Square`]s occupied by a [`Piece`].
     #[inline(always)]
-    pub fn by_piece(&self, piece: Piece) -> Bitboard {
+    pub const fn by_piece(&self, piece: Piece) -> Bitboard {
         self.board.by_piece(piece)
     }
 
     /// [`Square`]s occupied by pawns of a [`Color`].
     #[inline(always)]
-    pub fn pawns(&self, side: Color) -> Bitboard {
+    pub const fn pawns(&self, side: Color) -> Bitboard {
         self.by_piece(Piece::new(Role::Pawn, side))
+    }
+
+    /// The [`Color`] of the [`Piece`] on the given [`Square`], if any.
+    #[inline(always)]
+    pub const fn color_on(&self, sq: Square) -> Option<Color> {
+        self.board.color_on(sq)
+    }
+
+    /// The [`Role`] of the [`Piece`] on the given [`Square`], if any.
+    #[inline(always)]
+    pub const fn role_on(&self, sq: Square) -> Option<Role> {
+        self.board.role_on(sq)
+    }
+
+    /// The [`Piece`] on the given [`Square`], if any.
+    #[inline(always)]
+    pub const fn piece_on(&self, sq: Square) -> Option<Piece> {
+        self.board.piece_on(sq)
+    }
+
+    /// This position's [zobrist hashes](`Zobrists`)
+    #[inline(always)]
+    pub const fn zobrists(&self) -> &Zobrists {
+        &self.zobrists
+    }
+
+    /// [`Square`]s occupied by [`Piece`]s giving check.
+    #[inline(always)]
+    pub const fn checkers(&self) -> Bitboard {
+        self.checkers
+    }
+
+    /// [`Square`]s occupied by pinned [`Piece`]s .
+    #[inline(always)]
+    pub const fn pinned(&self) -> Bitboard {
+        self.pinned
+    }
+
+    /// [`Square`]s threatened by opponent's [`Piece`]s .
+    #[inline(always)]
+    pub const fn threats(&self) -> Bitboard {
+        self.threats
     }
 
     /// [`Square`] occupied by a the king of a [`Color`].
@@ -415,52 +459,10 @@ impl Position {
         self.board.king(side).assume()
     }
 
-    /// The [`Color`] of the [`Piece`] on the given [`Square`], if any.
-    #[inline(always)]
-    pub fn color_on(&self, sq: Square) -> Option<Color> {
-        self.board.color_on(sq)
-    }
-
-    /// The [`Role`] of the [`Piece`] on the given [`Square`], if any.
-    #[inline(always)]
-    pub fn role_on(&self, sq: Square) -> Option<Role> {
-        self.board.role_on(sq)
-    }
-
-    /// The [`Piece`] on the given [`Square`], if any.
-    #[inline(always)]
-    pub fn piece_on(&self, sq: Square) -> Option<Piece> {
-        self.board.piece_on(sq)
-    }
-
     /// An iterator over all [`Piece`]s on the board.
     #[inline(always)]
     pub fn iter(&self) -> impl Iterator<Item = (Piece, Square)> {
         self.board.iter()
-    }
-
-    /// This position's [zobrist hashes](`Zobrists`)
-    #[inline(always)]
-    pub fn zobrists(&self) -> &Zobrists {
-        &self.zobrists
-    }
-
-    /// [`Square`]s occupied by [`Piece`]s giving check.
-    #[inline(always)]
-    pub fn checkers(&self) -> Bitboard {
-        self.checkers
-    }
-
-    /// [`Square`]s occupied by pinned [`Piece`]s .
-    #[inline(always)]
-    pub fn pinned(&self) -> Bitboard {
-        self.pinned
-    }
-
-    /// [`Square`]s threatened by opponent's [`Piece`]s .
-    #[inline(always)]
-    pub fn threats(&self) -> Bitboard {
-        self.threats
     }
 
     /// How many other times this position has repeated.
@@ -490,9 +492,35 @@ impl Position {
         false
     }
 
+    /// Whether the game is a draw by the 50-move rule.
+    #[inline(always)]
+    pub const fn is_draw_by_50_move_rule(&self) -> bool {
+        self.halfmoves() >= 100
+    }
+
+    /// Whether this position has insufficient material.
+    #[inline(always)]
+    pub const fn is_material_insufficient(&self) -> bool {
+        use {Piece::*, Role::*};
+        match self.occupied().len() {
+            2 => true,
+            3 => self.by_role(Bishop) | self.by_role(Knight) != Bitboard::empty(),
+            4 => {
+                let wb = self.by_piece(WhiteBishop);
+                let bb = self.by_piece(BlackBishop);
+
+                let dark = Bitboard::dark();
+                let light = Bitboard::light();
+
+                !(light.intersection(wb).is_empty() || light.intersection(bb).is_empty())
+                    || !(dark.intersection(wb).is_empty() || dark.intersection(bb).is_empty())
+            }
+            _ => false,
+        }
+    }
     /// Whether this position is a check.
     #[inline(always)]
-    pub fn is_check(&self) -> bool {
+    pub const fn is_check(&self) -> bool {
         !self.checkers().is_empty()
     }
 
@@ -512,33 +540,6 @@ impl Position {
     #[inline(always)]
     pub fn is_draw_by_repetition(&self) -> bool {
         self.repetitions() > 0
-    }
-
-    /// Whether the game is a draw by the 50-move rule.
-    #[inline(always)]
-    pub fn is_draw_by_50_move_rule(&self) -> bool {
-        self.halfmoves() >= 100
-    }
-
-    /// Whether this position has insufficient material.
-    #[inline(always)]
-    pub fn is_material_insufficient(&self) -> bool {
-        use {Piece::*, Role::*};
-        match self.occupied().len() {
-            2 => true,
-            3 => self.by_role(Bishop) | self.by_role(Knight) != Bitboard::empty(),
-            4 => {
-                let wb = self.by_piece(WhiteBishop);
-                let bb = self.by_piece(BlackBishop);
-
-                let dark = Bitboard::dark();
-                let light = Bitboard::light();
-
-                !(light.intersection(wb).is_empty() || light.intersection(bb).is_empty())
-                    || !(dark.intersection(wb).is_empty() || dark.intersection(bb).is_empty())
-            }
-            _ => false,
-        }
     }
 
     /// The [`Outcome`] of the game in case this position is final.
@@ -722,7 +723,6 @@ impl Position {
     }
 
     /// Play a [`Move`].
-    #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn play(&mut self, m: Move) {
         debug_assert!(self.is_legal(m), "{self} {m}");
@@ -803,7 +803,6 @@ impl Position {
     }
 
     /// Play a null-move.
-    #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn pass(&mut self) {
         debug_assert!(!self.is_check());
@@ -853,7 +852,8 @@ impl Display for Position {
 }
 
 /// The reason why parsing the FEN string failed.
-#[derive(Debug, Display, Clone, Eq, PartialEq, Error, From)]
+#[derive(Debug, Display, Error, From)]
+#[derive_const(Clone, Eq, PartialEq)]
 pub enum ParsePositionError {
     #[display("failed to parse position")]
     InvalidFen(ParseFenError),

@@ -18,8 +18,7 @@ pub struct Transformer {
 impl Transformer {
     /// Refreshes `accumulator`.
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn refresh(&self, accumulator: &mut Aligned<[i16; N]>) {
+    pub const fn refresh(&self, accumulator: &mut Aligned<[i16; N]>) {
         *accumulator = self.bias;
     }
 

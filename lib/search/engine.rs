@@ -28,7 +28,8 @@ fn convolve<const N: usize>(data: [(f32, &[f32]); N]) -> f32 {
     acc.iter().sum()
 }
 
-#[derive(Debug, Display, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Error)]
+#[derive(Debug, Display, Copy, Hash, Error)]
+#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[display("the search was interrupted")]
 struct Interrupted;
 
@@ -66,6 +67,7 @@ struct Stack {
 }
 
 impl Stack {
+    #[inline(always)]
     fn new(pos: Evaluator, pv: Pv) -> Self {
         Self {
             pv,
@@ -443,6 +445,7 @@ impl<'a> Searcher<'a> {
     }
 
     #[must_use]
+    #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn next(&mut self, m: Option<Move>) -> RecursionGuard<'_, 'a> {
         self.stack.replies[self.stack.pos.ply().cast::<usize>()] = m.map(|m| {
@@ -486,6 +489,7 @@ impl<'a> Searcher<'a> {
     }
 
     /// The principal variation search.
+    #[inline(always)]
     fn pvs<const IS_PV: bool, const N: usize>(
         &mut self,
         mut depth: Depth,
@@ -806,6 +810,7 @@ impl<'a> Searcher<'a> {
     }
 
     /// The root of the principal variation search.
+    #[inline(always)]
     fn root(
         &mut self,
         moves: &mut Moves,
@@ -907,7 +912,9 @@ impl<'a> Searcher<'a> {
     }
 
     /// An implementation of aspiration windows with iterative deepening.
+    #[inline(always)]
     fn aw(&mut self, mut moves: Moves) -> impl Iterator<Item = Info> {
+        #[inline(always)]
         gen move {
             for depth in Depth::iter() {
                 let mut reduction = 0.;
@@ -963,6 +970,7 @@ pub struct Search<'e, 'p> {
 }
 
 impl<'e, 'p> Search<'e, 'p> {
+    #[inline(always)]
     fn new(engine: &'e mut Engine, pos: &'p mut Evaluator, limits: Limits) -> Self {
         Search {
             pv: Pv::empty(Score::lower()),
@@ -990,6 +998,7 @@ impl<'e, 'p> Search<'e, 'p> {
 }
 
 impl<'e, 'p> Drop for Search<'e, 'p> {
+    #[inline(always)]
     fn drop(&mut self) {
         if let Some(t) = self.task.take() {
             self.abort();
@@ -999,6 +1008,7 @@ impl<'e, 'p> Drop for Search<'e, 'p> {
 }
 
 impl<'e, 'p> FusedStream for Pin<&mut Search<'e, 'p>> {
+    #[inline(always)]
     fn is_terminated(&self) -> bool {
         self.channel
             .as_ref()

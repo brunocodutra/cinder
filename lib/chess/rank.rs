@@ -5,7 +5,8 @@ use std::fmt::{self, Formatter, Write};
 use std::{ops::Sub, str::FromStr};
 
 /// A row on the chess board.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(i8)]
 pub enum Rank {
@@ -22,7 +23,7 @@ pub enum Rank {
 impl Rank {
     /// Returns a [`Bitboard`] that only contains this rank.
     #[inline(always)]
-    pub fn bitboard(self) -> Bitboard {
+    pub const fn bitboard(self) -> Bitboard {
         Bitboard::new(0x000000000000FF << (self.get() * 8))
     }
 }
@@ -51,7 +52,7 @@ impl const Transpose for Rank {
     }
 }
 
-impl Sub for Rank {
+impl const Sub for Rank {
     type Output = i8;
 
     #[inline(always)]
@@ -67,7 +68,8 @@ impl Display for Rank {
 }
 
 /// The reason why parsing [`Rank`] failed.
-#[derive(Debug, Display, Clone, Eq, PartialEq, Error)]
+#[derive(Debug, Display, Error)]
+#[derive_const(Default, Clone, Eq, PartialEq)]
 #[display("failed to parse rank")]
 pub struct ParseRankError;
 

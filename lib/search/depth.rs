@@ -1,7 +1,8 @@
 use crate::util::{Assume, Binary, Bits, Bounded, Int};
 use bytemuck::{Pod, Zeroable};
 
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable, Pod)]
+#[derive(Debug, Copy, Hash, Zeroable, Pod)]
+#[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct DepthRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <DepthRepr as Int>::Repr);

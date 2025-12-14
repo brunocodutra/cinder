@@ -329,7 +329,8 @@ mod tests {
     use super::*;
     use test_strategy::{Arbitrary, proptest};
 
-    #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Arbitrary)]
+    #[derive(Debug, Copy, Hash, Arbitrary)]
+    #[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
     #[repr(u16)]
     enum Digit {
         One = 1,

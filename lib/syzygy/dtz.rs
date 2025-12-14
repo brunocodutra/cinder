@@ -1,11 +1,11 @@
 use crate::syzygy::Wdl;
 use crate::util::{Binary, Bits, Bounded, Int};
 use bytemuck::Zeroable;
-use derive_more::with_trait::{Constructor, Neg};
+use derive_more::with_trait::Constructor;
+use std::ops::Neg;
 
-#[derive(
-    Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Constructor, Neg, Zeroable,
-)]
+#[derive(Debug, Copy, Hash, Constructor, Zeroable)]
+#[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct DtzRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <DtzRepr as Int>::Repr);
@@ -34,7 +34,7 @@ pub type Dtz = Bounded<DtzRepr>;
 impl Dtz {
     /// Increases the absolute non-zero value by `plies`.
     #[inline(always)]
-    pub fn stretch(self, plies: u16) -> Dtz {
+    pub const fn stretch(self, plies: u16) -> Dtz {
         self + self.signum() as i32 * plies as i32
     }
 }
@@ -48,7 +48,7 @@ impl Dtz {
 /// | Draw         | 0    |
 /// | Cursed win   | 101  |
 /// | Win          | 1    |
-impl From<Wdl> for Dtz {
+impl const From<Wdl> for Dtz {
     #[inline(always)]
     fn from(wdl: Wdl) -> Self {
         match wdl {
@@ -58,6 +58,15 @@ impl From<Wdl> for Dtz {
             Wdl::CursedWin => Dtz::new(101),
             Wdl::Win => Dtz::new(1),
         }
+    }
+}
+
+impl Neg for DtzRepr {
+    type Output = Self;
+
+    #[inline(always)]
+    fn neg(self) -> Self::Output {
+        Self(self.0.neg())
     }
 }
 

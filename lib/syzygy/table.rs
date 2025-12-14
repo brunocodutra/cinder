@@ -7,7 +7,8 @@ use derive_more::with_trait::Deref;
 use std::{hint::unreachable_unchecked, io, marker::PhantomData, path::Path};
 
 /// Metric stored in a table: WDL or DTZ.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq)]
 pub enum Metric {
     /// WDL<sub>50</sub>.
     Wdl,
@@ -37,7 +38,8 @@ impl TableDescriptor for Dtz {
 }
 
 /// Table layout flags.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Deref)]
+#[derive(Debug, Copy, Hash, Deref)]
+#[derive_const(Clone, Eq, PartialEq)]
 #[repr(transparent)]
 struct Layout(Bits<u8, 8>);
 
@@ -53,7 +55,8 @@ impl Layout {
 }
 
 /// Sub-table format flags.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Deref)]
+#[derive(Debug, Copy, Hash, Deref)]
+#[derive_const(Clone, Eq, PartialEq)]
 #[repr(transparent)]
 struct Flag(Bits<u8, 8>);
 

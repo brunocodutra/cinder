@@ -3,7 +3,8 @@ use derive_more::with_trait::Display;
 use std::ops::Not;
 
 /// The color of a chess [`Piece`][`crate::chess::Piece`].
-#[derive(Debug, Display, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Display, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(u8)]
 pub enum Color {
@@ -38,14 +39,14 @@ impl const Not for Color {
     }
 }
 
-impl From<bool> for Color {
+impl const From<bool> for Color {
     #[inline(always)]
     fn from(b: bool) -> Self {
         Int::new(b as _)
     }
 }
 
-impl From<Color> for bool {
+impl const From<Color> for bool {
     #[inline(always)]
     fn from(c: Color) -> Self {
         c == Color::Black

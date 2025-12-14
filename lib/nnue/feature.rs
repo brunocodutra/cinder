@@ -2,7 +2,8 @@ use crate::chess::{Color, File, Perspective, Piece, Side, Square};
 use crate::util::Int;
 
 /// The king's bucket.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct Bucket(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Bucket as Int>::Repr);
@@ -18,7 +19,8 @@ unsafe impl const Int for Bucket {
 }
 
 /// A bucketed feature set with horizontal mirroring.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct Feature(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Feature as Int>::Repr);
@@ -35,8 +37,7 @@ impl Feature {
 
     /// Constructs a [`Feature`].
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn new(side: Color, ksq: Square, piece: Piece, sq: Square) -> Self {
+    pub const fn new(side: Color, ksq: Square, piece: Piece, sq: Square) -> Self {
         let chirality = Side::from(ksq.file() < File::E);
         let bucket = Self::bucket(side, ksq.perspective(chirality)).cast::<u16>();
         let psq = 64 * piece.perspective(side).cast::<u16>()
@@ -47,8 +48,7 @@ impl Feature {
 
     /// Constructs a [`Feature`].
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn bucket(side: Color, ksq: Square) -> Bucket {
+    pub const fn bucket(side: Color, ksq: Square) -> Bucket {
         #[rustfmt::skip]
         const BUCKETS: [u8; 64] = [
             16, 17, 18, 19,  3,  2,  1,  0,

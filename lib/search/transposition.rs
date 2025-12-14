@@ -18,7 +18,7 @@ impl ScoreBound {
     // Constructs a [`ScoreBound`] normalized to [`Ply`].
     #[track_caller]
     #[inline(always)]
-    pub fn new(bounds: Range<Score>, score: Score, ply: Ply) -> Self {
+    pub const fn new(bounds: Range<Score>, score: Score, ply: Ply) -> Self {
         (bounds.start < bounds.end).assume();
 
         if score >= bounds.end {
@@ -32,7 +32,7 @@ impl ScoreBound {
 
     // The score bound.
     #[inline(always)]
-    pub fn bound(&self, ply: Ply) -> Score {
+    pub const fn bound(&self, ply: Ply) -> Score {
         match *self {
             ScoreBound::Lower(s) | ScoreBound::Upper(s) | ScoreBound::Exact(s) => {
                 s.relative_to_ply(ply)
@@ -42,7 +42,7 @@ impl ScoreBound {
 
     /// A lower bound for the score normalized to [`Ply`].
     #[inline(always)]
-    pub fn lower(&self, ply: Ply) -> Score {
+    pub const fn lower(&self, ply: Ply) -> Score {
         match *self {
             ScoreBound::Upper(_) => Score::mated(ply),
             _ => self.bound(ply),
@@ -51,7 +51,7 @@ impl ScoreBound {
 
     /// An upper bound for the score normalized to [`Ply`].
     #[inline(always)]
-    pub fn upper(&self, ply: Ply) -> Score {
+    pub const fn upper(&self, ply: Ply) -> Score {
         match *self {
             ScoreBound::Lower(_) => Score::mating(ply),
             _ => self.bound(ply),
@@ -60,12 +60,12 @@ impl ScoreBound {
 
     /// The score range normalized to [`Ply`].
     #[inline(always)]
-    pub fn range(&self, ply: Ply) -> RangeInclusive<Score> {
+    pub const fn range(&self, ply: Ply) -> RangeInclusive<Score> {
         self.lower(ply)..=self.upper(ply)
     }
 }
 
-impl Binary for ScoreBound {
+impl const Binary for ScoreBound {
     type Bits = Bits<u16, { 2 + <Score as Binary>::Bits::BITS }>;
 
     #[inline(always)]
@@ -157,7 +157,7 @@ impl Transposition {
     }
 }
 
-impl Binary for Transposition {
+impl const Binary for Transposition {
     type Bits = Bits<u64, { Self::BITS }>;
 
     #[inline(always)]

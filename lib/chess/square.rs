@@ -79,7 +79,7 @@ impl Transpose for Square {
     }
 }
 
-impl Binary for Square {
+impl const Binary for Square {
     type Bits = Bits<u8, 6>;
 
     #[inline(always)]

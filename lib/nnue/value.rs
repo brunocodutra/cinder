@@ -23,7 +23,7 @@ impl Flip for Value {
     }
 }
 
-impl Binary for Value {
+impl const Binary for Value {
     type Bits = Bits<u16, 13>;
 
     #[inline(always)]

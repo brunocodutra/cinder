@@ -122,7 +122,7 @@ impl<T: Stat> Stat for NonNull<T> {
 #[repr(transparent)]
 pub struct Graviton<const MIN: i16, const MAX: i16>(i16);
 
-unsafe impl<const MIN: i16, const MAX: i16> Int for Graviton<MIN, MAX> {
+unsafe impl<const MIN: i16, const MAX: i16> const Int for Graviton<MIN, MAX> {
     type Repr = i16;
     const MIN: Self::Repr = MIN;
     const MAX: Self::Repr = MAX;

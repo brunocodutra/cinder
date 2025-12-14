@@ -6,7 +6,7 @@ use bytemuck::{Pod, Zeroable};
 #[repr(transparent)]
 pub struct DepthRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <DepthRepr as Int>::Repr);
 
-unsafe impl Int for DepthRepr {
+unsafe impl const Int for DepthRepr {
     type Repr = i8;
 
     const MIN: Self::Repr = 0;

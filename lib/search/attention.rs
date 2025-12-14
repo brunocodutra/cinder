@@ -9,7 +9,7 @@ use derive_more::with_trait::Debug;
 #[repr(transparent)]
 pub struct Nodes(usize);
 
-unsafe impl Int for Nodes {
+unsafe impl const Int for Nodes {
     type Repr = usize;
 }
 

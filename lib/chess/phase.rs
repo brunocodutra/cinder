@@ -10,7 +10,7 @@ impl Phase {
     pub const LEN: usize = Phase::MAX as usize + 1;
 }
 
-unsafe impl Int for Phase {
+unsafe impl const Int for Phase {
     type Repr = u8;
     const MIN: Self::Repr = 0;
     const MAX: Self::Repr = 7;

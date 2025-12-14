@@ -1,6 +1,7 @@
 use crate::util::{Int, Unsigned, ones, zero};
 use bytemuck::{Pod, Zeroable};
 use derive_more::with_trait::{Debug, *};
+use std::marker::Destruct;
 use std::ops::{Bound, Not, RangeBounds};
 
 #[cfg(test)]
@@ -37,13 +38,13 @@ use std::ops::RangeInclusive;
 #[repr(transparent)]
 pub struct Bits<T, const W: u32>(#[cfg_attr(test, strategy(zero()..=ones(W)))] T);
 
-unsafe impl<T: Unsigned + 'static, const W: u32> Int for Bits<T, W> {
+unsafe impl<T: [const] Unsigned + 'static, const W: u32> const Int for Bits<T, W> {
     type Repr = T;
     const MIN: Self::Repr = zero();
     const MAX: Self::Repr = ones(W);
 }
 
-impl<T: Unsigned, const W: u32> Bits<T, W> {
+impl<T: const Unsigned, const W: u32> Bits<T, W> {
     /// The bit width.
     pub const BITS: u32 = const {
         assert!(size_of::<T>() * 8 >= W as usize);
@@ -52,13 +53,13 @@ impl<T: Unsigned, const W: u32> Bits<T, W> {
 
     /// Whether this is a superset of `bits`.
     #[inline(always)]
-    pub fn contains(&self, bits: &Self) -> bool {
-        *self & *bits == *bits
+    pub const fn contains(&self, bits: &Self) -> bool {
+        self.get() & bits.get() == bits.get()
     }
 
     /// Returns a slice of bits.
     #[inline(always)]
-    pub fn slice<R: RangeBounds<u32>>(&self, r: R) -> Self {
+    pub const fn slice<R: [const] Destruct + [const] RangeBounds<u32>>(&self, r: R) -> Self {
         let a = match r.start_bound() {
             Bound::Included(&i) => i,
             Bound::Excluded(&i) => i + 1,
@@ -76,13 +77,13 @@ impl<T: Unsigned, const W: u32> Bits<T, W> {
 
     /// Shifts bits into the collection.
     #[inline(always)]
-    pub fn push<U: Unsigned, const N: u32>(&mut self, bits: Bits<U, N>) {
+    pub const fn push<U: [const] Unsigned, const N: u32>(&mut self, bits: Bits<U, N>) {
         *self = Bits::new((self.get() << N.cast()) & ones(W) ^ bits.cast());
     }
 
     /// Shifts bits out of the collection.
     #[inline(always)]
-    pub fn pop<U: Unsigned, const N: u32>(&mut self) -> Bits<U, N> {
+    pub const fn pop<U: [const] Unsigned, const N: u32>(&mut self) -> Bits<U, N> {
         let bits = Bits::new(self.cast::<U>() & ones(N));
         *self = Bits::new(self.get() >> N.cast());
         bits

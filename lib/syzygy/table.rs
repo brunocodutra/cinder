@@ -41,7 +41,7 @@ impl TableDescriptor for Dtz {
 #[repr(transparent)]
 struct Layout(Bits<u8, 8>);
 
-unsafe impl Int for Layout {
+unsafe impl const Int for Layout {
     type Repr = u8;
 }
 
@@ -57,7 +57,7 @@ impl Layout {
 #[repr(transparent)]
 struct Flag(Bits<u8, 8>);
 
-unsafe impl Int for Flag {
+unsafe impl const Int for Flag {
     type Repr = u8;
 }
 

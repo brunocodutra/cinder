@@ -14,7 +14,7 @@ use std::{cmp::Ordering, mem::size_of, num::Saturating as S, str::FromStr};
 #[repr(transparent)]
 pub struct Bounded<T>(T);
 
-unsafe impl<T: Int<Repr: Signed>> Int for Bounded<T> {
+unsafe impl<T: Int<Repr: [const] Signed>> const Int for Bounded<T> {
     type Repr = T::Repr;
     const MIN: Self::Repr = T::MIN;
     const MAX: Self::Repr = T::MAX;
@@ -211,7 +211,7 @@ mod tests {
     #[repr(transparent)]
     struct Asymmetric(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as Int>::Repr);
 
-    unsafe impl Int for Asymmetric {
+    unsafe impl const Int for Asymmetric {
         type Repr = i16;
         const MIN: Self::Repr = -89;
         const MAX: Self::Repr = 131;

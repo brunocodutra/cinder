@@ -13,7 +13,7 @@ use proptest::strategy::LazyJust;
 #[repr(transparent)]
 pub struct HashSize(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] usize);
 
-unsafe impl Int for HashSize {
+unsafe impl const Int for HashSize {
     type Repr = usize;
 
     const MIN: Self::Repr = 0;
@@ -72,7 +72,7 @@ impl FromStr for HashSize {
 #[repr(transparent)]
 pub struct ThreadCount(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] u16);
 
-unsafe impl Int for ThreadCount {
+unsafe impl const Int for ThreadCount {
     type Repr = u16;
 
     const MIN: Self::Repr = 1;

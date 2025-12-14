@@ -7,7 +7,7 @@ use bytemuck::{Pod, Zeroable};
 #[repr(transparent)]
 pub struct ValueRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <ValueRepr as Int>::Repr);
 
-unsafe impl Int for ValueRepr {
+unsafe impl const Int for ValueRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
     const MAX: Self::Repr = 3839;

@@ -26,7 +26,7 @@ impl<T: Unsigned, const W: u32> Binary for Bits<T, W> {
     }
 }
 
-impl<T: Binary<Bits: Default + Eq>> Binary for Option<T> {
+impl<T: Binary<Bits: Default + Eq + Int>> Binary for Option<T> {
     type Bits = T::Bits;
 
     #[inline(always)]

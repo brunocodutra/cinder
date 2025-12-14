@@ -11,7 +11,7 @@ impl Bucket {
     pub const LEN: usize = Self::MAX as usize + 1;
 }
 
-unsafe impl Int for Bucket {
+unsafe impl const Int for Bucket {
     type Repr = u8;
     const MIN: Self::Repr = 0;
     const MAX: Self::Repr = 31;
@@ -23,7 +23,7 @@ unsafe impl Int for Bucket {
 #[repr(transparent)]
 pub struct Feature(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Feature as Int>::Repr);
 
-unsafe impl Int for Feature {
+unsafe impl const Int for Feature {
     type Repr = u16;
     const MIN: Self::Repr = 0;
     const MAX: Self::Repr = Self::LEN as Self::Repr - 1;

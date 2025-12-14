@@ -7,7 +7,12 @@
 #![feature(
     adt_const_params,
     const_cmp,
+    const_default,
+    const_destruct,
     const_index,
+    const_ops,
+    const_option_ops,
+    const_range,
     const_result_unwrap_unchecked,
     const_trait_impl,
     coverage_attribute,

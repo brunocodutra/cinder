@@ -13,7 +13,7 @@ pub enum Color {
     Black,
 }
 
-unsafe impl Int for Color {
+unsafe impl const Int for Color {
     type Repr = u8;
     const MIN: Self::Repr = Color::White as _;
     const MAX: Self::Repr = Color::Black as _;

@@ -31,7 +31,7 @@ pub enum Side {
     Right,
 }
 
-unsafe impl Int for Side {
+unsafe impl const Int for Side {
     type Repr = u8;
     const MIN: Self::Repr = Side::Left as _;
     const MAX: Self::Repr = Side::Right as _;

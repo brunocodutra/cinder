@@ -1,6 +1,7 @@
 use crate::util::{Assume, Float};
 use bytemuck::{Pod, Zeroable, zeroed};
 use std::fmt::{Binary, Debug, LowerHex, Octal, UpperHex};
+use std::marker::Destruct;
 use std::{cmp::Ordering, hash::Hash, hint::unreachable_unchecked, mem::transmute_copy};
 use std::{num::*, ops::*};
 
@@ -9,9 +10,9 @@ use std::{num::*, ops::*};
 /// # Safety
 ///
 /// Must only be implemented for types that can be safely transmuted to and from [`Int::Repr`].
-pub unsafe trait Int: 'static + Send + Sync + Copy {
+pub const unsafe trait Int: 'static + Send + Sync + Copy {
     /// The primitive integer representation.
-    type Repr: IntRepr;
+    type Repr: [const] IntRepr;
 
     /// The minimum repr.
     const MIN: Self::Repr = <Self::Repr as Int>::MIN;
@@ -74,21 +75,21 @@ pub unsafe trait Int: 'static + Send + Sync + Copy {
     /// Casts to [`Float`].
     #[track_caller]
     #[inline(always)]
-    fn to_float<F: Float>(self) -> F {
+    fn to_float<F: [const] Float>(self) -> F {
         self.get().to_float()
     }
 
     /// Converts to another [`Int`], if not out of range.
     #[track_caller]
     #[inline(always)]
-    fn convert<I: Int>(self) -> Option<I> {
+    fn convert<I: [const] Int>(self) -> Option<I> {
         self.get().convert()
     }
 
     /// Converts to another [`Int`] with saturation.
     #[track_caller]
     #[inline(always)]
-    fn saturate<I: Int>(self) -> I {
+    fn saturate<I: [const] Int>(self) -> I {
         let min = I::MIN.convert().unwrap_or(Self::MIN);
         let max = I::MAX.convert().unwrap_or(Self::MAX);
         I::new(self.get().clamp(min, max).cast::<I::Repr>())
@@ -97,11 +98,49 @@ pub unsafe trait Int: 'static + Send + Sync + Copy {
     /// An iterator over all values in the range [`Int::MIN`]..=[`Int::MAX`].
     #[track_caller]
     #[inline(always)]
-    fn iter() -> impl ExactSizeIterator<Item = Self> + DoubleEndedIterator
-    where
-        RangeInclusive<Self::Repr>: ExactSizeIterator<Item = Self::Repr> + DoubleEndedIterator,
-    {
-        (Self::MIN..=Self::MAX).map(Self::new)
+    fn iter() -> Ints<Self> {
+        Ints(Self::MIN..=Self::MAX)
+    }
+}
+
+#[derive(Debug)]
+pub struct Ints<I: Int>(RangeInclusive<I::Repr>);
+
+impl<I: Int> ExactSizeIterator for Ints<I>
+where
+    RangeInclusive<I::Repr>: ExactSizeIterator<Item = I::Repr>,
+{
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<I: Int> Iterator for Ints<I>
+where
+    RangeInclusive<I::Repr>: ExactSizeIterator<Item = I::Repr>,
+{
+    type Item = I;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        Some(I::new(self.0.next()?))
+    }
+
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len(), Some(self.len()))
+    }
+}
+
+impl<I: Int> DoubleEndedIterator for Ints<I>
+where
+    RangeInclusive<I::Repr>: ExactSizeIterator<Item = I::Repr> + DoubleEndedIterator,
+{
+    #[inline(always)]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        Some(I::new(self.0.next_back()?))
     }
 }
 
@@ -119,64 +158,65 @@ pub const fn ones<U: Unsigned>(n: u32) -> U {
 }
 
 /// Marker trait for primitive integers.
-pub trait IntRepr:
-    Int<Repr = Self>
+pub const trait IntRepr:
+    [const] Int<Repr = Self>
     + Debug
     + Binary
     + Octal
     + LowerHex
     + UpperHex
-    + Default
-    + Eq
-    + PartialEq
-    + Ord
-    + PartialOrd
+    + [const] Destruct
+    + [const] Default
+    + [const] Eq
+    + [const] PartialEq
+    + [const] Ord
+    + [const] PartialOrd
     + Hash
     + Zeroable
     + Pod
-    + Add<Output = Self>
-    + AddAssign
-    + Sub<Output = Self>
-    + SubAssign
-    + Mul<Output = Self>
-    + MulAssign
-    + Div<Output = Self>
-    + DivAssign
-    + BitAnd<Output = Self>
-    + BitAndAssign
-    + BitOr<Output = Self>
-    + BitOrAssign
-    + BitXor<Output = Self>
-    + BitXorAssign
-    + Shl<Output = Self>
-    + ShlAssign
-    + Shr<Output = Self>
-    + ShrAssign
-    + Not<Output = Self>
+    + [const] Add<Output = Self>
+    + [const] AddAssign
+    + [const] Sub<Output = Self>
+    + [const] SubAssign
+    + [const] Mul<Output = Self>
+    + [const] MulAssign
+    + [const] Div<Output = Self>
+    + [const] DivAssign
+    + [const] BitAnd<Output = Self>
+    + [const] BitAndAssign
+    + [const] BitOr<Output = Self>
+    + [const] BitOrAssign
+    + [const] BitXor<Output = Self>
+    + [const] BitXorAssign
+    + [const] Shl<Output = Self>
+    + [const] ShlAssign
+    + [const] Shr<Output = Self>
+    + [const] ShrAssign
+    + [const] Not<Output = Self>
 {
     /// This primitive's size in number of bits.
     const BITS: u32;
 }
 
 /// Marker trait for signed primitive integers.
-pub trait Signed: IntRepr {}
+pub const trait Signed: [const] IntRepr {}
 
 /// Marker trait for unsigned primitive integers.
-pub trait Unsigned: IntRepr {}
+pub const trait Unsigned: [const] IntRepr {}
 
-unsafe impl<I: IntRepr> Int for Saturating<I> {
+unsafe impl<I: [const] IntRepr> const Int for Saturating<I> {
     type Repr = I;
     const MIN: Self::Repr = I::MIN;
     const MAX: Self::Repr = I::MAX;
 }
 
-unsafe impl Int for bool {
+unsafe impl const Int for bool {
     type Repr = u8;
     const MIN: Self::Repr = 0x00;
     const MAX: Self::Repr = 0x01;
 }
 
-unsafe impl Int for Ordering {
+unsafe impl const Int for Ordering {
     type Repr = i8;
     const MIN: Self::Repr = Ordering::Less as _;
     const MAX: Self::Repr = Ordering::Greater as _;
@@ -184,7 +224,7 @@ unsafe impl Int for Ordering {
 
 macro_rules! impl_int_for_non_zero {
     ($nz: ty, $repr: ty) => {
-        unsafe impl Int for $nz {
+        unsafe impl const Int for $nz {
             type Repr = $repr;
             const MIN: Self::Repr = Self::MIN.get();
             const MAX: Self::Repr = Self::MAX.get();
@@ -201,11 +241,11 @@ impl_int_for_non_zero!(NonZeroUsize, usize);
 
 macro_rules! impl_int_repr_for {
     ($i: ty) => {
-        impl IntRepr for $i {
+        impl const IntRepr for $i {
             const BITS: u32 = <$i>::BITS;
         }
 
-        unsafe impl Int for $i {
+        unsafe impl const Int for $i {
             type Repr = $i;
 
             const MIN: Self::Repr = <$i>::MIN;
@@ -240,7 +280,7 @@ macro_rules! impl_int_repr_for {
 
             #[track_caller]
             #[inline(always)]
-            fn convert<I: Int>(self) -> Option<I> {
+            fn convert<I: [const] Int>(self) -> Option<I> {
                 let i = self.cast();
 
                 if (I::MIN..=I::MAX).contains(&i)
@@ -259,7 +299,7 @@ macro_rules! impl_int_repr_for {
 macro_rules! impl_signed_for {
     ($i: ty) => {
         impl_int_repr_for!($i);
-        impl Signed for $i {}
+        impl const Signed for $i {}
     };
 }
 
@@ -273,7 +313,7 @@ impl_signed_for!(isize);
 macro_rules! impl_unsigned_for {
     ($i: ty) => {
         impl_int_repr_for!($i);
-        impl Unsigned for $i {}
+        impl const Unsigned for $i {}
     };
 }
 
@@ -303,7 +343,7 @@ mod tests {
         Nine,
     }
 
-    unsafe impl Int for Digit {
+    unsafe impl const Int for Digit {
         type Repr = u16;
         const MIN: Self::Repr = Digit::One as _;
         const MAX: Self::Repr = Digit::Nine as _;

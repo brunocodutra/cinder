@@ -47,7 +47,7 @@ impl Square {
     }
 }
 
-unsafe impl Int for Square {
+unsafe impl const Int for Square {
     type Repr = i8;
     const MIN: Self::Repr = Square::A1 as _;
     const MAX: Self::Repr = Square::H8 as _;

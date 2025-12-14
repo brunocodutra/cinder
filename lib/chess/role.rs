@@ -16,7 +16,7 @@ pub enum Role {
     King,
 }
 
-unsafe impl Int for Role {
+unsafe impl const Int for Role {
     type Repr = u8;
     const MIN: Self::Repr = Role::Pawn as _;
     const MAX: Self::Repr = Role::King as _;

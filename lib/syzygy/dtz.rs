@@ -10,7 +10,7 @@ use derive_more::with_trait::{Constructor, Neg};
 #[repr(transparent)]
 pub struct DtzRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <DtzRepr as Int>::Repr);
 
-unsafe impl Int for DtzRepr {
+unsafe impl const Int for DtzRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
     const MAX: Self::Repr = 1023;

@@ -27,7 +27,7 @@ impl File {
     }
 }
 
-unsafe impl Int for File {
+unsafe impl const Int for File {
     type Repr = i8;
     const MIN: Self::Repr = File::A as _;
     const MAX: Self::Repr = File::H as _;

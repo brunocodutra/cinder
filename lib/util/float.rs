@@ -1,15 +1,15 @@
 use crate::util::{Assume, Int, Signed};
 use bytemuck::{Pod, Zeroable};
-use std::{fmt::Debug, hint::unreachable_unchecked, mem::transmute_copy, ops::*};
+use std::{fmt::Debug, hint::unreachable_unchecked, marker::Destruct, mem::transmute_copy, ops::*};
 
 /// Trait for finite floating point primitive types.
 ///
 /// # Safety
 ///
 /// Must only be implemented for types that can be safely transmuted to and from [`Float::Repr`].
-pub unsafe trait Float: 'static + Send + Sync + Copy {
+pub const unsafe trait Float: 'static + Send + Sync + Copy {
     /// The primitive float representation.
-    type Repr: FloatRepr;
+    type Repr: [const] FloatRepr;
 
     /// The minimum repr.
     const MIN: Self::Repr = <Self::Repr as Float>::MIN;
@@ -52,7 +52,7 @@ pub unsafe trait Float: 'static + Send + Sync + Copy {
     /// Converts to [`Int`] with saturation.
     #[track_caller]
     #[inline(always)]
-    fn to_int<I: Int<Repr: Signed>>(self) -> I {
+    fn to_int<I: [const] Int<Repr: Signed>>(self) -> I {
         self.get().to_int()
     }
 
@@ -67,36 +67,37 @@ pub unsafe trait Float: 'static + Send + Sync + Copy {
 }
 
 /// Marker trait for primitive floats.
-pub trait FloatRepr:
-    Float<Repr = Self>
+pub const trait FloatRepr:
+    [const] Float<Repr = Self>
     + Debug
-    + Default
-    + PartialEq
-    + PartialOrd
+    + [const] Destruct
+    + [const] Default
+    + [const] PartialEq
+    + [const] PartialOrd
     + Zeroable
     + Pod
-    + Add<Output = Self>
-    + AddAssign
-    + Sub<Output = Self>
-    + SubAssign
-    + Mul<Output = Self>
-    + MulAssign
-    + Div<Output = Self>
-    + DivAssign
+    + [const] Add<Output = Self>
+    + [const] AddAssign
+    + [const] Sub<Output = Self>
+    + [const] SubAssign
+    + [const] Mul<Output = Self>
+    + [const] MulAssign
+    + [const] Div<Output = Self>
+    + [const] DivAssign
 {
 }
 
-impl FloatRepr for f32 {}
-impl FloatRepr for f64 {}
+impl const FloatRepr for f32 {}
+impl const FloatRepr for f64 {}
 
-unsafe impl Float for f32 {
+unsafe impl const Float for f32 {
     type Repr = f32;
 
     const MIN: Self::Repr = f32::MIN;
     const MAX: Self::Repr = f32::MAX;
 
     #[inline(always)]
-    fn to_int<I: Int<Repr: Signed>>(self) -> I {
+    fn to_int<I: [const] Int<Repr: Signed>>(self) -> I {
         self.is_finite().assume();
 
         match size_of::<I>() {
@@ -115,14 +116,14 @@ unsafe impl Float for f32 {
     }
 }
 
-unsafe impl Float for f64 {
+unsafe impl const Float for f64 {
     type Repr = f64;
 
     const MIN: Self::Repr = f64::MIN;
     const MAX: Self::Repr = f64::MAX;
 
     #[inline(always)]
-    fn to_int<I: Int<Repr: Signed>>(self) -> I {
+    fn to_int<I: [const] Int<Repr: Signed>>(self) -> I {
         self.is_finite().assume();
 
         match size_of::<I>() {
@@ -150,7 +151,7 @@ mod tests {
     #[repr(transparent)]
     struct Unit(#[strategy(Self::MIN..=Self::MAX)] <Unit as Float>::Repr);
 
-    unsafe impl Float for Unit {
+    unsafe impl const Float for Unit {
         type Repr = f64;
         const MIN: Self::Repr = -1.;
         const MAX: Self::Repr = 1.;

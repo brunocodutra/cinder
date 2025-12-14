@@ -53,7 +53,7 @@ unsafe impl const Int for Square {
     const MAX: Self::Repr = Square::H8 as _;
 }
 
-impl Mirror for Square {
+impl const Mirror for Square {
     /// Horizontally mirrors this square.
     #[inline(always)]
     fn mirror(self) -> Self {
@@ -61,7 +61,7 @@ impl Mirror for Square {
     }
 }
 
-impl Flip for Square {
+impl const Flip for Square {
     /// Flips this square's [`Rank`].
     #[inline(always)]
     fn flip(self) -> Self {
@@ -69,7 +69,7 @@ impl Flip for Square {
     }
 }
 
-impl Transpose for Square {
+impl const Transpose for Square {
     type Transposition = Self;
 
     /// Diagonally flips this square.

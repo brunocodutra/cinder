@@ -1,18 +1,18 @@
 use crate::{chess::Color, util::Int};
 
 /// Trait for types that can be seen from a different perspective.
-pub trait Perspective<T>: Sized {
+pub const trait Perspective<T>: Sized {
     /// This value from `side`'s perspective.
     fn perspective(self, side: T) -> Self;
 }
 
 /// Trait for types that can be seen from the opponent's perspective.
-pub trait Flip: Sized {
+pub const trait Flip: Sized {
     /// This value from the opponent's perspective.
     fn flip(self) -> Self;
 }
 
-impl<T: Flip> Perspective<Color> for T {
+impl<T: [const] Flip> const Perspective<Color> for T {
     #[inline(always)]
     fn perspective(self, side: Color) -> Self {
         match side {
@@ -52,12 +52,12 @@ impl From<Side> for bool {
 }
 
 /// Trait for types that can be horizontally mirrored.
-pub trait Mirror: Sized {
+pub const trait Mirror: Sized {
     /// This value's horizontal mirror.
     fn mirror(self) -> Self;
 }
 
-impl<T: Mirror> Perspective<Side> for T {
+impl<T: [const] Mirror> const Perspective<Side> for T {
     #[inline(always)]
     fn perspective(self, side: Side) -> Self {
         match side {
@@ -68,7 +68,7 @@ impl<T: Mirror> Perspective<Side> for T {
 }
 
 /// Trait for types that can be diagonally transposed.
-pub trait Transpose: Sized {
+pub const trait Transpose: Sized {
     /// This type's diagonal transposition.
     type Transposition;
 

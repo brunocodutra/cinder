@@ -33,7 +33,7 @@ unsafe impl const Int for Rank {
     const MAX: Self::Repr = Rank::Eighth as _;
 }
 
-impl Flip for Rank {
+impl const Flip for Rank {
     /// This rank from the opponent's perspective.
     #[inline(always)]
     fn flip(self) -> Self {
@@ -41,7 +41,7 @@ impl Flip for Rank {
     }
 }
 
-impl Transpose for Rank {
+impl const Transpose for Rank {
     type Transposition = File;
 
     /// This rank's corresponding file.

@@ -136,7 +136,7 @@ impl Score {
     }
 }
 
-impl Flip for Score {
+impl const Flip for Score {
     #[inline(always)]
     fn flip(self) -> Self {
         -self

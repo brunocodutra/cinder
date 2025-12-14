@@ -254,7 +254,7 @@ impl Bitboard {
     }
 }
 
-impl Flip for Bitboard {
+impl const Flip for Bitboard {
     /// Flips all squares in the set.
     #[inline(always)]
     fn flip(self) -> Self {

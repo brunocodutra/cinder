@@ -13,7 +13,6 @@ impl const Assume for bool {
 
     #[track_caller]
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn assume(self) -> Self::Assumed {
         // Definitely not safe, but we'll assume unit tests will catch everything.
         unsafe { assert_unchecked(self) }
@@ -25,7 +24,6 @@ impl<'a, T> const Assume for &'a NonNull<T> {
 
     #[track_caller]
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn assume(self) -> Self::Assumed {
         // Definitely not safe, but we'll assume unit tests will catch everything.
         unsafe { self.as_ref() }
@@ -37,7 +35,6 @@ impl<'a, T> const Assume for &'a mut NonNull<T> {
 
     #[track_caller]
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn assume(self) -> Self::Assumed {
         // Definitely not safe, but we'll assume unit tests will catch everything.
         unsafe { self.as_mut() }
@@ -49,7 +46,6 @@ impl<T> const Assume for Option<T> {
 
     #[track_caller]
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn assume(self) -> Self::Assumed {
         // Definitely not safe, but we'll assume unit tests will catch everything.
         unsafe { self.unwrap_unchecked() }
@@ -61,7 +57,6 @@ impl<T, E> const Assume for Result<T, E> {
 
     #[track_caller]
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn assume(self) -> Self::Assumed {
         // Definitely not safe, but we'll assume unit tests will catch everything.
         unsafe { self.unwrap_unchecked() }

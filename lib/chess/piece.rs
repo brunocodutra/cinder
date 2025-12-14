@@ -6,7 +6,8 @@ use std::fmt::{self, Formatter, Write};
 use std::{cell::SyncUnsafeCell, ops::Shl, str::FromStr};
 
 /// A chess [piece][`Role`] of a certain [`Color`].
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(u8)]
 pub enum Piece {
@@ -26,8 +27,7 @@ pub enum Piece {
 
 impl Piece {
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn forks(wc: Square, color: Color) -> Bitboard {
+    const fn forks(wc: Square, color: Color) -> Bitboard {
         pub static FORKS: SyncUnsafeCell<[[Bitboard; 64]; 2]> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
@@ -49,8 +49,7 @@ impl Piece {
     }
 
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn jumps(wc: Square) -> Bitboard {
+    const fn jumps(wc: Square) -> Bitboard {
         pub static JUMPS: SyncUnsafeCell<[Bitboard; 64]> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
@@ -71,8 +70,7 @@ impl Piece {
     }
 
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn steps(wc: Square) -> Bitboard {
+    const fn steps(wc: Square) -> Bitboard {
         pub static SLIDES: SyncUnsafeCell<[Bitboard; 64]> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
@@ -93,8 +91,7 @@ impl Piece {
     }
 
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn slides(idx: usize) -> Bitboard {
+    const fn slides(idx: usize) -> Bitboard {
         pub static BITBOARDS: SyncUnsafeCell<[Bitboard; 88772]> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
@@ -131,29 +128,25 @@ impl Piece {
 
     /// Constructs [`Piece`] from a pair of [`Color`] and [`Role`].
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn new(r: Role, c: Color) -> Self {
+    pub const fn new(r: Role, c: Color) -> Self {
         Int::new(c.get() | (r.get() << 1))
     }
 
     /// This piece's [`Role`].
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn role(&self) -> Role {
+    pub const fn role(&self) -> Role {
         Int::new(self.get() >> 1)
     }
 
     /// This piece's [`Color`].
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn color(&self) -> Color {
+    pub const fn color(&self) -> Color {
         Int::new(self.get() & 0b1)
     }
 
     /// This piece's possible attacks from a given square.
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn attacks(&self, wc: Square, occupied: Bitboard) -> Bitboard {
+    pub const fn attacks(&self, wc: Square, occupied: Bitboard) -> Bitboard {
         match self.role() {
             Role::Pawn => Self::forks(wc, self.color()),
             Role::Knight => Self::jumps(wc),
@@ -187,8 +180,7 @@ impl Piece {
 
     /// This piece's possible moves from a given square.
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn moves(&self, wc: Square, ours: Bitboard, theirs: Bitboard) -> Bitboard {
+    pub const fn moves(&self, wc: Square, ours: Bitboard, theirs: Bitboard) -> Bitboard {
         let occ = ours ^ theirs;
         if self.role() != Role::Pawn {
             self.attacks(wc, occ) & !ours
@@ -236,7 +228,8 @@ impl Display for Piece {
 }
 
 /// The reason why parsing [`Piece`] failed.
-#[derive(Debug, Display, Clone, Eq, PartialEq, Error)]
+#[derive(Debug, Display, Error)]
+#[derive_const(Default, Clone, Eq, PartialEq)]
 #[display("failed to parse piece")]
 pub struct ParsePieceError;
 

@@ -1,30 +1,30 @@
 use crate::chess::{Bitboard, Square};
 use crate::util::Int;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq)]
 pub struct Magic(Bitboard, u64, usize);
 
 impl Magic {
     #[inline(always)]
-    pub fn mask(&self) -> Bitboard {
+    pub const fn mask(&self) -> Bitboard {
         self.0
     }
 
     #[inline(always)]
-    pub fn factor(&self) -> u64 {
+    pub const fn factor(&self) -> u64 {
         self.1
     }
 
     #[inline(always)]
-    pub fn offset(&self) -> usize {
+    pub const fn offset(&self) -> usize {
         self.2
     }
 
     /// Bishop fixed shift magics by Volker Annuss,
     /// see <http://www.talkchess.com/forum/viewtopic.php?p=727500&t=64790>.
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn bishop(sq: Square) -> Self {
+    pub const fn bishop(sq: Square) -> Self {
         const MAGICS: [Magic; Square::MAX as usize + 1] = [
             Magic(Bitboard::new(0x0040201008040200), 0x007FBFBFBFBFBFFF, 5378),
             Magic(Bitboard::new(0x0000402010080400), 0x0000A060401007FC, 4093),
@@ -98,8 +98,7 @@ impl Magic {
     /// Rook fixed shift magics by Volker Annuss,
     /// see <http://www.talkchess.com/forum/viewtopic.php?p=727500&t=64790>.
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn rook(sq: Square) -> Self {
+    pub const fn rook(sq: Square) -> Self {
         const MAGICS: [Magic; Square::MAX as usize + 1] = [
             Magic(Bitboard::new(0x000101010101017E), 0x00280077FFEBFFFE, 26304),
             Magic(Bitboard::new(0x000202020202027C), 0x2004010201097FFF, 35520),

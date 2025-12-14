@@ -64,7 +64,7 @@ impl<T> Drop for Slice<T> {
     }
 }
 
-impl<T> Deref for Slice<T> {
+impl<T> const Deref for Slice<T> {
     type Target = [T];
 
     #[inline(always)]
@@ -73,7 +73,7 @@ impl<T> Deref for Slice<T> {
     }
 }
 
-impl<T> DerefMut for Slice<T> {
+impl<T> const DerefMut for Slice<T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { slice::from_raw_parts_mut(self.ptr.cast_mut(), self.len) }

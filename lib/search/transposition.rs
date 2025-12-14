@@ -6,7 +6,8 @@ use std::hint::unreachable_unchecked;
 use std::ops::{Range, RangeInclusive};
 
 /// Whether the transposed score is exact or a bound.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub enum ScoreBound {
     Lower(Score),
@@ -97,7 +98,8 @@ impl const Binary for ScoreBound {
 }
 
 /// A partial search result.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Transposition {
     score: ScoreBound,
@@ -114,7 +116,7 @@ impl Transposition {
 
     /// Constructs a [`Transposition`] given a [`ScoreBound`], the [`Depth`] searched, and the best [`Move`].
     #[inline(always)]
-    pub fn new(score: ScoreBound, depth: Depth, best: Option<Move>, was_pv: bool) -> Self {
+    pub const fn new(score: ScoreBound, depth: Depth, best: Option<Move>, was_pv: bool) -> Self {
         Transposition {
             score,
             depth,
@@ -125,31 +127,31 @@ impl Transposition {
 
     /// The score bound.
     #[inline(always)]
-    pub fn score(&self) -> ScoreBound {
+    pub const fn score(&self) -> ScoreBound {
         self.score
     }
 
     /// The depth searched.
     #[inline(always)]
-    pub fn depth(&self) -> Depth {
+    pub const fn depth(&self) -> Depth {
         self.depth
     }
 
     /// Whether this position was ever in the PV.
     #[inline(always)]
-    pub fn was_pv(&self) -> bool {
+    pub const fn was_pv(&self) -> bool {
         self.was_pv
     }
 
     /// The best move.
     #[inline(always)]
-    pub fn best(&self) -> Option<Move> {
+    pub const fn best(&self) -> Option<Move> {
         self.best
     }
 
     /// The principal variation normalized to [`Ply`].
     #[inline(always)]
-    pub fn transpose(&self, ply: Ply) -> Pv<1> {
+    pub const fn transpose(&self, ply: Ply) -> Pv<1> {
         Pv::new(
             self.score.bound(ply),
             self.best.map_or_else(Line::empty, Line::singular),

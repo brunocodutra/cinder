@@ -2,13 +2,14 @@ use crate::chess::{Move, Position};
 use crate::params::Params;
 use crate::search::{Attention, Depth, Limits, Nodes, Ply, Pv};
 use crate::util::{Float, Int};
-use derive_more::with_trait::Deref;
+use std::ops::{Deref, Range};
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-use std::{ops::Range, ptr::NonNull};
 
 /// Controls the search flow.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum ControlFlow {
     /// Continue searching.
     Continue,
@@ -86,9 +87,8 @@ impl GlobalControl {
 }
 
 /// The active search controller.
-#[derive(Debug, Deref)]
+#[derive(Debug)]
 pub struct Active<'a> {
-    #[deref]
     global: &'a GlobalControl,
     attention: Attention,
     peak_depth: Depth,
@@ -166,10 +166,18 @@ impl<'a> Active<'a> {
     }
 }
 
+impl<'a> const Deref for Active<'a> {
+    type Target = GlobalControl;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.global
+    }
+}
+
 /// The passive search controller.
-#[derive(Debug, Deref)]
+#[derive(Debug)]
 pub struct Passive<'a> {
-    #[deref]
     global: &'a GlobalControl,
     nodes: u64,
 }
@@ -196,6 +204,15 @@ impl<'a> Passive<'a> {
     }
 }
 
+impl<'a> const Deref for Passive<'a> {
+    type Target = GlobalControl;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.global
+    }
+}
+
 /// The local search controller.
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -204,8 +221,8 @@ pub enum LocalControl<'a> {
     Passive(Passive<'a>),
 }
 
-impl<'a> Deref for LocalControl<'a> {
-    type Target = &'a GlobalControl;
+impl<'a> const Deref for LocalControl<'a> {
+    type Target = GlobalControl;
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {

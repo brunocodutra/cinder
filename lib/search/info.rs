@@ -1,52 +1,60 @@
 use crate::search::{Depth, Pv};
 use crate::util::Int;
-use derive_more::with_trait::{Constructor, Deref};
-use std::time::Duration;
+use derive_more::with_trait::Constructor;
+use std::{ops::Deref, time::Duration};
 
 /// Information about the search result.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Deref, Constructor)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Constructor)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Info {
     depth: Depth,
     time: Duration,
     nodes: u64,
-    #[deref]
     pv: Pv,
 }
 
 impl Info {
     /// The depth searched.
     #[inline(always)]
-    pub fn depth(&self) -> Depth {
+    pub const fn depth(&self) -> Depth {
         self.depth
     }
 
     /// The duration searched.
     #[inline(always)]
-    pub fn time(&self) -> Duration {
+    pub const fn time(&self) -> Duration {
         self.time
     }
 
     /// The number of nodes searched.
     #[inline(always)]
-    pub fn nodes(&self) -> u64 {
+    pub const fn nodes(&self) -> u64 {
         self.nodes
     }
 
     /// The number of nodes searched per second.
     #[inline(always)]
-    pub fn nps(&self) -> f64 {
-        self.nodes as f64 / self.time().max(Duration::from_nanos(1)).as_secs_f64()
+    pub const fn nps(&self) -> f64 {
+        self.nodes as f64 / self.time().as_secs_f64().max(1E-6)
     }
 
     /// The principal variation.
     #[inline(always)]
-    pub fn pv(&self) -> &Pv {
+    pub const fn pv(&self) -> &Pv {
         &self.pv
     }
 }
 
-impl From<Pv> for Info {
+impl const Deref for Info {
+    type Target = Pv;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.pv()
+    }
+}
+
+impl const From<Pv> for Info {
     #[inline(always)]
     fn from(pv: Pv) -> Self {
         Info::new(Depth::new(0), Duration::ZERO, 0, pv)

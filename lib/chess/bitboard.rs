@@ -1,80 +1,44 @@
 use crate::chess::{Butterfly, File, Flip, Rank, Square};
 use crate::util::{Assume, Int};
 use bytemuck::{Zeroable, zeroed};
-use derive_more::with_trait::{Debug, *};
-use std::cell::SyncUnsafeCell;
+use derive_more::with_trait::{Constructor, Debug};
 use std::fmt::{self, Formatter, Write};
+use std::{cell::SyncUnsafeCell, ops::*};
 
 /// A set of squares on a chess board.
-#[derive(
-    Default,
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    Hash,
-    Zeroable,
-    Constructor,
-    Deref,
-    BitAnd,
-    BitAndAssign,
-    BitOr,
-    BitOrAssign,
-    BitXor,
-    BitXorAssign,
-    Not,
-    Shl,
-    ShlAssign,
-    Shr,
-    ShrAssign,
-)]
+#[derive(Copy, Hash, Zeroable, Constructor)]
+#[derive_const(Default, Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Bitboard(pub u64);
-
-impl Debug for Bitboard {
-    #[coverage(off)]
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_char('\n')?;
-        for rank in Rank::iter().rev() {
-            for file in File::iter() {
-                let sq = Square::new(file, rank);
-                f.write_char(if self.contains(sq) { '■' } else { '◻' })?;
-                f.write_char(if file < File::H { ' ' } else { '\n' })?;
-            }
-        }
-
-        Ok(())
-    }
-}
 
 impl Bitboard {
     /// An empty board.
     #[inline(always)]
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Bitboard::new(0)
     }
 
     /// A full board.
     #[inline(always)]
-    pub fn full() -> Self {
+    pub const fn full() -> Self {
         Bitboard::new(0xFFFFFFFFFFFFFFFF)
     }
 
     /// Border squares.
     #[inline(always)]
-    pub fn border() -> Self {
+    pub const fn border() -> Self {
         Bitboard::new(0xFF818181818181FF)
     }
 
     /// Light squares.
     #[inline(always)]
-    pub fn light() -> Self {
+    pub const fn light() -> Self {
         Bitboard::new(0x55AA55AA55AA55AA)
     }
 
     /// Dark squares.
     #[inline(always)]
-    pub fn dark() -> Self {
+    pub const fn dark() -> Self {
         Bitboard::new(0xAA55AA55AA55AA55)
     }
 
@@ -92,11 +56,13 @@ impl Bitboard {
     /// );
     /// ```
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn fill(sq: Square, steps: &[(i8, i8)], occupied: Bitboard) -> Self {
+    pub const fn fill(sq: Square, steps: &[(i8, i8)], occupied: Bitboard) -> Self {
         let mut bitboard = sq.bitboard();
 
-        for (df, dr) in steps {
+        let mut i = steps.len();
+        while i > 0 {
+            i -= 1;
+            let (df, dr) = steps[i];
             let mut sq = sq;
             while let Some((file, rank)) = Option::zip(
                 (sq.file().get() + df).convert(),
@@ -124,8 +90,7 @@ impl Bitboard {
     /// );
     /// ```
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn line(whence: Square, whither: Square) -> Self {
+    pub const fn line(whence: Square, whither: Square) -> Self {
         pub static LINES: SyncUnsafeCell<Butterfly<Bitboard>> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
@@ -167,8 +132,7 @@ impl Bitboard {
     /// );
     /// ```
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn segment(whence: Square, whither: Square) -> Self {
+    pub const fn segment(whence: Square, whither: Square) -> Self {
         pub static SEGMENTS: SyncUnsafeCell<Butterfly<Bitboard>> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
@@ -195,62 +159,176 @@ impl Bitboard {
 
     /// The number of [`Square`]s in the set.
     #[inline(always)]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.0.count_ones() as _
     }
 
     /// Whether the board is empty.
     #[inline(always)]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Whether this [`Square`] is in the set.
     #[inline(always)]
-    pub fn contains(&self, sq: Square) -> bool {
+    pub const fn contains(&self, sq: Square) -> bool {
         !sq.bitboard().intersection(*self).is_empty()
     }
 
     /// Adds a [`Square`] to this bitboard.
     #[inline(always)]
-    pub fn with(&self, sq: Square) -> Self {
+    pub const fn with(&self, sq: Square) -> Self {
         sq.bitboard().union(*self)
     }
 
     /// Removes a [`Square`]s from this bitboard.
     #[inline(always)]
-    pub fn without(&self, sq: Square) -> Self {
+    pub const fn without(&self, sq: Square) -> Self {
         sq.bitboard().inverse().intersection(*self)
     }
 
     /// The set of [`Square`]s not in this bitboard.
     #[inline(always)]
-    pub fn inverse(&self) -> Self {
+    pub const fn inverse(&self) -> Self {
         Bitboard(!self.0)
     }
 
     /// The set of [`Square`]s in both bitboards.
     #[inline(always)]
-    pub fn intersection(&self, bb: Bitboard) -> Self {
+    pub const fn intersection(&self, bb: Bitboard) -> Self {
         Bitboard(self.0 & bb.0)
     }
 
     /// The set of [`Square`]s in either bitboard.
     #[inline(always)]
-    pub fn union(&self, bb: Bitboard) -> Self {
+    pub const fn union(&self, bb: Bitboard) -> Self {
         Bitboard(self.0 | bb.0)
     }
 
     /// An iterator over the [`Square`]s in this bitboard.
     #[inline(always)]
-    pub fn iter(&self) -> Squares {
+    pub const fn iter(&self) -> Squares {
         Squares::new(*self)
     }
 
     /// An iterator over the subsets of this bitboard.
     #[inline(always)]
-    pub fn subsets(&self) -> Subsets {
+    pub const fn subsets(&self) -> Subsets {
         Subsets::new(*self)
+    }
+}
+
+impl Debug for Bitboard {
+    #[coverage(off)]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_char('\n')?;
+        for rank in Rank::iter().rev() {
+            for file in File::iter() {
+                let sq = Square::new(file, rank);
+                f.write_char(if self.contains(sq) { '■' } else { '◻' })?;
+                f.write_char(if file < File::H { ' ' } else { '\n' })?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl const Deref for Bitboard {
+    type Target = u64;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl const Not for Bitboard {
+    type Output = Self;
+
+    #[inline(always)]
+    fn not(self) -> Self::Output {
+        Self(self.0.not())
+    }
+}
+
+impl const BitAnd for Bitboard {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitand(self, rhs: Self) -> Self::Output {
+        Self(self.0.bitand(rhs.0))
+    }
+}
+
+impl const BitAndAssign for Bitboard {
+    #[inline(always)]
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0.bitand_assign(rhs.0)
+    }
+}
+
+impl const BitOr for Bitboard {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0.bitor(rhs.0))
+    }
+}
+
+impl const BitOrAssign for Bitboard {
+    #[inline(always)]
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0.bitor_assign(rhs.0)
+    }
+}
+
+impl const BitXor for Bitboard {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        Self(self.0.bitxor(rhs.0))
+    }
+}
+
+impl const BitXorAssign for Bitboard {
+    #[inline(always)]
+    fn bitxor_assign(&mut self, rhs: Self) {
+        self.0.bitxor_assign(rhs.0)
+    }
+}
+
+impl const Shl<u32> for Bitboard {
+    type Output = Self;
+
+    #[inline(always)]
+    fn shl(self, rhs: u32) -> Self::Output {
+        Self(self.0.shl(rhs))
+    }
+}
+
+impl const ShlAssign<u32> for Bitboard {
+    #[inline(always)]
+    fn shl_assign(&mut self, rhs: u32) {
+        self.0.shl_assign(rhs)
+    }
+}
+
+impl const Shr<u32> for Bitboard {
+    type Output = Self;
+
+    #[inline(always)]
+    fn shr(self, rhs: u32) -> Self::Output {
+        Self(self.0.shr(rhs))
+    }
+}
+
+impl const ShrAssign<u32> for Bitboard {
+    #[inline(always)]
+    fn shr_assign(&mut self, rhs: u32) {
+        self.0.shr_assign(rhs)
     }
 }
 
@@ -262,21 +340,21 @@ impl const Flip for Bitboard {
     }
 }
 
-impl From<File> for Bitboard {
+impl const From<File> for Bitboard {
     #[inline(always)]
     fn from(f: File) -> Self {
         f.bitboard()
     }
 }
 
-impl From<Rank> for Bitboard {
+impl const From<Rank> for Bitboard {
     #[inline(always)]
     fn from(r: Rank) -> Self {
         r.bitboard()
     }
 }
 
-impl From<Square> for Bitboard {
+impl const From<Square> for Bitboard {
     #[inline(always)]
     fn from(sq: Square) -> Self {
         sq.bitboard()
@@ -332,7 +410,7 @@ pub struct Subsets(u64, Option<u64>);
 
 impl Subsets {
     #[inline(always)]
-    pub fn new(bb: Bitboard) -> Self {
+    pub const fn new(bb: Bitboard) -> Self {
         Self(bb.0, Some(0))
     }
 }

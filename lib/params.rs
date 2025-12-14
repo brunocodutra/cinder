@@ -36,7 +36,6 @@ struct Param<const BYTES: ByteBuffer<32>> {
 impl<const BYTES: ByteBuffer<32>> Param<BYTES> {
     const VALUES: TypedByteBuffer<f32, 32> = unsafe { TypedByteBuffer::from_bytes(BYTES) };
 
-    #[inline(always)]
     pub const fn new() -> Self {
         Self {
             #[cfg(feature = "spsa")]
@@ -67,14 +66,13 @@ impl<const BYTES: ByteBuffer<32>> Param<BYTES> {
     }
 }
 
-impl<const BYTES: ByteBuffer<32>> Default for Param<BYTES> {
-    #[inline(always)]
+impl<const BYTES: ByteBuffer<32>> const Default for Param<BYTES> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const BYTES: ByteBuffer<32>> Deref for Param<BYTES> {
+impl<const BYTES: ByteBuffer<32>> const Deref for Param<BYTES> {
     type Target = [f32];
 
     #[inline(always)]
@@ -156,8 +154,8 @@ macro_rules! params {
 
         $(impl Params {
             /// This parameter's current value.
-            #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-            pub fn $name<R: SliceIndex<[f32]>>(idx: R) -> &'static R::Output {
+            #[inline(always)]
+            pub const fn $name<R: [const] SliceIndex<[f32]>>(idx: R) -> &'static R::Output {
                 unsafe { PARAMS.get().as_ref_unchecked().$name.get_unchecked(idx) }
             }
         })*
@@ -168,7 +166,7 @@ macro_rules! params {
             pub const LEN: usize = len!($($value,)*);
 
             /// Initializes the global params.
-            pub fn init(self) {
+            pub const fn init(self) {
                 unsafe { *PARAMS.get().as_mut_unchecked() = self }
             }
 

@@ -4,7 +4,8 @@ use std::fmt::{self, Formatter, Write};
 use std::str::FromStr;
 
 /// The type of a chess [`Piece`][`crate::chess::Piece`].
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(u8)]
 pub enum Role {
@@ -36,7 +37,8 @@ impl Display for Role {
 }
 
 /// The reason why parsing the piece.
-#[derive(Debug, Display, Clone, Eq, PartialEq, Error)]
+#[derive(Debug, Display, Error)]
+#[derive_const(Default, Clone, Eq, PartialEq)]
 #[display("failed to parse piece")]
 pub struct ParseRoleError;
 

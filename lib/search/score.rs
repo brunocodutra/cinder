@@ -4,7 +4,8 @@ use crate::{chess::Flip, search::Ply};
 use bytemuck::{Pod, Zeroable};
 
 /// Number of [plies][`Ply`] to mate.
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Default, Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub enum Mate {
     #[default]
@@ -15,7 +16,7 @@ pub enum Mate {
 
 impl Mate {
     #[inline(always)]
-    pub fn plies(&self) -> Option<Ply> {
+    pub const fn plies(&self) -> Option<Ply> {
         match *self {
             Mate::None => None,
             Mate::Mating(ply) => Some(ply),
@@ -24,7 +25,8 @@ impl Mate {
     }
 }
 
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Zeroable, Pod)]
+#[derive(Debug, Copy, Hash, Zeroable, Pod)]
+#[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct ScoreRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Score as Int>::Repr);

@@ -10,14 +10,15 @@ use std::{array, hint::unreachable_unchecked, str::FromStr};
 #[cfg(test)]
 use proptest::{prelude::*, sample::*};
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Hash)]
+#[derive_const(Eq, PartialEq)]
 struct CachedAccumulator {
     accumulator: Accumulator,
     pieces: Aligned<[Option<Piece>; Square::MAX as usize + 1]>,
     occupied: Bitboard,
 }
 
-impl Default for CachedAccumulator {
+impl const Default for CachedAccumulator {
     fn default() -> Self {
         let mut cache = CachedAccumulator {
             accumulator: zeroed(),
@@ -30,7 +31,8 @@ impl Default for CachedAccumulator {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq)]
 #[repr(u8)]
 enum Pending {
     Update,
@@ -51,18 +53,17 @@ pub struct Evaluator {
 }
 
 impl Default for Evaluator {
-    #[inline(always)]
     fn default() -> Self {
         Self::new(Position::default())
     }
 }
 
-impl Eq for Evaluator {}
+impl const Eq for Evaluator {}
 
-impl PartialEq for Evaluator {
+impl const PartialEq for Evaluator {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
-        self.deref() == other.deref()
+        self.deref().eq(other)
     }
 }
 
@@ -73,7 +74,7 @@ impl Hash for Evaluator {
     }
 }
 
-impl Deref for Evaluator {
+impl const Deref for Evaluator {
     type Target = Position;
 
     #[inline(always)]
@@ -82,7 +83,7 @@ impl Deref for Evaluator {
     }
 }
 
-impl Index<Ply> for Evaluator {
+impl const Index<Ply> for Evaluator {
     type Output = Position;
 
     #[inline(always)]
@@ -133,98 +134,13 @@ impl Evaluator {
     }
 
     /// The current [`Ply`].
+    #[inline(always)]
     pub fn ply(&self) -> Ply {
         self.ply
     }
 
-    /// Resets the evaluator stack from the current [`Position`].
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn reset(&mut self) {
-        for side in Color::iter() {
-            self.refresh(side);
-        }
-
-        if self.ply > 0 {
-            let idx = self.ply.cast::<usize>();
-            unsafe { self.positions.swap_unchecked(0, idx) };
-            unsafe { self.accumulator.swap_unchecked(0, idx) };
-            self.pending = [[None; Ply::MAX as usize + 1]; 2];
-            self.moves = [None; Ply::MAX as usize];
-            self.ply = Ply::lower();
-        }
-    }
-
-    /// Pushes a [`Position`] into the evaluator stack.
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn push(&mut self, m: Option<Move>) {
-        (self.ply < Ply::MAX).assume();
-
-        let turn = self.turn();
-        let idx = self.ply.cast::<usize>();
-
-        self.ply += 1;
-        self.moves[idx] = m;
-        self.pending[0][idx + 1] = Some(Pending::Update);
-        self.pending[1][idx + 1] = Some(Pending::Update);
-        self.positions[idx + 1] = self.positions[idx].clone();
-
-        match self.moves[idx] {
-            None => self.positions[idx + 1].pass(),
-            Some(m) => {
-                self.positions[idx + 1].play(m);
-                let (wc, wt) = (m.whence(), m.whither());
-                let role = self.positions[idx].role_on(m.whence()).assume();
-                if role == Role::King && Feature::bucket(turn, wc) != Feature::bucket(turn, wt) {
-                    self.pending[turn.cast::<usize>()][idx + 1] = Some(Pending::Refresh)
-                }
-            }
-        }
-    }
-
-    /// Pops a [`Position`] from the evaluator stack.
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn pop(&mut self) {
-        (self.ply > 0).assume();
-        self.ply -= 1;
-    }
-
-    /// Evaluates the [`Position`] at the current [`Ply`].
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn evaluate(&mut self) -> Value {
-        for side in Color::iter() {
-            let mut idx = self.ply.cast::<usize>();
-            if self.pending[side.cast::<usize>()][idx].is_none() {
-                continue;
-            }
-
-            while self.pending[side.cast::<usize>()][idx] == Some(Pending::Update) {
-                idx = idx.checked_sub(1).assume();
-            }
-
-            match self.pending[side.cast::<usize>()][idx] {
-                Some(Pending::Update) => unsafe { unreachable_unchecked() },
-                Some(Pending::Refresh) => self.refresh(side),
-                None => {
-                    for i in idx + 1..=self.ply.cast::<usize>() {
-                        self.update(side, i.convert().assume());
-                    }
-                }
-            }
-        }
-
-        let phase = self.phase();
-        let nn = Nnue::nn(phase);
-
-        let idx = self.ply.cast::<usize>();
-        debug_assert_eq!(self.pending[0][idx], None);
-        debug_assert_eq!(self.pending[1][idx], None);
-
-        let us = self.turn() as usize;
-        let them = self.turn().flip() as usize;
-        nn.forward((&self.accumulator[idx][us], &self.accumulator[idx][them]))
-    }
-
     /// Piece values at this phase of the game.
+    #[inline(always)]
     pub fn piece_values(&self) -> [f32; Role::MAX as usize + 1] {
         let phase = self.phase().cast::<usize>();
 
@@ -239,6 +155,7 @@ impl Evaluator {
     }
 
     /// Estimates the material gain of a move.
+    #[inline(always)]
     pub fn gain(&self, m: Move) -> Value {
         let mut gain = 0.;
 
@@ -261,11 +178,13 @@ impl Evaluator {
     }
 
     /// Whether this move wins the exchange by at least `margin`.
+    #[inline(always)]
     pub fn winning(&self, m: Move, margin: Value) -> bool {
         margin == Value::lower() || self.see(m, margin - 1..margin) == margin
     }
 
     /// Computes the static exchange evaluation.
+    #[inline(always)]
     pub fn see(&self, m: Move, bounds: Range<Value>) -> Value {
         let (mut alpha, mut beta) = (bounds.start, bounds.end);
         let mut score = self.gain(m);
@@ -313,6 +232,95 @@ impl Evaluator {
                 break beta;
             }
         }
+    }
+
+    /// Pushes a [`Position`] into the evaluator stack.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn push(&mut self, m: Option<Move>) {
+        (self.ply < Ply::MAX).assume();
+
+        let turn = self.turn();
+        let idx = self.ply.cast::<usize>();
+
+        self.ply += 1;
+        self.moves[idx] = m;
+        self.pending[0][idx + 1] = Some(Pending::Update);
+        self.pending[1][idx + 1] = Some(Pending::Update);
+        self.positions[idx + 1] = self.positions[idx].clone();
+
+        match self.moves[idx] {
+            None => self.positions[idx + 1].pass(),
+            Some(m) => {
+                self.positions[idx + 1].play(m);
+                let (wc, wt) = (m.whence(), m.whither());
+                let role = self.positions[idx].role_on(m.whence()).assume();
+                if role == Role::King && Feature::bucket(turn, wc) != Feature::bucket(turn, wt) {
+                    self.pending[turn.cast::<usize>()][idx + 1] = Some(Pending::Refresh)
+                }
+            }
+        }
+    }
+
+    /// Pops a [`Position`] from the evaluator stack.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn pop(&mut self) {
+        (self.ply > 0).assume();
+        self.ply -= 1;
+    }
+
+    /// Resets the evaluator stack from the current [`Position`].
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn reset(&mut self) {
+        for side in Color::iter() {
+            self.refresh(side);
+        }
+
+        if self.ply > 0 {
+            let idx = self.ply.cast::<usize>();
+            unsafe { self.positions.swap_unchecked(0, idx) };
+            unsafe { self.accumulator.swap_unchecked(0, idx) };
+            self.pending = [[None; Ply::MAX as usize + 1]; 2];
+            self.moves = [None; Ply::MAX as usize];
+            self.ply = Ply::lower();
+        }
+    }
+
+    /// Evaluates the [`Position`] at the current [`Ply`].
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn evaluate(&mut self) -> Value {
+        for side in Color::iter() {
+            let mut idx = self.ply.cast::<usize>();
+            if self.pending[side.cast::<usize>()][idx].is_none() {
+                continue;
+            }
+
+            while self.pending[side.cast::<usize>()][idx] == Some(Pending::Update) {
+                idx = idx.checked_sub(1).assume();
+            }
+
+            match self.pending[side.cast::<usize>()][idx] {
+                Some(Pending::Update) => unsafe { unreachable_unchecked() },
+                Some(Pending::Refresh) => self.refresh(side),
+                None => {
+                    for i in idx + 1..=self.ply.cast::<usize>() {
+                        self.update(side, i.convert().assume());
+                    }
+                }
+            }
+        }
+
+        let phase = self.phase();
+        let nn = Nnue::nn(phase);
+
+        let idx = self.ply.cast::<usize>();
+        debug_assert_eq!(self.pending[0][idx], None);
+        debug_assert_eq!(self.pending[1][idx], None);
+
+        let us = self.turn() as usize;
+        let them = self.turn().flip() as usize;
+        nn.forward((&self.accumulator[idx][us], &self.accumulator[idx][them]))
     }
 
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]

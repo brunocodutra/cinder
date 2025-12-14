@@ -1,14 +1,15 @@
 use crate::chess::Move;
 
 /// A set of killer moves.
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Default, Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Killers(Option<Move>, Option<Move>);
 
 impl Killers {
     /// Adds a killer move to the set.
     #[inline(always)]
-    pub fn insert(&mut self, m: Move) {
+    pub const fn insert(&mut self, m: Move) {
         if self.0 != Some(m) {
             self.1 = self.0;
             self.0 = Some(m);
@@ -17,7 +18,7 @@ impl Killers {
 
     /// Whether a move is in the set.
     #[inline(always)]
-    pub fn contains(&self, m: Move) -> bool {
+    pub const fn contains(&self, m: Move) -> bool {
         self.0 == Some(m) || self.1 == Some(m)
     }
 }

@@ -9,7 +9,8 @@ use std::str::{self, FromStr};
 #[cfg(test)]
 use proptest::strategy::LazyJust;
 
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash, Zeroable)]
+#[derive(Debug, Copy, Hash, Zeroable)]
+#[derive_const(Default, Clone, Eq, PartialEq)]
 pub struct Zobrists {
     pub hash: Zobrist,
     pub pawns: Zobrist,
@@ -21,7 +22,7 @@ pub struct Zobrists {
 
 impl Zobrists {
     #[inline(always)]
-    pub fn toggle(&mut self, p: Piece, sq: Square) {
+    pub const fn toggle(&mut self, p: Piece, sq: Square) {
         self.hash ^= ZobristNumbers::psq(p, sq);
 
         if p.role() == Role::Pawn {
@@ -45,7 +46,8 @@ impl Zobrists {
 }
 
 /// The chess board.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Hash)]
+#[derive_const(Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Board({self})")]
 pub struct Board {
@@ -79,7 +81,7 @@ pub struct Board {
     pub fullmoves: u32,
 }
 
-impl Default for Board {
+impl const Default for Board {
     #[inline(always)]
     fn default() -> Self {
         use Piece::*;
@@ -122,44 +124,75 @@ impl Default for Board {
 impl Board {
     /// The [`Color`] bitboards.
     #[inline(always)]
-    pub fn colors(&self) -> [Bitboard; 2] {
+    pub const fn colors(&self) -> [Bitboard; 2] {
         self.colors
     }
 
     /// The [`Role`] bitboards.
     #[inline(always)]
-    pub fn roles(&self) -> [Bitboard; 6] {
+    pub const fn roles(&self) -> [Bitboard; 6] {
         self.roles
     }
 
     /// The [`Piece`]s table.
     #[inline(always)]
-    pub fn pieces(&self) -> &Aligned<[Option<Piece>; Square::MAX as usize + 1]> {
+    pub const fn pieces(&self) -> &Aligned<[Option<Piece>; Square::MAX as usize + 1]> {
         &self.pieces
     }
 
     /// [`Square`]s occupied.
     #[inline(always)]
-    pub fn occupied(&self) -> Bitboard {
+    pub const fn occupied(&self) -> Bitboard {
         self.colors[Color::White as usize] ^ self.colors[Color::Black as usize]
     }
 
     /// [`Square`]s occupied by [`Piece`]s of a [`Color`].
     #[inline(always)]
-    pub fn by_color(&self, c: Color) -> Bitboard {
+    pub const fn by_color(&self, c: Color) -> Bitboard {
         self.colors[c as usize]
     }
 
     /// [`Square`]s occupied by [`Piece`]s of a [`Role`].
     #[inline(always)]
-    pub fn by_role(&self, r: Role) -> Bitboard {
+    pub const fn by_role(&self, r: Role) -> Bitboard {
         self.roles[r as usize]
     }
 
     /// [`Square`]s occupied by a [`Piece`].
     #[inline(always)]
-    pub fn by_piece(&self, p: Piece) -> Bitboard {
+    pub const fn by_piece(&self, p: Piece) -> Bitboard {
         self.by_color(p.color()) & self.by_role(p.role())
+    }
+
+    /// The [`Color`] of the piece on the given [`Square`], if any.
+    #[inline(always)]
+    pub const fn color_on(&self, sq: Square) -> Option<Color> {
+        self.piece_on(sq).as_ref().map(Piece::color)
+    }
+
+    /// The [`Role`] of the piece on the given [`Square`], if any.
+    #[inline(always)]
+    pub const fn role_on(&self, sq: Square) -> Option<Role> {
+        self.piece_on(sq).as_ref().map(Piece::role)
+    }
+
+    /// The [`Piece`] on the given [`Square`], if any.
+    #[inline(always)]
+    pub const fn piece_on(&self, sq: Square) -> Option<Piece> {
+        self.pieces[sq as usize]
+    }
+
+    /// [`Square`] occupied by a the king of a [`Color`].
+    #[inline(always)]
+    pub fn king(&self, side: Color) -> Option<Square> {
+        let piece = Piece::new(Role::King, side);
+        self.by_piece(piece).into_iter().next()
+    }
+
+    /// An iterator over all pieces on the board.
+    #[inline(always)]
+    pub fn iter(&self) -> impl Iterator<Item = (Piece, Square)> + '_ {
+        Piece::iter().flat_map(|p| self.by_piece(p).into_iter().map(move |sq| (p, sq)))
     }
 
     /// Squares occupied by pinned [`Piece`]s of a [`Color`].
@@ -250,37 +283,6 @@ impl Board {
         threats
     }
 
-    /// [`Square`] occupied by a the king of a [`Color`].
-    #[inline(always)]
-    pub fn king(&self, side: Color) -> Option<Square> {
-        let piece = Piece::new(Role::King, side);
-        self.by_piece(piece).into_iter().next()
-    }
-
-    /// The [`Color`] of the piece on the given [`Square`], if any.
-    #[inline(always)]
-    pub fn color_on(&self, sq: Square) -> Option<Color> {
-        self.piece_on(sq).map(|p| p.color())
-    }
-
-    /// The [`Role`] of the piece on the given [`Square`], if any.
-    #[inline(always)]
-    pub fn role_on(&self, sq: Square) -> Option<Role> {
-        self.piece_on(sq).map(|p| p.role())
-    }
-
-    /// The [`Piece`] on the given [`Square`], if any.
-    #[inline(always)]
-    pub fn piece_on(&self, sq: Square) -> Option<Piece> {
-        self.pieces[sq as usize]
-    }
-
-    /// An iterator over all pieces on the board.
-    #[inline(always)]
-    pub fn iter(&self) -> impl Iterator<Item = (Piece, Square)> + '_ {
-        Piece::iter().flat_map(|p| self.by_piece(p).into_iter().map(move |sq| (p, sq)))
-    }
-
     /// Computes the [zobrist hashes](`Zobrists`).
     #[inline(always)]
     pub fn zobrists(&self) -> Zobrists {
@@ -368,7 +370,8 @@ impl Display for Board {
 }
 
 /// The reason why parsing the FEN string failed.
-#[derive(Debug, Display, Clone, Eq, PartialEq, Error)]
+#[derive(Debug, Display, Error)]
+#[derive_const(Clone, Eq, PartialEq)]
 pub enum ParseFenError {
     #[display("failed to parse piece placement")]
     InvalidPlacement,

@@ -1,12 +1,14 @@
 use crate::chess::Move;
 use derive_more::with_trait::Debug;
 use std::fmt::{self, Display, Formatter, Write};
+use std::ptr::copy;
 
 #[cfg(test)]
 use proptest::{collection::vec, prelude::*};
 
 /// A sequence of [`Move`]s.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Hash)]
+#[derive_const(Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Line({self})")]
 pub struct Line<const N: usize>(
@@ -20,7 +22,7 @@ pub struct Line<const N: usize>(
     [Option<Move>; N],
 );
 
-impl<const N: usize> Default for Line<N> {
+impl<const N: usize> const Default for Line<N> {
     #[inline(always)]
     fn default() -> Self {
         Self::empty()
@@ -30,22 +32,25 @@ impl<const N: usize> Default for Line<N> {
 impl<const N: usize> Line<N> {
     /// An empty [`Line`].
     #[inline(always)]
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Line([None; N])
     }
 
     /// Constructs a singular [`Line`].
     #[inline(always)]
-    pub fn singular(m: Move) -> Self {
+    pub const fn singular(m: Move) -> Self {
         Line::cons(m, Line::empty())
     }
 
     /// Prepends a [`Move`] to a [`Line`].
     #[inline(always)]
-    pub fn cons(head: Move, mut tail: Line<N>) -> Self {
+    pub const fn cons(head: Move, mut tail: Line<N>) -> Self {
         if N > 0 {
-            tail.0.copy_within(..N - 1, 1);
-            tail.0[0] = Some(head);
+            unsafe {
+                let ptr = tail.0.as_mut_ptr();
+                copy(ptr, ptr.add(1), N - 1);
+                ptr.write(Some(head));
+            }
         }
 
         tail
@@ -53,19 +58,13 @@ impl<const N: usize> Line<N> {
 
     /// The first [`Move`]s in this [`Line`].
     #[inline(always)]
-    pub fn head(&self) -> Option<Move> {
+    pub const fn head(&self) -> Option<Move> {
         if N > 0 { self.0[0] } else { None }
-    }
-
-    /// An iterator over the [`Move`]s in this [`Line`].
-    #[inline(always)]
-    pub fn iter(&self) -> impl Iterator<Item = Move> {
-        self.0.iter().map_while(|m| *m)
     }
 
     /// Truncates to a principal variation of a different length.
     #[inline(always)]
-    pub fn truncate<const M: usize>(self) -> Line<M> {
+    pub const fn truncate<const M: usize>(self) -> Line<M> {
         let mut line = Line::empty();
         let len = M.min(N);
         if len > 0 {
@@ -73,6 +72,12 @@ impl<const N: usize> Line<N> {
         }
 
         line
+    }
+
+    /// An iterator over the [`Move`]s in this [`Line`].
+    #[inline(always)]
+    pub fn iter(&self) -> impl Iterator<Item = Move> {
+        self.0.iter().map_while(|m| *m)
     }
 }
 

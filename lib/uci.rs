@@ -66,14 +66,22 @@ use mock::MockEngine as Engine;
 use crate::search::Engine;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-struct UciMove(Move);
+struct UciMove([u8; 5]);
+
+impl UciMove {
+    #[inline(always)]
+    fn new(m: Move) -> Self {
+        let mut buffer = [b'\0'; 5];
+        write!(&mut buffer[..], "{}", m).assume();
+        Self(buffer)
+    }
+}
 
 impl PartialEq<str> for UciMove {
+    #[inline(always)]
     fn eq(&self, other: &str) -> bool {
-        let mut buffer = [b'\0'; 5];
-        write!(&mut buffer[..], "{}", self.0).assume();
-        let len = if buffer[4] == b'\0' { 4 } else { 5 };
-        other == unsafe { str::from_utf8_unchecked(&buffer[..len]) }
+        let len = if self.0[4] == b'\0' { 4 } else { 5 };
+        other == unsafe { str::from_utf8_unchecked(&self.0[..len]) }
     }
 }
 
@@ -103,7 +111,8 @@ impl Display for UciSearchInfo {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Hash)]
+#[derive_const(Clone, Eq, PartialEq)]
 struct UciBestMove(Option<Move>);
 
 impl Display for UciBestMove {
@@ -123,7 +132,7 @@ enum UciError {
     Fatal(io::Error),
 }
 
-impl From<ParseError<&str>> for UciError {
+impl const From<ParseError<&str>> for UciError {
     fn from(_: ParseError<&str>) -> Self {
         UciError::ParseError
     }
@@ -225,7 +234,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> +
 
                         let moves = pos.moves();
                         let mut moves_iter = moves.unpack_if(|ms| ms.whence() == whence);
-                        let Some(m) = moves_iter.find(|m| UciMove(*m) == *s) else {
+                        let Some(m) = moves_iter.find(|m| UciMove::new(*m) == *s) else {
                             return Err(UciError::ParseError);
                         };
 
@@ -581,7 +590,8 @@ mod tests {
     #[proptest]
     fn handles_position_with_illegal_move(
         #[any(MockStream::new([format!("position startpos moves {}", #_m)]))] mut uci: MockUci,
-        #[filter(!Position::default().moves().unpack().any(|m| UciMove(m) == *#_m.to_string()))] _m: Move,
+        #[filter(!Position::default().moves().unpack().any(|m| UciMove::new(m) == *#_m.to_string()))]
+        _m: Move,
     ) {
         let pos = uci.pos.clone();
         assert!(block_on(uci.run()).is_ok());

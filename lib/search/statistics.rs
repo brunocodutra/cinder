@@ -2,10 +2,10 @@ use crate::chess::Position;
 use crate::util::{Assume, Int, zero};
 use bytemuck::{Pod, Zeroable};
 use derive_more::with_trait::Debug;
-use std::ptr::NonNull;
+use std::{marker::Destruct, ptr::NonNull};
 
 /// A trait for types that record statistics for [`Position`]s.
-pub trait Statistics<C> {
+pub const trait Statistics<C> {
     /// The stat type.
     type Stat: Stat;
 
@@ -16,7 +16,7 @@ pub trait Statistics<C> {
     fn update(&mut self, pos: &Position, ctx: C, delta: <Self::Stat as Stat>::Value);
 }
 
-impl<C, T: Statistics<C>> Statistics<C> for &mut T {
+impl<C, T: [const] Statistics<C>> const Statistics<C> for &mut T {
     type Stat = T::Stat;
 
     #[inline(always)]
@@ -30,12 +30,15 @@ impl<C, T: Statistics<C>> Statistics<C> for &mut T {
     }
 }
 
-impl<C, T: Statistics<C>> Statistics<C> for Option<T> {
+impl<C: [const] Destruct, T: [const] Statistics<C>> const Statistics<C> for Option<T> {
     type Stat = T::Stat;
 
     #[inline(always)]
     fn get(&mut self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value {
-        self.as_mut().map_or_else(zero, |g| g.get(pos, ctx))
+        match self {
+            Some(g) => g.get(pos, ctx),
+            None => zero(),
+        }
     }
 
     #[inline(always)]
@@ -46,7 +49,7 @@ impl<C, T: Statistics<C>> Statistics<C> for Option<T> {
     }
 }
 
-impl<C, T: Statistics<C>> Statistics<C> for NonNull<T> {
+impl<C, T: [const] Statistics<C>> const Statistics<C> for NonNull<T> {
     type Stat = T::Stat;
 
     #[inline(always)]
@@ -61,7 +64,7 @@ impl<C, T: Statistics<C>> Statistics<C> for NonNull<T> {
 }
 
 /// A trait for statistics counters.
-pub trait Stat {
+pub const trait Stat {
     /// The value type.
     type Value: Int + Zeroable;
 
@@ -72,7 +75,7 @@ pub trait Stat {
     fn update(&mut self, delta: Self::Value);
 }
 
-impl<T: Stat> Stat for &mut T {
+impl<T: [const] Stat> const Stat for &mut T {
     type Value = T::Value;
 
     #[inline(always)]
@@ -86,7 +89,7 @@ impl<T: Stat> Stat for &mut T {
     }
 }
 
-impl<T: Stat> Stat for Option<T> {
+impl<T: [const] Stat> const Stat for Option<T> {
     type Value = T::Value;
 
     #[inline(always)]
@@ -102,7 +105,7 @@ impl<T: Stat> Stat for Option<T> {
     }
 }
 
-impl<T: Stat> Stat for NonNull<T> {
+impl<T: [const] Stat> const Stat for NonNull<T> {
     type Value = T::Value;
 
     #[inline(always)]
@@ -117,7 +120,8 @@ impl<T: Stat> Stat for NonNull<T> {
 }
 
 /// A saturating accumulator that implements the "gravity" formula.
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash, Zeroable, Pod)]
+#[derive(Debug, Copy, Hash, Zeroable, Pod)]
+#[derive_const(Default, Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct Graviton<const MIN: i16, const MAX: i16>(i16);
@@ -128,7 +132,7 @@ unsafe impl<const MIN: i16, const MAX: i16> const Int for Graviton<MIN, MAX> {
     const MAX: Self::Repr = MAX;
 }
 
-impl<const MIN: i16, const MAX: i16> Stat for Graviton<MIN, MAX> {
+impl<const MIN: i16, const MAX: i16> const Stat for Graviton<MIN, MAX> {
     type Value = <Self as Int>::Repr;
 
     #[inline(always)]

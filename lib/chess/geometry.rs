@@ -23,7 +23,8 @@ impl<T: [const] Flip> const Perspective<Color> for T {
 }
 
 /// One of two horizontal perspectives.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(u8)]
 pub enum Side {
@@ -37,14 +38,14 @@ unsafe impl const Int for Side {
     const MAX: Self::Repr = Side::Right as _;
 }
 
-impl From<bool> for Side {
+impl const From<bool> for Side {
     #[inline(always)]
     fn from(b: bool) -> Self {
         Int::new(b as _)
     }
 }
 
-impl From<Side> for bool {
+impl const From<Side> for bool {
     #[inline(always)]
     fn from(s: Side) -> Self {
         s == Side::Right

@@ -8,6 +8,7 @@
     adt_const_params,
     const_clone,
     const_cmp,
+    const_convert,
     const_default,
     const_destruct,
     const_index,

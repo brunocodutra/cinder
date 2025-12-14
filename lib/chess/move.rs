@@ -1,23 +1,24 @@
 use crate::chess::{Bitboard, Flip, Perspective, Piece, Rank, Role, Square, Squares};
 use crate::util::{Assume, Binary, Bits, Int};
 use std::fmt::{self, Debug, Display, Formatter, Write};
-use std::{num::NonZeroU16, ops::RangeBounds};
+use std::{marker::Destruct, num::NonZeroU16, ops::RangeBounds};
 
 /// A chess move.
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, filter(#self.is_promotion() || #self.bits(..2) == Bits::new(0)))]
 pub struct Move(NonZeroU16);
 
 impl Move {
     #[inline(always)]
-    fn bits<R: RangeBounds<u32>>(&self, r: R) -> Bits<u16, 16> {
+    const fn bits<R: [const] Destruct + [const] RangeBounds<u32>>(&self, r: R) -> Bits<u16, 16> {
         self.encode().slice(r)
     }
 
     /// Constructs a regular move.
     #[inline(always)]
-    pub fn regular(whence: Square, whither: Square, promotion: Option<Role>) -> Self {
+    pub const fn regular(whence: Square, whither: Square, promotion: Option<Role>) -> Self {
         let mut bits = Bits::<u16, 16>::default();
         bits.push(whence.encode());
         bits.push(whither.encode());
@@ -35,7 +36,7 @@ impl Move {
 
     /// Constructs a capture move.
     #[inline(always)]
-    pub fn capture(whence: Square, whither: Square, promotion: Option<Role>) -> Self {
+    pub const fn capture(whence: Square, whither: Square, promotion: Option<Role>) -> Self {
         let mut m = Self::regular(whence, whither, promotion);
         m.0 |= 0b100;
         m
@@ -43,19 +44,19 @@ impl Move {
 
     /// The source [`Square`].
     #[inline(always)]
-    pub fn whence(&self) -> Square {
+    pub const fn whence(&self) -> Square {
         Square::decode(self.bits(10..).pop())
     }
 
     /// The destination [`Square`].
     #[inline(always)]
-    pub fn whither(&self) -> Square {
+    pub const fn whither(&self) -> Square {
         Square::decode(self.bits(4..).pop())
     }
 
     /// The promotion specifier.
     #[inline(always)]
-    pub fn promotion(&self) -> Option<Role> {
+    pub const fn promotion(&self) -> Option<Role> {
         if self.is_promotion() {
             Some(Role::new(self.bits(..2).cast::<u8>() + 1))
         } else {
@@ -65,19 +66,19 @@ impl Move {
 
     /// Whether this is a capture move.
     #[inline(always)]
-    pub fn is_capture(&self) -> bool {
+    pub const fn is_capture(&self) -> bool {
         self.bits(2..=2) != Bits::new(0)
     }
 
     /// Whether this is a promotion move.
     #[inline(always)]
-    pub fn is_promotion(&self) -> bool {
+    pub const fn is_promotion(&self) -> bool {
         self.bits(3..=3) != Bits::new(0)
     }
 
     /// Whether this move is neither a capture nor a promotion.
     #[inline(always)]
-    pub fn is_quiet(&self) -> bool {
+    pub const fn is_quiet(&self) -> bool {
         self.bits(2..=3) == Bits::new(0)
     }
 }
@@ -123,7 +124,8 @@ impl const Binary for Move {
 }
 
 /// A set of [`Move`]s originating from a given [`Square`].
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, filter(!#whither.contains(#base.whence())))]
 pub struct MoveSet {
@@ -134,7 +136,7 @@ pub struct MoveSet {
 impl MoveSet {
     /// A pack of regular moves.
     #[inline(always)]
-    pub fn regular(piece: Piece, whence: Square, whither: Bitboard) -> Self {
+    pub const fn regular(piece: Piece, whence: Square, whither: Bitboard) -> Self {
         use {Rank::*, Role::*};
         let base = if piece.role() == Pawn && whence.rank().perspective(piece.color()) == Seventh {
             Move::regular(whence, whence.flip(), Some(Knight))
@@ -147,7 +149,7 @@ impl MoveSet {
 
     /// A pack of capture moves.
     #[inline(always)]
-    pub fn capture(piece: Piece, whence: Square, whither: Bitboard) -> Self {
+    pub const fn capture(piece: Piece, whence: Square, whither: Bitboard) -> Self {
         let mut moves = Self::regular(piece, whence, whither);
         moves.base.0 |= 0b100;
         moves
@@ -155,37 +157,37 @@ impl MoveSet {
 
     /// The source [`Square`].
     #[inline(always)]
-    pub fn whence(&self) -> Square {
+    pub const fn whence(&self) -> Square {
         self.base.whence()
     }
 
     /// The destination [`Square`]s.
     #[inline(always)]
-    pub fn whither(&self) -> Bitboard {
+    pub const fn whither(&self) -> Bitboard {
         self.whither
     }
 
     /// Whether the moves in this set are captures.
     #[inline(always)]
-    pub fn is_capture(&self) -> bool {
+    pub const fn is_capture(&self) -> bool {
         self.base.is_capture()
     }
 
     /// Whether the moves in this set are promotions.
     #[inline(always)]
-    pub fn is_promotion(&self) -> bool {
+    pub const fn is_promotion(&self) -> bool {
         self.base.is_promotion()
     }
 
     /// Whether the moves in this set are neither captures nor promotions.
     #[inline(always)]
-    pub fn is_quiet(&self) -> bool {
+    pub const fn is_quiet(&self) -> bool {
         self.base.is_quiet()
     }
 
     /// An iterator over the [`Move`]s in this bitboard.
     #[inline(always)]
-    pub fn iter(&self) -> MoveSetIter {
+    pub const fn iter(&self) -> MoveSetIter {
         MoveSetIter::new(*self)
     }
 }
@@ -209,7 +211,7 @@ pub struct MoveSetIter {
 
 impl MoveSetIter {
     #[inline(always)]
-    fn new(set: MoveSet) -> Self {
+    const fn new(set: MoveSet) -> Self {
         MoveSetIter {
             base: set.base,
             whither: set.whither.iter(),

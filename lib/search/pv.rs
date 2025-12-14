@@ -1,84 +1,84 @@
 use crate::chess::Move;
 use crate::search::{Depth, Line, Score};
 use crate::util::{Assume, Int};
-use derive_more::with_trait::{Constructor, Deref};
-use std::{cmp::Ordering, hash::Hash};
-use std::{hash::Hasher, ops::Neg};
+use derive_more::with_trait::Constructor;
+use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
+use std::ops::{Deref, Neg};
 
 /// The principal variation.
-#[derive(Debug, Clone, Deref, Constructor)]
+#[derive(Debug, Clone, Constructor)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Pv<const N: usize = { Depth::MAX as _ }> {
     score: Score,
-    #[deref]
     moves: Line<N>,
 }
 
 impl<const N: usize> Pv<N> {
     /// An empty principal variation.
     #[inline(always)]
-    pub fn empty(score: Score) -> Self {
+    pub const fn empty(score: Score) -> Self {
         Self::new(score, Line::empty())
     }
 
     /// The score from the point of view of the side to move.
     #[inline(always)]
-    pub fn score(&self) -> Score {
+    pub const fn score(&self) -> Score {
         self.score
     }
 
     /// Constrains the score between `lower` and `upper`.
     #[inline(always)]
-    pub fn clamp(self, lower: Score, upper: Score) -> Pv<N> {
+    pub const fn clamp(self, lower: Score, upper: Score) -> Pv<N> {
         (lower <= upper).assume();
         Pv::new(self.score.clamp(lower, upper), self.moves)
     }
 
     /// The sequence of [`Move`]s in this principal variation.
     #[inline(always)]
-    pub fn moves(&self) -> &Line<N> {
+    pub const fn moves(&self) -> &Line<N> {
         &self.moves
     }
 
     /// Truncates to a principal variation of a different length.
     #[inline(always)]
-    pub fn truncate<const M: usize>(self) -> Pv<M> {
+    pub const fn truncate<const M: usize>(self) -> Pv<M> {
         Pv::new(self.score, self.moves.truncate())
     }
 
     /// Transposes to a principal variation to a move.
     #[inline(always)]
-    pub fn transpose(self, head: Move) -> Pv<N> {
+    pub const fn transpose(self, head: Move) -> Pv<N> {
         Pv::new(self.score, Line::cons(head, self.moves))
     }
 }
 
-impl<const N: usize> Eq for Pv<N> {}
+impl<const N: usize> const Eq for Pv<N> {}
 
-impl<const N: usize> PartialEq for Pv<N> {
+impl<const N: usize> const PartialEq for Pv<N> {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.score.eq(&other.score)
     }
 }
 
-impl<const N: usize> Ord for Pv<N> {
+impl<const N: usize> const Ord for Pv<N> {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
         self.score.cmp(&other.score)
     }
 }
 
-impl<const N: usize> PartialOrd for Pv<N> {
+impl<const N: usize> const PartialOrd for Pv<N> {
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<T, const N: usize> PartialEq<T> for Pv<N>
+impl<T, const N: usize> const PartialEq<T> for Pv<N>
 where
-    Score: PartialEq<T>,
+    Score: [const] PartialEq<T>,
 {
     #[inline(always)]
     fn eq(&self, other: &T) -> bool {
@@ -86,9 +86,9 @@ where
     }
 }
 
-impl<T, const N: usize> PartialOrd<T> for Pv<N>
+impl<T, const N: usize> const PartialOrd<T> for Pv<N>
 where
-    Score: PartialOrd<T>,
+    Score: [const] PartialOrd<T>,
 {
     #[inline(always)]
     fn partial_cmp(&self, other: &T) -> Option<Ordering> {
@@ -103,7 +103,16 @@ impl<const N: usize> Hash for Pv<N> {
     }
 }
 
-impl<const N: usize> Neg for Pv<N> {
+impl<const N: usize> const Deref for Pv<N> {
+    type Target = Line<N>;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.moves
+    }
+}
+
+impl<const N: usize> const Neg for Pv<N> {
     type Output = Self;
 
     #[inline(always)]

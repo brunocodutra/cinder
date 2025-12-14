@@ -1,27 +1,13 @@
 use crate::chess::{Color, Move, Perspective, Piece, Role, Square};
 use crate::util::{Assume, Bits, Int};
 use bytemuck::{Zeroable, zeroed};
-use derive_more::with_trait::{Debug, *};
+use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter};
-use std::{cell::SyncUnsafeCell, str::FromStr};
+use std::{cell::SyncUnsafeCell, ops::*, str::FromStr};
 
 /// The castling rights in a chess [`Position`][`crate::chess::Position`].
-#[derive(
-    Debug,
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    Hash,
-    Zeroable,
-    BitAnd,
-    BitAndAssign,
-    BitOr,
-    BitOrAssign,
-    BitXor,
-    BitXorAssign,
-    Not,
-)]
+#[derive(Debug, Copy, Hash, Zeroable)]
+#[derive_const(Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Castles({self})")]
 pub struct Castles(Bits<u8, 4>);
@@ -29,19 +15,19 @@ pub struct Castles(Bits<u8, 4>);
 impl Castles {
     /// No castling rights.
     #[inline(always)]
-    pub fn none() -> Self {
+    pub const fn none() -> Self {
         Castles(Bits::new(0b0000))
     }
 
     /// All castling rights.
     #[inline(always)]
-    pub fn all() -> Self {
+    pub const fn all() -> Self {
         Castles(Bits::new(0b1111))
     }
 
     /// The rook's [`Move`] given the king's castling [`Square`].
     #[inline(always)]
-    pub fn rook(castling: Square) -> Option<Move> {
+    pub const fn rook(castling: Square) -> Option<Move> {
         match castling {
             Square::C1 => Some(Move::regular(Square::A1, Square::D1, None)),
             Square::G1 => Some(Move::regular(Square::H1, Square::F1, None)),
@@ -53,25 +39,82 @@ impl Castles {
 
     /// A unique number the represents this castling rights configuration.
     #[inline(always)]
-    pub fn index(&self) -> u8 {
+    pub const fn index(&self) -> u8 {
         self.0.get()
     }
 
     /// Whether the rights for the given castling square.
     #[inline(always)]
-    pub fn has(&self, sq: Square) -> bool {
+    pub const fn has(&self, sq: Square) -> bool {
         *self & Castles::from(Castles::rook(sq).assume().whence()) != Castles::none()
     }
 }
 
-impl Default for Castles {
+impl const Default for Castles {
     #[inline(always)]
     fn default() -> Self {
         Castles::all()
     }
 }
 
-impl From<Square> for Castles {
+impl const Not for Castles {
+    type Output = Self;
+
+    #[inline(always)]
+    fn not(self) -> Self::Output {
+        Self(self.0.not())
+    }
+}
+
+impl const BitAnd for Castles {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitand(self, rhs: Self) -> Self::Output {
+        Self(self.0.bitand(rhs.0))
+    }
+}
+
+impl const BitAndAssign for Castles {
+    #[inline(always)]
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0.bitand_assign(rhs.0)
+    }
+}
+
+impl const BitOr for Castles {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0.bitor(rhs.0))
+    }
+}
+
+impl const BitOrAssign for Castles {
+    #[inline(always)]
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0.bitor_assign(rhs.0)
+    }
+}
+
+impl const BitXor for Castles {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        Self(self.0.bitxor(rhs.0))
+    }
+}
+
+impl const BitXorAssign for Castles {
+    #[inline(always)]
+    fn bitxor_assign(&mut self, rhs: Self) {
+        self.0.bitxor_assign(rhs.0)
+    }
+}
+
+impl const From<Square> for Castles {
     #[inline(always)]
     fn from(sq: Square) -> Self {
         pub static CASTLES: SyncUnsafeCell<[Castles; 64]> = SyncUnsafeCell::new(zeroed());
@@ -110,7 +153,8 @@ impl Display for Castles {
 }
 
 /// The reason why parsing [`Castles`] failed.
-#[derive(Debug, Display, Clone, Eq, PartialEq, Error)]
+#[derive(Debug, Display, Error)]
+#[derive_const(Default, Clone, Eq, PartialEq)]
 #[display("failed to parse castling rights")]
 pub struct ParseCastlesError;
 

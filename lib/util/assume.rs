@@ -1,14 +1,14 @@
 use std::{hint::assert_unchecked, ptr::NonNull};
 
 /// A trait for types that can be assumed to be another type.
-pub trait Assume {
+pub const trait Assume {
     /// The type of the assumed value.
     type Assumed;
     /// Assume `Self` represents a value of `Self::Assumed`.
     fn assume(self) -> Self::Assumed;
 }
 
-impl Assume for bool {
+impl const Assume for bool {
     type Assumed = ();
 
     #[track_caller]
@@ -20,7 +20,7 @@ impl Assume for bool {
     }
 }
 
-impl<'a, T> Assume for &'a NonNull<T> {
+impl<'a, T> const Assume for &'a NonNull<T> {
     type Assumed = &'a T;
 
     #[track_caller]
@@ -32,7 +32,7 @@ impl<'a, T> Assume for &'a NonNull<T> {
     }
 }
 
-impl<'a, T> Assume for &'a mut NonNull<T> {
+impl<'a, T> const Assume for &'a mut NonNull<T> {
     type Assumed = &'a mut T;
 
     #[track_caller]
@@ -44,7 +44,7 @@ impl<'a, T> Assume for &'a mut NonNull<T> {
     }
 }
 
-impl<T> Assume for Option<T> {
+impl<T> const Assume for Option<T> {
     type Assumed = T;
 
     #[track_caller]
@@ -56,7 +56,7 @@ impl<T> Assume for Option<T> {
     }
 }
 
-impl<T, E> Assume for Result<T, E> {
+impl<T, E> const Assume for Result<T, E> {
     type Assumed = T;
 
     #[track_caller]

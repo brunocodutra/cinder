@@ -8,6 +8,7 @@
     adt_const_params,
     const_cmp,
     const_index,
+    const_result_unwrap_unchecked,
     const_trait_impl,
     coverage_attribute,
     gen_blocks,

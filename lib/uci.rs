@@ -97,8 +97,11 @@ impl Display for UciSearchInfo {
         write!(f, " nodes {}", self.0.nodes())?;
         write!(f, " nps {}", self.0.nps() as u64)?;
 
+        const NORMALIZE_TO_PAWN_VALUE: i32 = 68;
+        let normalized_score = self.0.score().cast::<i32>() * 100 / NORMALIZE_TO_PAWN_VALUE;
+
         match self.0.score().mate() {
-            Mate::None => write!(f, " score cp {}", self.0.score())?,
+            Mate::None => write!(f, " score cp {}", normalized_score)?,
             Mate::Mating(p) => write!(f, " score mate {}", (p + 1) / 2)?,
             Mate::Mated(p) => write!(f, " score mate -{}", (p + 1) / 2)?,
         }

@@ -4,7 +4,7 @@ use crate::util::Int;
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 
-const BUCKETS: usize = 8192;
+const BUCKETS: usize = 16384;
 
 /// Historical statistics about a [`Move`](`crate::chess::Move`).
 #[derive(Debug, Clone, Hash, Zeroable)]

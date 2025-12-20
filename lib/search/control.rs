@@ -271,6 +271,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn global_measures_time_elapsed(pos: Evaluator, l: Limits) {
         let ctrl = GlobalControl::new(&pos, l);
         let duration = Duration::from_millis(1);
@@ -279,6 +280,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn active_counts_nodes_visited(
         #[filter(#d < Depth::MAX)] d: Depth,
         pos: Evaluator,
@@ -292,6 +294,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn passive_counts_nodes_visited(pos: Evaluator) {
         let global = GlobalControl::new(&pos, Limits::none());
         let mut passive = Passive::new(&global);
@@ -301,6 +304,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn active_aborts_if_time_is_up(
         pos: Evaluator,
         d: Depth,
@@ -314,6 +318,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn passive_continues_if_time_is_up(
         d: Depth,
         pos: Evaluator,
@@ -327,6 +332,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn active_stops_if_searched_for_sufficient_time(
         d: Depth,
         #[filter(#pos.ply() == 0)] pos: Evaluator,
@@ -342,6 +348,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn passive_continues_if_searched_for_sufficient_time(
         d: Depth,
         #[filter(#pos.ply() == 0)] pos: Evaluator,
@@ -357,6 +364,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn active_stops_if_target_depth_is_reached(
         d: Depth,
         pos: Evaluator,
@@ -370,6 +378,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn passive_continues_if_target_depth_is_reached(
         d: Depth,
         pos: Evaluator,
@@ -383,6 +392,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn active_stops_if_node_count_is_reached(
         d: Depth,
         pos: Evaluator,
@@ -396,6 +406,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn passive_continues_if_node_count_is_reached(
         d: Depth,
         pos: Evaluator,
@@ -409,6 +420,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn active_aborts_upon_request(
         d: Depth,
         pos: Evaluator,
@@ -424,6 +436,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn passive_aborts_upon_request(
         d: Depth,
         pos: Evaluator,
@@ -439,6 +452,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn active_suspends_limits_while_empty_pv(d: Depth, pos: Evaluator, s: Score) {
         let pv = Pv::empty(s);
 

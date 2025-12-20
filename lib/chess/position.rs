@@ -890,11 +890,13 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn position_compares_by_board(a: Position, b: Position) {
         assert_eq!(a == b, a.board == b.board);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn hash_is_consistent(a: Position, b: Position) {
         let mut hasher = DefaultHasher::default();
         a.hash(&mut hasher);
@@ -908,6 +910,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn occupied_returns_non_empty_squares(pos: Position) {
         for sq in pos.occupied() {
             assert_ne!(pos.piece_on(sq), None);
@@ -915,46 +918,55 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn king_returns_square_occupied_by_a_king(pos: Position, c: Color) {
         assert_eq!(pos.piece_on(pos.king(c)), Some(Piece::new(Role::King, c)));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn iter_returns_pieces_and_squares(pos: Position) {
         assert_eq!(Vec::from_iter(pos.iter()), Vec::from_iter(pos.board.iter()));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn zobrist_hashes_are_updated_incrementally(pos: Position) {
         assert_eq!(pos.zobrists, pos.board.zobrists());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn checkmate_implies_outcome(pos: Position) {
         assert!(!pos.is_checkmate() || pos.outcome() == Some(Outcome::Checkmate(!pos.turn())));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn stalemate_implies_outcome(pos: Position) {
         assert!(!pos.is_stalemate() || pos.outcome() == Some(Outcome::Stalemate));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn checkmate_implies_check(pos: Position) {
         assert!(!pos.is_checkmate() || pos.is_check());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn checkmate_and_stalemate_are_mutually_exclusive(pos: Position) {
         assert!(!(pos.is_checkmate() && pos.is_stalemate()));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn check_and_stalemate_are_mutually_exclusive(pos: Position) {
         assert!(!(pos.is_check() && pos.is_stalemate()));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn moves_returns_legal_moves_from_this_position(
         #[filter(#pos.outcome().is_none())] pos: Position,
     ) {
@@ -964,6 +976,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn exchanges_iterator_is_sorted_by_captor_of_least_value(
         #[filter(#pos.outcome().is_none())] pos: Position,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
@@ -990,6 +1003,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn captures_reduce_material(
         #[filter(#pos.moves().unpack().any(|m| m.is_capture()))] mut pos: Position,
         #[map(|s: Selector| s.select(#pos.moves().unpack_if(|ms| ms.is_capture())))] m: Move,
@@ -1000,6 +1014,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn promotions_exchange_pawns(
         #[filter(#pos.moves().unpack().any(|m| m.is_promotion()))] mut pos: Position,
         #[map(|s: Selector| s.select(#pos.moves().unpack_if(|ms| ms.is_promotion())))] m: Move,
@@ -1016,11 +1031,13 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn move_is_legal_if_can_be_played(#[filter(#pos.outcome().is_none())] pos: Position, m: Move) {
         assert_eq!(pos.is_legal(m), pos.moves().unpack().any(|n| m == n))
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn legal_move_updates_position(
         #[filter(#pos.outcome().is_none())] mut pos: Position,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
@@ -1074,11 +1091,13 @@ mod tests {
 
     #[proptest]
     #[should_panic]
+    #[cfg_attr(miri, ignore)]
     fn play_panics_if_move_illegal(mut pos: Position, #[filter(!#pos.is_legal(#m))] m: Move) {
         pos.play(m);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn pass_updates_position(#[filter(!#pos.is_check())] mut pos: Position) {
         let prev = pos.clone();
         pos.pass();
@@ -1086,6 +1105,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn pass_reverts_itself(#[filter(!#pos.is_check() )] mut pos: Position) {
         let prev = pos.clone();
         pos.pass();
@@ -1097,11 +1117,13 @@ mod tests {
 
     #[proptest]
     #[should_panic]
+    #[cfg_attr(miri, ignore)]
     fn pass_panics_if_in_check(#[filter(#pos.is_check())] mut pos: Position) {
         pos.pass();
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn threefold_repetition_implies_draw(#[filter(#pos.outcome().is_none() )] mut pos: Position) {
         let zobrist = NonZeroU32::new(pos.zobrists().hash.cast());
         prop_assume!(zobrist.is_some());
@@ -1112,11 +1134,13 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_printed_position_is_an_identity(pos: Position) {
         assert_eq!(pos.to_string().parse(), Ok(pos));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_position_fails_for_invalid_board(#[filter(#s.parse::<Board>().is_err())] s: String) {
         assert_eq!(
             s.parse::<Position>().err(),
@@ -1125,6 +1149,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_position_fails_for_illegal_board(#[filter(#b.king(#b.turn).is_none())] b: Board) {
         assert_eq!(
             b.to_string().parse::<Position>(),
@@ -1266,6 +1291,7 @@ mod tests {
 
     #[cfg(not(coverage))]
     #[proptest(cases = 1)]
+    #[cfg_attr(miri, ignore)]
     fn perft_counts_all_reachable_positions_up_to_ply(
         #[strategy(select(PERFT_SUITE))] entry: (&'static str, u8, usize),
     ) {

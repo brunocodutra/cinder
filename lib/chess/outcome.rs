@@ -51,21 +51,25 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn outcome_is_either_draw_or_decisive(o: Outcome) {
         assert_ne!(o.is_draw(), o.is_decisive());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn neither_side_wins_if_draw(#[filter(#o.is_draw())] o: Outcome) {
         assert_eq!(o.winner(), None);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn one_side_wins_if_decisive(#[filter(#o.is_decisive())] o: Outcome) {
         assert_ne!(o.winner(), None);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn side_that_checkmates_wins(c: Color) {
         assert_eq!(Outcome::Checkmate(c).winner(), Some(c));
     }

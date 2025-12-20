@@ -95,6 +95,7 @@ impl Bitboard {
 
         #[cold]
         #[ctor::ctor]
+        #[cfg(not(miri))]
         #[inline(never)]
         unsafe fn init() {
             let lines = unsafe { LINES.get().as_mut_unchecked() };
@@ -137,6 +138,7 @@ impl Bitboard {
 
         #[cold]
         #[ctor::ctor]
+        #[cfg(not(miri))]
         #[inline(never)]
         unsafe fn init() {
             let segments = unsafe { SEGMENTS.get().as_mut_unchecked() };
@@ -438,16 +440,19 @@ mod tests {
     use test_strategy::proptest;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn empty_constructs_board_with_no_squares() {
         assert_eq!(Bitboard::empty().iter().count(), 0);
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn full_constructs_board_with_all_squares() {
         assert_eq!(Bitboard::full().iter().count(), 64);
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn border_constructs_bitboard_with_first_rank_eighth_rank_a_file_h_file() {
         assert_eq!(
             Bitboard::border(),
@@ -459,6 +464,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn line_contains_both_squares(a: Square, b: Square) {
         assert_eq!(
             Bitboard::line(a, b).contains(a),
@@ -467,11 +473,13 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn line_degenerates_to_point(sq: Square) {
         assert_eq!(Bitboard::line(sq, sq), sq.bitboard());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn line_contains_segment(a: Square, b: Square) {
         assert_eq!(
             Bitboard::line(a, b) & Bitboard::segment(a, b),
@@ -480,16 +488,19 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn segment_does_not_contain_whence(a: Square, b: Square) {
         assert!(!Bitboard::segment(a, b).contains(a));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn segment_does_not_contain_whither(a: Square, b: Square) {
         assert!(!Bitboard::segment(a, b).contains(b));
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn light_bitboards_contains_light_squares() {
         assert!(
             Bitboard::light()
@@ -499,6 +510,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn dark_bitboards_contains_dark_squares() {
         assert!(
             Bitboard::dark()
@@ -508,22 +520,26 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn squares_are_either_light_or_dark() {
         assert_eq!(Bitboard::light() ^ Bitboard::dark(), Bitboard::full());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn len_returns_number_of_squares_on_the_board(bb: Bitboard) {
         assert_eq!(bb.len() as u32, bb.count_ones());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     #[allow(clippy::len_zero)]
     fn is_empty_returns_whether_there_are_squares_on_the_board(bb: Bitboard) {
         assert_eq!(bb.is_empty(), bb.len() == 0);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn contains_checks_whether_square_is_on_the_board(bb: Bitboard) {
         for sq in bb {
             assert!(bb.contains(sq));
@@ -531,16 +547,19 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn with_adds_square_to_set(bb: Bitboard, sq: Square) {
         assert!(bb.with(sq).contains(sq));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn without_removes_square_to_set(bb: Bitboard, sq: Square) {
         assert!(!bb.without(sq).contains(sq));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn inverse_returns_squares_not_in_set(bb: Bitboard) {
         let pp = bb.inverse();
         for sq in Square::iter() {
@@ -549,6 +568,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn intersection_returns_squares_in_both_sets(a: Bitboard, b: Bitboard) {
         let c = a.intersection(b);
         for sq in Square::iter() {
@@ -557,6 +577,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn union_returns_squares_in_either_set(a: Bitboard, b: Bitboard) {
         let c = a.union(b);
         for sq in Square::iter() {
@@ -565,6 +586,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn flipping_a_bitboard_flips_every_square(bb: Bitboard) {
         assert_eq!(
             HashSet::<Square>::from_iter(bb.flip()),
@@ -573,6 +595,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn can_iterate_over_squares_in_a_bitboard(bb: Bitboard, sq: Square) {
         let v = Vec::from_iter(bb);
         assert_eq!(bb.iter().len(), v.len());
@@ -580,6 +603,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn can_iterate_over_subsets_of_a_bitboard(a: [Square; 6], b: [Square; 3]) {
         let a = a.into_iter().fold(Bitboard::empty(), |bb, sq| bb.with(sq));
         let b = b.into_iter().fold(Bitboard::empty(), |bb, sq| bb.with(sq));
@@ -588,16 +612,19 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn bitboard_can_be_created_from_file(f: File) {
         assert_eq!(Bitboard::from(f), f.bitboard());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn bitboard_can_be_created_from_rank(r: Rank) {
         assert_eq!(Bitboard::from(r), r.bitboard());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn bitboard_can_be_created_from_square(sq: Square) {
         assert_eq!(Bitboard::from(sq), sq.bitboard());
     }

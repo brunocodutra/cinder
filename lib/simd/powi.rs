@@ -40,6 +40,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn for_i32(
         #[strategy(UniformArrayStrategy::new(-128i32..=127i32).prop_map(i32x4::from_array))]
         x: i32x4,
@@ -51,6 +52,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn for_f32(
         #[strategy(UniformArrayStrategy::new(-128f32..=127f32).prop_map(f32x4::from_array))]
         x: f32x4,

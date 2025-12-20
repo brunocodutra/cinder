@@ -170,36 +170,43 @@ mod tests {
     use test_strategy::proptest;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn square_guarantees_zero_value_optimization() {
         assert_eq!(size_of::<Option<Square>>(), size_of::<Square>());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn new_constructs_square_from_pair_of_file_and_rank(sq: Square) {
         assert_eq!(Square::new(sq.file(), sq.rank()), sq);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn square_has_an_equivalent_bitboard(sq: Square) {
         assert_eq!(Vec::from_iter(sq.bitboard()), vec![sq]);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn decoding_encoded_square_is_an_identity(sq: Square) {
         assert_eq!(Square::decode(sq.encode()), sq);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn mirroring_square_mirrors_its_file(sq: Square) {
         assert_eq!(sq.mirror(), Square::new(sq.file().mirror(), sq.rank()));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn flipping_square_preserves_file_and_flips_rank(sq: Square) {
         assert_eq!(sq.flip(), Square::new(sq.file(), sq.rank().flip()));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn transposing_square_transposes_file_and_rank(sq: Square) {
         assert_eq!(
             sq.transpose(),
@@ -208,12 +215,14 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn subtracting_squares_returns_distance(a: Square, b: Square) {
         assert_eq!(b + (a - b), a);
         assert_eq!(a - (a - b), b);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn square_can_be_incremented(mut sq: Square, #[strategy(-#sq.get()..64 - #sq.get())] i: i8) {
         assert_eq!(sq + i, {
             sq += i;
@@ -222,6 +231,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn square_can_be_decremented(mut sq: Square, #[strategy(#sq.get() - 63..=#sq.get())] i: i8) {
         assert_eq!(sq - i, {
             sq -= i;
@@ -230,11 +240,13 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_printed_square_is_an_identity(sq: Square) {
         assert_eq!(sq.to_string().parse(), Ok(sq));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_square_fails_if_file_invalid(
         #[filter(!('a'..='h').contains(&#c))] c: char,
         r: Rank,
@@ -246,6 +258,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_square_fails_if_rank_invalid(
         f: File,
         #[filter(!('1'..='8').contains(&#c))] c: char,
@@ -257,6 +270,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_square_fails_if_length_not_two(#[filter(#s.len() != 2)] s: String) {
         assert_eq!(s.parse::<Square>().ok(), None);
     }

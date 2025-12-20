@@ -66,6 +66,19 @@ jobs:
         lfs: true
     - run: cargo test --workspace --features spsa,trainer,bullet/cpu
 
+  miri:
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        lfs: true
+    - run: rustup component add miri rust-src
+    - run: cargo miri test --workspace --lib
+      env:
+        MIRIFLAGS: "-Zmiri-disable-isolation"
+        PROPTEST_CASES: 10
+
   sanitize:
     needs: [test]
     runs-on: ubuntu-latest

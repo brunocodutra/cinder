@@ -77,6 +77,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn wdl_has_an_equivalent_dtz(wdl: Wdl) {
         assert_eq!(Wdl::from(Dtz::from(wdl)), wdl);
     }

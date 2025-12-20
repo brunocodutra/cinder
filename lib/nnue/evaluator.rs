@@ -431,6 +431,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn evaluator_updates_accumulator_lazily(
         #[filter(#pos.outcome().is_none())] mut pos: Evaluator,
     ) {
@@ -441,6 +442,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_printed_evaluator_is_an_identity(e: Evaluator) {
         assert_eq!(e.to_string().parse(), Ok(e));
     }
@@ -518,6 +520,7 @@ mod tests {
     ];
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn see_estimates_quiescent_move_gain(
         #[strategy(select(SEE_SUITE))] entry: (&'static str, &'static str, i16),
     ) {

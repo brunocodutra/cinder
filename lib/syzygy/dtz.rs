@@ -90,16 +90,19 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn stretching_dtz_increases_magnitude(dtz: Dtz, p: u16) {
         assert_eq!(dtz.stretch(p).signum(), dtz.signum());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn decoding_encoded_dtz_is_an_identity(dtz: Dtz) {
         assert_eq!(Dtz::decode(dtz.encode()), dtz);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn decoding_encoded_optional_dtz_is_an_identity(dtz: Option<Dtz>) {
         assert_eq!(Option::decode(dtz.encode()), dtz);
     }

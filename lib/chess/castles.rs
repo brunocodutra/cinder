@@ -121,6 +121,7 @@ impl const From<Square> for Castles {
 
         #[cold]
         #[ctor::ctor]
+        #[cfg(not(miri))]
         #[inline(never)]
         unsafe fn init() {
             let castles = unsafe { CASTLES.get().as_mut_unchecked() };
@@ -193,11 +194,13 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_printed_castles_is_an_identity(cr: Castles) {
         assert_eq!(cr.to_string().parse(), Ok(cr));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_castles_fails_if_right_is_duplicated(
         #[filter(!#s.is_empty())]
         #[strategy("(KK)?(kk)?(QQ)?(qq)?")]
@@ -207,6 +210,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_castles_fails_for_invalid_string(
         c: Castles,
         #[strategy(..=#c.to_string().len())] n: usize,

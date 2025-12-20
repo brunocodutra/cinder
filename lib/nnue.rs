@@ -198,15 +198,14 @@ impl Nnue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrayvec::ArrayVec;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn feature_transformer_does_not_overflow() {
         (0..Accumulator::LEN).for_each(|i| {
-            let bias = Nnue::transformer().bias[i] as i32;
-            let mut features = ArrayVec::<_, { Feature::LEN }>::from_iter(
-                Nnue::transformer().weight.iter().map(|a| a[i] as i32),
-            );
+            let transformer = Nnue::transformer();
+            let bias = transformer.bias[i] as i32;
+            let mut features = Vec::from_iter(transformer.weight.iter().map(|a| a[i] as i32));
 
             for weights in features.as_chunks_mut::<768>().0 {
                 let (small, _, _) = weights.select_nth_unstable(32);

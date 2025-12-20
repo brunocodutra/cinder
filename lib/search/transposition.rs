@@ -190,6 +190,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn bound_returns_score_bound(
         #[filter(!#b.is_empty())] b: Range<Score>,
         s: Score,
@@ -199,6 +200,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn lower_returns_score_lower_bound(
         #[filter(!#b.is_empty())] b: Range<Score>,
         #[filter(#s > #b.start)] s: Score,
@@ -208,6 +210,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn upper_returns_score_upper_bound(
         #[filter(!#b.is_empty())] b: Range<Score>,
         #[filter(#s < #b.end)] s: Score,
@@ -217,6 +220,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn bound_is_within_range(
         #[filter(!#b.is_empty())] b: Range<Score>,
         s: Score,
@@ -226,26 +230,31 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn decoding_encoded_score_bound_is_an_identity(s: ScoreBound) {
         assert_eq!(ScoreBound::decode(s.encode()), s);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn decoding_encoded_optional_score_bound_is_an_identity(s: Option<ScoreBound>) {
         assert_eq!(Option::decode(s.encode()), s);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn transposed_score_is_within_bounds(t: Transposition, p: Ply) {
         assert!(t.score().range(p).contains(&t.transpose(p).score()));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn decoding_encoded_transposition_is_an_identity(t: Transposition) {
         assert_eq!(Transposition::decode(t.encode()), t);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn decoding_encoded_optional_transposition_is_an_identity(t: Option<Transposition>) {
         assert_eq!(Option::decode(t.encode()), t);
     }

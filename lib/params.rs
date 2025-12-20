@@ -307,6 +307,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn perturbing_updates_params(
         p: Params,
         #[strategy(vec(-1f32..=1f32, Params::LEN))] d: Vec<f32>,
@@ -318,6 +319,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_printed_params_is_an_identity(p: Params) {
         assert_eq!(p.to_string().parse(), Ok(p));
     }

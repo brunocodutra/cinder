@@ -47,6 +47,12 @@ struct GameResult {
     losses: u32,
 }
 
+/// Parse a single key-value pair
+fn parse_key_val(s: &str) -> Result<(String, String), Failure> {
+    let mid = s.find('=').context("expected `key=val` pair")?;
+    Ok((s[..mid].to_owned(), s[mid + 1..].to_owned()))
+}
+
 /// Orchestrates a series of game between engines.
 #[derive(Debug, Args, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -71,6 +77,10 @@ struct MatchRunner {
     #[clap(long)]
     engine: PathBuf,
 
+    /// Options for the engine.
+    #[clap(long, value_parser = parse_key_val, value_delimiter = ',')]
+    options: Vec<(String, String)>,
+
     /// Time control.
     #[clap(long)]
     tc: String,
@@ -91,17 +101,20 @@ impl MatchRunner {
             format!("-openings file={} order=random", p.display())
         });
 
-        let (tb, option_syzygy_path) = self.syzygy.as_ref().map_or_else(Default::default, |p| {
+        let (tb, mut options) = self.syzygy.as_ref().map_or_else(Default::default, |p| {
             let path = p.display();
             (format!("-tb {path}"), format!("option.SyzygyPath={path}"))
         });
 
+        options.extend(self.options.iter().map(|(k, v)| format!(" option.{k}={v}")));
+
         let args = format!(
             "-games 2 -rounds {pairs} -concurrency {concurrency} -use-affinity -recover
             -report penta=false -ratinginterval 0 -autosaveinterval 0 {openings} {tb}
+            -draw movenumber=32 movecount=6 score=15 -resign movecount=5 score=600
             -engine name=left cmd={engine} args=--params={left}
             -engine name=right cmd={engine} args=--params={right}
-            -each tc={tc} {option_syzygy_path}"
+            -each tc={tc} {options}"
         );
 
         let args: Vec<_> = args.split_whitespace().collect();

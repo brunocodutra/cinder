@@ -60,16 +60,19 @@ mod tests {
     use test_strategy::proptest;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn color_guarantees_zero_value_optimization() {
         assert_eq!(size_of::<Option<Color>>(), size_of::<Color>());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn color_has_an_equivalent_boolean(c: Color) {
         assert_eq!(Color::from(bool::from(c)), c);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn color_implements_not_operator(c: Color) {
         assert_eq!(!c, c.flip());
     }

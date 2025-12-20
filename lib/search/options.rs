@@ -167,12 +167,14 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn hash_size_is_smaller_than_max(h: HashSize) {
         assert!(HashSize::default() <= HashSize::MAX);
         assert!(h <= HashSize::MAX);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn hash_size_constructs_if_size_not_too_large(
         #[strategy(HashSize::MIN..=HashSize::MAX)] n: usize,
     ) {
@@ -180,16 +182,19 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_printed_hash_size_rounds_to_megabytes(h: HashSize) {
         assert_eq!(h.to_string().parse(), Ok(h >> 20 << 20));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_hash_size_fails_for_numbers_too_large(#[strategy(HashSize::MAX + 1..)] n: usize) {
         assert_eq!(n.to_string().parse::<HashSize>(), Err(ParseHashSizeError));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_hash_size_fails_for_invalid_number(
         #[filter(#s.parse::<usize>().is_err())] s: String,
     ) {
@@ -197,12 +202,14 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn thread_count_is_smaller_than_max(t: ThreadCount) {
         assert!(ThreadCount::default() <= ThreadCount::MAX);
         assert!(t <= ThreadCount::MAX);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn thread_count_constructs_if_count_not_too_large(
         #[strategy(ThreadCount::MIN..=ThreadCount::MAX)] n: u16,
     ) {
@@ -210,11 +217,13 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_printed_thread_count_is_an_identity(t: ThreadCount) {
         assert_eq!(t.to_string().parse(), Ok(t));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_thread_count_fails_for_numbers_too_large(
         #[strategy(ThreadCount::MAX + 1..)] n: u16,
     ) {
@@ -225,6 +234,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_thread_count_fails_for_invalid_number(
         #[filter(#s.parse::<usize>().is_err())] s: String,
     ) {

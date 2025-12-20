@@ -1217,6 +1217,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn tt_can_be_resized(s: HashSize, t: HashSize) {
         let mut tt = TranspositionTable::new(s)?;
         tt.resize(t)?;
@@ -1224,6 +1225,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn vt_can_be_resized(s: ThreadCount, t: ThreadCount) {
         let mut vt = ValuesTable::new(s)?;
         vt.resize(t)?;
@@ -1231,6 +1233,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn nw_returns_transposition_if_beta_too_low(
         #[by_ref]
         #[filter(#e.shared.tt.len() > 0)]
@@ -1255,6 +1258,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn nw_returns_transposition_if_beta_too_high(
         #[by_ref]
         #[filter(#e.shared.tt.len() > 0)]
@@ -1279,6 +1283,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn nw_returns_transposition_if_exact(
         #[by_ref]
         #[filter(#e.shared.tt.len() > 0)]
@@ -1303,6 +1308,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn ab_aborts_if_time_is_up(
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
@@ -1323,6 +1329,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn ab_can_be_aborted_upon_request(
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
@@ -1343,6 +1350,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn ab_returns_drawn_score_if_game_ends_in_a_draw(
         mut e: Engine,
         #[filter(#pos.outcome().is_some_and(|o| o.is_draw()))] pos: Evaluator,
@@ -1362,6 +1370,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn ab_returns_lost_score_if_game_ends_in_checkmate(
         mut e: Engine,
         #[filter(#pos.outcome().is_some_and(|o| o.is_decisive()))] pos: Evaluator,
@@ -1385,6 +1394,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn aw_extends_time_to_find_some_pv(
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Position,
@@ -1401,6 +1411,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn aw_extends_depth_to_find_some_pv(
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Position,
@@ -1417,6 +1428,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn aw_extends_nodes_to_find_some_pv(
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Position,

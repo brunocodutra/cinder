@@ -145,12 +145,14 @@ mod tests {
     ];
 
     #[proptest(cases = 1)]
+    #[cfg_attr(miri, ignore)]
     fn new_with_empty_paths_succeeds() {
         let syzygy = Syzygy::new::<&PathBuf, _>(&[])?;
         assert_eq!(syzygy.max_pieces(), 0);
     }
 
     #[proptest(cases = 1)]
+    #[cfg_attr(miri, ignore)]
     fn new_with_single_directory_succeeds() {
         let tmp = TempDir::new()?;
 
@@ -165,6 +167,7 @@ mod tests {
     }
 
     #[proptest(cases = 1)]
+    #[cfg_attr(miri, ignore)]
     fn new_with_multiple_directories_succeeds() {
         let tmp = TempDir::new()?;
 
@@ -183,6 +186,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn new_with_nonexistent_directory_succeeds(#[strategy("[A-Za-z0-9_]{1,10}")] dir: String) {
         let tmp = TempDir::new()?;
         let syzygy = Syzygy::new(&[tmp.path().join(dir)])?;
@@ -190,6 +194,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn new_with_empty_directory_succeeds(#[strategy("[A-Za-z0-9_]{1,10}")] dir: String) {
         let tmp = TempDir::new()?;
         let dir = tmp.path().join(dir);
@@ -200,6 +205,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn new_with_not_a_directory_succeeds(#[strategy("[A-Za-z0-9_]{1,10}")] file: String) {
         let tmp = TempDir::new()?;
         let file = tmp.path().join(file);
@@ -210,6 +216,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn new_with_directory_containing_invalid_file_fails(
         #[strategy("[A-Za-z0-9_]{1,10}[.](rtbw|rtbz|RTBW|RTBZ)")] file: String,
     ) {
@@ -221,6 +228,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn new_with_directory_containing_invalid_file_extension_succeeds(
         #[strategy("KNvK[.]([A-Za-z0-9_]{0,3})?")] file: String,
     ) {

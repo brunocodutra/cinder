@@ -405,6 +405,7 @@ const SYZYGY_SUITE: &[(&str, Wdl, i16, &str)] = &[
 ];
 
 #[proptest]
+#[cfg_attr(miri, ignore)]
 fn probing_syzygy_tablebase_finds_wdl(
     #[strategy(select(SYZYGY_SUITE))] entry: (&'static str, Wdl, i16, &'static str),
 ) {
@@ -414,6 +415,7 @@ fn probing_syzygy_tablebase_finds_wdl(
 }
 
 #[proptest]
+#[cfg_attr(miri, ignore)]
 fn probing_syzygy_tablebase_finds_dtz(
     #[strategy(select(SYZYGY_SUITE))] entry: (&'static str, Wdl, i16, &'static str),
 ) {
@@ -423,6 +425,7 @@ fn probing_syzygy_tablebase_finds_dtz(
 }
 
 #[proptest]
+#[cfg_attr(miri, ignore)]
 fn probing_syzygy_tablebase_finds_best_move(
     #[strategy(select(SYZYGY_SUITE))] entry: (&'static str, Wdl, i16, &'static str),
 ) {

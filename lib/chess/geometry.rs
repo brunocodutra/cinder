@@ -83,6 +83,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn side_has_an_equivalent_boolean(s: Side) {
         assert_eq!(Side::from(bool::from(s)), s);
     }

@@ -72,16 +72,19 @@ mod tests {
     use test_strategy::proptest;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn len_counts_total_number_of_features() {
         assert_eq!(Feature::LEN, Feature::iter().len());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn is_unique_to_perspective(c: Color, ksq: Square, p: Piece, sq: Square) {
         assert_ne!(Feature::new(c, ksq, p, sq), Feature::new(!c, ksq, p, sq));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn is_vertically_symmetric(c: Color, ksq: Square, p: Piece, sq: Square) {
         assert_eq!(
             Feature::new(c, ksq, p, sq),
@@ -90,6 +93,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn is_horizontally_symmetric(c: Color, ksq: Square, p: Piece, sq: Square) {
         assert_eq!(
             Feature::new(c, ksq, p, sq),

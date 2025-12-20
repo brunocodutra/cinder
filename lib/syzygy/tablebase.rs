@@ -271,6 +271,7 @@ mod test {
     use test_strategy::proptest;
 
     #[proptest(cases = 1)]
+    #[cfg_attr(miri, ignore)]
     fn loads_wdl_table() {
         let tmp = TempDir::new()?;
         let file = tmp.path().join("KNvK.rtbw");
@@ -286,6 +287,7 @@ mod test {
     }
 
     #[proptest(cases = 1)]
+    #[cfg_attr(miri, ignore)]
     fn loads_dtz_table() {
         let tmp = TempDir::new()?;
         let file = tmp.path().join("KNvKN.rtbz");
@@ -301,6 +303,7 @@ mod test {
     }
 
     #[proptest(cases = 1)]
+    #[cfg_attr(miri, ignore)]
     fn load_ignores_extension_casing() {
         let tmp = TempDir::new()?;
 
@@ -319,6 +322,7 @@ mod test {
     }
 
     #[proptest(cases = 1)]
+    #[cfg_attr(miri, ignore)]
     fn load_skips_repeated_table() {
         let tmp = TempDir::new()?;
 
@@ -345,6 +349,7 @@ mod test {
     }
 
     #[proptest(cases = 1)]
+    #[cfg_attr(miri, ignore)]
     fn loading_larger_table_increases_max_pieces() {
         let tmp = TempDir::new()?;
         let mut tablebase = Tablebase::default();
@@ -366,6 +371,7 @@ mod test {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn loading_smaller_table_does_not_decrease_max_pieces() {
         let tmp = TempDir::new()?;
         let mut tablebase = Tablebase::default();
@@ -387,6 +393,7 @@ mod test {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn loading_file_with_empty_stem_fails(#[strategy("[.][A-Za-z0-9_]{1,10}")] ext: String) {
         let tmp = TempDir::new()?;
         let file = tmp.path().join(ext);
@@ -401,6 +408,7 @@ mod test {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn loading_file_with_empty_extension_fails(#[strategy("[A-Za-z0-9_]{1,10}[.]?")] stem: String) {
         let tmp = TempDir::new()?;
         let file = tmp.path().join(stem);
@@ -415,6 +423,7 @@ mod test {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn loading_file_with_invalid_material_fails(
         #[filter(Material::from_str(&#stem).is_err())]
         #[strategy("[A-Za-z0-9_]{1,10}")]
@@ -434,6 +443,7 @@ mod test {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn loading_file_with_too_many_pieces_fails(
         #[strategy("[PNBRQ]{6,}")] stem: String,
         #[strategy("(rtbw)|(rtbz)")] ext: String,
@@ -451,6 +461,7 @@ mod test {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn loading_file_with_unsupported_extension_fails(
         #[strategy("[PNBRQ]{1,5}")] stem: String,
         #[filter(!#ext.to_lowercase().starts_with("rtb"))]

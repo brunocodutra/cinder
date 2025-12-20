@@ -96,26 +96,31 @@ mod tests {
     use test_strategy::proptest;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn file_guarantees_zero_value_optimization() {
         assert_eq!(size_of::<Option<File>>(), size_of::<File>());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn mirroring_file_returns_its_complement(f: File) {
         assert_eq!(f.mirror().get(), File::MAX - f.get());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn transposing_file_returns_its_corresponding_rank(f: File) {
         assert_eq!(f.transpose().get(), f.get());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn subtracting_files_returns_distance(a: File, b: File) {
         assert_eq!(a - b, a.get() - b.get());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn file_has_an_equivalent_bitboard(f: File) {
         assert_eq!(
             Vec::from_iter(f.bitboard()),
@@ -124,11 +129,13 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_printed_file_is_an_identity(f: File) {
         assert_eq!(f.to_string().parse(), Ok(f));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_file_fails_if_not_lower_case_letter_between_a_and_h(
         #[filter(!('a'..='h').contains(&#c))] c: char,
     ) {
@@ -136,6 +143,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_file_fails_if_length_not_one(#[filter(#s.len() != 1)] s: String) {
         assert_eq!(s.parse::<File>(), Err(ParseFileError));
     }

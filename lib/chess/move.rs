@@ -265,16 +265,19 @@ mod tests {
     use test_strategy::proptest;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn move_guarantees_zero_value_optimization() {
         assert_eq!(size_of::<Option<Move>>(), size_of::<Move>());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn decoding_encoded_move_is_an_identity(m: Move) {
         assert_eq!(Move::decode(m.encode()), m);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn capture_move_can_be_constructed(
         wc: Square,
         #[filter(#wc != #wt)] wt: Square,
@@ -284,11 +287,13 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn quiet_move_can_be_constructed(wc: Square, #[filter(#wc != #wt)] wt: Square) {
         assert!(Move::regular(wc, wt, None).is_quiet());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn promotion_move_can_be_constructed(
         wc: Square,
         #[filter(#wc != #wt)] wt: Square,
@@ -298,6 +303,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn promotions_are_never_quiet(
         wc: Square,
         #[filter(#wc != #wt)] wt: Square,
@@ -307,6 +313,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn captures_are_never_quiet(
         wc: Square,
         #[filter(#wc != #wt)] wt: Square,
@@ -317,12 +324,14 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn can_iterate_moves_in_set(ml: MoveSet) {
         let v = Vec::from_iter(ml);
         assert_eq!(ml.iter().len(), v.len());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn all_moves_in_set_are_of_the_same_type(ml: MoveSet) {
         for m in ml {
             assert_eq!(m.is_promotion(), ml.is_promotion());
@@ -332,6 +341,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn all_moves_in_set_are_of_the_same_source_square(ml: MoveSet) {
         for m in ml {
             assert_eq!(m.whence(), ml.whence());

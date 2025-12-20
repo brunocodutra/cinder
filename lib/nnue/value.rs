@@ -44,16 +44,19 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn flipping_value_returns_its_negative(v: Value) {
         assert_eq!(v.flip(), -v);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn decoding_encoded_value_is_an_identity(v: Value) {
         assert_eq!(Value::decode(v.encode()), v);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn decoding_encoded_optional_value_is_an_identity(v: Option<Value>) {
         assert_eq!(Option::decode(v.encode()), v);
     }

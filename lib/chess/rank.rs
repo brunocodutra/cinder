@@ -96,26 +96,31 @@ mod tests {
     use test_strategy::proptest;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn rank_guarantees_zero_value_optimization() {
         assert_eq!(size_of::<Option<Rank>>(), size_of::<Rank>());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn subtracting_ranks_returns_distance(a: Rank, b: Rank) {
         assert_eq!(a - b, a.get() - b.get());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn flipping_rank_returns_its_complement(r: Rank) {
         assert_eq!(r.flip().get(), Rank::MAX - r.get());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn transposing_rank_returns_its_corresponding_file(r: Rank) {
         assert_eq!(r.transpose().get(), r.get());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn rank_has_an_equivalent_bitboard(r: Rank) {
         assert_eq!(
             Vec::from_iter(r.bitboard()),
@@ -124,11 +129,13 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_printed_rank_is_an_identity(r: Rank) {
         assert_eq!(r.to_string().parse(), Ok(r));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_rank_fails_if_not_digit_between_1_and_8(
         #[filter(!('1'..='8').contains(&#c))] c: char,
     ) {
@@ -136,6 +143,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_rank_fails_if_length_not_one(#[filter(#s.len() != 1)] s: String) {
         assert_eq!(s.parse::<Rank>(), Err(ParseRankError));
     }

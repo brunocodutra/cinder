@@ -145,6 +145,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn symmetric_material_implies_piece_count_is_same_on_both_sides(mat: Material) {
         let left = Role::iter().map(|r| mat.left(r)).sum::<usize>();
         let right = Role::iter().map(|r| mat.right(r)).sum::<usize>();
@@ -152,6 +153,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn count_returns_total_number_of_pieces(mat: Material) {
         let left = Role::iter().map(|r| mat.left(r)).sum::<usize>();
         let right = Role::iter().map(|r| mat.right(r)).sum::<usize>();
@@ -159,16 +161,19 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn normalizing_normalized_material_is_an_identity(mat: Material) {
         assert_eq!(mat.normalize().normalize(), mat.normalize());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn collecting_material_is_an_identity(mat: Material) {
         assert_eq!(mat.iter().collect::<Material>(), mat);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_printed_material_is_an_identity(mat: Material) {
         assert_eq!(mat.to_string().parse(), Ok(mat));
     }

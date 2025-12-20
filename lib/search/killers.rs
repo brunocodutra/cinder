@@ -31,6 +31,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn contains_returns_true_only_if_inserted(m: Move) {
         let mut k = Killers::default();
         assert!(!k.contains(m));
@@ -39,6 +40,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn insert_avoids_duplicated_moves(m: Move) {
         let mut k = Killers::default();
 
@@ -49,6 +51,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn insert_keeps_most_recent(#[any(size_range(2..10).lift())] ms: HashSet<Move>, m: Move) {
         let mut k = Killers::default();
 

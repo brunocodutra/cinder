@@ -18,6 +18,7 @@ static ZOBRIST: SyncUnsafeCell<ZobristNumbers> = SyncUnsafeCell::new(zeroed());
 
 #[cold]
 #[ctor::ctor]
+#[cfg(not(miri))]
 #[inline(never)]
 unsafe fn init() {
     let zobrist = unsafe { ZOBRIST.get().as_mut_unchecked() };

@@ -127,11 +127,13 @@ mod tests {
     use test_strategy::proptest;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn default_is_unlimited() {
         assert_eq!(Limits::default(), Limits::none());
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn none_is_unlimited() {
         let limits = Limits::none();
 
@@ -141,6 +143,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn can_combine_multiple_limits(d: Depth, n: u64, t: Duration, i: Duration) {
         let limits = Limits::none()
             .with_depth(d)
@@ -154,33 +157,39 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn depth_returns_value_if_set(d: Depth) {
         assert_eq!(Limits::depth(d).max_depth(), d);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn depth_returns_max_by_default(n: u64, t: Duration, i: Duration) {
         let limits = Limits::none().with_nodes(n).with_time(t).with_clock(t, i);
         assert_eq!(limits.max_depth(), Depth::upper());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn nodes_returns_value_if_set(n: u64) {
         assert_eq!(Limits::nodes(n).max_nodes(), n);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn nodes_returns_max_by_default(d: Depth, t: Duration, i: Duration) {
         let limits = Limits::none().with_depth(d).with_time(t).with_clock(t, i);
         assert_eq!(limits.max_nodes(), u64::MAX);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn time_returns_min_of_time_or_clock_if_set(t: Duration, u: Duration, i: Duration) {
         assert_eq!(Limits::time(t).with_clock(u, i).max_time(), t.min(u));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn time_returns_max_by_default(d: Depth, n: u64) {
         let limits = Limits::none().with_depth(d).with_nodes(n);
         assert_eq!(limits.max_time(), Duration::MAX);

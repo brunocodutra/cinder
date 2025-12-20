@@ -497,6 +497,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_position_with_startpos(
         #[any(MockStream::new(["position startpos"]))] mut uci: MockUci,
     ) {
@@ -506,6 +507,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_position_with_startpos_and_moves(
         #[by_ref]
         #[filter(#uci.pos.outcome().is_none())]
@@ -532,6 +534,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_position_with_fen(
         #[any(MockStream::new([format!("position fen {}", #pos)]))] mut uci: MockUci,
         pos: Position,
@@ -542,6 +545,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_position_with_fen_and_moves(
         #[by_ref]
         #[filter(#uci.pos.outcome().is_none())]
@@ -569,6 +573,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn ignores_position_with_invalid_fen(
         #[any(MockStream::new([format!("position fen {}", #_s)]))] mut uci: MockUci,
         #[filter(#_s.parse::<Position>().is_err())] _s: String,
@@ -580,6 +585,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn ignores_position_with_invalid_move(
         #[any(MockStream::new([format!("position startpos moves {}", #_s)]))] mut uci: MockUci,
         #[strategy("[^[:ascii:]]+")] _s: String,
@@ -591,6 +597,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_position_with_illegal_move(
         #[any(MockStream::new([format!("position startpos moves {}", #_m)]))] mut uci: MockUci,
         #[filter(!Position::default().moves().unpack().any(|m| UciMove::new(m) == *#_m.to_string()))]
@@ -603,6 +610,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_go_time_left(
         #[by_ref]
         #[filter(#uci.pos.outcome().is_none())]
@@ -633,6 +641,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_go_depth(
         #[filter(#uci.pos.outcome().is_none())]
         #[any(MockStream::new([format!("go depth {}", #_d)]))]
@@ -649,6 +658,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_go_nodes(
         #[filter(#uci.pos.outcome().is_none())]
         #[any(MockStream::new([format!("go nodes {}", #_n)]))]
@@ -665,6 +675,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_go_time(
         #[filter(#uci.pos.outcome().is_none())]
         #[any(MockStream::new([format!("go movetime {}", #_ms)]))]
@@ -681,6 +692,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_go_infinite(
         #[by_ref]
         #[filter(#uci.pos.outcome().is_none())]
@@ -697,6 +709,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_go_with_no_move(
         #[by_ref]
         #[filter(#uci.pos.moves().is_empty())]
@@ -713,6 +726,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_go_with_moves_to_go(
         #[by_ref]
         #[filter(#uci.pos.outcome().is_none())]
@@ -730,6 +744,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_go_with_mate(
         #[by_ref]
         #[filter(#uci.pos.outcome().is_none())]
@@ -747,6 +762,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_stop_during_search(
         #[by_ref]
         #[filter(#uci.pos.outcome().is_none())]
@@ -763,6 +779,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_quit_during_search(
         #[by_ref]
         #[filter(#uci.pos.outcome().is_none())]
@@ -773,18 +790,21 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_stop(#[any(MockStream::new(["stop"]))] mut uci: MockUci) {
         assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_quit(#[any(MockStream::new(["quit"]))] mut uci: MockUci) {
         assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.output.join("\n"), "");
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_perft(
         #[any(MockStream::new([format!("perft {}", #_d)]))] mut uci: MockUci,
         #[strategy(..4u8)] _d: u8,
@@ -802,12 +822,14 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_uci(#[any(MockStream::new(["uci"]))] mut uci: MockUci) {
         assert!(block_on(uci.run()).is_ok());
         assert!(uci.output.concat().ends_with("uciok"));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_new_game(#[any(MockStream::new(["ucinewgame"]))] mut uci: MockUci) {
         assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.pos, Default::default());
@@ -815,12 +837,14 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_ready(#[any(MockStream::new(["isready"]))] mut uci: MockUci) {
         assert!(block_on(uci.run()).is_ok());
         assert_eq!(uci.output.concat(), "readyok");
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_option_hash(
         #[any(MockStream::new([format!("setoption name Hash value {}", #h)]))] mut uci: MockUci,
         h: HashSize,
@@ -831,6 +855,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn ignores_invalid_hash_size(
         #[any(MockStream::new([format!("setoption name Hash value {}", #_s)]))] mut uci: MockUci,
         #[filter(#_s.trim().parse::<HashSize>().is_err())] _s: String,
@@ -842,6 +867,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_option_threads(
         #[any(MockStream::new([format!("setoption name Threads value {}", #t)]))] mut uci: MockUci,
         t: ThreadCount,
@@ -852,6 +878,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn ignores_invalid_thread_count(
         #[any(MockStream::new([format!("setoption name Threads value {}", #_s)]))] mut uci: MockUci,
         #[filter(#_s.trim().parse::<ThreadCount>().is_err())] _s: String,
@@ -863,6 +890,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn handles_option_syzygy_path(
         #[any(MockStream::new([format!("setoption name SyzygyPath value {}", #s)]))]
         mut uci: MockUci,
@@ -881,6 +909,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn ignores_unsupported_messages(
         #[any(MockStream::new([#_s]))] mut uci: MockUci,
         #[strategy("[^[:ascii:]]*")] _s: String,

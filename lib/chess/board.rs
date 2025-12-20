@@ -480,6 +480,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn iter_returns_pieces_and_squares(b: Board) {
         for (p, sq) in b.iter() {
             assert_eq!(b.piece_on(sq), Some(p));
@@ -487,6 +488,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn by_color_returns_squares_occupied_by_pieces_of_a_color(b: Board, c: Color) {
         for sq in b.by_color(c) {
             assert_eq!(b.piece_on(sq).map(|p| p.color()), Some(c));
@@ -494,6 +496,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn by_color_returns_squares_occupied_by_pieces_of_a_role(b: Board, r: Role) {
         for sq in b.by_role(r) {
             assert_eq!(b.piece_on(sq).map(|p| p.role()), Some(r));
@@ -501,6 +504,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn by_piece_returns_squares_occupied_by_a_piece(b: Board, p: Piece) {
         for sq in b.by_piece(p) {
             assert_eq!(b.piece_on(sq), Some(p));
@@ -508,6 +512,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn king_returns_square_occupied_by_a_king(b: Board, c: Color) {
         if let Some(sq) = b.king(c) {
             assert_eq!(b.piece_on(sq), Some(Piece::new(Role::King, c)));
@@ -515,6 +520,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn piece_on_returns_piece_on_the_given_square(b: Board, sq: Square) {
         assert_eq!(
             b.piece_on(sq),
@@ -523,6 +529,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn toggle_removes_piece_from_square(
         mut b: Board,
         #[filter(#b.piece_on(#sq).is_some())] sq: Square,
@@ -533,6 +540,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn toggle_places_piece_on_square(
         mut b: Board,
         #[filter(#b.piece_on(#sq).is_none())] sq: Square,
@@ -544,6 +552,7 @@ mod tests {
 
     #[proptest]
     #[should_panic]
+    #[cfg_attr(miri, ignore)]
     fn toggle_panics_if_square_occupied_by_other_piece(
         mut b: Board,
         #[filter(#b.piece_on(#sq).is_some())] sq: Square,
@@ -553,11 +562,13 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_printed_board_is_an_identity(b: Board) {
         assert_eq!(b.to_string().parse(), Ok(b));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_board_fails_for_invalid_fen(
         b: Board,
         #[strategy(..=#b.to_string().len())] n: usize,

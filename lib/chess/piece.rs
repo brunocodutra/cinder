@@ -32,6 +32,7 @@ impl Piece {
 
         #[cold]
         #[ctor::ctor]
+        #[cfg(not(miri))]
         #[inline(never)]
         unsafe fn init() {
             let forks = unsafe { FORKS.get().as_mut_unchecked() };
@@ -54,6 +55,7 @@ impl Piece {
 
         #[cold]
         #[ctor::ctor]
+        #[cfg(not(miri))]
         #[inline(never)]
         unsafe fn init() {
             let jumps = unsafe { JUMPS.get().as_mut_unchecked() };
@@ -75,6 +77,7 @@ impl Piece {
 
         #[cold]
         #[ctor::ctor]
+        #[cfg(not(miri))]
         #[inline(never)]
         unsafe fn init() {
             let slides = unsafe { SLIDES.get().as_mut_unchecked() };
@@ -96,6 +99,7 @@ impl Piece {
 
         #[cold]
         #[ctor::ctor]
+        #[cfg(not(miri))]
         #[inline(never)]
         unsafe fn init() {
             let bitboard = unsafe { BITBOARDS.get().as_mut_unchecked() };
@@ -263,31 +267,37 @@ mod tests {
     use test_strategy::proptest;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn piece_guarantees_zero_value_optimization() {
         assert_eq!(size_of::<Option<Piece>>(), size_of::<Piece>());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn piece_has_a_color(r: Role, c: Color) {
         assert_eq!(Piece::new(r, c).color(), c);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn piece_has_a_role(r: Role, c: Color) {
         assert_eq!(Piece::new(r, c).role(), r);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn piece_cannot_attack_onto_themselves(p: Piece, wc: Square, bb: Bitboard) {
         assert!(!p.attacks(wc, bb).contains(wc));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn piece_cannot_move_onto_themselves(p: Piece, wc: Square, a: Bitboard, b: Bitboard) {
         assert!(!p.moves(wc, a, b).contains(wc));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn piece_can_only_move_to_empty_or_opponent_piece(
         p: Piece,
         wc: Square,
@@ -300,17 +310,20 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn flipping_piece_preserves_role_and_mirrors_color(p: Piece) {
         assert_eq!(p.flip().role(), p.role());
         assert_eq!(p.flip().color(), !p.color());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_printed_piece_is_an_identity(p: Piece) {
         assert_eq!(p.to_string().parse(), Ok(p));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_piece_fails_if_not_one_of_pnbrqk(
         #[filter(!['p', 'n', 'b', 'r', 'q', 'k'].contains(&#c.to_ascii_lowercase()))] c: char,
     ) {
@@ -318,6 +331,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_piece_fails_if_length_not_one(#[filter(#s.len() != 1)] s: String) {
         assert_eq!(s.parse::<Piece>(), Err(ParsePieceError));
     }

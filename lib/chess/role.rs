@@ -66,16 +66,19 @@ mod tests {
     use test_strategy::proptest;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn role_guarantees_zero_value_optimization() {
         assert_eq!(size_of::<Option<Role>>(), size_of::<Role>());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_printed_role_is_an_identity(r: Role) {
         assert_eq!(r.to_string().parse(), Ok(r));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_role_fails_if_not_one_of_lowercase_pnbrqk(
         #[filter(!['p', 'n', 'b', 'r', 'q', 'k'].contains(&#c))] c: char,
     ) {
@@ -83,6 +86,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn parsing_role_fails_if_length_not_one(#[filter(#s.len() != 1)] s: String) {
         assert_eq!(s.parse::<Role>(), Err(ParseRoleError));
     }

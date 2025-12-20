@@ -155,6 +155,7 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     #[cfg(target_feature = "avx512bw")]
     fn for_i8x64(
         #[strategy(UniformArrayStrategy::new(-128i8..=127i8).prop_map(i8x64::from_array))] w: i8x64,
@@ -167,6 +168,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     #[cfg(target_feature = "avx2")]
     fn for_i8x32(
         #[strategy(UniformArrayStrategy::new(-128i8..=127i8).prop_map(i8x32::from_array))] w: i8x32,
@@ -179,6 +181,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn for_i8x16(
         #[strategy(UniformArrayStrategy::new(-128i8..=127i8).prop_map(i8x16::from_array))] w: i8x16,
         #[strategy(UniformArrayStrategy::new(0u8..=127u8).prop_map(u8x16::from_array))] x: u8x16,

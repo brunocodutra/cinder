@@ -1,3 +1,5 @@
+#![allow(long_running_const_eval)]
+
 use anyhow::{Context, Error as Failure};
 use bullet::game::formats::bulletformat::ChessBoard;
 use bullet::game::formats::sfbinpack::TrainingDataEntry;

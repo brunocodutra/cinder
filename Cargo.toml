@@ -14,7 +14,7 @@ default-run = "cinder"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [features]
-spsa = ["rand/thread_rng", "dep:ron", "dep:serde"]
+spsa = ["dep:rand", "dep:ron", "dep:serde"]
 trainer = ["dep:bullet"]
 no_panic = ["dep:no-panic"]
 
@@ -53,13 +53,13 @@ futures = { version = "0.3.31", default-features = false, features = [
 libc = { version = "0.2.178", default-features = false, features = ["std"] }
 memmap2 = { version = "0.9.9", default-features = false }
 nom = { version = "8.0.0", default-features = false, features = ["std"] }
-rand = { version = "0.9.2", default-features = false, features = [
-    "small_rng",
-    "std",
-] }
 rustc-hash = { version = "2.1.1", default-features = false, features = ["std"] }
 
 # spsa
+rand = { version = "0.9.2", optional = true, default-features = false, features = [
+    "std",
+    "thread_rng",
+] }
 ron = { version = "0.12.0", optional = true, default-features = false, features = [
     "std",
 ] }

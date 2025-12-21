@@ -1,9 +1,9 @@
 use crate::nnue::{Evaluator, Value};
 use crate::search::{ControlFlow::*, *};
-use crate::util::{Assume, Atomic, Bits, Bounded, Cache, Float, Int, Slice, Vault};
+use crate::util::{Assume, Atomic, Bits, Bounded, Cache, Float, HugeSeq, Int, Vault};
 use crate::{chess::Move, params::Params, syzygy::Syzygy};
 use bytemuck::{Zeroable, fill_zeroes, zeroed};
-use derive_more::with_trait::{Constructor, Deref, DerefMut, Display, Error};
+use derive_more::with_trait::{Constructor, Debug, Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
 use std::task::{Context, Poll};
@@ -50,6 +50,7 @@ struct LocalData {
 }
 
 #[derive(Debug, Deref, DerefMut)]
+#[debug("TranspositionTable({})", _0.len())]
 struct TranspositionTable(Cache<Transposition>);
 
 impl TranspositionTable {
@@ -65,6 +66,7 @@ impl TranspositionTable {
 }
 
 #[derive(Debug, Deref, DerefMut)]
+#[debug("ValuesTable({})", _0.len())]
 struct ValuesTable(Cache<Value, u64>);
 
 impl ValuesTable {
@@ -1122,7 +1124,7 @@ impl<'e, 'p> Stream for Pin<&mut Search<'e, 'p>> {
 pub struct Engine {
     executor: Executor,
     shared: SharedData,
-    local: Slice<LocalData>,
+    local: HugeSeq<LocalData>,
 }
 
 #[cfg(test)]
@@ -1147,7 +1149,7 @@ impl Engine {
     pub fn with_options(options: &Options) -> io::Result<Self> {
         Ok(Engine {
             executor: Executor::new(options.threads)?,
-            local: Slice::new(options.threads.cast())?,
+            local: HugeSeq::zeroed(options.threads.cast())?,
             shared: SharedData {
                 syzygy: Syzygy::new(&options.syzygy)?,
                 tt: TranspositionTable::new(options.hash)?,
@@ -1164,7 +1166,7 @@ impl Engine {
     /// Resets the thread count.
     pub fn set_threads(&mut self, threads: ThreadCount) -> io::Result<()> {
         self.executor = Executor::new(threads)?;
-        self.local = Slice::new(threads.cast())?;
+        self.local.zeroed_in_place(threads.cast())?;
         self.shared.values.resize(threads)?;
         Ok(())
     }
@@ -1213,6 +1215,7 @@ mod tests {
     use super::*;
     use crate::chess::Position;
     use proptest::sample::Selector;
+    use std::fmt::Debug;
     use std::{thread, time::Duration};
     use test_strategy::proptest;
 
@@ -1246,6 +1249,8 @@ mod tests {
         #[filter(!#s.is_winning() && #s >= #b)] s: Score,
         cut: bool,
     ) {
+        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0));
+
         let tpos = Transposition::new(ScoreBound::Lower(s), Depth::upper(), Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);
 
@@ -1271,6 +1276,8 @@ mod tests {
         #[filter(!#s.is_losing() && #s < #b)] s: Score,
         cut: bool,
     ) {
+        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0));
+
         let tpos = Transposition::new(ScoreBound::Upper(s), Depth::upper(), Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);
 
@@ -1296,6 +1303,8 @@ mod tests {
         #[filter(!#s.is_winning() && !#s.is_losing())] s: Score,
         cut: bool,
     ) {
+        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0));
+
         let tpos = Transposition::new(ScoreBound::Exact(s), Depth::upper(), Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);
 

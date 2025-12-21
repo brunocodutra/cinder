@@ -1,8 +1,8 @@
 #![feature(exit_status_error)]
 
 use anyhow::{Context, Error as Failure};
-use arrayvec::ArrayVec;
-use cinder::{params::Params, util::parsers::*};
+use cinder::params::Params;
+use cinder::util::{StaticSeq, parsers::*};
 use clap::{Args, Parser, Subcommand};
 use nom::{Parser as _, bytes::complete::*, character::complete::*, multi::*, sequence::*};
 use rand::prelude::*;
@@ -193,7 +193,7 @@ impl SpsaTuner {
         let ck = c0 / k.powf(self.config.gamma);
 
         let mut rng = rand::rng();
-        let delta: ArrayVec<_, { Params::LEN }> = (0..Params::LEN)
+        let delta: StaticSeq<_, { Params::LEN }> = (0..Params::LEN)
             .map(|_| if rng.random() { ck } else { -ck })
             .collect();
 

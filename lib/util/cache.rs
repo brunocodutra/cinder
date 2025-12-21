@@ -1,4 +1,4 @@
-use crate::util::{Assume, Atomic, Binary, Bits, Int, Slice, Unsigned, zero};
+use crate::util::{Assume, Atomic, Binary, Bits, HugeSeq, Int, Unsigned, zero};
 use bytemuck::{Pod, Zeroable};
 use derive_more::with_trait::{Debug, Deref, DerefMut};
 use std::ops::{Index, IndexMut};
@@ -55,6 +55,8 @@ where
     U: Unsigned,
     R: Unsigned,
 {
+    const SIZE: usize = size_of::<Self>();
+
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn empty() -> Self {
@@ -100,7 +102,7 @@ where
 pub struct Cache<T: Binary, U: Unsigned = <<T as Binary>::Bits as Int>::Repr> {
     #[deref(forward)]
     #[deref_mut(forward)]
-    data: Slice<Atomic<Vault<T, U>>>,
+    data: HugeSeq<Atomic<Vault<T, U>>>,
 }
 
 #[cfg(test)]
@@ -116,8 +118,8 @@ where
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         (hash_map(any::<Key>(), any::<T>(), ..32), ..128usize)
             .prop_map(|(map, size)| {
-                let data: Slice<Atomic<Vault<T, U>>> =
-                    Slice::new(size * size_of::<Atomic<Vault<T, U>>>()).unwrap();
+                let data: HugeSeq<Atomic<Vault<T, U>>> =
+                    HugeSeq::zeroed(size * Vault::<T, U>::SIZE).unwrap();
 
                 if size > 0 {
                     for (k, v) in map {
@@ -141,14 +143,14 @@ where
     #[inline(always)]
     pub fn new(size: usize) -> io::Result<Self> {
         Ok(Self {
-            data: Slice::new(size / size_of::<Atomic<Vault<T, U>>>())?,
+            data: HugeSeq::zeroed(size / Vault::<T, U>::SIZE)?,
         })
     }
 
     /// Resizes the cache space to up to `size` bytes.
     #[inline(always)]
     pub fn resize(&mut self, size: usize) -> io::Result<()> {
-        self.data.resize(size / size_of::<Atomic<Vault<T, U>>>())
+        self.data.zeroed_in_place(size / Vault::<T, U>::SIZE)
     }
 
     /// Instructs the CPU to load the slot associated with `key`.
@@ -214,7 +216,7 @@ mod tests {
     }
 
     #[proptest]
-    fn cache_resizes_to_up_to_size(mut c: MockCache, #[strategy(..1024usize)] s: usize) {
+    fn cache_resizes_up_to_size(mut c: MockCache, #[strategy(..1024usize)] s: usize) {
         c.resize(s)?;
         assert!(c.len() * size_of::<MockVault>() <= s);
     }

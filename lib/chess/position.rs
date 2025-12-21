@@ -1,6 +1,5 @@
-use crate::util::{Assume, Int};
+use crate::util::{Assume, Int, StaticSeq};
 use crate::{chess::*, simd::Aligned};
-use arrayvec::ArrayVec;
 use bytemuck::zeroed;
 use derive_more::with_trait::{Debug, Deref, DerefMut, Display, Error, From, IntoIterator};
 use std::fmt::{self, Formatter};
@@ -12,7 +11,7 @@ use proptest::{prelude::*, sample::*};
 
 /// A container with sufficient capacity to hold all [`Move`]s in any [`Position`].
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash, Deref, DerefMut, IntoIterator)]
-pub struct MovePack(ArrayVec<MoveSet, 32>);
+pub struct MovePack(StaticSeq<MoveSet, 32>);
 
 impl MovePack {
     #[inline(always)]
@@ -74,12 +73,12 @@ impl MovePacker for MovePack {
 
         if !captures.is_empty() {
             let captures = MoveSet::capture(piece, wc, captures);
-            self.0.try_push(captures).assume();
+            self.0.push(captures);
         }
 
         if !regulars.is_empty() {
             let regulars = MoveSet::regular(piece, wc, regulars);
-            self.0.try_push(regulars).assume();
+            self.0.push(regulars);
         }
 
         Ok(())

@@ -1,7 +1,6 @@
 use crate::syzygy::{Dtz, MAX_PIECES, Material, RandomAccessFile, Wdl};
-use crate::util::{Assume, Bits, Int};
+use crate::util::{Assume, Bits, Int, StaticSeq};
 use crate::{chess::*, syzygy::NormalizedMaterial};
-use arrayvec::ArrayVec;
 use byteorder::{BE, ByteOrder, LE, ReadBytesExt};
 use derive_more::with_trait::Deref;
 use std::{hint::unreachable_unchecked, io, marker::PhantomData, path::Path};
@@ -427,11 +426,11 @@ fn nibble_to_piece(nibble: u8) -> Piece {
 }
 
 /// List of up to `MAX_PIECES` pieces.
-type Pieces = ArrayVec<Piece, MAX_PIECES>;
+type Pieces = StaticSeq<Piece, MAX_PIECES>;
 
 /// Parse a piece list.
 fn parse_pieces(raf: &RandomAccessFile, ptr: usize, count: usize, side: Color) -> Pieces {
-    let mut pieces = Pieces::new();
+    let mut pieces = Pieces::default();
     for p in raf.read(ptr..ptr + count) {
         pieces.push(nibble_to_piece(match side {
             Color::White => *p & 0xf,
@@ -443,8 +442,8 @@ fn parse_pieces(raf: &RandomAccessFile, ptr: usize, count: usize, side: Color) -
 }
 
 /// Group pieces that will be encoded together.
-fn group_pieces(pieces: &Pieces, material: &Material) -> ArrayVec<usize, MAX_PIECES> {
-    let mut result = ArrayVec::new();
+fn group_pieces(pieces: &Pieces, material: &Material) -> StaticSeq<usize, MAX_PIECES> {
+    let mut result = StaticSeq::default();
 
     // For positions without pawns: If there are at least 3 unique pieces then 3
     // unique pieces will form the leading group. Otherwise the two kings will
@@ -474,8 +473,8 @@ fn group_pieces(pieces: &Pieces, material: &Material) -> ArrayVec<usize, MAX_PIE
 struct GroupData {
     pieces: Pieces,
     material: Material,
-    lens: ArrayVec<usize, MAX_PIECES>,
-    factors: ArrayVec<u64, { MAX_PIECES + 1 }>,
+    lens: StaticSeq<usize, MAX_PIECES>,
+    factors: StaticSeq<u64, { MAX_PIECES + 1 }>,
 }
 
 impl GroupData {
@@ -487,14 +486,13 @@ impl GroupData {
 
         // Compute a factor for each group.
         let pp = material.left(Role::Pawn) > 0 && material.right(Role::Pawn) > 0;
-        let mut factors = ArrayVec::from([0; MAX_PIECES + 1]);
-        factors.truncate(lens.len() + 1);
+        let mut factors = StaticSeq::<_, { MAX_PIECES + 1 }>::zeroed(lens.len() + 1).assume();
         let mut free_squares = 64 - lens[0] - if pp { lens[1] } else { 0 };
         let mut next = if pp { 2 } else { 1 };
         let mut idx = 1;
         let mut k = 0;
 
-        while next < lens.len() || k == order[0] || k == order[1] {
+        while next < lens.len().cast::<usize>() || k == order[0] || k == order[1] {
             if k == order[0] {
                 // Leading pawns or pieces.
                 factors[0] = idx;
@@ -524,7 +522,7 @@ impl GroupData {
             k += 1;
         }
 
-        factors[lens.len()] = idx;
+        factors[lens.len().cast::<usize>()] = idx;
 
         GroupData {
             pieces,
@@ -669,7 +667,7 @@ impl PairsData {
         // Read header.
         let header = raf.read(ptr..ptr + 10);
 
-        let tb_size = groups.factors[groups.lens.len()];
+        let tb_size = groups.factors[groups.lens.len().cast::<usize>()];
         let block_size = 1u32 << header[1] as u32;
         debug_assert!(block_size <= MAX_BLOCK_SIZE as u32);
 
@@ -783,7 +781,7 @@ fn read_symbols(
 /// Description of encoding and compression for both sides of a table.
 #[derive(Debug)]
 struct FileData {
-    sides: ArrayVec<PairsData, 2>,
+    sides: StaticSeq<PairsData, 2>,
 }
 
 /// Small readahead buffer for the block length table.
@@ -846,7 +844,7 @@ pub struct Table<T: TableDescriptor> {
     raf: RandomAccessFile,
     num_unique_pieces: usize,
     min_like_man: usize,
-    files: ArrayVec<FileData, 4>,
+    files: StaticSeq<FileData, 4>,
 }
 
 impl<T: TableDescriptor> Table<T> {
@@ -878,7 +876,7 @@ impl<T: TableDescriptor> Table<T> {
 
         let mut ptr = 5;
 
-        let files: ArrayVec<_, 4> = io::Result::from_iter((0..num_files).map(|file| {
+        let files: StaticSeq<_, 4> = io::Result::from_iter((0..num_files).map(|file| {
             let order = [
                 [
                     *raf.read(ptr) & 0xf,
@@ -892,7 +890,7 @@ impl<T: TableDescriptor> Table<T> {
 
             ptr += 1 + pp as usize;
 
-            let sides = ArrayVec::<_, 2>::from_iter(Color::iter().take(num_sides).map(|side| {
+            let sides = StaticSeq::<_, 2>::from_iter(Color::iter().take(num_sides).map(|side| {
                 let pieces = parse_pieces(&raf, ptr, material.count(), side);
                 let key = Material::from_iter(pieces.clone());
                 debug_assert!(key.normalize() == material);
@@ -910,8 +908,8 @@ impl<T: TableDescriptor> Table<T> {
         debug_assert_eq!((files[0][0].pieces[0].role() == Role::Pawn), has_pawns);
 
         // Setup pairs.
-        let mut files = ArrayVec::<_, 4>::from_iter(files.into_iter().map(|file| FileData {
-            sides: ArrayVec::from_iter(file.into_iter().map(|side| {
+        let mut files = StaticSeq::<_, 4>::from_iter(files.into_iter().map(|file| FileData {
+            sides: StaticSeq::from_iter(file.into_iter().map(|side| {
                 let (pairs, next_ptr) = PairsData::parse::<T>(&raf, ptr, side);
                 ptr = next_ptr;
                 pairs
@@ -1057,7 +1055,7 @@ impl<T: TableDescriptor> Table<T> {
         let bside: bool = pos.turn().perspective(pov).into();
 
         let mut used = Bitboard::empty();
-        let mut sqs: ArrayVec<Square, MAX_PIECES> = ArrayVec::new();
+        let mut sqs = StaticSeq::<Square, MAX_PIECES>::default();
 
         // For pawns there are sub-tables for each file (a, b, c, d) the
         // leading pawn can be placed on.
@@ -1071,7 +1069,7 @@ impl<T: TableDescriptor> Table<T> {
             sqs.extend(lead_pawns.into_iter().map(|sq| sq.perspective(pov)));
 
             // Ensure squares[0] is the maximum with regard to map_pawns.
-            for i in 1..sqs.len() {
+            for i in 1..sqs.len().cast::<usize>() {
                 if CONSTS.map_pawns[sqs[0] as usize] < CONSTS.map_pawns[sqs[i] as usize] {
                     sqs.swap(0, i);
                 }
@@ -1086,7 +1084,11 @@ impl<T: TableDescriptor> Table<T> {
         }];
 
         // WDL tables have sub-tables for each side to move.
-        let side = &file.sides[if bside { file.sides.len() - 1 } else { 0 }];
+        let side = &file.sides[if bside {
+            file.sides.len().cast::<usize>() - 1
+        } else {
+            0
+        }];
 
         // DTZ tables store only one side to move. It is possible that we have
         // to check the other side (by doing a 1-ply search).
@@ -1101,7 +1103,7 @@ impl<T: TableDescriptor> Table<T> {
         //
         // So far squares has been initialized with the leading pawns.
         // Also add the other pieces.
-        let lead_pawns_count = sqs.len();
+        let lead_pawns_count = sqs.len().cast::<usize>();
 
         for piece in side.groups.pieces.iter().skip(lead_pawns_count) {
             let candidates = pos.by_piece(piece.perspective(pov)) & !used;

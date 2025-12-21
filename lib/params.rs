@@ -1,14 +1,11 @@
-use crate::util::{ByteBuffer, TypedByteBuffer};
+use crate::util::*;
 use std::{cell::SyncUnsafeCell, ops::Deref, slice::SliceIndex};
 
 #[cfg(feature = "spsa")]
 use derive_more::with_trait::Display;
 
 #[cfg(feature = "spsa")]
-use ron::de::{SpannedError, from_str as deserialize};
-
-#[cfg(feature = "spsa")]
-use ron::ser::to_writer as serialize;
+use ron::{Error, de::SpannedError, from_str as deserialize, ser::to_writer as serialize};
 
 #[cfg(feature = "spsa")]
 use serde::{Deserialize, Serialize};
@@ -26,20 +23,21 @@ use proptest::{collection::vec, prelude::*};
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(feature = "spsa", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "spsa", serde(into = "Vec<f32>", from = "Vec<f32>"))]
-struct Param<const BYTES: ByteBuffer<32>> {
+#[cfg_attr(feature = "spsa", serde(into = "Box<[f32]>", try_from = "Box<[f32]>"))]
+struct Param<const BYTES: ConstBytes<32>> {
     #[cfg(feature = "spsa")]
-    #[cfg_attr(test, strategy(vec(-1e3f32..=1e3f32, 8).prop_map(|vs| TypedByteBuffer::new(&vs))))]
-    values: TypedByteBuffer<f32, 32>,
+    #[cfg_attr(test, strategy(vec(-1e3f32..=1e3f32, Self::VALUES.len().cast::<usize>())
+        .prop_map(|vs| Seq::from_iter(vs))))]
+    values: ConstSeq<f32, 32>,
 }
 
-impl<const BYTES: ByteBuffer<32>> Param<BYTES> {
-    const VALUES: TypedByteBuffer<f32, 32> = unsafe { TypedByteBuffer::from_bytes(BYTES) };
+impl<const BYTES: ConstBytes<32>> Param<BYTES> {
+    const VALUES: &ConstSeq<f32, 32> = unsafe { &Seq::reify(BYTES) };
 
     pub const fn new() -> Self {
         Self {
             #[cfg(feature = "spsa")]
-            values: Self::VALUES,
+            values: Self::VALUES.clone(),
         }
     }
 
@@ -66,13 +64,13 @@ impl<const BYTES: ByteBuffer<32>> Param<BYTES> {
     }
 }
 
-impl<const BYTES: ByteBuffer<32>> const Default for Param<BYTES> {
+impl<const BYTES: ConstBytes<32>> const Default for Param<BYTES> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const BYTES: ByteBuffer<32>> const Deref for Param<BYTES> {
+impl<const BYTES: ConstBytes<32>> const Deref for Param<BYTES> {
     type Target = [f32];
 
     #[inline(always)]
@@ -84,23 +82,32 @@ impl<const BYTES: ByteBuffer<32>> const Deref for Param<BYTES> {
 
         #[cfg(not(feature = "spsa"))]
         {
-            &Self::VALUES
+            Self::VALUES
         }
     }
 }
 
 #[cfg(feature = "spsa")]
-impl<const BYTES: ByteBuffer<32>> From<Param<BYTES>> for Vec<f32> {
+impl<const BYTES: ConstBytes<32>> From<Param<BYTES>> for Box<[f32]> {
     fn from(param: Param<BYTES>) -> Self {
-        param.to_vec()
+        param.values.into_iter().collect()
     }
 }
 
 #[cfg(feature = "spsa")]
-impl<const BYTES: ByteBuffer<32>> From<Vec<f32>> for Param<BYTES> {
-    fn from(values: Vec<f32>) -> Self {
-        Self {
-            values: TypedByteBuffer::new(&values),
+impl<const BYTES: ConstBytes<32>> TryFrom<Box<[f32]>> for Param<BYTES> {
+    type Error = Error;
+
+    fn try_from(values: Box<[f32]>) -> Result<Self, Self::Error> {
+        if values.len() <= Self::VALUES.len().cast() {
+            Ok(Param {
+                values: values.into_iter().collect(),
+            })
+        } else {
+            Err(Error::ExpectedDifferentLength {
+                expected: Self::VALUES.len().to_string(),
+                found: values.len(),
+            })
         }
     }
 }
@@ -140,7 +147,7 @@ macro_rules! params {
         pub struct Params {
             $(
                 #[cfg_attr(feature = "spsa", serde(default))]
-                $name: Param<{ TypedByteBuffer::<f32, 32>::new(&$value).into_bytes() }>,
+                $name: Param<{ Bytes::from($value as [f32; _]) }>,
             )*
         }
 
@@ -166,7 +173,7 @@ macro_rules! params {
             pub const LEN: usize = len!($($value,)*);
 
             /// Initializes the global params.
-            pub const fn init(self) {
+            pub fn init(self) {
                 unsafe { *PARAMS.get().as_mut_unchecked() = self }
             }
 

@@ -1,6 +1,5 @@
 use crate::chess::Move;
-use crate::util::{Assume, Bounded, Int};
-use arrayvec::ArrayVec;
+use crate::util::{Assume, Bounded, Int, Memory, StaticMemory, StaticSeq};
 
 #[cfg(test)]
 use proptest::{collection::vec, prelude::*};
@@ -8,24 +7,27 @@ use proptest::{collection::vec, prelude::*};
 /// A measure for how good a [`Move`] is.
 pub type Rating = Bounded<i16>;
 
+/// A [`Move`] paired with its [`Rating`].
+pub type RatedMove = (Move, Rating);
+
 /// A collection of [`Move`]s.
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Moves {
-    #[cfg_attr(test, strategy(vec(any::<(Move, Rating)>(), 0..=10usize)
-        .prop_map(ArrayVec::from_iter)))]
-    entries: ArrayVec<(Move, Rating), 254>,
+    #[cfg_attr(test, strategy(vec(any::<RatedMove>(), 0..=10usize)
+        .prop_map(StaticSeq::from_iter)))]
+    entries: StaticSeq<RatedMove, 254>,
 
     // Index of the first unsorted move
     #[cfg_attr(test, strategy(Just(0)))]
-    unsorted: u32,
+    unsorted: <StaticMemory<RatedMove, 254> as Memory<RatedMove>>::Usize,
 }
 
 impl Moves {
     /// The number of [`Move`]s in this collection.
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.entries.len().cast()
     }
 
     /// Whether there are no [`Move`]s in this collection.
@@ -60,13 +62,10 @@ impl FromIterator<Move> for Moves {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn from_iter<I: IntoIterator<Item = Move>>(iter: I) -> Self {
-        let mut moves = Self::default();
-
-        for m in iter {
-            moves.entries.try_push((m, Rating::new(0))).assume();
+        Moves {
+            entries: iter.into_iter().map(|m| (m, Rating::new(0))).collect(),
+            unsorted: 0,
         }
-
-        moves
     }
 }
 
@@ -74,20 +73,20 @@ impl FromIterator<Move> for Moves {
 #[derive(Debug)]
 struct SortedMovesIter<'a> {
     moves: &'a mut Moves,
-    index: usize,
+    cursor: <StaticMemory<RatedMove, 254> as Memory<RatedMove>>::Usize,
 }
 
 impl<'a> SortedMovesIter<'a> {
     #[inline(always)]
     fn new(moves: &'a mut Moves) -> Self {
-        SortedMovesIter { moves, index: 0 }
+        SortedMovesIter { moves, cursor: 0 }
     }
 }
 
 impl<'a> ExactSizeIterator for SortedMovesIter<'a> {
     #[inline(always)]
     fn len(&self) -> usize {
-        self.moves.len() - self.index
+        self.moves.len() - self.cursor.cast::<usize>()
     }
 }
 
@@ -97,25 +96,26 @@ impl<'a> Iterator for SortedMovesIter<'a> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn next(&mut self) -> Option<Self::Item> {
-        let mut idx = self.index;
+        let mut idx = self.cursor.cast::<usize>();
         let mut next = *self.moves.entries.get(idx)?;
 
-        if idx >= self.moves.unsorted as usize {
-            let unsorted = self.moves.entries.get(self.index + 1..).assume();
+        if idx >= self.moves.unsorted.cast::<usize>() {
+            let baseline = self.cursor.cast::<usize>() + 1;
+            let unsorted = self.moves.entries.get(baseline..).assume();
             for (i, &entry) in unsorted.iter().enumerate() {
                 if entry.1 > next.1 {
-                    idx = i + self.index + 1;
+                    idx = baseline + i;
                     next = entry;
                 }
             }
         }
 
-        if self.index < idx {
-            unsafe { self.moves.entries.swap_unchecked(self.index, idx) }
+        if self.cursor.cast::<usize>() < idx {
+            unsafe { self.moves.entries.swap_unchecked(self.cursor.cast(), idx) }
         }
 
-        self.index += 1;
-        self.moves.unsorted = self.moves.unsorted.max(self.index as u32);
+        self.cursor += 1;
+        self.moves.unsorted = self.moves.unsorted.max(self.cursor);
         Some(next.0)
     }
 

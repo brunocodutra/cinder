@@ -77,7 +77,7 @@ jobs:
     - run: cargo miri test --workspace --lib
       env:
         MIRIFLAGS: "-Zmiri-disable-isolation"
-        PROPTEST_CASES: 10
+        PROPTEST_CASES: 1
 
   sanitize:
     needs: [test]

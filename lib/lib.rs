@@ -6,11 +6,13 @@
 )]
 #![feature(
     adt_const_params,
+    box_vec_non_null,
     const_clone,
     const_cmp,
     const_convert,
     const_default,
     const_destruct,
+    const_drop_in_place,
     const_index,
     const_ops,
     const_option_ops,
@@ -21,6 +23,7 @@
     derive_const,
     gen_blocks,
     iter_array_chunks,
+    maybe_uninit_uninit_array_transpose,
     pointer_is_aligned_to,
     portable_simd,
     ptr_as_ref_unchecked,

@@ -1,9 +1,9 @@
 use crate::chess::{Color, Move, Perspective, Piece, Role, Square};
 use crate::util::{Assume, Bits, Int};
-use bytemuck::{Zeroable, zeroed};
+use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter};
-use std::{cell::SyncUnsafeCell, ops::*, str::FromStr};
+use std::{ops::*, str::FromStr};
 
 /// The castling rights in a chess [`Position`][`crate::chess::Position`].
 #[derive(Debug, Copy, Hash, Zeroable)]
@@ -117,23 +117,18 @@ impl const BitXorAssign for Castles {
 impl const From<Square> for Castles {
     #[inline(always)]
     fn from(sq: Square) -> Self {
-        pub static CASTLES: SyncUnsafeCell<[Castles; 64]> = SyncUnsafeCell::new(zeroed());
-
-        #[cold]
-        #[ctor::ctor]
-        #[cfg(not(miri))]
-        #[inline(never)]
-        unsafe fn init() {
-            let castles = unsafe { CASTLES.get().as_mut_unchecked() };
+        const CASTLES: [Castles; 64] = const {
+            let mut castles = [Castles::none(); 64];
             castles[Square::A1 as usize] = Castles(Bits::new(0b0010));
             castles[Square::H1 as usize] = Castles(Bits::new(0b0001));
             castles[Square::E1 as usize] = Castles(Bits::new(0b0011));
             castles[Square::A8 as usize] = Castles(Bits::new(0b1000));
             castles[Square::H8 as usize] = Castles(Bits::new(0b0100));
             castles[Square::E8 as usize] = Castles(Bits::new(0b1100));
-        }
+            castles
+        };
 
-        unsafe { CASTLES.get().as_ref_unchecked()[sq as usize] }
+        CASTLES[sq as usize]
     }
 }
 

@@ -1,3 +1,5 @@
+#![allow(long_running_const_eval)]
+
 use anyhow::Error as Failure;
 use cinder::{uci::Uci, util::thread};
 use clap::Parser;

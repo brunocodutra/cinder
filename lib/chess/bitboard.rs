@@ -3,7 +3,7 @@ use crate::util::{Assume, Int};
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::{Constructor, Debug};
 use std::fmt::{self, Formatter, Write};
-use std::{cell::SyncUnsafeCell, ops::*};
+use std::ops::*;
 
 /// A set of squares on a chess board.
 #[derive(Copy, Hash, Zeroable, Constructor)]
@@ -91,17 +91,19 @@ impl Bitboard {
     /// ```
     #[inline(always)]
     pub const fn line(whence: Square, whither: Square) -> Self {
-        pub static LINES: SyncUnsafeCell<Butterfly<Bitboard>> = SyncUnsafeCell::new(zeroed());
+        static LINES: Butterfly<Bitboard> = const {
+            let mut lines: Butterfly<Bitboard> = zeroed();
 
-        #[cold]
-        #[ctor::ctor]
-        #[cfg(not(miri))]
-        #[inline(never)]
-        unsafe fn init() {
-            let lines = unsafe { LINES.get().as_mut_unchecked() };
+            let mut i = Square::MIN;
+            while i <= Square::MAX {
+                let wc: Square = Int::new(i);
+                i += 1;
 
-            for wc in Square::iter() {
-                for wt in Square::iter() {
+                let mut j = Square::MIN;
+                while j <= Square::MAX {
+                    let wt: Square = Int::new(j);
+                    j += 1;
+
                     let df = wt.file() - wc.file();
                     let dr = wt.rank() - wc.rank();
                     if df == 0 && dr == 0 {
@@ -117,9 +119,11 @@ impl Bitboard {
                     }
                 }
             }
-        }
 
-        unsafe { LINES.get().as_ref_unchecked()[whence as usize][whither as usize] }
+            lines
+        };
+
+        LINES[whence as usize][whither as usize]
     }
 
     /// Bitboard with squares in the open segment between two squares.
@@ -134,17 +138,19 @@ impl Bitboard {
     /// ```
     #[inline(always)]
     pub const fn segment(whence: Square, whither: Square) -> Self {
-        pub static SEGMENTS: SyncUnsafeCell<Butterfly<Bitboard>> = SyncUnsafeCell::new(zeroed());
+        static SEGMENTS: Butterfly<Bitboard> = const {
+            let mut segments: Butterfly<Bitboard> = zeroed();
 
-        #[cold]
-        #[ctor::ctor]
-        #[cfg(not(miri))]
-        #[inline(never)]
-        unsafe fn init() {
-            let segments = unsafe { SEGMENTS.get().as_mut_unchecked() };
+            let mut i = Square::MIN;
+            while i <= Square::MAX {
+                let wc: Square = Int::new(i);
+                i += 1;
 
-            for wc in Square::iter() {
-                for wt in Square::iter() {
+                let mut j = Square::MIN;
+                while j <= Square::MAX {
+                    let wt: Square = Int::new(j);
+                    j += 1;
+
                     let df = wt.file() - wc.file();
                     let dr = wt.rank() - wc.rank();
                     if df == 0 || dr == 0 || df.abs() == dr.abs() {
@@ -154,9 +160,11 @@ impl Bitboard {
                     }
                 }
             }
-        }
 
-        unsafe { SEGMENTS.get().as_ref_unchecked()[whence as usize][whither as usize] }
+            segments
+        };
+
+        SEGMENTS[whence as usize][whither as usize]
     }
 
     /// The number of [`Square`]s in the set.

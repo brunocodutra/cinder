@@ -1,3 +1,4 @@
+#![allow(long_running_const_eval)]
 #![feature(exit_status_error)]
 
 use anyhow::{Context, Error as Failure};

@@ -168,7 +168,7 @@ impl const Binary for Transposition {
         bits.push(self.score.encode());
         bits.push(self.depth.encode());
         bits.push(self.best.encode());
-        bits.push::<u8, 1>(Bits::new(self.was_pv as _));
+        bits.push::<u8, 1>(Bits::new(self.was_pv as u8));
         bits
     }
 

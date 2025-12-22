@@ -18,7 +18,7 @@ impl Synapse for Output {
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn forward<'a>(&self, input: Self::Input<'a>) -> Self::Output {
+    fn forward(&self, input: Self::Input<'_>) -> Self::Output {
         const { assert!(N.is_multiple_of(W2)) }
 
         let xs: &[V2<f32>; N / W2] = input.cast();

@@ -67,7 +67,7 @@ impl Limits {
     ///
     /// Returns the set depth or [`Depth::MAX`] if unlimited.
     #[inline(always)]
-    pub fn max_depth(&self) -> Depth {
+    pub const fn max_depth(&self) -> Depth {
         self.depth.unwrap_or_else(Depth::upper)
     }
 
@@ -75,7 +75,7 @@ impl Limits {
     ///
     /// Returns the set node limit or [`u64::MAX`] if unlimited.
     #[inline(always)]
-    pub fn max_nodes(&self) -> u64 {
+    pub const fn max_nodes(&self) -> u64 {
         self.nodes.unwrap_or_else(u64::upper)
     }
 
@@ -91,7 +91,7 @@ impl Limits {
     /// Set depth limit.
     #[must_use]
     #[inline(always)]
-    pub fn with_depth(mut self, depth: Depth) -> Self {
+    pub const fn with_depth(mut self, depth: Depth) -> Self {
         self.depth = Some(depth);
         self
     }
@@ -99,7 +99,7 @@ impl Limits {
     /// Set node limit.
     #[must_use]
     #[inline(always)]
-    pub fn with_nodes(mut self, nodes: u64) -> Self {
+    pub const fn with_nodes(mut self, nodes: u64) -> Self {
         self.nodes = Some(nodes);
         self
     }
@@ -107,7 +107,7 @@ impl Limits {
     /// Set time limit.
     #[must_use]
     #[inline(always)]
-    pub fn with_time(mut self, time: Duration) -> Self {
+    pub const fn with_time(mut self, time: Duration) -> Self {
         self.time = Some(time);
         self
     }
@@ -115,7 +115,7 @@ impl Limits {
     /// Set clock limit.
     #[must_use]
     #[inline(always)]
-    pub fn with_clock(mut self, time: Duration, increment: Duration) -> Self {
+    pub const fn with_clock(mut self, time: Duration, increment: Duration) -> Self {
         self.clock = Some((time, increment));
         self
     }

@@ -29,7 +29,7 @@ impl<T> Memory<T> for DynamicMemory<T> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn zeroed(capacity: Self::Usize) -> io::Result<Self> {
-        Ok(try_zeroed_slice_box(capacity).map_err(|_| OutOfMemory)?)
+        Ok(try_zeroed_slice_box(capacity).map_err(|()| OutOfMemory)?)
     }
 }
 
@@ -89,7 +89,7 @@ impl<T, const N: usize> const AsMut<[MaybeUninit<T>]> for StaticMemory<T, N> {
 #[derive(Debug, Copy, Hash, ConstParamTy, Zeroable)]
 #[derive_const(Clone, Eq, PartialEq)]
 #[debug("ConstMemory({_0:#04X?})")]
-#[repr(C, align(8))]
+#[repr(C, align(4))]
 pub struct ConstMemory<const S: usize>([u8; S]);
 
 impl<T: NoUninit, const S: usize> Memory<T> for ConstMemory<S> {
@@ -189,7 +189,7 @@ impl<T> Memory<T> for HugePage<T> {
     fn zeroed(capacity: Self::Usize) -> io::Result<Self> {
         const { assert!(align_of::<T>() <= align_of::<Thp>()) }
 
-        let layout = Layout::array::<T>(capacity).map_err(|_| OutOfMemory)?;
+        let layout = Layout::array::<T>(capacity).map_err(|e| io::Error::new(OutOfMemory, e))?;
         let pages = layout.size().div_ceil(size_of::<Thp>());
         let boxed = DynamicMemory::<Thp>::zeroed(pages)?;
 

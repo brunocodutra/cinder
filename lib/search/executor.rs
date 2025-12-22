@@ -43,7 +43,7 @@ pub struct Task<'e> {
     executor: &'e mut Executor,
 }
 
-impl<'e> Drop for Task<'e> {
+impl Drop for Task<'_> {
     #[inline(always)]
     fn drop(&mut self) {
         self.executor.shared.barrier.wait();
@@ -82,7 +82,7 @@ impl Executor {
             job: SyncUnsafeCell::new(None),
         });
 
-        for (idx, shared) in repeat_n(shared.clone(), threads.cast()).enumerate() {
+        for (idx, shared) in repeat_n(Arc::clone(&shared), threads.cast()).enumerate() {
             thread::spawn(move || {
                 loop {
                     shared.barrier.wait();

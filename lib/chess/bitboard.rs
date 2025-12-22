@@ -170,7 +170,7 @@ impl Bitboard {
     /// The number of [`Square`]s in the set.
     #[inline(always)]
     pub const fn len(&self) -> usize {
-        self.0.count_ones() as _
+        self.0.count_ones() as usize
     }
 
     /// Whether the board is empty.
@@ -274,7 +274,7 @@ impl const BitAnd for Bitboard {
 impl const BitAndAssign for Bitboard {
     #[inline(always)]
     fn bitand_assign(&mut self, rhs: Self) {
-        self.0.bitand_assign(rhs.0)
+        self.0.bitand_assign(rhs.0);
     }
 }
 
@@ -290,7 +290,7 @@ impl const BitOr for Bitboard {
 impl const BitOrAssign for Bitboard {
     #[inline(always)]
     fn bitor_assign(&mut self, rhs: Self) {
-        self.0.bitor_assign(rhs.0)
+        self.0.bitor_assign(rhs.0);
     }
 }
 
@@ -306,7 +306,7 @@ impl const BitXor for Bitboard {
 impl const BitXorAssign for Bitboard {
     #[inline(always)]
     fn bitxor_assign(&mut self, rhs: Self) {
-        self.0.bitxor_assign(rhs.0)
+        self.0.bitxor_assign(rhs.0);
     }
 }
 
@@ -322,7 +322,7 @@ impl const Shl<u32> for Bitboard {
 impl const ShlAssign<u32> for Bitboard {
     #[inline(always)]
     fn shl_assign(&mut self, rhs: u32) {
-        self.0.shl_assign(rhs)
+        self.0.shl_assign(rhs);
     }
 }
 
@@ -338,7 +338,7 @@ impl const Shr<u32> for Bitboard {
 impl const ShrAssign<u32> for Bitboard {
     #[inline(always)]
     fn shr_assign(&mut self, rhs: u32) {
-        self.0.shr_assign(rhs)
+        self.0.shr_assign(rhs);
     }
 }
 

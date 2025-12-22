@@ -6,9 +6,6 @@ use std::{marker::Destruct, ops::*};
 #[cfg(test)]
 use proptest::prelude::*;
 
-#[cfg(test)]
-use std::ops::RangeInclusive;
-
 /// A fixed width collection of bits.
 #[derive(Debug, Display, Copy, Hash, Zeroable, Pod, Constructor)]
 #[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -111,7 +108,7 @@ impl<T: [const] Unsigned, const W: u32> const BitAnd for Bits<T, W> {
 impl<T: [const] Unsigned, const W: u32> const BitAndAssign for Bits<T, W> {
     #[inline(always)]
     fn bitand_assign(&mut self, rhs: Self) {
-        self.0.bitand_assign(rhs.0)
+        self.0.bitand_assign(rhs.0);
     }
 }
 
@@ -127,7 +124,7 @@ impl<T: [const] Unsigned, const W: u32> const BitOr for Bits<T, W> {
 impl<T: [const] Unsigned, const W: u32> const BitOrAssign for Bits<T, W> {
     #[inline(always)]
     fn bitor_assign(&mut self, rhs: Self) {
-        self.0.bitor_assign(rhs.0)
+        self.0.bitor_assign(rhs.0);
     }
 }
 
@@ -143,7 +140,7 @@ impl<T: [const] Unsigned, const W: u32> const BitXor for Bits<T, W> {
 impl<T: [const] Unsigned, const W: u32> const BitXorAssign for Bits<T, W> {
     #[inline(always)]
     fn bitxor_assign(&mut self, rhs: Self) {
-        self.0.bitxor_assign(rhs.0)
+        self.0.bitxor_assign(rhs.0);
     }
 }
 
@@ -175,6 +172,7 @@ mod tests {
 
     #[proptest]
     #[should_panic]
+    #[cfg_attr(miri, ignore)]
     fn slice_panics_if_index_is_out_of_range(b: Bits<u64, 48>, #[strategy(48u32..)] i: u32) {
         b.slice(i..i);
     }
@@ -199,6 +197,7 @@ mod tests {
 
     #[proptest]
     #[should_panic]
+    #[cfg_attr(miri, ignore)]
     fn push_panics_on_overflow(mut a: Bits<u8, 3>, b: Bits<u16, 9>) {
         a.push(b);
     }
@@ -218,6 +217,7 @@ mod tests {
 
     #[proptest]
     #[should_panic]
+    #[cfg_attr(miri, ignore)]
     fn pop_panics_on_underflow(mut a: Bits<u8, 3>) {
         a.pop::<u16, 9>();
     }

@@ -31,6 +31,7 @@ impl Syzygy {
             if let Ok(directory) = read_dir(path) {
                 for entry in directory.flatten() {
                     let file = entry.path();
+                    #[expect(clippy::collapsible_if)]
                     if let Some(ext) = file.extension() {
                         if ext.eq_ignore_ascii_case(Wdl::EXTENSION)
                             || ext.eq_ignore_ascii_case(Dtz::EXTENSION)

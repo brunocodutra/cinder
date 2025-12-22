@@ -62,7 +62,7 @@ impl Material {
     #[inline(always)]
     pub fn iter(&self) -> impl Iterator<Item = Piece> {
         Color::iter().zip(self.0).flat_map(|(c, s)| {
-            let pieces = move |(r, n)| repeat_n(Piece::new(r, c), n as _);
+            let pieces = move |(r, n)| repeat_n(Piece::new(r, c), n as usize);
             Role::iter().zip(s).flat_map(pieces)
         })
     }
@@ -119,6 +119,7 @@ impl FromStr for Material {
         let (left, right) = s.split_once('v').ok_or(ParseMaterialError)?;
         for (i, s) in [left, right].into_iter().enumerate() {
             for s in s.split_inclusive(|_| true) {
+                #[expect(clippy::map_err_ignore)]
                 let piece: Piece = s.parse().map_err(|_| ParseMaterialError)?;
                 material.0[i][piece.role().cast::<usize>()] += 1;
             }

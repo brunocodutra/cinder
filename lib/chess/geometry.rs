@@ -34,14 +34,14 @@ pub enum Side {
 
 unsafe impl const Int for Side {
     type Repr = u8;
-    const MIN: Self::Repr = Side::Left as _;
-    const MAX: Self::Repr = Side::Right as _;
+    const MIN: Self::Repr = Side::Left as u8;
+    const MAX: Self::Repr = Side::Right as u8;
 }
 
 impl const From<bool> for Side {
     #[inline(always)]
     fn from(b: bool) -> Self {
-        Int::new(b as _)
+        Int::new(b as u8)
     }
 }
 

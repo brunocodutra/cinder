@@ -16,8 +16,8 @@ pub enum Color {
 
 unsafe impl const Int for Color {
     type Repr = u8;
-    const MIN: Self::Repr = Color::White as _;
-    const MAX: Self::Repr = Color::Black as _;
+    const MIN: Self::Repr = Color::White as u8;
+    const MAX: Self::Repr = Color::Black as u8;
 }
 
 impl const Flip for Color {
@@ -42,7 +42,7 @@ impl const Not for Color {
 impl const From<bool> for Color {
     #[inline(always)]
     fn from(b: bool) -> Self {
-        Int::new(b as _)
+        Int::new(b as u8)
     }
 }
 
@@ -56,7 +56,6 @@ impl const From<Color> for bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::mem::size_of;
     use test_strategy::proptest;
 
     #[test]

@@ -72,7 +72,7 @@ impl UciMove {
     #[inline(always)]
     fn new(m: Move) -> Self {
         let mut buffer = [b'\0'; 5];
-        write!(&mut buffer[..], "{}", m).assume();
+        write!(&mut buffer[..], "{m}").assume();
         Self(buffer)
     }
 }
@@ -101,7 +101,7 @@ impl Display for UciSearchInfo {
         let normalized_score = self.0.score().cast::<i32>() * 100 / NORMALIZE_TO_PAWN_VALUE;
 
         match self.0.score().mate() {
-            Mate::None => write!(f, " score cp {}", normalized_score)?,
+            Mate::None => write!(f, " score cp {normalized_score}")?,
             Mate::Mating(p) => write!(f, " score mate {}", (p + 1) / 2)?,
             Mate::Mated(p) => write!(f, " score mate -{}", (p + 1) / 2)?,
         }
@@ -195,7 +195,11 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> +
                         None | Some("") => continue,
                         Some("quit") => return Ok(false),
                         Some("stop") => { search.abort(); },
-                        Some(cmd) => eprintln!("Warning: ignored unsupported command `{cmd}` during search"),
+
+                        #[expect(clippy::print_stderr)]
+                        Some(cmd) => {
+                            eprintln!("Warning: ignored unsupported command `{cmd}` during search");
+                        },
                     }
                 }
             }
@@ -282,18 +286,18 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> +
                         }
 
                         if let Some(nodes) = n {
-                            limits = limits.with_nodes(nodes.saturate())
+                            limits = limits.with_nodes(nodes.saturate());
                         }
 
                         if let Some(depth) = d {
-                            limits = limits.with_depth(depth.saturate())
+                            limits = limits.with_depth(depth.saturate());
                         }
                     }
 
                     limits
                 });
 
-                let mut go = terminated(opt(limits), eof).map(|l| l.unwrap_or_default());
+                let mut go = terminated(opt(limits), eof).map(Option::unwrap_or_default);
                 let (_, limits) = go.parse(args).finish()?;
                 self.go(limits).await
             }
@@ -321,8 +325,8 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> +
                 let option = |n| preceded((t(tag("name")), tag_no_case(n), t(tag("value"))), rest);
 
                 let options = gather3((
-                    option("hash").map_res(|s| s.parse()),
-                    option("threads").map_res(|s| s.parse()),
+                    option("hash").map_res(str::parse),
+                    option("threads").map_res(str::parse),
                     option("syzygypath").map(|s| s.split(Self::PATH_DELIMITER).collect()),
                 ));
 
@@ -345,7 +349,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> +
             }
 
             ("", "isready") => {
-                let readyok = "readyok".to_string();
+                let readyok = "readyok".to_owned();
                 self.output.send(readyok).await?;
                 Ok(true)
             }
@@ -357,9 +361,9 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> +
             }
 
             ("", "uci") => {
-                let uciok = "uciok".to_string();
+                let uciok = "uciok".to_owned();
                 let name = format!("id name Cinder {}", env!("CARGO_PKG_VERSION"));
-                let author = "id author Bruno Dutra".to_string();
+                let author = "id author Bruno Dutra".to_owned();
 
                 let hash = format!(
                     "option name Hash type spin default {} min {} max {}",
@@ -375,7 +379,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> +
                     ThreadCount::upper()
                 );
 
-                let syzygy = "option name SyzygyPath type string default <empty>".to_string();
+                let syzygy = "option name SyzygyPath type string default <empty>".to_owned();
 
                 self.output.send(name).await?;
                 self.output.send(author).await?;
@@ -391,6 +395,7 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> +
 
             ("", "quit") => Ok(false),
 
+            #[expect(clippy::unreachable)]
             _ => unreachable!(),
         }
     }
@@ -404,8 +409,10 @@ impl<I: FusedStream<Item = String> + Unpin, O: Sink<String, Error = io::Error> +
                     Ok(false) => break,
                     Ok(true) => continue,
                     Err(UciError::Fatal(e)) => return Err(e),
+
+                    #[expect(clippy::print_stderr)]
                     Err(UciError::ParseError) => {
-                        eprintln!("Warning: ignored unrecognized command `{cmd}`")
+                        eprintln!("Warning: ignored unrecognized command `{cmd}`");
                     }
                 },
             }

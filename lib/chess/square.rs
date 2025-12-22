@@ -50,8 +50,8 @@ impl Square {
 
 unsafe impl const Int for Square {
     type Repr = i8;
-    const MIN: Self::Repr = Square::A1 as _;
-    const MAX: Self::Repr = Square::H8 as _;
+    const MIN: Self::Repr = Square::A1 as i8;
+    const MAX: Self::Repr = Square::H8 as i8;
 }
 
 impl const Mirror for Square {
@@ -76,7 +76,7 @@ impl const Transpose for Square {
     /// Diagonally flips this square.
     #[inline(always)]
     fn transpose(self) -> Self::Transposition {
-        Int::new((self.cast::<u32>().wrapping_mul(0x2080_0000) >> 26) as _)
+        Int::new((self.cast::<u32>().wrapping_mul(0x2080_0000) >> 26) as i8)
     }
 }
 
@@ -124,14 +124,14 @@ impl Add<i8> for Square {
 impl SubAssign<i8> for Square {
     #[inline(always)]
     fn sub_assign(&mut self, rhs: i8) {
-        *self = *self - rhs
+        *self = *self - rhs;
     }
 }
 
 impl AddAssign<i8> for Square {
     #[inline(always)]
     fn add_assign(&mut self, rhs: i8) {
-        *self = *self + rhs
+        *self = *self + rhs;
     }
 }
 
@@ -159,6 +159,8 @@ impl FromStr for Square {
     #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let i = s.ceil_char_boundary(1);
+
+        #[expect(clippy::string_slice)]
         Ok(Square::new(s[..i].parse()?, s[i..].parse()?))
     }
 }
@@ -166,7 +168,6 @@ impl FromStr for Square {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::mem::size_of;
     use test_strategy::proptest;
 
     #[test]

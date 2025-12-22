@@ -78,7 +78,7 @@ impl const BitAnd for Castles {
 impl const BitAndAssign for Castles {
     #[inline(always)]
     fn bitand_assign(&mut self, rhs: Self) {
-        self.0.bitand_assign(rhs.0)
+        self.0.bitand_assign(rhs.0);
     }
 }
 
@@ -94,7 +94,7 @@ impl const BitOr for Castles {
 impl const BitOrAssign for Castles {
     #[inline(always)]
     fn bitor_assign(&mut self, rhs: Self) {
-        self.0.bitor_assign(rhs.0)
+        self.0.bitor_assign(rhs.0);
     }
 }
 
@@ -110,7 +110,7 @@ impl const BitXor for Castles {
 impl const BitXorAssign for Castles {
     #[inline(always)]
     fn bitxor_assign(&mut self, rhs: Self) {
-        self.0.bitxor_assign(rhs.0)
+        self.0.bitxor_assign(rhs.0);
     }
 }
 
@@ -166,11 +166,11 @@ impl FromStr for Castles {
             let mut buffer = [0; 4];
 
             match Piece::from_str(c.encode_utf8(&mut buffer)) {
-                Ok(p @ WhiteKing | p @ BlackKing) if !castles.has(G1.perspective(p.color())) => {
+                Ok(p @ (WhiteKing | BlackKing)) if !castles.has(G1.perspective(p.color())) => {
                     castles |= Castles::from(Square::H1.perspective(p.color()));
                 }
 
-                Ok(p @ WhiteQueen | p @ BlackQueen) if !castles.has(C1.perspective(p.color())) => {
+                Ok(p @ (WhiteQueen | BlackQueen)) if !castles.has(C1.perspective(p.color())) => {
                     castles |= Castles::from(Square::A1.perspective(p.color()));
                 }
 

@@ -26,7 +26,7 @@ impl<C, T: [const] Statistics<C>> const Statistics<C> for &mut T {
 
     #[inline(always)]
     fn update(&mut self, pos: &Position, ctx: C, delta: <Self::Stat as Stat>::Value) {
-        (*self).update(pos, ctx, delta)
+        (*self).update(pos, ctx, delta);
     }
 }
 
@@ -59,7 +59,7 @@ impl<C, T: [const] Statistics<C>> const Statistics<C> for NonNull<T> {
 
     #[inline(always)]
     fn update(&mut self, pos: &Position, ctx: C, delta: <Self::Stat as Stat>::Value) {
-        self.assume().update(pos, ctx, delta)
+        self.assume().update(pos, ctx, delta);
     }
 }
 
@@ -144,6 +144,6 @@ impl<const MIN: i16, const MAX: i16> const Stat for Graviton<MIN, MAX> {
     #[inline(always)]
     fn update(&mut self, delta: Self::Value) {
         let delta = delta.clamp(Self::MIN, Self::MAX) as i32;
-        self.0 = (delta - delta.abs() * self.0 as i32 / Self::MAX as i32 + self.0 as i32) as i16
+        self.0 = (delta - delta.abs() * self.0 as i32 / Self::MAX as i32 + self.0 as i32) as i16;
     }
 }

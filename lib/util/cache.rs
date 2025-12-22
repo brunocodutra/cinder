@@ -67,6 +67,7 @@ where
     }
 
     #[inline(always)]
+    #[expect(clippy::needless_pass_by_value)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn close(mut key: Key, value: T) -> Self {
         const { assert!(U::BITS >= M) }
@@ -160,14 +161,15 @@ where
             #[cfg(target_arch = "x86_64")]
             unsafe {
                 use std::arch::x86_64::{_MM_HINT_ET0, _mm_prefetch};
-                _mm_prefetch(&self.data[key] as *const _ as _, _MM_HINT_ET0);
+                let ptr = &raw const self.data[key];
+                _mm_prefetch(ptr.cast(), _MM_HINT_ET0);
             }
 
             #[cfg(target_arch = "aarch64")]
             unsafe {
                 use std::arch::aarch64::{_PREFETCH_LOCALITY0, _PREFETCH_WRITE, _prefetch};
-                let ptr = &self.data[key] as *const _ as _;
-                _prefetch(ptr, _PREFETCH_WRITE, _PREFETCH_LOCALITY0);
+                let ptr = &raw const self.data[key];
+                _prefetch(ptr.cast(), _PREFETCH_WRITE, _PREFETCH_LOCALITY0);
             }
         }
     }

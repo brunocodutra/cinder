@@ -407,7 +407,7 @@ const CONSTS: Consts = {
 };
 
 /// Header nibble to piece.
-fn nibble_to_piece(nibble: u8) -> Piece {
+const fn nibble_to_piece(nibble: u8) -> Piece {
     match nibble {
         1 => Piece::WhitePawn,
         2 => Piece::WhiteKnight,
@@ -555,7 +555,7 @@ impl DtzMap {
         match *self {
             DtzMap::Normal { map_ptr, by_wdl } => {
                 let offset = map_ptr + by_wdl[wdl] as usize + res as usize;
-                *raf.read(offset) as _
+                *raf.read(offset) as u16
             }
 
             DtzMap::Wide { map_ptr, by_wdl } => {
@@ -574,15 +574,15 @@ struct Symbol {
 }
 
 impl Symbol {
-    fn new() -> Symbol {
+    const fn new() -> Symbol {
         Symbol { lr: [0; 3], len: 0 }
     }
 
-    fn left(&self) -> u16 {
+    const fn left(&self) -> u16 {
         (u16::from(self.lr[1] & 0xf) << 8) | u16::from(self.lr[0])
     }
 
-    fn right(&self) -> u16 {
+    const fn right(&self) -> u16 {
         (u16::from(self.lr[2]) << 4) | (u16::from(self.lr[1]) >> 4)
     }
 }
@@ -706,7 +706,7 @@ impl PairsData {
         let sym = LE::read_u16(raf.read(ptr..ptr + 2));
         ptr += 2;
         let btree = ptr;
-        let mut symbols = vec![Symbol::new(); sym as _];
+        let mut symbols = vec![Symbol::new(); sym as usize];
         let mut visited = vec![false; symbols.len()];
         for s in 0..sym {
             read_symbols(raf, btree, &mut symbols, &mut visited, s, 16);
@@ -785,12 +785,14 @@ struct FileData {
 }
 
 /// Small readahead buffer for the block length table.
+#[derive(Debug)]
 struct BlockLengthBuffer {
     buffer: [u8; 2 * BlockLengthBuffer::CACHED_BLOCKS as usize],
     first_block: Option<u32>,
 }
 
 /// Readahead direction.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 enum Readahead {
     Forward,
     Backward,
@@ -924,7 +926,7 @@ impl<T: TableDescriptor> Table<T> {
                     let mut by_wdl = [0; 4];
                     if file.sides[0].flags.contains(&Flag::WIDE_DTZ) {
                         for idx in &mut by_wdl {
-                            *idx = ((ptr - map_ptr + 2) / 2) as u16;
+                            *idx = usize::midpoint(ptr - map_ptr, 2) as u16;
                             ptr += LE::read_u16(raf.read(ptr..ptr + 2)) as usize * 2 + 2;
                         }
                         file.sides[0].dtz_map = Some(DtzMap::Wide { map_ptr, by_wdl });
@@ -979,7 +981,7 @@ impl<T: TableDescriptor> Table<T> {
     fn decompress_pairs(&self, d: &PairsData, idx: u64) -> u16 {
         // Special case: The table stores only a single value.
         if d.flags.contains(&Flag::SINGLE_VALUE) {
-            return d.min_symlen as _;
+            return d.min_symlen as u16;
         }
 
         // Use the sparse index to jump very close to the correct block.

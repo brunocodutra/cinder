@@ -50,6 +50,7 @@ impl Zobrists {
 #[derive_const(Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Board({self})")]
+#[expect(clippy::partial_pub_fields)]
 pub struct Board {
     #[cfg_attr(test, strategy(LazyJust::new(move || {
         let mut roles = [Bitboard::empty(); 6];
@@ -242,7 +243,7 @@ impl Board {
             for wc in theirs & slider.attacks(king, theirs) & (queens | self.by_role(role)) {
                 let blockers = occ & Bitboard::segment(king, wc);
                 if blockers.is_empty() {
-                    checkers |= wc.bitboard()
+                    checkers |= wc.bitboard();
                 }
             }
         }
@@ -262,9 +263,10 @@ impl Board {
         let pawns = theirs & self.by_role(Role::Pawn);
         let mut threats = Bitboard::empty();
 
+        use File::*;
         threats |= match c {
-            Color::White => (pawns << 7 & !File::H.bitboard()) | (pawns << 9 & !File::A.bitboard()),
-            Color::Black => (pawns >> 7 & !File::A.bitboard()) | (pawns >> 9 & !File::H.bitboard()),
+            Color::White => ((pawns << 7) & !H.bitboard()) | ((pawns << 9) & !A.bitboard()),
+            Color::Black => ((pawns >> 7) & !A.bitboard()) | ((pawns >> 9) & !H.bitboard()),
         };
 
         let blockers = occ.without(king);
@@ -321,7 +323,7 @@ impl Board {
 impl Display for Board {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut skip = 0;
-        for sq in Square::iter().map(|sq| sq.flip()) {
+        for sq in Square::iter().map(Flip::flip) {
             let mut buffer = [b'\0'; 2];
 
             if sq.file() == File::H {
@@ -332,7 +334,7 @@ impl Display for Board {
                 None => skip += 1,
                 Some(p) => {
                     buffer[1] = buffer[0];
-                    write!(&mut buffer[..1], "{p}").assume()
+                    write!(&mut buffer[..1], "{p}").assume();
                 }
             }
 
@@ -413,7 +415,7 @@ impl FromStr for Board {
                 } else if let Some(skip) = c.to_digit(10) {
                     file += skip;
                 } else if let Ok(p) = Piece::from_str(c.encode_utf8(&mut buffer)) {
-                    let sq = Square::new(File::new(file as _), Rank::new(rank as _));
+                    let sq = Square::new(File::new(file as i8), Rank::new(rank as i8));
                     colors[p.color() as usize] ^= sq.bitboard();
                     roles[p.role() as usize] ^= sq.bitboard();
                     pieces[sq as usize] = Some(p);
@@ -478,6 +480,12 @@ mod tests {
     use super::*;
     use std::fmt::Debug;
     use test_strategy::proptest;
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn board_guarantees_zero_value_optimization() {
+        assert_eq!(size_of::<Option<Board>>(), size_of::<Board>());
+    }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]

@@ -35,7 +35,7 @@ where
     preceded(t(tag(key)), value)
 }
 
-#[allow(clippy::type_complexity)]
+#[expect(clippy::type_complexity)]
 pub fn gather<'s, A, B, C, D, E, F, G, H, I, J>(
     inner: (A, B, C, D, E, F, G, H, I, J),
 ) -> impl Parser<
@@ -95,14 +95,14 @@ where
             j.map(|o| output.9 = Some(o)),
         ));
 
-        let (rest, _) = fold_many0(inner, || (), |_, _| ()).parse(input)?;
+        let (rest, ()) = fold_many0(inner, || (), |(), ()| ()).parse(input)?;
         Ok((rest, output))
     }
 }
 
 macro_rules! define_gather {
     ($gather:ident, $recurse:ident, $($i:ident),+) => {
-        #[allow(non_snake_case, clippy::type_complexity)]
+        #[expect(non_snake_case)]
         pub fn $gather<'s, $($i),+>(inner: ($($i),+)) -> impl Parser<
             &'s str,
             Output = ($(Option<<$i as Parser<&'s str>>::Output>),+),

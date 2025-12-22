@@ -84,7 +84,7 @@ impl Tablebase {
 
         let moves = pos.moves();
         let mut all_are_en_passant = None;
-        for m in moves.unpack_if(|m| m.is_capture()) {
+        for m in moves.unpack_if(MoveSet::is_capture) {
             let is_pawn = pos.pawns(pos.turn()).contains(m.whence());
             let is_en_passant = pos.en_passant() == Some(m.whither()) && is_pawn;
             all_are_en_passant = Some(all_are_en_passant.unwrap_or(true) && is_en_passant);
@@ -127,7 +127,7 @@ impl Tablebase {
     }
 
     fn probe_ab(&self, pos: &Position, mut alpha: Wdl, beta: Wdl) -> Option<Wdl> {
-        for m in pos.moves().unpack_if(|m| m.is_capture()) {
+        for m in pos.moves().unpack_if(MoveSet::is_capture) {
             let mut next = pos.clone();
             next.play(m);
             alpha = alpha.max(-self.probe_ab(&next, -beta, -alpha)?);
@@ -205,7 +205,7 @@ impl<'a> ProbeResult<'a> {
     /// The true [`Wdl`] of the [`Position`].
     pub fn wdl(&self) -> Option<Wdl> {
         match self.pos.halfmoves() {
-            n @ 1.. => Some(self.dtz()?.stretch(n as _).into()),
+            n @ 1.. => Some(self.dtz()?.stretch(n as u16).into()),
             0 => Some(self.wdl),
         }
     }

@@ -2,7 +2,7 @@ use crate::{chess::*, util::Key};
 use bytemuck::{Pod, Zeroable, zeroed};
 use std::mem::transmute;
 
-/// A type representing a [`Position`]'s [zobrist hashes](`Zobrists`)
+/// A type representing a [`Position`]'s [zobrist hashes](`Zobrists`).
 pub type Zobrist = Key;
 
 #[derive(Debug, Copy, Clone, Zeroable, Pod)]

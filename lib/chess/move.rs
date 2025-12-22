@@ -12,7 +12,7 @@ pub struct Move(NonZeroU16);
 
 impl Move {
     #[inline(always)]
-    const fn bits<R: [const] Destruct + [const] RangeBounds<u32>>(&self, r: R) -> Bits<u16, 16> {
+    const fn bits<R: [const] Destruct + [const] RangeBounds<u32>>(self, r: R) -> Bits<u16, 16> {
         self.encode().slice(r)
     }
 
@@ -261,7 +261,6 @@ impl ExactSizeIterator for MoveSetIter {
 mod tests {
     use super::*;
     use proptest::sample::select;
-    use std::mem::size_of;
     use test_strategy::proptest;
 
     #[test]

@@ -1,6 +1,6 @@
 use crate::{chess::Phase, util::Int};
 use bytemuck::{Zeroable, zeroed};
-use std::slice;
+use std::{ptr, slice};
 
 mod accumulator;
 mod evaluator;
@@ -37,7 +37,7 @@ pub const HLS: i16 = 64;
 
 const unsafe fn copy_bytes<T>(dst: &mut T, src: &[u8]) -> usize {
     let len = size_of_val(dst);
-    let dst = unsafe { slice::from_raw_parts_mut(dst as *mut T as *mut u8, len) };
+    let dst = unsafe { slice::from_raw_parts_mut(ptr::from_mut(dst).cast(), len) };
     dst.copy_from_slice(&src[..len]);
     len
 }
@@ -64,7 +64,8 @@ const fn arrange_in_blocks<
             output[dst].copy_from_slice(&input[i][src..src + B]);
             i += 1;
         }
-        block += 1
+
+        block += 1;
     }
 }
 

@@ -3,7 +3,7 @@ use bytemuck::{Pod, Zeroable};
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
-use std::{cmp::Ordering, mem::size_of, num::Saturating as S, str::FromStr};
+use std::{cmp::Ordering, num::Saturating as S, str::FromStr};
 
 /// A saturating bounded integer.
 #[derive(Debug, Copy, Hash, Zeroable, Pod)]
@@ -102,7 +102,7 @@ where
 {
     #[inline(always)]
     fn add_assign(&mut self, rhs: U) {
-        *self = *self + rhs
+        *self = *self + rhs;
     }
 }
 
@@ -132,7 +132,7 @@ where
 {
     #[inline(always)]
     fn sub_assign(&mut self, rhs: U) {
-        *self = *self - rhs
+        *self = *self - rhs;
     }
 }
 
@@ -162,7 +162,7 @@ where
 {
     #[inline(always)]
     fn mul_assign(&mut self, rhs: U) {
-        *self = *self * rhs
+        *self = *self * rhs;
     }
 }
 
@@ -192,7 +192,7 @@ where
 {
     #[inline(always)]
     fn div_assign(&mut self, rhs: U) {
-        *self = *self / rhs
+        *self = *self / rhs;
     }
 }
 

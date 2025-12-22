@@ -428,7 +428,7 @@ impl Position {
         self.board.piece_on(sq)
     }
 
-    /// This position's [zobrist hashes](`Zobrists`)
+    /// This position's [zobrist hashes](`Zobrists`).
     #[inline(always)]
     pub const fn zobrists(&self) -> &Zobrists {
         &self.zobrists
@@ -636,9 +636,9 @@ impl Position {
         let mut moves = MovePack::default();
 
         if self.is_check() {
-            EvasionGenerator::generate(self, &mut moves).assume()
+            EvasionGenerator::generate(self, &mut moves).assume();
         } else {
-            MoveGenerator::generate(self, &mut moves).assume()
+            MoveGenerator::generate(self, &mut moves).assume();
         }
 
         moves
@@ -887,6 +887,12 @@ mod tests {
     use super::*;
     use std::{cmp::Reverse, fmt::Debug, hash::DefaultHasher};
     use test_strategy::proptest;
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn position_guarantees_zero_value_optimization() {
+        assert_eq!(size_of::<Option<Position>>(), size_of::<Position>());
+    }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]

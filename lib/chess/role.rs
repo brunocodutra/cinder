@@ -19,8 +19,8 @@ pub enum Role {
 
 unsafe impl const Int for Role {
     type Repr = u8;
-    const MIN: Self::Repr = Role::Pawn as _;
-    const MAX: Self::Repr = Role::King as _;
+    const MIN: Self::Repr = Role::Pawn as u8;
+    const MAX: Self::Repr = Role::King as u8;
 }
 
 impl Display for Role {
@@ -62,7 +62,6 @@ impl FromStr for Role {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::mem::size_of;
     use test_strategy::proptest;
 
     #[test]

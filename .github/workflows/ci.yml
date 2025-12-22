@@ -25,7 +25,7 @@ jobs:
     - uses: actions/checkout@v5
       with:
         lfs: true
-    - run: cargo clippy --workspace --all-features --features bullet/cpu -- -D warnings
+    - run: cargo clippy --workspace --features spsa,trainer,bullet/cpu -- -D warnings
 
   audit:
     runs-on: ubuntu-latest

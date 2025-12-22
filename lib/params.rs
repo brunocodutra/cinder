@@ -34,7 +34,7 @@ struct Param<const BYTES: ConstBytes<32>> {
 impl<const BYTES: ConstBytes<32>> Param<BYTES> {
     const VALUES: &ConstSeq<f32, 32> = unsafe { &Seq::reify(BYTES) };
 
-    pub const fn new() -> Self {
+    const fn new() -> Self {
         Self {
             #[cfg(feature = "spsa")]
             values: Self::VALUES.clone(),
@@ -42,7 +42,7 @@ impl<const BYTES: ConstBytes<32>> Param<BYTES> {
     }
 
     #[cfg(feature = "spsa")]
-    pub fn perturb<I: IntoIterator<Item = f32>>(&self, perturbations: I) -> (Self, Self) {
+    fn perturb<I: IntoIterator<Item = f32>>(&self, perturbations: I) -> (Self, Self) {
         let (mut left, mut right) = (self.clone(), self.clone());
         let mut perturbations = perturbations.into_iter();
         for (i, c) in Self::VALUES.iter().enumerate() {
@@ -55,7 +55,7 @@ impl<const BYTES: ConstBytes<32>> Param<BYTES> {
     }
 
     #[cfg(feature = "spsa")]
-    pub fn update<I: IntoIterator<Item = f32>>(&mut self, corrections: I) {
+    fn update<I: IntoIterator<Item = f32>>(&mut self, corrections: I) {
         let mut corrections = corrections.into_iter();
         for (i, c) in Self::VALUES.iter().enumerate() {
             let delta = c.abs() * corrections.next().unwrap();
@@ -117,6 +117,7 @@ static PARAMS: SyncUnsafeCell<Params> = SyncUnsafeCell::new(Params::new());
 #[cfg(feature = "spsa")]
 impl Display for Params {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        #[expect(clippy::map_err_ignore)]
         serialize(f, self).map_err(|_| fmt::Error)
     }
 }

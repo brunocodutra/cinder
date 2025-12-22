@@ -217,8 +217,8 @@ unsafe impl const Int for bool {
 
 unsafe impl const Int for Ordering {
     type Repr = i8;
-    const MIN: Self::Repr = Ordering::Less as _;
-    const MAX: Self::Repr = Ordering::Greater as _;
+    const MIN: Self::Repr = Ordering::Less as i8;
+    const MAX: Self::Repr = Ordering::Greater as i8;
 }
 
 macro_rules! impl_int_for_non_zero {

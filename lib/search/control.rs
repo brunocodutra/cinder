@@ -41,7 +41,7 @@ impl GlobalControl {
         let moves_left_start = *Params::moves_left_start(0);
         let moves_left_end = *Params::moves_left_end(0);
         let max_fullmoves = moves_left_start / moves_left_end;
-        let moves_left = moves_left_start / max_fullmoves.min(pos.fullmoves().get() as _);
+        let moves_left = moves_left_start / max_fullmoves.min(pos.fullmoves().get() as f32);
         let time_per_move = inc + time_left / moves_left;
 
         let soft_time_fraction = *Params::soft_time_fraction(0);
@@ -111,7 +111,7 @@ impl<'a> Active<'a> {
     }
 
     #[inline(always)]
-    fn check(&mut self, depth: Depth, ply: Ply, pv: &Pv) -> ControlFlow {
+    pub fn check(&mut self, depth: Depth, ply: Ply, pv: &Pv) -> ControlFlow {
         let score = pv.score().get() as f32;
         let Some(head) = pv.head() else {
             return ControlFlow::Continue;
@@ -166,7 +166,7 @@ impl<'a> Active<'a> {
     }
 }
 
-impl<'a> const Deref for Active<'a> {
+impl const Deref for Active<'_> {
     type Target = GlobalControl;
 
     #[inline(always)]
@@ -189,7 +189,7 @@ impl<'a> Passive<'a> {
     }
 
     #[inline(always)]
-    fn check(&mut self) -> ControlFlow {
+    pub fn check(&mut self) -> ControlFlow {
         if self.abort.load(Ordering::Relaxed) {
             return ControlFlow::Abort;
         }
@@ -204,7 +204,7 @@ impl<'a> Passive<'a> {
     }
 }
 
-impl<'a> const Deref for Passive<'a> {
+impl const Deref for Passive<'_> {
     type Target = GlobalControl;
 
     #[inline(always)]
@@ -215,13 +215,13 @@ impl<'a> const Deref for Passive<'a> {
 
 /// The local search controller.
 #[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 pub enum LocalControl<'a> {
     Active(Active<'a>),
     Passive(Passive<'a>),
 }
 
-impl<'a> const Deref for LocalControl<'a> {
+impl const Deref for LocalControl<'_> {
     type Target = GlobalControl;
 
     #[inline(always)]

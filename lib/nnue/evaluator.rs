@@ -119,6 +119,7 @@ impl Arbitrary for Evaluator {
 
 impl Evaluator {
     /// Constructs the evaluator from a [`Position`].
+    #[expect(clippy::needless_pass_by_value)]
     pub fn new(pos: Position) -> Self {
         let mut evaluator = Evaluator {
             ply: Ply::new(0),
@@ -250,13 +251,15 @@ impl Evaluator {
         self.positions[idx + 1] = self.positions[idx].clone();
 
         match self.moves[idx] {
+            Some(m) => self.positions[idx + 1].play(m),
             None => self.positions[idx + 1].pass(),
-            Some(m) => {
-                self.positions[idx + 1].play(m);
-                let (wc, wt) = (m.whence(), m.whither());
-                let role = self.positions[idx].role_on(m.whence()).assume();
-                if role == Role::King && Feature::bucket(turn, wc) != Feature::bucket(turn, wt) {
-                    self.pending[turn.cast::<usize>()][idx + 1] = Some(Pending::Refresh)
+        }
+
+        #[expect(clippy::collapsible_if)]
+        if let Some(m) = self.moves[idx] {
+            if self.positions[idx].role_on(m.whence()) == Some(Role::King) {
+                if Feature::bucket(turn, m.whence()) != Feature::bucket(turn, m.whither()) {
+                    self.pending[turn.cast::<usize>()][idx + 1] = Some(Pending::Refresh);
                 }
             }
         }
@@ -426,7 +429,6 @@ impl FromStr for Evaluator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::sample::select;
     use std::fmt::Debug;
     use test_strategy::proptest;
 

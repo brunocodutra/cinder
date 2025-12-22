@@ -122,7 +122,7 @@ struct RecursionGuard<'e, 'a> {
     searcher: &'e mut Searcher<'a>,
 }
 
-impl<'e, 'a> Drop for RecursionGuard<'e, 'a> {
+impl Drop for RecursionGuard<'_, '_> {
     #[inline(always)]
     fn drop(&mut self) {
         self.searcher.stack.pos.pop();
@@ -141,12 +141,9 @@ impl<'a> Searcher<'a> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn transposition(&self) -> Option<Transposition> {
-        let tpos = self.shared.tt.load(self.stack.pos.zobrists().hash)?;
-        if tpos.best().is_none_or(|m| self.stack.pos.is_legal(m)) {
-            Some(tpos)
-        } else {
-            None
-        }
+        let pos = &self.stack.pos;
+        let tpos = self.shared.tt.load(pos.zobrists().hash)?;
+        tpos.best().is_none_or(|m| pos.is_legal(m)).then_some(tpos)
     }
 
     #[inline(always)]
@@ -569,16 +566,19 @@ impl<'a> Searcher<'a> {
             t.best().is_some_and(|m| !m.is_quiet()) && !matches!(t.score(), ScoreBound::Upper(_))
         });
 
+        #[expect(clippy::collapsible_if)]
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
             if let Some(t) = transposition {
                 let (lower, upper) = t.score().range(ply).into_inner();
 
+                #[expect(clippy::collapsible_if)]
                 if let Some(margin) = Self::flp(depth - t.depth()) {
                     if upper + margin.to_int::<i16>() <= alpha {
                         return Ok(transposed.truncate());
                     }
                 }
 
+                #[expect(clippy::collapsible_if)]
                 if let Some(margin) = Self::fhp(depth - t.depth()) {
                     if lower - margin.to_int::<i16>() >= beta {
                         return Ok(transposed.truncate());
@@ -614,6 +614,7 @@ impl<'a> Searcher<'a> {
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
         } else if !IS_PV && !is_check && depth > 0 {
+            #[expect(clippy::collapsible_if)]
             if let Some(margin) = Self::razoring(depth) {
                 if self.stack.value[ply.cast::<usize>()] + margin.to_int::<i16>() <= alpha {
                     let pv = self.nw(Depth::new(0), beta, cut)?;
@@ -633,6 +634,7 @@ impl<'a> Searcher<'a> {
             let turn = self.stack.pos.turn();
             let pawns = self.stack.pos.pawns(turn);
             if (self.stack.pos.by_color(turn) ^ pawns).len() > 1 {
+                #[expect(clippy::collapsible_if)]
                 if let Some(margin) = Self::nmp(depth) {
                     if transposed.score() - margin.to_int::<i16>() >= beta {
                         return Ok(transposed.truncate());
@@ -668,13 +670,11 @@ impl<'a> Searcher<'a> {
             let counter = reply.get(pos, m).to_float::<f32>();
             rating = Params::counter_rating(0).mul_add(counter / History::LIMIT as f32, rating);
 
-            if !m.is_quiet() {
-                if pos.winning(m, Params::winning_rating_margin(0).to_int()) {
-                    rating += convolve([
-                        (pos.gain(m).to_float(), Params::winning_rating_gain(..)),
-                        (1., Params::winning_rating_scalar(..)),
-                    ]);
-                }
+            if !m.is_quiet() && pos.winning(m, Params::winning_rating_margin(0).to_int()) {
+                rating += convolve([
+                    (pos.gain(m).to_float(), Params::winning_rating_gain(..)),
+                    (1., Params::winning_rating_scalar(..)),
+                ]);
             }
 
             rating.to_int()
@@ -717,11 +717,12 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        #[allow(clippy::blocks_in_conditions)]
+        #[expect(clippy::blocks_in_conditions)]
         let (mut head, mut tail) = match { moves.sorted().next() } {
             None => return Ok(transposed.truncate()),
             Some(m) => {
                 let mut extension = 0i8;
+                #[expect(clippy::collapsible_if)]
                 if let Some(t) = transposition {
                     if t.score().lower(ply) >= beta && t.depth() >= depth - 3 && depth >= 6 {
                         extension = 2 + m.is_quiet() as i8;
@@ -874,13 +875,11 @@ impl<'a> Searcher<'a> {
             let history = self.local.history.get(pos, m).to_float::<f32>();
             rating = Params::history_rating(0).mul_add(history / History::LIMIT as f32, rating);
 
-            if !m.is_quiet() {
-                if pos.winning(m, Params::winning_rating_margin(0).to_int()) {
-                    rating += convolve([
-                        (pos.gain(m).to_float(), Params::winning_rating_gain(..)),
-                        (1., Params::winning_rating_scalar(..)),
-                    ]);
-                }
+            if !m.is_quiet() && pos.winning(m, Params::winning_rating_margin(0).to_int()) {
+                rating += convolve([
+                    (pos.gain(m).to_float(), Params::winning_rating_gain(..)),
+                    (1., Params::winning_rating_scalar(..)),
+                ]);
             }
 
             rating.to_int()
@@ -1034,7 +1033,7 @@ impl<'e, 'p> Search<'e, 'p> {
     }
 }
 
-impl<'e, 'p> Drop for Search<'e, 'p> {
+impl Drop for Search<'_, '_> {
     #[inline(always)]
     fn drop(&mut self) {
         if let Some(t) = self.task.take() {
@@ -1044,7 +1043,7 @@ impl<'e, 'p> Drop for Search<'e, 'p> {
     }
 }
 
-impl<'e, 'p> FusedStream for Pin<&mut Search<'e, 'p>> {
+impl FusedStream for Pin<&mut Search<'_, '_>> {
     #[inline(always)]
     fn is_terminated(&self) -> bool {
         self.channel
@@ -1053,9 +1052,10 @@ impl<'e, 'p> FusedStream for Pin<&mut Search<'e, 'p>> {
     }
 }
 
-impl<'e, 'p> Stream for Pin<&mut Search<'e, 'p>> {
+impl Stream for Pin<&mut Search<'_, '_>> {
     type Item = Info;
 
+    #[expect(clippy::deref_addrof)]
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if let Some(rx) = &mut self.channel {
             let info = match rx.poll_next_unpin(cx) {
@@ -1070,12 +1070,12 @@ impl<'e, 'p> Stream for Pin<&mut Search<'e, 'p>> {
         let (tx, rx) = unbounded();
         self.channel = Some(rx);
 
-        let ctrl: &GlobalControl = unsafe { &*(&self.ctrl as *const _) };
-        let pos: &mut Evaluator = unsafe { &mut *(&mut *self.pos as *mut _) };
-        let executor: &mut Executor = unsafe { &mut *(&mut self.engine.executor as *mut _) };
-        let shared: &SharedData = unsafe { &*(&self.engine.shared as *const _) };
+        let ctrl: &GlobalControl = unsafe { &*(&raw const self.ctrl) };
+        let pos: &mut Evaluator = unsafe { &mut *(&raw mut *self.pos) };
+        let executor: &mut Executor = unsafe { &mut *(&raw mut self.engine.executor) };
+        let shared: &SharedData = unsafe { &*(&raw const self.engine.shared) };
         let local: &[SyncUnsafeCell<LocalData>] =
-            unsafe { &*(&mut *self.engine.local as *mut _ as *const _) };
+            unsafe { &*(&raw mut *self.engine.local as *const _) };
 
         let moves = Moves::from_iter(pos.moves().unpack());
         if let Some(pv) = shared.syzygy.best(pos, &moves) {
@@ -1180,11 +1180,11 @@ impl Engine {
     /// Resets the engine state.
     pub fn reset(&mut self) {
         let values: &[SyncUnsafeCell<Atomic<Vault<Value, u64>>>] =
-            unsafe { &*(&mut **self.shared.values as *mut _ as *const _) };
+            unsafe { &*(&raw mut **self.shared.values as *const _) };
         let tt: &[SyncUnsafeCell<Atomic<Vault<Transposition>>>] =
-            unsafe { &*(&mut **self.shared.tt as *mut _ as *const _) };
+            unsafe { &*(&raw mut **self.shared.tt as *const _) };
         let searchers: &[SyncUnsafeCell<LocalData>] =
-            unsafe { &*(&mut *self.local as *mut _ as *const _) };
+            unsafe { &*(&raw mut *self.local as *const _) };
 
         let values_chunk_size = values.len().div_ceil(searchers.len());
         let tt_chunk_size = tt.len().div_ceil(searchers.len());

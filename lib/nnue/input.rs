@@ -42,7 +42,7 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Input
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn forward<'a>(&self, (us, them): Self::Input<'a>) -> Self::Output {
+    fn forward(&self, (us, them): Self::Input<'_>) -> Self::Output {
         const { assert!(I.is_multiple_of(2 * W8)) }
         const { assert!(O.is_multiple_of(W2)) }
 

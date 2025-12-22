@@ -18,9 +18,8 @@ impl Mate {
     #[inline(always)]
     pub const fn plies(&self) -> Option<Ply> {
         match *self {
+            Mate::Mating(ply) | Mate::Mated(ply) => Some(ply),
             Mate::None => None,
-            Mate::Mating(ply) => Some(ply),
-            Mate::Mated(ply) => Some(ply),
         }
     }
 }
@@ -41,7 +40,7 @@ unsafe impl const Int for ScoreRepr {
 pub type Score = Bounded<ScoreRepr>;
 
 impl Score {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     const ASSERT: () = const {
         assert!(Value::MAX + 2 * (Ply::MAX as i16 + 1) <= Self::MAX);
         assert!(Value::MIN + 2 * (Ply::MIN as i16 - 1) >= Self::MIN);
@@ -65,13 +64,13 @@ impl Score {
         Self::mating(Ply::upper()).relative_to_ply(ply) - 1
     }
 
-    /// Mated score at `ply`
+    /// Mated score at `ply`.
     #[inline(always)]
     pub const fn mated(ply: Ply) -> Self {
         Self::lower().relative_to_ply(ply)
     }
 
-    /// Mating score at `ply`
+    /// Mating score at `ply`.
     #[inline(always)]
     pub const fn mating(ply: Ply) -> Self {
         Self::upper().relative_to_ply(ply)

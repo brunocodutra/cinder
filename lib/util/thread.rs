@@ -20,8 +20,7 @@ impl<T> Handle<T> {
 #[inline(always)]
 pub fn spawn<F, T>(f: F) -> io::Result<Handle<T>>
 where
-    F: FnOnce() -> T,
-    F: Send + 'static,
+    F: Send + 'static + FnOnce() -> T,
     T: Send + 'static,
 {
     Ok(Handle(Builder::new().stack_size(STACK_SIZE).spawn(f)?))

@@ -9,7 +9,7 @@ use std::ops::{Deref, Neg};
 /// The principal variation.
 #[derive(Debug, Clone, Constructor)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
-pub struct Pv<const N: usize = { Depth::MAX as _ }> {
+pub struct Pv<const N: usize = { Depth::MAX as usize }> {
     score: Score,
     moves: Line<N>,
 }

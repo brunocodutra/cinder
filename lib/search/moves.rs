@@ -52,7 +52,7 @@ impl Moves {
     #[inline(always)]
     pub fn sort<F: FnMut(Move) -> Rating>(&mut self, mut f: F) {
         self.unsorted = 0;
-        for (m, rating) in self.entries.iter_mut() {
+        for (m, rating) in &mut self.entries {
             *rating = f(*m);
         }
     }
@@ -83,14 +83,14 @@ impl<'a> SortedMovesIter<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for SortedMovesIter<'a> {
+impl ExactSizeIterator for SortedMovesIter<'_> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.moves.len() - self.cursor.cast::<usize>()
     }
 }
 
-impl<'a> Iterator for SortedMovesIter<'a> {
+impl Iterator for SortedMovesIter<'_> {
     type Item = Move;
 
     #[inline(always)]

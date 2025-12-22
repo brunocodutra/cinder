@@ -16,6 +16,7 @@ impl Mul4x8 for i8x64 {
     #[inline(always)]
     #[cfg(target_feature = "avx512vnni")]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    #[expect(clippy::absolute_paths)]
     fn mul_4x8(self, x: Self::Unsigned) -> Self::Output {
         crate::simd::MulAdd4x8::mul_add_4x8(self, x, Simd::splat(0))
     }
@@ -45,6 +46,7 @@ impl Mul4x8 for i8x32 {
     #[inline(always)]
     #[cfg(all(target_feature = "avx512vnni", target_feature = "avx512vl"))]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    #[expect(clippy::absolute_paths)]
     fn mul_4x8(self, x: Self::Unsigned) -> Self::Output {
         crate::simd::MulAdd4x8::mul_add_4x8(self, x, Simd::splat(0))
     }
@@ -73,6 +75,7 @@ impl Mul4x8 for i8x16 {
     #[inline(always)]
     #[cfg(all(target_feature = "avx512vnni", target_feature = "avx512vl"))]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    #[expect(clippy::absolute_paths)]
     fn mul_4x8(self, x: Self::Unsigned) -> Self::Output {
         crate::simd::MulAdd4x8::mul_add_4x8(self, x, Simd::splat(0))
     }
@@ -98,6 +101,7 @@ impl Mul4x8 for i8x16 {
     #[inline(always)]
     #[cfg(target_feature = "dotprod")]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    #[expect(clippy::absolute_paths)]
     fn mul_4x8(self, x: Self::Unsigned) -> Self::Output {
         crate::simd::MulAdd4x8::mul_add_4x8(self, x, Simd::splat(0))
     }

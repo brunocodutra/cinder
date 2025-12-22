@@ -8,7 +8,7 @@ use derive_more::with_trait::Debug;
 #[derive_const(Eq, PartialEq)]
 #[debug("History")]
 pub struct History(
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     [[Butterfly<[[<History as Statistics<Move>>::Stat; 2]; 2]>; 2]; 2],
 );
 

@@ -30,8 +30,8 @@ impl File {
 
 unsafe impl const Int for File {
     type Repr = i8;
-    const MIN: Self::Repr = File::A as _;
-    const MAX: Self::Repr = File::H as _;
+    const MIN: Self::Repr = File::A as i8;
+    const MAX: Self::Repr = File::H as i8;
 }
 
 impl const Mirror for File {
@@ -91,8 +91,7 @@ impl FromStr for File {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess::{Rank, Square};
-    use std::mem::size_of;
+    use crate::chess::Square;
     use test_strategy::proptest;
 
     #[test]

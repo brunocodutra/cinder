@@ -9,5 +9,5 @@ pub trait Synapse {
     type Output;
 
     /// Transforms input neurons.
-    fn forward<'a>(&self, input: Self::Input<'a>) -> Self::Output;
+    fn forward(&self, input: Self::Input<'_>) -> Self::Output;
 }

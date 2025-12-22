@@ -200,8 +200,8 @@ impl Piece {
 
 unsafe impl const Int for Piece {
     type Repr = u8;
-    const MIN: Self::Repr = Piece::WhitePawn as _;
-    const MAX: Self::Repr = Piece::BlackKing as _;
+    const MIN: Self::Repr = Piece::WhitePawn as u8;
+    const MAX: Self::Repr = Piece::BlackKing as u8;
 }
 
 impl const Flip for Piece {
@@ -263,7 +263,6 @@ impl FromStr for Piece {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::mem::size_of;
     use test_strategy::proptest;
 
     #[test]

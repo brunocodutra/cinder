@@ -30,8 +30,8 @@ impl Rank {
 
 unsafe impl const Int for Rank {
     type Repr = i8;
-    const MIN: Self::Repr = Rank::First as _;
-    const MAX: Self::Repr = Rank::Eighth as _;
+    const MIN: Self::Repr = Rank::First as i8;
+    const MAX: Self::Repr = Rank::Eighth as i8;
 }
 
 impl const Flip for Rank {
@@ -91,8 +91,7 @@ impl FromStr for Rank {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess::{File, Square};
-    use std::mem::size_of;
+    use crate::chess::Square;
     use test_strategy::proptest;
 
     #[test]

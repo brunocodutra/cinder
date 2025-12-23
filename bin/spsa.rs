@@ -101,14 +101,12 @@ impl MatchRunner {
             format!("-openings file={} order=random", p.display())
         });
 
-        let (tb, option_syzygy_path) = self.syzygy.as_ref().map_or_else(Default::default, |p| {
+        let (tb, mut options) = self.syzygy.as_ref().map_or_else(Default::default, |p| {
             let path = p.display();
             (format!("-tb {path}"), format!("option.SyzygyPath={path}"))
         });
 
-        let options = String::from_iter(self.options.iter().map(|(k, v)| {
-            return format!("option.{k}={v} ");
-        }));
+        options.extend(self.options.iter().map(|(k, v)| format!(" option.{k}={v}")));
 
         let args = format!(
             "-games 2 -rounds {pairs} -concurrency {concurrency} -use-affinity -recover
@@ -116,7 +114,7 @@ impl MatchRunner {
             -draw movenumber=32 movecount=6 score=15 -resign movecount=5 score=600
             -engine name=left cmd={engine} args=--params={left}
             -engine name=right cmd={engine} args=--params={right}
-            -each tc={tc} {option_syzygy_path} {options}"
+            -each tc={tc} {options}"
         );
 
         let args: Vec<_> = args.split_whitespace().collect();

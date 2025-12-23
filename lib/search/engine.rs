@@ -950,11 +950,10 @@ impl<'a> Searcher<'a> {
     /// An implementation of aspiration windows with iterative deepening.
     #[inline(always)]
     fn aw(&mut self, mut moves: Moves) -> impl Iterator<Item = Info> {
-        #[inline(always)]
         gen move {
             for depth in Depth::iter() {
                 let mut reduction = 0.;
-                let mut window = *Params::aw_baseline(depth.cast::<usize>().min(7));
+                let mut window = *Params::aw_baseline(depth.cast::<usize>().min(5));
                 let mut lower = self.stack.pv.score() - window.to_int::<i16>();
                 let mut upper = self.stack.pv.score() + window.to_int::<i16>();
 
@@ -962,11 +961,9 @@ impl<'a> Searcher<'a> {
                     let draft = depth - reduction.to_int::<i8>();
                     window = window.mul_add(*Params::aw_gamma(0), *Params::aw_delta(0));
                     let Ok(partial) = self.root(&mut moves, draft, lower..upper) else {
-                        return;
+                        let (time, nodes) = (self.ctrl.elapsed(), self.ctrl.visited());
+                        return yield Info::new(depth - 1, time, nodes, self.stack.pv.clone());
                     };
-
-                    let time = self.ctrl.elapsed();
-                    let nodes = self.ctrl.visited();
 
                     match partial.score() {
                         score if (-lower..Score::upper()).contains(&-score) => {
@@ -980,11 +977,13 @@ impl<'a> Searcher<'a> {
                             upper = score + window.to_int::<i16>();
                             reduction += *Params::aw_fail_high_reduction(0);
                             self.stack.pv = partial;
+                            let (time, nodes) = (self.ctrl.elapsed(), self.ctrl.visited());
                             yield Info::new(depth - 1, time, nodes, self.stack.pv.clone());
                         }
 
                         _ => {
                             self.stack.pv = partial;
+                            let (time, nodes) = (self.ctrl.elapsed(), self.ctrl.visited());
                             break yield Info::new(depth, time, nodes, self.stack.pv.clone());
                         }
                     }

@@ -37,12 +37,13 @@ impl GlobalControl {
             None => return f32::INFINITY..limits.max_time().as_secs_f32(),
         };
 
-        let time_left = clock - inc;
-        let moves_left_start = *Params::moves_left_start(0);
-        let moves_left_end = *Params::moves_left_end(0);
-        let max_fullmoves = moves_left_start / moves_left_end;
-        let moves_left = moves_left_start / max_fullmoves.min(pos.fullmoves().get() as f32);
-        let time_per_move = inc + time_left / moves_left;
+        let damping = *Params::moves_left_damping(0);
+        let start = *Params::moves_left_start(0);
+        let end = *Params::moves_left_end(0);
+
+        let moves = pos.fullmoves().get() as f32;
+        let moves_left = (moves + damping).powi(-1).lerp(end, start);
+        let time_per_move = moves_left.powi(-1).lerp(inc, clock);
 
         let soft_time_fraction = *Params::soft_time_fraction(0);
         let hard_time_fraction = *Params::hard_time_fraction(0);

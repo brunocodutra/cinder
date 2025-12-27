@@ -75,6 +75,7 @@ pub struct ParseHashSizeError;
 impl FromStr for HashSize {
     type Err = ParseHashSizeError;
 
+    #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<usize>()
             .ok()
@@ -135,6 +136,7 @@ pub struct ParseThreadCountError;
 impl FromStr for ThreadCount {
     type Err = ParseThreadCountError;
 
+    #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<usize>()
             .ok()

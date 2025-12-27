@@ -329,7 +329,7 @@ impl Hash for Position {
 impl const PartialEq for Position {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
-        self.board.eq(&other.board)
+        self.zobrists.hash.eq(&other.zobrists.hash) && self.board.eq(&other.board)
     }
 }
 
@@ -827,10 +827,15 @@ impl Position {
     }
 
     /// Counts the total number of reachable positions to the given depth.
-    pub fn perft(&self, depth: u8) -> usize {
+    pub fn perft(&self, depth: u8) -> u64 {
         match depth {
             0 => 1,
-            1 => self.moves().into_iter().map(|ms| ms.iter().len()).sum(),
+            1 => self
+                .moves()
+                .into_iter()
+                .map(|ms| ms.iter().len() as u64)
+                .sum(),
+
             _ => self
                 .moves()
                 .unpack()
@@ -1164,7 +1169,7 @@ mod tests {
 
     #[rustfmt::skip]
     #[cfg(not(coverage))]
-    const PERFT_SUITE: &[(&str, u8, usize)] = &[
+    const PERFT_SUITE: &[(&str, u8, u64)] = &[
         ("1r2k2r/8/8/8/8/8/8/R3K2R b KQk - 0 1", 6, 195629489),
         ("1r2k2r/8/8/8/8/8/8/R3K2R w KQk - 0 1", 6, 198328929),
         ("2r1k2r/8/8/8/8/8/8/R3K2R b KQk - 0 1", 6, 184411439),
@@ -1298,7 +1303,7 @@ mod tests {
     #[proptest(cases = 1)]
     #[cfg_attr(miri, ignore)]
     fn perft_counts_all_reachable_positions_up_to_ply(
-        #[strategy(select(PERFT_SUITE))] entry: (&'static str, u8, usize),
+        #[strategy(select(PERFT_SUITE))] entry: (&'static str, u8, u64),
     ) {
         let (fen, plies, count) = entry;
         let pos: Position = fen.parse()?;

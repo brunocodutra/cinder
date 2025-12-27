@@ -1,7 +1,8 @@
 #![allow(long_running_const_eval)]
 
 use anyhow::Error as Failure;
-use cinder::{uci::Uci, util::thread};
+use cinder::uci::{Outbound, Uci, UciParser};
+use cinder::util::thread;
 use clap::Parser;
 use futures::{channel::mpsc::unbounded, executor::block_on, sink::unfold as sink};
 use std::future::ready;
@@ -37,15 +38,23 @@ fn main() -> Result<(), Failure> {
     thread::spawn(move || {
         let mut lines = stdin().lock().lines();
         while let Some(Ok(line)) = lines.next() {
-            if tx.unbounded_send(line).is_err() {
-                break;
+            match line.trim() {
+                "" => continue,
+                trimmed => match UciParser.parse(trimmed) {
+                    #[expect(clippy::print_stderr)]
+                    Err(e) => eprintln!("Warning: ignored uci command, {e}"),
+                    Ok(cmd) => match tx.unbounded_send(cmd) {
+                        Ok(()) => continue,
+                        Err(_) => break,
+                    },
+                },
             }
         }
     })?;
 
     let handle = thread::spawn(move || {
         let mut stdout = stdout().lock();
-        let output = sink((), |_, line: String| ready(writeln!(stdout, "{line}")));
+        let output = sink((), move |_, o: Outbound| ready(writeln!(stdout, "{o}")));
         Ok(block_on(Uci::new(input, output)?.run())?)
     })?;
 

@@ -5,8 +5,8 @@ use std::fmt::{self, Formatter, Write};
 use std::{iter::repeat_n, str::FromStr};
 
 /// A material key.
-#[derive(Debug, Default, Copy, Clone, Hash)]
-#[derive_const(Eq, PartialEq)]
+#[derive(Debug, Default, Copy, Hash)]
+#[derive_const(Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Material({self})")]
 pub struct Material(
@@ -114,6 +114,7 @@ pub struct ParseMaterialError;
 impl FromStr for Material {
     type Err = ParseMaterialError;
 
+    #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut material = Material::default();
         let (left, right) = s.split_once('v').ok_or(ParseMaterialError)?;

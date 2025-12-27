@@ -130,11 +130,7 @@ impl MatchRunner {
         let losses = field("Losses:", int);
         let mut parser = many_till(anychar, separated_pair(wins, t(tag(",")), losses));
         let (_, (_, (wins, losses))) = parser.parse(&stdout).map_err(|e| e.to_owned())?;
-
-        Ok(GameResult {
-            wins: wins.try_into()?,
-            losses: losses.try_into()?,
-        })
+        Ok(GameResult { wins, losses })
     }
 }
 
@@ -265,7 +261,7 @@ struct Cli {
 
 /// Controls whether to resume a tuning session from a checkpoint or to start a new one.
 #[derive(Debug, Subcommand)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 enum Action {
     /// Starts a new tuning session.
     Start(#[clap(flatten)] SpsaTuner),

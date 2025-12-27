@@ -45,7 +45,7 @@ enum Pending {
 pub struct Evaluator {
     ply: Ply,
     positions: [Position; Ply::MAX as usize + 1],
-    accumulator: [[Accumulator; 2]; Ply::MAX as usize + 1],
+    accumulator: [[Accumulator; Ply::MAX as usize + 1]; 2],
     pending: [[Option<Pending>; Ply::MAX as usize + 1]; 2],
     // move[i] leads to pos[i + 1]
     moves: [Option<Move>; Ply::MAX as usize],
@@ -248,16 +248,19 @@ impl Evaluator {
         self.moves[idx] = m;
         self.pending[0][idx + 1] = Some(Pending::Update);
         self.pending[1][idx + 1] = Some(Pending::Update);
-        self.positions[idx + 1] = self.positions[idx].clone();
+
+        let (left, right) = self.positions.split_at_mut(idx + 1);
+        let (prev, pos) = (&left[left.len() - 1], &mut right[0]);
+        pos.clone_from(prev);
 
         match self.moves[idx] {
-            Some(m) => self.positions[idx + 1].play(m),
-            None => self.positions[idx + 1].pass(),
+            Some(m) => pos.play(m),
+            None => pos.pass(),
         }
 
         #[expect(clippy::collapsible_if)]
         if let Some(m) = self.moves[idx] {
-            if self.positions[idx].role_on(m.whence()) == Some(Role::King) {
+            if prev.role_on(m.whence()) == Some(Role::King) {
                 if Feature::bucket(turn, m.whence()) != Feature::bucket(turn, m.whither()) {
                     self.pending[turn.cast::<usize>()][idx + 1] = Some(Pending::Refresh);
                 }
@@ -283,10 +286,11 @@ impl Evaluator {
         if self.ply > 0 {
             let idx = self.ply.cast::<usize>();
             unsafe { self.positions.swap_unchecked(0, idx) };
-            unsafe { self.accumulator.swap_unchecked(0, idx) };
-            self.pending = [[None; Ply::MAX as usize + 1]; 2];
-            self.moves = [None; Ply::MAX as usize];
-            self.ply = Ply::lower();
+            unsafe { self.accumulator[0].swap_unchecked(0, idx) };
+            unsafe { self.accumulator[1].swap_unchecked(0, idx) };
+            unsafe { self.pending[0].swap_unchecked(0, idx) };
+            unsafe { self.pending[1].swap_unchecked(0, idx) };
+            self.ply = Ply::new(0);
         }
     }
 
@@ -314,16 +318,13 @@ impl Evaluator {
             }
         }
 
-        let phase = self.phase();
-        let nn = Nnue::nn(phase);
-
         let idx = self.ply.cast::<usize>();
-        debug_assert_eq!(self.pending[0][idx], None);
-        debug_assert_eq!(self.pending[1][idx], None);
+        self.pending[0][idx].is_none().assume();
+        self.pending[1][idx].is_none().assume();
 
         let us = self.turn() as usize;
         let them = self.turn().flip() as usize;
-        nn.forward((&self.accumulator[idx][us], &self.accumulator[idx][them]))
+        Nnue::nn(self.phase()).forward((&self.accumulator[us][idx], &self.accumulator[them][idx]))
     }
 
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -366,8 +367,8 @@ impl Evaluator {
         self.cache[side.cast::<usize>()][bucket].pieces = *pos.pieces();
 
         self.pending[side.cast::<usize>()][idx] = None;
-        self.accumulator[idx][side.cast::<usize>()] =
-            self.cache[side.cast::<usize>()][bucket].accumulator.clone();
+        self.accumulator[side.cast::<usize>()][idx]
+            .clone_from(&self.cache[side.cast::<usize>()][bucket].accumulator);
     }
 
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -411,9 +412,8 @@ impl Evaluator {
             }
         }
 
-        let (left, right) = self.accumulator.split_at_mut(idx);
-        let src = &left[left.len() - 1][side.cast::<usize>()];
-        let dst = &mut right[0][side.cast::<usize>()];
+        let (left, right) = self.accumulator[side.cast::<usize>()].split_at_mut(idx);
+        let (src, dst) = (&left[left.len() - 1], &mut right[0]);
         Nnue::transformer().accumulate(src, dst, sub, add);
     }
 }
@@ -421,6 +421,7 @@ impl Evaluator {
 impl FromStr for Evaluator {
     type Err = ParsePositionError;
 
+    #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self::new(s.parse()?))
     }

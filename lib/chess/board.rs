@@ -3,6 +3,7 @@ use crate::{chess::*, simd::Aligned};
 use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter, Write};
+use std::hash::{Hash, Hasher};
 use std::io::Write as _;
 use std::str::{self, FromStr};
 
@@ -46,7 +47,7 @@ impl Zobrists {
 }
 
 /// The chess board.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 #[derive_const(Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Board({self})")]
@@ -320,6 +321,13 @@ impl Board {
     }
 }
 
+impl Hash for Board {
+    #[inline(always)]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.zobrists().hash.get().hash(state);
+    }
+}
+
 impl Display for Board {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut skip = 0;
@@ -455,7 +463,7 @@ impl FromStr for Board {
         };
 
         let Some(Ok(fullmoves)) = tokens.next().map(u32::from_str) else {
-            return Err(ParseFenError::InvalidHalfmoveClock);
+            return Err(ParseFenError::InvalidFullmoveNumber);
         };
 
         if tokens.next().is_some() {
@@ -478,13 +486,27 @@ impl FromStr for Board {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fmt::Debug;
+    use std::{fmt::Debug, hash::DefaultHasher};
     use test_strategy::proptest;
 
     #[test]
     #[cfg_attr(miri, ignore)]
     fn board_guarantees_zero_value_optimization() {
         assert_eq!(size_of::<Option<Board>>(), size_of::<Board>());
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn hash_is_consistent(a: Board, b: Board) {
+        let mut hasher = DefaultHasher::default();
+        a.hash(&mut hasher);
+        let x = hasher.finish();
+
+        let mut hasher = DefaultHasher::default();
+        b.hash(&mut hasher);
+        let y = hasher.finish();
+
+        assert!(x != y || a == b);
     }
 
     #[proptest]

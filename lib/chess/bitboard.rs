@@ -541,7 +541,7 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    #[allow(clippy::len_zero)]
+    #[expect(clippy::len_zero)]
     fn is_empty_returns_whether_there_are_squares_on_the_board(bb: Bitboard) {
         assert_eq!(bb.is_empty(), bb.len() == 0);
     }

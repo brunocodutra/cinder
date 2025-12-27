@@ -1,21 +1,29 @@
 use crate::util::Int;
 use nom::{branch::*, bytes::complete::*, character::complete::*, combinator::*, multi::*};
 use nom::{error::*, sequence::*, *};
+use std::str::FromStr;
 use std::time::Duration;
 
-pub fn int(input: &str) -> IResult<&str, i64> {
+pub fn int<I: Int>(input: &str) -> IResult<&str, I> {
     recognize((opt(alt([tag("-"), tag("+")])), digit1))
-        .map_res(|s: &str| s.parse())
+        .map_res(i128::from_str)
+        .map(i128::saturate)
         .parse(input)
 }
 
 pub fn millis(input: &str) -> IResult<&str, Duration> {
-    int.map(|i| Duration::from_millis(i.saturate()))
-        .parse(input)
+    int.map(Duration::from_millis).parse(input)
 }
 
 pub fn word(input: &str) -> IResult<&str, &str> {
     take_till1(char::is_whitespace).parse(input)
+}
+
+pub fn find<'s, O, F>(inner: F) -> impl Parser<&'s str, Output = O, Error = Error<&'s str>>
+where
+    F: Parser<&'s str, Output = O, Error = Error<&'s str>>,
+{
+    many_till(value((), anychar), inner).map(|(_, r)| r)
 }
 
 pub fn t<'s, O, F>(inner: F) -> impl Parser<&'s str, Output = O, Error = Error<&'s str>>

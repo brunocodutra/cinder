@@ -183,7 +183,6 @@ impl TrainingDataFilter {
         1. - acceptance.clamp(0., 1.)
     }
 
-    #[allow(clippy::if_same_then_else)]
     pub fn should_skip(&self, entry: &TrainingDataEntry) -> bool {
         let mut rng = rng();
 
@@ -240,7 +239,6 @@ struct Orchestrator {
 
 /// Controls whether to resume training from a checkpoint.
 #[derive(Debug, Subcommand)]
-#[allow(clippy::large_enum_variant)]
 enum Mode {
     /// Resumes from a checkpoint.
     Resume {

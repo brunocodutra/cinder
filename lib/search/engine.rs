@@ -136,7 +136,6 @@ impl<'a> Searcher<'a> {
     fn correction(&mut self) -> f32 {
         let pos = &self.stack.pos;
         let zbs = pos.zobrists();
-        let phase = pos.phase().cast::<usize>();
         let pawns = self.local.corrections.pawns.get(pos, zbs.pawns) as f32;
         let minor = self.local.corrections.minor.get(pos, zbs.minor) as f32;
         let major = self.local.corrections.major.get(pos, zbs.major) as f32;
@@ -144,11 +143,11 @@ impl<'a> Searcher<'a> {
         let black = self.local.corrections.black.get(pos, zbs.black) as f32;
 
         let mut correction = 0.;
-        correction = Params::pawns_correction(phase).mul_add(pawns, correction);
-        correction = Params::minor_correction(phase).mul_add(minor, correction);
-        correction = Params::major_correction(phase).mul_add(major, correction);
-        correction = Params::pieces_correction(phase).mul_add(white, correction);
-        correction = Params::pieces_correction(phase).mul_add(black, correction);
+        correction = Params::pawns_correction(0).mul_add(pawns, correction);
+        correction = Params::minor_correction(0).mul_add(minor, correction);
+        correction = Params::major_correction(0).mul_add(major, correction);
+        correction = Params::pieces_correction(0).mul_add(white, correction);
+        correction = Params::pieces_correction(0).mul_add(black, correction);
         correction / Correction::LIMIT as f32
     }
 

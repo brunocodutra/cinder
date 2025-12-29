@@ -5,7 +5,7 @@ use std::hash::{Hash, Hasher};
 use std::marker::{ConstParamTy, Destruct, PhantomData};
 use std::mem::{ManuallyDrop, MaybeUninit, needs_drop};
 use std::ops::{Deref, DerefMut};
-use std::{io, ptr, slice};
+use std::{ptr, slice};
 
 #[cfg(test)]
 use proptest::{collection::*, prelude::*};
@@ -65,7 +65,7 @@ impl<T: Arbitrary, M: Memory<T, Usize: From<u8>>> Arbitrary for Seq<T, M> {
         any::<u8>()
             .prop_flat_map(|cap| {
                 vec(any::<T>(), 0..=cap.cast()).prop_map(move |items| {
-                    let mut seq = Self::new(cap.into()).unwrap();
+                    let mut seq = Self::new(cap.into());
 
                     for i in items {
                         seq.push(i);
@@ -81,38 +81,40 @@ impl<T: Arbitrary, M: Memory<T, Usize: From<u8>>> Arbitrary for Seq<T, M> {
 impl<T: Zeroable, M: Memory<T>> Seq<T, M> {
     /// Allocates a new [`Seq`] with `len` zero-initialized objects of type `T`.
     #[inline(always)]
-    pub fn zeroed(len: M::Usize) -> io::Result<Self> {
-        Ok(Seq {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn zeroed(len: M::Usize) -> Self {
+        Seq {
             phantom: PhantomData,
             bytes: Bytes {
                 len,
-                mem: M::zeroed(len)?,
+                mem: M::zeroed(len),
             },
-        })
+        }
     }
 
     /// Reallocates a new [`Seq`] in-place with `len` zero-initialized objects of type `T`.
     ///
     /// This method guarantees existing memory is deallocated before reallocating.
     #[inline(always)]
-    pub fn zeroed_in_place(&mut self, len: M::Usize) -> io::Result<()> {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn zeroed_in_place(&mut self, len: M::Usize) {
         unsafe { ptr::drop_in_place(self) }; // IMPORTANT: deallocate first
-        unsafe { ptr::write(self, Self::zeroed(len)?) }
-        Ok(())
+        unsafe { ptr::write(self, Self::zeroed(len)) };
     }
 }
 
 impl<T, M: Memory<T>> Seq<T, M> {
     /// Allocates a new [`Seq`] for up to `capacity` objects of type `T`.
     #[inline(always)]
-    pub fn new(capacity: M::Usize) -> io::Result<Self> {
-        Ok(Seq {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn new(capacity: M::Usize) -> Self {
+        Seq {
             phantom: PhantomData,
             bytes: Bytes {
                 len: zero(),
-                mem: M::alloc(capacity)?,
+                mem: M::uninit(capacity),
             },
-        })
+        }
     }
 
     /// Reifies raw [`Bytes`] into a sequence of `T`.
@@ -257,8 +259,9 @@ where
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        let slice = self.bytes.mem.as_ref();
-        unsafe { slice::from_raw_parts(slice.as_ptr().cast(), self.bytes.len.cast()) }
+        let len = self.bytes.len.cast();
+        let uninit = self.bytes.mem.as_ref();
+        unsafe { uninit.get_unchecked(..len).assume_init_ref() }
     }
 }
 
@@ -270,8 +273,9 @@ where
 {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        let slice = self.bytes.mem.as_mut();
-        unsafe { slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), self.bytes.len.cast()) }
+        let len = self.bytes.len.cast();
+        let uninit = self.bytes.mem.as_mut();
+        unsafe { uninit.get_unchecked_mut(..len).assume_init_mut() }
     }
 }
 
@@ -395,7 +399,7 @@ mod tests {
 
     #[proptest]
     fn can_be_zero_initialized(#[strategy(..10usize)] n: usize) {
-        let seq = DynamicSeq::<u32>::zeroed(n)?;
+        let seq = DynamicSeq::<u32>::zeroed(n);
         assert!(seq.iter().all(|x| *x == 0));
     }
 
@@ -404,10 +408,10 @@ mod tests {
         #[strategy(..10usize)] m: usize,
         #[strategy(..10usize)] n: usize,
     ) {
-        let mut seq = DynamicSeq::<u32>::zeroed(m)?;
+        let mut seq = DynamicSeq::<u32>::zeroed(m);
 
         assert_eq!(seq.len(), m);
-        seq.zeroed_in_place(n)?;
+        seq.zeroed_in_place(n);
         assert_eq!(seq.len(), n);
 
         assert!(seq.iter().all(|x| *x == 0));
@@ -420,18 +424,18 @@ mod tests {
 
     #[proptest]
     fn capacity_returns_maximum_number_of_elements(#[strategy(..10usize)] n: usize) {
-        assert_eq!(ConstSeq::<u32, 64>::new(n.cast())?.capacity(), 16);
-        assert_eq!(StaticSeq::<u32, 16>::new(n.cast())?.capacity(), 16);
-        assert_eq!(DynamicSeq::<u32>::new(n)?.capacity(), n);
-        assert_eq!(HugeSeq::<u32>::new(n)?.capacity(), n);
+        assert_eq!(ConstSeq::<u32, 64>::new(n.cast()).capacity(), 16);
+        assert_eq!(StaticSeq::<u32, 16>::new(n.cast()).capacity(), 16);
+        assert_eq!(DynamicSeq::<u32>::new(n).capacity(), n);
+        assert_eq!(HugeSeq::<u32>::new(n).capacity(), n);
     }
 
     #[proptest]
     fn len_returns_current_number_of_elements(#[strategy(..10usize)] n: usize) {
-        assert_eq!(ConstSeq::<u32, 64>::zeroed(n.cast())?.len(), n.cast());
-        assert_eq!(StaticSeq::<u32, 16>::zeroed(n.cast())?.len(), n.cast());
-        assert_eq!(DynamicSeq::<u32>::zeroed(n)?.len(), n);
-        assert_eq!(HugeSeq::<u32>::zeroed(n)?.len(), n);
+        assert_eq!(ConstSeq::<u32, 64>::zeroed(n.cast()).len(), n.cast());
+        assert_eq!(StaticSeq::<u32, 16>::zeroed(n.cast()).len(), n.cast());
+        assert_eq!(DynamicSeq::<u32>::zeroed(n).len(), n);
+        assert_eq!(HugeSeq::<u32>::zeroed(n).len(), n);
     }
 
     #[test]

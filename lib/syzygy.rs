@@ -1,6 +1,6 @@
 use crate::search::{Line, Moves, Ply, Pv};
-use crate::{chess::Position, util::Int};
-use std::{fs::read_dir, io, path::Path};
+use crate::{chess::Position, util::Int, warn};
+use std::{fs::read_dir, path::Path};
 
 mod dtz;
 mod fs;
@@ -24,26 +24,21 @@ pub struct Syzygy {
 
 impl Syzygy {
     /// Initializes the the tablebase from the files in `path`.
-    pub fn new<P: AsRef<Path>, I: IntoIterator<Item = P>>(paths: I) -> io::Result<Self> {
+    pub fn new<P: AsRef<Path>, I: IntoIterator<Item = P>>(paths: I) -> Self {
         let mut syzygy = Self::default();
 
         for path in paths {
             if let Ok(directory) = read_dir(path) {
                 for entry in directory.flatten() {
                     let file = entry.path();
-                    #[expect(clippy::collapsible_if)]
-                    if let Some(ext) = file.extension() {
-                        if ext.eq_ignore_ascii_case(Wdl::EXTENSION)
-                            || ext.eq_ignore_ascii_case(Dtz::EXTENSION)
-                        {
-                            syzygy.tablebase.load(&file)?;
-                        }
+                    if let Err(e) = syzygy.tablebase.load(&file) {
+                        warn!("failed to load `{}`, {e}", file.display());
                     }
                 }
             }
         }
 
-        Ok(syzygy)
+        syzygy
     }
 
     /// The maximum number of pieces available in the tablebase.
@@ -148,7 +143,7 @@ mod tests {
     #[proptest(cases = 1)]
     #[cfg_attr(miri, ignore)]
     fn new_with_empty_paths_succeeds() {
-        let syzygy = Syzygy::new::<&PathBuf, _>(&[])?;
+        let syzygy = Syzygy::new::<&PathBuf, _>(&[]);
         assert_eq!(syzygy.max_pieces(), 0);
     }
 
@@ -163,7 +158,7 @@ mod tests {
         let file = tmp.path().join("KNvKN.rtbz");
         File::create(&file)?.write_all(KNVKN_RTBZ)?;
 
-        let syzygy = Syzygy::new(&[tmp])?;
+        let syzygy = Syzygy::new(&[tmp]);
         assert_eq!(syzygy.max_pieces(), 4);
     }
 
@@ -182,7 +177,7 @@ mod tests {
         let file = dtz.join("KNvKN.rtbz");
         File::create(&file)?.write_all(KNVKN_RTBZ)?;
 
-        let syzygy = Syzygy::new(&[wdl, dtz])?;
+        let syzygy = Syzygy::new(&[wdl, dtz]);
         assert_eq!(syzygy.max_pieces(), 4);
     }
 
@@ -190,7 +185,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn new_with_nonexistent_directory_succeeds(#[strategy("[A-Za-z0-9_]{1,10}")] dir: String) {
         let tmp = TempDir::new()?;
-        let syzygy = Syzygy::new(&[tmp.path().join(dir)])?;
+        let syzygy = Syzygy::new(&[tmp.path().join(dir)]);
         assert_eq!(syzygy.max_pieces(), 0);
     }
 
@@ -201,7 +196,7 @@ mod tests {
         let dir = tmp.path().join(dir);
         create_dir_all(&dir)?;
 
-        let syzygy = Syzygy::new(&[dir])?;
+        let syzygy = Syzygy::new(&[dir]);
         assert_eq!(syzygy.max_pieces(), 0);
     }
 
@@ -212,20 +207,21 @@ mod tests {
         let file = tmp.path().join(file);
         File::create(&file)?;
 
-        let syzygy = Syzygy::new(&[file])?;
+        let syzygy = Syzygy::new(&[file]);
         assert_eq!(syzygy.max_pieces(), 0);
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn new_with_directory_containing_invalid_file_fails(
+    fn new_with_directory_containing_invalid_file_succeeds(
         #[strategy("[A-Za-z0-9_]{1,10}[.](rtbw|rtbz|RTBW|RTBZ)")] file: String,
     ) {
         let tmp = TempDir::new()?;
         let file = tmp.path().join(file);
         File::create(file)?;
 
-        assert!(Syzygy::new(&[tmp]).is_err());
+        let syzygy = Syzygy::new(&[tmp]);
+        assert_eq!(syzygy.max_pieces(), 0);
     }
 
     #[proptest]
@@ -237,7 +233,7 @@ mod tests {
         let file = tmp.path().join(file);
         File::create(file)?;
 
-        let syzygy = Syzygy::new(&[tmp])?;
+        let syzygy = Syzygy::new(&[tmp]);
         assert_eq!(syzygy.max_pieces(), 0);
     }
 }

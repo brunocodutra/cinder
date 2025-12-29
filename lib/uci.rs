@@ -5,9 +5,9 @@ pub use inbound::*;
 pub use outbound::*;
 
 use crate::search::{Engine, Limits};
-use crate::{chess::Color, nnue::Evaluator};
+use crate::{chess::Color, nnue::Evaluator, warn};
 use futures::{pin_mut, prelude::*, select_biased as select, stream::FusedStream};
-use std::{fmt::Debug, io, time::Instant};
+use std::{fmt::Debug, time::Instant};
 
 #[cfg(test)]
 use proptest::{prelude::*, strategy::LazyJust};
@@ -31,20 +31,20 @@ pub struct Uci<I, O> {
 
 impl<I, O> Uci<I, O> {
     /// Constructs a new uci server instance.
-    pub fn new(input: I, output: O) -> io::Result<Self> {
-        Ok(Self {
+    pub fn new(input: I, output: O) -> Self {
+        Self {
             input,
             output,
-            engine: Engine::new()?,
+            engine: Engine::new(),
             pos: Default::default(),
-        })
+        }
     }
 }
 
 impl<I, O> Uci<I, O>
 where
     I: FusedStream<Item = Inbound> + Unpin,
-    O: Sink<Outbound, Error = io::Error> + Unpin,
+    O: Sink<Outbound> + Unpin,
 {
     /// Runs the UCI server.
     pub async fn run(&mut self) -> Result<(), O::Error> {
@@ -93,9 +93,7 @@ where
                                 None => continue,
                                 Some(Inbound::Quit) => break 'quit,
                                 Some(Inbound::Stop) => search.abort(),
-
-                                #[expect(clippy::print_stderr)]
-                                _ => eprintln!("Warning: ignored unexpected command"),
+                                _ => warn!("ignored unexpected command"),
                             }
                         }
                     }
@@ -120,9 +118,9 @@ where
                     self.output.send(info).await?;
                 }
 
-                Inbound::SetOptionHash(hash) => self.engine.set_hash(hash)?,
-                Inbound::SetOptionThreads(threads) => self.engine.set_threads(threads)?,
-                Inbound::SetOptionSyzygyPath(paths) => self.engine.set_syzygy(paths)?,
+                Inbound::SetOptionHash(hash) => self.engine.set_hash(hash),
+                Inbound::SetOptionThreads(threads) => self.engine.set_threads(threads),
+                Inbound::SetOptionSyzygyPath(paths) => self.engine.set_syzygy(paths),
                 Inbound::IsReady => self.output.send(Outbound::ReadyOk).await?,
                 Inbound::Uci => self.output.send(Outbound::UciOk).await?,
                 Inbound::Quit => break 'quit,
@@ -138,7 +136,6 @@ where
 mod tests {
     use super::*;
     use crate::search::{Depth, HashSize, ThreadCount};
-    use derive_more::Deref;
     use futures::executor::block_on;
     use std::collections::{HashSet, VecDeque};
     use std::task::{Context, Poll};
@@ -168,38 +165,7 @@ mod tests {
         }
     }
 
-    #[derive(Debug, Default, Clone, PartialEq, Deref)]
-    struct MockSink(Vec<Outbound>);
-
-    impl Sink<Outbound> for MockSink {
-        type Error = io::Error;
-
-        fn poll_ready(
-            mut self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
-            self.0.poll_ready_unpin(cx).map_err(|_| unreachable!())
-        }
-
-        fn start_send(mut self: Pin<&mut Self>, item: Outbound) -> Result<(), Self::Error> {
-            self.0.start_send_unpin(item).map_err(|_| unreachable!())
-        }
-
-        fn poll_flush(
-            mut self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
-            self.0.poll_flush_unpin(cx).map_err(|_| unreachable!())
-        }
-
-        fn poll_close(
-            mut self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
-            self.0.poll_close_unpin(cx).map_err(|_| unreachable!())
-        }
-    }
-
+    type MockSink = Vec<Outbound>;
     type MockUci = Uci<MockStream, MockSink>;
 
     #[proptest]
@@ -454,7 +420,7 @@ mod tests {
         uci.input = MockStream::new([Inbound::Perft(p)]);
 
         assert!(block_on(uci.run()).is_ok());
-        assert!(matches!(&**uci.output, [Outbound::Info { .. }]));
+        assert!(matches!(&*uci.output, [Outbound::Info { .. }]));
     }
 
     #[proptest]

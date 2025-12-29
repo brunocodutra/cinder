@@ -486,7 +486,7 @@ impl GroupData {
 
         // Compute a factor for each group.
         let pp = material.left(Role::Pawn) > 0 && material.right(Role::Pawn) > 0;
-        let mut factors = StaticSeq::<_, { MAX_PIECES + 1 }>::zeroed(lens.len() + 1).assume();
+        let mut factors = StaticSeq::<_, { MAX_PIECES + 1 }>::zeroed(lens.len() + 1);
         let mut free_squares = 64 - lens[0] - if pp { lens[1] } else { 0 };
         let mut next = if pp { 2 } else { 1 };
         let mut idx = 1;

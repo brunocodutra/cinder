@@ -2,7 +2,7 @@ use crate::util::{Assume, Atomic, Binary, Bits, HugeSeq, Int, Unsigned, zero};
 use bytemuck::{Pod, Zeroable};
 use derive_more::with_trait::{Debug, Deref, DerefMut};
 use std::ops::{Index, IndexMut};
-use std::{io, marker::PhantomData, sync::atomic::Ordering};
+use std::{marker::PhantomData, sync::atomic::Ordering};
 
 #[cfg(test)]
 use proptest::{collection::*, prelude::*};
@@ -120,7 +120,7 @@ where
         (hash_map(any::<Key>(), any::<T>(), ..32), ..128usize)
             .prop_map(|(map, size)| {
                 let data: HugeSeq<Atomic<Vault<T, U>>> =
-                    HugeSeq::zeroed(size * Vault::<T, U>::SIZE).unwrap();
+                    HugeSeq::zeroed(size * Vault::<T, U>::SIZE);
 
                 if size > 0 {
                     for (k, v) in map {
@@ -142,16 +142,16 @@ where
 {
     /// Allocates up to `size` bytes of cache space.
     #[inline(always)]
-    pub fn new(size: usize) -> io::Result<Self> {
-        Ok(Self {
-            data: HugeSeq::zeroed(size / Vault::<T, U>::SIZE)?,
-        })
+    pub fn new(size: usize) -> Self {
+        Self {
+            data: HugeSeq::zeroed(size / Vault::<T, U>::SIZE),
+        }
     }
 
     /// Resizes the cache space to up to `size` bytes.
     #[inline(always)]
-    pub fn resize(&mut self, size: usize) -> io::Result<()> {
-        self.data.zeroed_in_place(size / Vault::<T, U>::SIZE)
+    pub fn resize(&mut self, size: usize) {
+        self.data.zeroed_in_place(size / Vault::<T, U>::SIZE);
     }
 
     /// Instructs the CPU to load the slot associated with `key`.
@@ -214,18 +214,18 @@ mod tests {
 
     #[proptest]
     fn cache_allocates_up_to_size(#[strategy(..1024usize)] s: usize) {
-        assert!(MockCache::new(s)?.len() * size_of::<MockVault>() <= s);
+        assert!(MockCache::new(s).len() * size_of::<MockVault>() <= s);
     }
 
     #[proptest]
     fn cache_resizes_up_to_size(mut c: MockCache, #[strategy(..1024usize)] s: usize) {
-        c.resize(s)?;
+        c.resize(s);
         assert!(c.len() * size_of::<MockVault>() <= s);
     }
 
     #[proptest]
     fn load_does_nothing_if_capacity_is_zero(k: Key) {
-        assert_eq!(MockCache::new(0)?.load(k), None);
+        assert_eq!(MockCache::new(0).load(k), None);
     }
 
     #[proptest]
@@ -265,7 +265,7 @@ mod tests {
 
     #[proptest]
     fn set_does_nothing_if_capacity_is_zero(k: Key, v: u8) {
-        MockCache::new(0)?.store(k, v);
+        MockCache::new(0).store(k, v);
     }
 
     #[proptest]

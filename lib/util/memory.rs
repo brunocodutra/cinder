@@ -1,9 +1,8 @@
 use crate::util::{Assume, Int, Unsigned};
 use bytemuck::{NoUninit, Zeroable, try_zeroed_slice_box, zeroed};
 use derive_more::with_trait::Debug;
-use std::io::{self, ErrorKind::OutOfMemory};
-use std::ops::{Deref, DerefMut};
-use std::{alloc::Layout, marker::ConstParamTy, mem::MaybeUninit, ptr::NonNull, slice};
+use std::ops::{Deref, DerefMut, Mul};
+use std::{marker::ConstParamTy, mem::MaybeUninit, process::abort, ptr::NonNull, slice};
 
 /// Trait for types that represent raw memory allocation.
 pub trait Memory<T>: Sized + AsRef<[MaybeUninit<T>]> + AsMut<[MaybeUninit<T>]> {
@@ -11,11 +10,11 @@ pub trait Memory<T>: Sized + AsRef<[MaybeUninit<T>]> + AsMut<[MaybeUninit<T>]> {
     type Usize: Unsigned;
 
     /// Allocates zeroed memory for at least `capacity` objects of type `T`.
-    fn zeroed(capacity: Self::Usize) -> io::Result<Self>;
+    fn zeroed(capacity: Self::Usize) -> Self;
 
     /// Allocates possibly uninitialized memory for at least `capacity` objects of type `T`.
     #[inline(always)]
-    fn alloc(capacity: Self::Usize) -> io::Result<Self> {
+    fn uninit(capacity: Self::Usize) -> Self {
         Self::zeroed(capacity)
     }
 }
@@ -28,8 +27,8 @@ impl<T> Memory<T> for DynamicMemory<T> {
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn zeroed(capacity: Self::Usize) -> io::Result<Self> {
-        Ok(try_zeroed_slice_box(capacity).map_err(|()| OutOfMemory)?)
+    fn zeroed(capacity: Self::Usize) -> Self {
+        try_zeroed_slice_box(capacity).unwrap_or_else(|()| abort())
     }
 }
 
@@ -45,21 +44,21 @@ impl<T, const N: usize> Memory<T> for StaticMemory<T, N> {
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn zeroed(capacity: Self::Usize) -> io::Result<Self> {
-        if capacity.cast::<usize>() > N {
-            Err(OutOfMemory.into())
+    fn zeroed(capacity: Self::Usize) -> Self {
+        if capacity.cast::<usize>() <= N {
+            StaticMemory(MaybeUninit::zeroed().transpose())
         } else {
-            Ok(StaticMemory(MaybeUninit::zeroed().transpose()))
+            abort()
         }
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn alloc(capacity: Self::Usize) -> io::Result<Self> {
-        if capacity.cast::<usize>() > N {
-            Err(OutOfMemory.into())
+    fn uninit(capacity: Self::Usize) -> Self {
+        if capacity.cast::<usize>() <= N {
+            Default::default()
         } else {
-            Ok(Default::default())
+            abort()
         }
     }
 }
@@ -97,13 +96,13 @@ impl<T: NoUninit, const S: usize> Memory<T> for ConstMemory<S> {
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn zeroed(capacity: Self::Usize) -> io::Result<Self> {
+    fn zeroed(capacity: Self::Usize) -> Self {
         const { assert!(align_of::<T>() <= align_of::<Self>()) }
 
-        if capacity.cast::<usize>() * size_of::<T>() > S {
-            Err(OutOfMemory.into())
+        if capacity.cast::<usize>() * size_of::<T>() <= S {
+            Default::default()
         } else {
-            Ok(Default::default())
+            abort()
         }
     }
 }
@@ -186,12 +185,11 @@ impl<T> Memory<T> for HugePage<T> {
     /// Advises the operating system to use huge pages and optimize for random access order where possible.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn zeroed(capacity: Self::Usize) -> io::Result<Self> {
+    fn zeroed(capacity: Self::Usize) -> Self {
         const { assert!(align_of::<T>() <= align_of::<Thp>()) }
 
-        let layout = Layout::array::<T>(capacity).map_err(|e| io::Error::new(OutOfMemory, e))?;
-        let pages = layout.size().div_ceil(size_of::<Thp>());
-        let boxed = DynamicMemory::<Thp>::zeroed(pages)?;
+        let pages = size_of::<T>().mul(capacity).div_ceil(size_of::<Thp>());
+        let boxed = DynamicMemory::<Thp>::zeroed(pages);
 
         #[allow(dead_code)]
         let size = size_of_val(boxed.deref());
@@ -203,16 +201,17 @@ impl<T> Memory<T> for HugePage<T> {
             libc::madvise(ptr.cast(), size, libc::MADV_HUGEPAGE);
         };
 
-        Ok(HugePage {
+        HugePage {
             ptr: ptr.cast(),
             capacity,
             pages,
-        })
+        }
     }
 }
 
 impl<T> Drop for HugePage<T> {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn drop(&mut self) {
         unsafe {
             drop(DynamicMemory::<Thp>::from_non_null(NonNull::from_mut(
@@ -244,7 +243,7 @@ mod tests {
 
     #[proptest]
     fn huge_page_is_aligned_to_thp(#[strategy(..100usize)] n: usize) {
-        let mem = HugePage::<u64>::alloc(n)?;
+        let mem = HugePage::<u64>::uninit(n);
 
         assert!(mem.as_ref().len() >= n);
         assert!(mem.as_ref().as_ptr().is_aligned_to(align_of::<Thp>()));

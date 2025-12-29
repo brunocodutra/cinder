@@ -2,8 +2,8 @@
 #![feature(exit_status_error)]
 
 use anyhow::{Context, Error as Failure};
-use cinder::params::Params;
 use cinder::util::{StaticSeq, parsers::*};
+use cinder::{params::Params, warn};
 use clap::{Args, Parser, Subcommand};
 use nom::{Parser as _, bytes::complete::*, character::complete::*, multi::*, sequence::*};
 use rand::prelude::*;
@@ -122,7 +122,7 @@ impl MatchRunner {
         let stdout = String::from_utf8(output.stdout)?;
 
         if let Err(e) = output.status.exit_ok() {
-            eprintln!("{stdout}");
+            warn!("{stdout}");
             return Err(e).context(String::from_utf8(output.stderr)?);
         }
 

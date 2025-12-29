@@ -266,3 +266,20 @@ pub mod syzygy;
 pub mod uci;
 /// Assorted utilities.
 pub mod util;
+
+use std::fmt::Arguments;
+
+#[cold]
+#[doc(hidden)]
+#[inline(never)]
+#[expect(clippy::print_stderr)]
+pub fn warn_(args: Arguments<'_>) {
+    eprintln!("Warning: {args}");
+}
+
+#[macro_export]
+macro_rules! warn {
+    ($($arg:tt)*) => {
+        $crate::warn_(std::format_args!($($arg)*))
+    };
+}

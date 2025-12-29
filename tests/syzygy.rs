@@ -176,7 +176,7 @@ static SYZYGY: LazyLock<Syzygy> = LazyLock::new(|| {
         }
     }
 
-    let syzygy = Syzygy::new(&[syzygy]).unwrap();
+    let syzygy = Syzygy::new(&[syzygy]);
     assert_eq!(syzygy.max_pieces(), 7);
 
     syzygy

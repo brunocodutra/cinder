@@ -7,7 +7,7 @@ use derive_more::with_trait::{Constructor, Debug, Deref, DerefMut, Display, Erro
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
 use std::task::{Context, Poll};
-use std::{cell::SyncUnsafeCell, io, ops::Range, path::Path, pin::Pin, ptr::NonNull, slice};
+use std::{cell::SyncUnsafeCell, ops::Range, path::Path, pin::Pin, ptr::NonNull, slice};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -55,13 +55,13 @@ struct TranspositionTable(Cache<Transposition>);
 
 impl TranspositionTable {
     #[inline(always)]
-    fn new(size: HashSize) -> io::Result<Self> {
-        Ok(Self(Cache::new(size.get())?))
+    fn new(size: HashSize) -> Self {
+        Self(Cache::new(size.get()))
     }
 
     #[inline(always)]
-    fn resize(&mut self, size: HashSize) -> io::Result<()> {
-        self.0.resize(size.get())
+    fn resize(&mut self, size: HashSize) {
+        self.0.resize(size.get());
     }
 }
 
@@ -76,13 +76,13 @@ impl ValuesTable {
     }
 
     #[inline(always)]
-    fn new(threads: ThreadCount) -> io::Result<Self> {
-        Ok(Self(Cache::new(Self::size(threads))?))
+    fn new(threads: ThreadCount) -> Self {
+        Self(Cache::new(Self::size(threads)))
     }
 
     #[inline(always)]
-    fn resize(&mut self, threads: ThreadCount) -> io::Result<()> {
-        self.0.resize(Self::size(threads))
+    fn resize(&mut self, threads: ThreadCount) {
+        self.0.resize(Self::size(threads));
     }
 }
 
@@ -1133,47 +1133,51 @@ impl Arbitrary for Engine {
 
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         any::<Options>()
-            .prop_map(|o| Engine::with_options(&o).unwrap())
+            .prop_map(|o| Engine::with_options(&o))
             .boxed()
+    }
+}
+
+impl Default for Engine {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl Engine {
     /// Initializes the engine with the default [`Options`].
-    pub fn new() -> io::Result<Self> {
+    pub fn new() -> Self {
         Self::with_options(&Options::default())
     }
 
     /// Initializes the engine with the given [`Options`].
-    pub fn with_options(options: &Options) -> io::Result<Self> {
-        Ok(Engine {
-            executor: Executor::new(options.threads)?,
-            local: HugeSeq::zeroed(options.threads.cast())?,
+    pub fn with_options(options: &Options) -> Self {
+        Engine {
+            executor: Executor::new(options.threads),
+            local: HugeSeq::zeroed(options.threads.cast()),
             shared: SharedData {
-                syzygy: Syzygy::new(&options.syzygy)?,
-                tt: TranspositionTable::new(options.hash)?,
-                values: ValuesTable::new(options.threads)?,
+                syzygy: Syzygy::new(&options.syzygy),
+                tt: TranspositionTable::new(options.hash),
+                values: ValuesTable::new(options.threads),
             },
-        })
+        }
     }
 
     /// Resets the hash size.
-    pub fn set_hash(&mut self, hash: HashSize) -> io::Result<()> {
-        self.shared.tt.resize(hash)
+    pub fn set_hash(&mut self, hash: HashSize) {
+        self.shared.tt.resize(hash);
     }
 
     /// Resets the thread count.
-    pub fn set_threads(&mut self, threads: ThreadCount) -> io::Result<()> {
-        self.executor = Executor::new(threads)?;
-        self.local.zeroed_in_place(threads.cast())?;
-        self.shared.values.resize(threads)?;
-        Ok(())
+    pub fn set_threads(&mut self, threads: ThreadCount) {
+        self.executor = Executor::new(threads);
+        self.local.zeroed_in_place(threads.cast());
+        self.shared.values.resize(threads);
     }
 
     /// Resets the Syzygy path.
-    pub fn set_syzygy<I: IntoIterator<Item: AsRef<Path>>>(&mut self, paths: I) -> io::Result<()> {
-        self.shared.syzygy = Syzygy::new(paths)?;
-        Ok(())
+    pub fn set_syzygy<I: IntoIterator<Item: AsRef<Path>>>(&mut self, paths: I) {
+        self.shared.syzygy = Syzygy::new(paths);
     }
 
     /// Resets the engine state.
@@ -1221,17 +1225,17 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn tt_can_be_resized(s: HashSize, t: HashSize) {
-        let mut tt = TranspositionTable::new(s)?;
-        tt.resize(t)?;
-        assert_eq!(tt.len(), TranspositionTable::new(t)?.len());
+        let mut tt = TranspositionTable::new(s);
+        tt.resize(t);
+        assert_eq!(tt.len(), TranspositionTable::new(t).len());
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn vt_can_be_resized(s: ThreadCount, t: ThreadCount) {
-        let mut vt = ValuesTable::new(s)?;
-        vt.resize(t)?;
-        assert_eq!(vt.len(), ValuesTable::new(t)?.len());
+        let mut vt = ValuesTable::new(s);
+        vt.resize(t);
+        assert_eq!(vt.len(), ValuesTable::new(t).len());
     }
 
     #[proptest]

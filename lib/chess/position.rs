@@ -322,7 +322,7 @@ impl Default for Position {
 impl Hash for Position {
     #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.board.hash(state);
+        self.zobrists.hash.hash(state);
     }
 }
 
@@ -916,7 +916,7 @@ mod tests {
         b.hash(&mut hasher);
         let y = hasher.finish();
 
-        assert!(x != y || a == b);
+        assert!(a != b || x == y);
     }
 
     #[proptest]

@@ -61,8 +61,8 @@ mac-aarch64-sme:
 
 define build
 	@echo "Building target $1"
-	cargo build --release --bin=cinder -Zunstable-options -Zprofile-rustflags \
-		--config=profile.release.rustflags='["-Ctarget-cpu=$3", "-Cpanic=abort", "-Cstrip=symbols", "-Zlocation-detail=none"]' \
+	cargo build --release --bin=cinder \
+		--config='build.rustflags=["-Ctarget-cpu=$3", "-Cpanic=abort", "-Cstrip=symbols", "-Zlocation-detail=none"]' \
 		--target-dir=$(TARGET_DIR)/$1/ --target=$2 $4
 
 	@mkdir -p $(BIN_DIR)

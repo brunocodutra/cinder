@@ -90,7 +90,7 @@ jobs:
       with:
         lfs: true
     - run: rustup component add rust-src
-    - run: cargo test --lib --workspace --features spsa,trainer,bullet/cpu --target x86_64-unknown-linux-gnu -Zbuild-std -Zunstable-options --config='build.rustflags = ["-Zsanitizer=${{ matrix.sanitizer }}"]' -- --test-threads=1
+    - run: cargo test --lib --workspace --features spsa,trainer,bullet/cpu --target x86_64-unknown-linux-gnu -Zbuild-std --config='build.rustflags=["-Zsanitizer=${{ matrix.sanitizer }}"]' -- --test-threads=1
       env:
         CC: "clang"
         CFLAGS: "-fsanitize=${{ matrix.sanitizer }}"

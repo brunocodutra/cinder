@@ -18,6 +18,12 @@ pub enum Outbound {
     UciOk,
 }
 
+impl From<Option<Move>> for Outbound {
+    fn from(m: Option<Move>) -> Self {
+        Outbound::BestMove(m)
+    }
+}
+
 impl From<Info> for Outbound {
     fn from(info: Info) -> Self {
         Outbound::Info {

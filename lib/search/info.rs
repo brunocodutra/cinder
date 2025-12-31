@@ -1,7 +1,7 @@
-use crate::search::{Depth, Pv};
+use crate::search::{Depth, Pv, Score};
 use crate::util::Int;
 use derive_more::with_trait::Constructor;
-use std::{ops::Deref, time::Duration};
+use std::time::Duration;
 
 /// Information about the search result.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Constructor)]
@@ -38,19 +38,16 @@ impl Info {
         self.nodes as f64 / self.time().as_secs_f64().max(1E-6)
     }
 
+    /// The search score.
+    #[inline(always)]
+    pub const fn score(&self) -> Score {
+        self.pv.score()
+    }
+
     /// The principal variation.
     #[inline(always)]
     pub const fn pv(&self) -> &Pv {
         &self.pv
-    }
-}
-
-impl const Deref for Info {
-    type Target = Pv;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        self.pv()
     }
 }
 

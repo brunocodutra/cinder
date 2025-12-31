@@ -1,7 +1,6 @@
 use crate::nnue::{Evaluator, Value};
 use crate::search::{ControlFlow::*, *};
-use crate::util::{Assume, Atomic, Bits, Bounded, Cache, Float, HugeSeq, Int, Vault};
-use crate::{chess::Move, params::Params, syzygy::Syzygy};
+use crate::{chess::Move, params::Params, syzygy::Syzygy, util::*};
 use bytemuck::{Zeroable, fill_zeroes, zeroed};
 use derive_more::with_trait::{Constructor, Debug, Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
@@ -961,8 +960,7 @@ impl<'a> Searcher<'a> {
                     let draft = depth - reduction.to_int::<i8>();
                     window = window.mul_add(*Params::aw_gamma(0), *Params::aw_delta(0));
                     let Ok(partial) = self.root(&mut moves, draft, lower..upper) else {
-                        let (time, nodes) = (self.ctrl.elapsed(), self.ctrl.visited());
-                        return yield Info::new(depth - 1, time, nodes, self.stack.pv.clone());
+                        return;
                     };
 
                     match partial.score() {
@@ -998,20 +996,19 @@ impl<'a> Searcher<'a> {
 pub struct Search<'e, 'p> {
     engine: &'e mut Engine,
     pos: &'p mut Evaluator,
-    pv: Pv,
     ctrl: GlobalControl,
+    result: Info,
     channel: Option<UnboundedReceiver<Info>>,
-    task: Option<Task<'e>>,
+    execution: Option<Execution<'e>>,
 }
 
 impl<'e, 'p> Search<'e, 'p> {
-    #[inline(always)]
     fn new(engine: &'e mut Engine, pos: &'p mut Evaluator, limits: Limits) -> Self {
         Search {
-            pv: Pv::empty(Score::lower()),
             ctrl: GlobalControl::new(pos, limits),
+            result: Pv::empty(Score::lower()).into(),
             channel: None,
-            task: None,
+            execution: None,
             engine,
             pos,
         }
@@ -1020,29 +1017,28 @@ impl<'e, 'p> Search<'e, 'p> {
     /// Aborts the search.
     ///
     /// Returns true if the search had not already been aborted.
-    #[inline(always)]
     pub fn abort(&self) {
         self.ctrl.abort();
     }
 
-    /// The best move found by the search so far.
-    #[inline(always)]
-    pub fn bestmove(&self) -> Option<Move> {
-        self.pv.head()
+    /// Concludes the search and returns [`Info`] about the best [`Pv`].
+    pub fn conclude(self) -> Info {
+        self.result.clone()
     }
 }
 
 impl Drop for Search<'_, '_> {
-    #[inline(always)]
     fn drop(&mut self) {
-        if let Some(t) = self.task.take() {
+        if let Some(t) = self.execution.take() {
             self.abort();
             drop(t);
         }
     }
 }
 
-impl FusedStream for Pin<&mut Search<'_, '_>> {
+impl !Unpin for Search<'_, '_> {}
+
+impl FusedStream for Search<'_, '_> {
     #[inline(always)]
     fn is_terminated(&self) -> bool {
         self.channel
@@ -1051,70 +1047,78 @@ impl FusedStream for Pin<&mut Search<'_, '_>> {
     }
 }
 
-impl Stream for Pin<&mut Search<'_, '_>> {
+impl Stream for Search<'_, '_> {
     type Item = Info;
 
-    #[expect(clippy::deref_addrof)]
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        if let Some(rx) = &mut self.channel {
+    #[inline(always)]
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = unsafe { self.get_unchecked_mut() };
+        if let Some(rx) = &mut this.channel {
             let info = match rx.poll_next_unpin(cx) {
                 Poll::Ready(Some(info)) => info,
                 poll => return poll,
             };
 
-            self.pv = info.pv().clone();
+            this.result = info.clone();
             return Poll::Ready(Some(info));
         }
 
-        let (tx, rx) = unbounded();
-        self.channel = Some(rx);
+        #[inline(never)]
+        #[expect(clippy::deref_addrof)]
+        fn bootstrap(search: &mut Search<'_, '_>, cx: &mut Context<'_>) -> Poll<Option<Info>> {
+            let (tx, rx) = unbounded();
+            search.channel = Some(rx);
 
-        let ctrl: &GlobalControl = unsafe { &*(&raw const self.ctrl) };
-        let pos: &mut Evaluator = unsafe { &mut *(&raw mut *self.pos) };
-        let executor: &mut Executor = unsafe { &mut *(&raw mut self.engine.executor) };
-        let shared: &SharedData = unsafe { &*(&raw const self.engine.shared) };
-        let local: &[SyncUnsafeCell<LocalData>] =
-            unsafe { &*(&raw mut *self.engine.local as *const _) };
+            let ctrl: &GlobalControl = unsafe { &*(&raw const search.ctrl) };
+            let pos: &mut Evaluator = unsafe { &mut *(&raw mut *search.pos) };
+            let executor: &mut Executor = unsafe { &mut *(&raw mut search.engine.executor) };
+            let shared: &SharedData = unsafe { &*(&raw const search.engine.shared) };
+            let local: &[SyncUnsafeCell<LocalData>] =
+                unsafe { &*(&raw mut *search.engine.local as *const _) };
 
-        let moves = Moves::from_iter(pos.moves().unpack());
-        if let Some(pv) = shared.syzygy.best(pos, &moves) {
-            self.pv = pv.truncate();
-            return Poll::Ready(Some(self.pv.clone().into()));
-        }
+            let moves = Moves::from_iter(pos.moves().unpack());
+            if let Some(pv) = shared.syzygy.best(pos, &moves) {
+                search.result = pv.truncate().into();
+                return Poll::Ready(Some(search.result.clone()));
+            }
 
-        if matches!((moves.len(), &ctrl.limits().clock), (0, _) | (1, Some(_))) {
-            self.pv = if let Some(m) = moves.iter().next() {
-                Pv::new(Score::drawn(), Line::singular(m))
-            } else if pos.is_check() {
-                Pv::empty(Score::mated(Ply::new(0)))
-            } else {
-                Pv::empty(Score::drawn())
-            };
+            if matches!((moves.len(), &ctrl.limits().clock), (0, _) | (1, Some(_))) {
+                let pv = if let Some(m) = moves.iter().next() {
+                    Pv::new(Score::drawn(), Line::singular(m))
+                } else if pos.is_check() {
+                    Pv::empty(Score::mated(Ply::new(0)))
+                } else {
+                    Pv::empty(Score::drawn())
+                };
 
-            return Poll::Ready(Some(self.pv.clone().into()));
-        }
+                search.result = pv.into();
+                return Poll::Ready(Some(search.result.clone()));
+            }
 
-        self.task = Some(executor.execute(move |idx| {
-            let ctrl = if idx == 0 {
-                LocalControl::active(ctrl)
-            } else {
-                LocalControl::passive(ctrl)
-            };
+            search.execution = Some(executor.execute(move |idx| {
+                let local_ctrl = if idx == 0 {
+                    LocalControl::active(ctrl)
+                } else {
+                    LocalControl::passive(ctrl)
+                };
 
-            let local = unsafe { &mut *local.get(idx).assume().get() };
-            let stack = Stack::new(pos.clone(), Pv::empty(Score::drawn()));
-            for info in Searcher::new(ctrl, shared, local, stack).aw(moves.clone()) {
-                if idx == 0 {
-                    tx.unbounded_send(info).assume();
+                let local = unsafe { &mut *local.get_unchecked(idx).get() };
+                let stack = Stack::new(pos.clone(), Pv::empty(Score::drawn()));
+                for info in Searcher::new(local_ctrl, shared, local, stack).aw(moves.clone()) {
+                    if idx == 0 {
+                        tx.unbounded_send(info).assume();
+                    }
                 }
-            }
 
-            if idx == 0 {
-                tx.close_channel();
-            }
-        }));
+                if idx == 0 {
+                    ctrl.abort();
+                }
+            }));
 
-        self.poll_next(cx)
+            unsafe { Pin::new_unchecked(search).poll_next(cx) }
+        }
+
+        bootstrap(this, cx)
     }
 }
 
@@ -1182,15 +1186,14 @@ impl Engine {
 
     /// Resets the engine state.
     pub fn reset(&mut self) {
+        let local: &[SyncUnsafeCell<LocalData>] = unsafe { &*(&raw mut *self.local as *const _) };
         let values: &[SyncUnsafeCell<Atomic<Vault<Value, u64>>>] =
             unsafe { &*(&raw mut **self.shared.values as *const _) };
         let tt: &[SyncUnsafeCell<Atomic<Vault<Transposition>>>] =
             unsafe { &*(&raw mut **self.shared.tt as *const _) };
-        let searchers: &[SyncUnsafeCell<LocalData>] =
-            unsafe { &*(&raw mut *self.local as *const _) };
 
-        let values_chunk_size = values.len().div_ceil(searchers.len());
-        let tt_chunk_size = tt.len().div_ceil(searchers.len());
+        let values_chunk_size = values.len().div_ceil(local.len());
+        let tt_chunk_size = tt.len().div_ceil(local.len());
 
         self.executor.execute(move |idx| unsafe {
             let offset = idx * values_chunk_size;
@@ -1203,7 +1206,7 @@ impl Engine {
             let ptr = tt.as_ptr().add(offset) as *mut Atomic<Vault<Transposition>>;
             fill_zeroes(slice::from_raw_parts_mut(ptr, len));
 
-            *searchers.get(idx).assume().get() = zeroed();
+            *local.get(idx).assume().get() = zeroed();
         });
     }
 
@@ -1419,7 +1422,7 @@ mod tests {
         let stack = Stack::new(pos, Pv::empty(s));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         let last = searcher.aw(moves).last();
-        assert_ne!(last.and_then(|info| info.head()), None);
+        assert_ne!(last.and_then(|info| info.pv().head()), None);
     }
 
     #[proptest]
@@ -1436,7 +1439,7 @@ mod tests {
         let stack = Stack::new(pos, Pv::empty(s));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         let last = searcher.aw(moves).last();
-        assert_ne!(last.and_then(|info| info.head()), None);
+        assert_ne!(last.and_then(|info| info.pv().head()), None);
     }
 
     #[proptest]
@@ -1453,6 +1456,6 @@ mod tests {
         let stack = Stack::new(pos, Pv::empty(s));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         let last = searcher.aw(moves).last();
-        assert_ne!(last.and_then(|info| info.head()), None);
+        assert_ne!(last.and_then(|info| info.pv().head()), None);
     }
 }

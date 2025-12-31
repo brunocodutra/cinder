@@ -243,6 +243,7 @@
     gen_blocks,
     iter_array_chunks,
     maybe_uninit_uninit_array_transpose,
+    negative_impls,
     pointer_is_aligned_to,
     portable_simd,
     ptr_as_ref_unchecked,

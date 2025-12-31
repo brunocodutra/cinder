@@ -6,8 +6,8 @@ pub use outbound::*;
 
 use crate::search::{Engine, Limits};
 use crate::{chess::Color, nnue::Evaluator, warn};
-use futures::{pin_mut, prelude::*, select_biased as select, stream::FusedStream};
-use std::{fmt::Debug, time::Instant};
+use futures::{prelude::*, select_biased as select, stream::FusedStream};
+use std::{fmt::Debug, pin::Pin, time::Instant};
 
 #[cfg(test)]
 use proptest::{prelude::*, strategy::LazyJust};
@@ -79,12 +79,12 @@ where
                         clock,
                     };
 
-                    let search = self.engine.search(&mut self.pos, limits);
-                    pin_mut!(search);
+                    let mut search = self.engine.search(&mut self.pos, limits);
+                    let mut pinned = unsafe { Pin::new_unchecked(&mut search) };
 
                     loop {
                         select! {
-                            info = search.next() => match info {
+                            info = pinned.next() => match info {
                                 Some(i) => self.output.send(i.into()).await?,
                                 None => break,
                             },
@@ -92,14 +92,19 @@ where
                             inbound = self.input.next() => match inbound {
                                 None => continue,
                                 Some(Inbound::Quit) => break 'quit,
-                                Some(Inbound::Stop) => search.abort(),
+                                Some(Inbound::Stop) => pinned.abort(),
                                 _ => warn!("ignored unexpected command"),
                             }
                         }
                     }
 
-                    let bestmove = Outbound::BestMove(search.bestmove());
-                    self.output.send(bestmove).await?;
+                    #[expect(clippy::drop_non_drop)]
+                    drop(pinned);
+
+                    let info = search.conclude();
+                    let bestmove = info.pv().head();
+                    self.output.send(info.into()).await?;
+                    self.output.send(bestmove.into()).await?;
                 }
 
                 Inbound::Perft(plies) => {
@@ -139,7 +144,7 @@ mod tests {
     use futures::executor::block_on;
     use std::collections::{HashSet, VecDeque};
     use std::task::{Context, Poll};
-    use std::{pin::Pin, time::Duration};
+    use std::time::Duration;
     use test_strategy::proptest;
 
     #[derive(Debug, Default, Clone, Eq, PartialEq)]

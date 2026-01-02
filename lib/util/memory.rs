@@ -2,7 +2,8 @@ use crate::util::{Assume, Int, Unsigned};
 use bytemuck::{NoUninit, Zeroable, try_zeroed_slice_box, zeroed};
 use derive_more::with_trait::Debug;
 use std::ops::{Deref, DerefMut, Mul};
-use std::{marker::ConstParamTy, mem::MaybeUninit, process::abort, ptr::NonNull, slice};
+use std::ptr::{self, NonNull};
+use std::{marker::ConstParamTy, mem::MaybeUninit, process::abort, slice};
 
 /// Trait for types that represent raw memory allocation.
 pub trait Memory<T>: Sized + AsRef<[MaybeUninit<T>]> + AsMut<[MaybeUninit<T>]> {
@@ -12,10 +13,24 @@ pub trait Memory<T>: Sized + AsRef<[MaybeUninit<T>]> + AsMut<[MaybeUninit<T>]> {
     /// Allocates zeroed memory for at least `capacity` objects of type `T`.
     fn zeroed(capacity: Self::Usize) -> Self;
 
+    /// Re-allocates zeroed memory for at least `capacity` objects of type `T` in place.
+    #[inline(always)]
+    fn zeroed_in_place(&mut self, capacity: Self::Usize) {
+        unsafe { ptr::drop_in_place(self) }; // IMPORTANT: deallocate first
+        unsafe { ptr::write(self, Self::zeroed(capacity)) };
+    }
+
     /// Allocates possibly uninitialized memory for at least `capacity` objects of type `T`.
     #[inline(always)]
     fn uninit(capacity: Self::Usize) -> Self {
         Self::zeroed(capacity)
+    }
+
+    /// Re-allocates possibly uninitialized memory for at least `capacity` objects of type `T`. in place.
+    #[inline(always)]
+    fn uninit_in_place(&mut self, capacity: Self::Usize) {
+        unsafe { ptr::drop_in_place(self) }; // IMPORTANT: deallocate first
+        unsafe { ptr::write(self, Self::uninit(capacity)) };
     }
 }
 
@@ -33,7 +48,7 @@ impl<T> Memory<T> for DynamicMemory<T> {
 }
 
 /// Stack-allocated memory with capacity for up to `N` objects of type `T`.
-#[derive(Debug)]
+#[derive(Debug, Zeroable)]
 #[debug("StaticMemory({:?})", self.as_ref())]
 #[debug(bounds(T: Debug))]
 #[repr(transparent)]
@@ -81,6 +96,22 @@ impl<T, const N: usize> const AsMut<[MaybeUninit<T>]> for StaticMemory<T, N> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut [MaybeUninit<T>] {
         self.0.as_mut_slice()
+    }
+}
+
+impl<T: Zeroable, const N: usize> const Deref for StaticMemory<T, N> {
+    type Target = [T];
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.as_ref().assume_init_ref() }
+    }
+}
+
+impl<T: Zeroable, const N: usize> const DerefMut for StaticMemory<T, N> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.as_mut().assume_init_mut() }
     }
 }
 
@@ -168,16 +199,16 @@ struct Thp([u8; 2097152]);
 
 /// A huge page aligned memory allocation.
 #[derive(Debug)]
-pub struct HugePage<T> {
+pub struct HugePages<T> {
     ptr: *mut MaybeUninit<T>,
     capacity: usize,
     pages: usize,
 }
 
-unsafe impl<T: Send> Send for HugePage<T> {}
-unsafe impl<T: Sync> Sync for HugePage<T> {}
+unsafe impl<T: Send> Send for HugePages<T> {}
+unsafe impl<T: Sync> Sync for HugePages<T> {}
 
-impl<T> Memory<T> for HugePage<T> {
+impl<T> Memory<T> for HugePages<T> {
     type Usize = usize;
 
     /// Allocates a memory mapped block of memory for `len` instances of `T`.
@@ -201,7 +232,7 @@ impl<T> Memory<T> for HugePage<T> {
             libc::madvise(ptr.cast(), size, libc::MADV_HUGEPAGE);
         };
 
-        HugePage {
+        HugePages {
             ptr: ptr.cast(),
             capacity,
             pages,
@@ -209,7 +240,7 @@ impl<T> Memory<T> for HugePage<T> {
     }
 }
 
-impl<T> Drop for HugePage<T> {
+impl<T> Drop for HugePages<T> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn drop(&mut self) {
@@ -221,17 +252,33 @@ impl<T> Drop for HugePage<T> {
     }
 }
 
-impl<T> AsRef<[MaybeUninit<T>]> for HugePage<T> {
+impl<T> const AsRef<[MaybeUninit<T>]> for HugePages<T> {
     #[inline(always)]
     fn as_ref(&self) -> &[MaybeUninit<T>] {
         unsafe { slice::from_raw_parts(self.ptr, self.capacity) }
     }
 }
 
-impl<T> AsMut<[MaybeUninit<T>]> for HugePage<T> {
+impl<T> const AsMut<[MaybeUninit<T>]> for HugePages<T> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut [MaybeUninit<T>] {
         unsafe { slice::from_raw_parts_mut(self.ptr, self.capacity) }
+    }
+}
+
+impl<T: Zeroable> const Deref for HugePages<T> {
+    type Target = [T];
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.as_ref().assume_init_ref() }
+    }
+}
+
+impl<T: Zeroable> const DerefMut for HugePages<T> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.as_mut().assume_init_mut() }
     }
 }
 
@@ -242,8 +289,28 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
-    fn huge_page_is_aligned_to_thp(#[strategy(..100usize)] n: usize) {
-        let mem = HugePage::<u64>::uninit(n);
+    fn huge_pages_can_be_zero_initialized(#[strategy(..10usize)] n: usize) {
+        let mem = HugePages::<u32>::zeroed(n);
+        assert!(mem.iter().all(|x| *x == 0));
+    }
+
+    #[proptest]
+    fn huge_pages_can_be_reinitialized_in_place(
+        #[strategy(..10usize)] m: usize,
+        #[strategy(..10usize)] n: usize,
+    ) {
+        let mut mem = HugePages::<u32>::zeroed(m);
+
+        assert_eq!(mem.len(), m);
+        mem.zeroed_in_place(n);
+        assert_eq!(mem.len(), n);
+
+        assert!(mem.iter().all(|x| *x == 0));
+    }
+
+    #[proptest]
+    fn huge_pages_are_aligned_to_thp(#[strategy(..100usize)] n: usize) {
+        let mem = HugePages::<u64>::uninit(n);
 
         assert!(mem.as_ref().len() >= n);
         assert!(mem.as_ref().as_ptr().is_aligned_to(align_of::<Thp>()));

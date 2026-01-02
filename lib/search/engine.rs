@@ -32,6 +32,50 @@ fn convolve<const N: usize>(data: [(f32, &[f32]); N]) -> f32 {
 #[display("the search was interrupted")]
 struct Interrupted;
 
+#[derive(Debug, Deref, DerefMut)]
+#[debug("TranspositionTable({})", _0.len())]
+struct TranspositionTable(HugeCache<Transposition, u64>);
+
+impl TranspositionTable {
+    #[inline(always)]
+    fn new(size: HashSize) -> Self {
+        Self(HugeCache::new(size.get()))
+    }
+
+    #[inline(always)]
+    fn resize(&mut self, size: HashSize) {
+        self.0.resize(size.get());
+    }
+}
+
+#[derive(Debug, Deref, DerefMut)]
+#[debug("ValuesTable({})", _0.len())]
+struct ValuesTable(HugeCache<Value, u64>);
+
+impl ValuesTable {
+    #[inline(always)]
+    fn size(threads: ThreadCount) -> usize {
+        (2 + threads.cast::<usize>().next_multiple_of(2)) << 20
+    }
+
+    #[inline(always)]
+    fn new(threads: ThreadCount) -> Self {
+        Self(HugeCache::new(Self::size(threads)))
+    }
+
+    #[inline(always)]
+    fn resize(&mut self, threads: ThreadCount) {
+        self.0.resize(Self::size(threads));
+    }
+}
+
+#[derive(Debug)]
+struct SharedData {
+    syzygy: Syzygy,
+    tt: TranspositionTable,
+    values: ValuesTable,
+}
+
 #[derive(Debug, Zeroable)]
 struct Corrections {
     pawns: Correction,
@@ -46,50 +90,6 @@ struct LocalData {
     history: History,
     continuation: Continuation,
     corrections: Corrections,
-}
-
-#[derive(Debug, Deref, DerefMut)]
-#[debug("TranspositionTable({})", _0.len())]
-struct TranspositionTable(Cache<Transposition>);
-
-impl TranspositionTable {
-    #[inline(always)]
-    fn new(size: HashSize) -> Self {
-        Self(Cache::new(size.get()))
-    }
-
-    #[inline(always)]
-    fn resize(&mut self, size: HashSize) {
-        self.0.resize(size.get());
-    }
-}
-
-#[derive(Debug, Deref, DerefMut)]
-#[debug("ValuesTable({})", _0.len())]
-struct ValuesTable(Cache<Value, u64>);
-
-impl ValuesTable {
-    #[inline(always)]
-    fn size(threads: ThreadCount) -> usize {
-        (2 + threads.cast::<usize>().next_multiple_of(2)) << 20
-    }
-
-    #[inline(always)]
-    fn new(threads: ThreadCount) -> Self {
-        Self(Cache::new(Self::size(threads)))
-    }
-
-    #[inline(always)]
-    fn resize(&mut self, threads: ThreadCount) {
-        self.0.resize(Self::size(threads));
-    }
-}
-
-#[derive(Debug)]
-struct SharedData {
-    syzygy: Syzygy,
-    tt: TranspositionTable,
-    values: ValuesTable,
 }
 
 #[derive(Debug)]
@@ -1264,7 +1264,7 @@ impl Stream for Search<'_, '_> {
 pub struct Engine {
     executor: Executor,
     shared: SharedData,
-    local: HugeSeq<LocalData>,
+    local: HugePages<LocalData>,
 }
 
 #[cfg(test)]
@@ -1295,7 +1295,7 @@ impl Engine {
     pub fn with_options(options: &Options) -> Self {
         Engine {
             executor: Executor::new(options.threads),
-            local: HugeSeq::zeroed(options.threads.cast()),
+            local: HugePages::zeroed(options.threads.cast()),
             shared: SharedData {
                 syzygy: Syzygy::new(&options.syzygy),
                 tt: TranspositionTable::new(options.hash),
@@ -1326,7 +1326,7 @@ impl Engine {
         let local: &[SyncUnsafeCell<LocalData>] = unsafe { &*(&raw mut *self.local as *const _) };
         let values: &[SyncUnsafeCell<Atomic<Vault<Value, u64>>>] =
             unsafe { &*(&raw mut **self.shared.values as *const _) };
-        let tt: &[SyncUnsafeCell<Atomic<Vault<Transposition>>>] =
+        let tt: &[SyncUnsafeCell<Atomic<Vault<Transposition, u64>>>] =
             unsafe { &*(&raw mut **self.shared.tt as *const _) };
 
         let values_chunk_size = values.len().div_ceil(local.len());
@@ -1340,7 +1340,7 @@ impl Engine {
 
             let offset = idx * tt_chunk_size;
             let len = tt.len().saturating_sub(offset).min(tt_chunk_size);
-            let ptr = tt.as_ptr().add(offset) as *mut Atomic<Vault<Transposition>>;
+            let ptr = tt.as_ptr().add(offset) as *mut Atomic<Vault<Transposition, u64>>;
             fill_zeroes(slice::from_raw_parts_mut(ptr, len));
 
             *local.get(idx).assume().get() = zeroed();

@@ -1,7 +1,7 @@
-use crate::util::{Assume, Atomic, Binary, Bits, HugeSeq, Int, Unsigned, zero};
+use crate::util::*;
 use bytemuck::{Pod, Zeroable};
 use derive_more::with_trait::{Debug, Deref, DerefMut};
-use std::ops::{Index, IndexMut};
+use std::ops::{Div, Index, IndexMut};
 use std::{marker::PhantomData, sync::atomic::Ordering};
 
 #[cfg(test)]
@@ -32,7 +32,7 @@ impl<T> const IndexMut<Key> for [T] {
 #[derive(Debug)]
 #[debug("Vault({bits:?})")]
 #[repr(transparent)]
-pub struct Vault<T: Binary, U: Unsigned = <<T as Binary>::Bits as Int>::Repr> {
+pub struct Vault<T: Binary, U: Unsigned> {
     bits: U,
     phantom: PhantomData<T>,
 }
@@ -98,18 +98,25 @@ where
     }
 }
 
+/// A [`Cache`] backed by [`StaticMemory`].
+pub type StaticCache<T, U, const N: usize> = Cache<T, U, StaticMemory<Atomic<Vault<T, U>>, N>>;
+
+/// A [`Cache`] backed by [`HugePage`].
+pub type HugeCache<T, U> = Cache<T, U, HugePages<Atomic<Vault<T, U>>>>;
+
 /// A generic memoization cache.
 #[derive(Debug, Deref, DerefMut)]
-pub struct Cache<T: Binary, U: Unsigned = <<T as Binary>::Bits as Int>::Repr> {
+pub struct Cache<T: Binary, U: Unsigned, M: Memory<Atomic<Vault<T, U>>>> {
     #[deref(forward)]
     #[deref_mut(forward)]
-    data: HugeSeq<Atomic<Vault<T, U>>>,
+    data: M,
+    phantom: PhantomData<Vault<T, U>>,
 }
 
 #[cfg(test)]
-impl<T, U, R, const M: u32> Arbitrary for Cache<T, U>
+impl<T, U, R, const N: u32> Arbitrary for HugeCache<T, U>
 where
-    T: Arbitrary + Binary<Bits = Bits<R, M>>,
+    T: Arbitrary + Binary<Bits = Bits<R, N>>,
     U: Unsigned,
     R: Unsigned,
 {
@@ -120,24 +127,56 @@ where
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (hash_map(any::<Key>(), any::<T>(), ..32), ..128usize)
             .prop_map(|(map, size)| {
-                let data: HugeSeq<Atomic<Vault<T, U>>> =
-                    HugeSeq::zeroed(size * Vault::<T, U>::SIZE);
+                let cache = Self {
+                    data: HugePages::zeroed(size * Vault::<T, U>::SIZE),
+                    phantom: PhantomData,
+                };
 
                 if size > 0 {
                     for (k, v) in map {
-                        data[k].store(Vault::close(k, v), Ordering::Relaxed);
+                        cache.data[k].store(Vault::close(k, v), Ordering::Relaxed);
                     }
                 }
 
-                Cache { data }
+                cache
             })
             .boxed()
     }
 }
 
-impl<T, U, R, const M: u32> Cache<T, U>
+unsafe impl<T: Binary, U: Unsigned, const N: usize> Zeroable for StaticCache<T, U, N> {}
+
+impl<T, U, R, const N: u32, const M: usize> Default for StaticCache<T, U, M>
 where
-    T: Binary<Bits = Bits<R, M>>,
+    T: Binary<Bits = Bits<R, N>>,
+    U: Unsigned,
+    R: Unsigned,
+{
+    #[inline(always)]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T, U, R, const N: u32, const M: usize> StaticCache<T, U, M>
+where
+    T: Binary<Bits = Bits<R, N>>,
+    U: Unsigned,
+    R: Unsigned,
+{
+    /// Initializes the cache with space for `M` entries.
+    #[inline(always)]
+    pub fn new() -> Self {
+        Self {
+            data: StaticMemory::default(),
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<T, U, R, const N: u32> HugeCache<T, U>
+where
+    T: Binary<Bits = Bits<R, N>>,
     U: Unsigned,
     R: Unsigned,
 {
@@ -145,14 +184,24 @@ where
     #[inline(always)]
     pub fn new(size: usize) -> Self {
         Self {
-            data: HugeSeq::zeroed(size / Vault::<T, U>::SIZE),
+            data: HugePages::zeroed(size.div(Vault::<T, U>::SIZE).cast()),
+            phantom: PhantomData,
         }
     }
+}
 
+impl<T, U, R, M, const N: u32> Cache<T, U, M>
+where
+    T: Binary<Bits = Bits<R, N>>,
+    U: Unsigned,
+    M: Memory<Atomic<Vault<T, U>>> + Deref<Target = [Atomic<Vault<T, U>>]>,
+    R: Unsigned,
+{
     /// Resizes the cache space to up to `size` bytes.
     #[inline(always)]
     pub fn resize(&mut self, size: usize) {
-        self.data.zeroed_in_place(size / Vault::<T, U>::SIZE);
+        self.data
+            .zeroed_in_place(size.div(Vault::<T, U>::SIZE).cast());
     }
 
     /// Instructs the CPU to load the slot associated with `key`.
@@ -201,7 +250,7 @@ mod tests {
     use test_strategy::proptest;
 
     type MockVault = Vault<u8, u64>;
-    type MockCache = Cache<u8, u64>;
+    type MockCache = HugeCache<u8, u64>;
 
     #[proptest]
     fn opening_vault_with_correct_key_succeeds(k: Key, v: u8) {

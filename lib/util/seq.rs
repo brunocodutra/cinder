@@ -41,11 +41,8 @@ pub type ConstSeq<T, const S: usize> = Seq<T, ConstMemory<S>>;
 /// A [`Seq`] backed by [`StaticMemory`].
 pub type StaticSeq<T, const N: usize> = Seq<T, StaticMemory<T, N>>;
 
-/// A [`Seq`] backed by [`DynamicMemory`].
-pub type DynamicSeq<T> = Seq<T, DynamicMemory<T>>;
-
 /// A [`Seq`] backed by [`HugePage`].
-pub type HugeSeq<T> = Seq<T, HugePage<T>>;
+pub type HugeSeq<T> = Seq<T, HugePages<T>>;
 
 /// A sequence of objects of type `T`.
 #[derive(Debug)]
@@ -90,16 +87,6 @@ impl<T: Zeroable, M: Memory<T>> Seq<T, M> {
                 mem: M::zeroed(len),
             },
         }
-    }
-
-    /// Reallocates a new [`Seq`] in-place with `len` zero-initialized objects of type `T`.
-    ///
-    /// This method guarantees existing memory is deallocated before reallocating.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn zeroed_in_place(&mut self, len: M::Usize) {
-        unsafe { ptr::drop_in_place(self) }; // IMPORTANT: deallocate first
-        unsafe { ptr::write(self, Self::zeroed(len)) };
     }
 }
 
@@ -399,21 +386,7 @@ mod tests {
 
     #[proptest]
     fn can_be_zero_initialized(#[strategy(..10usize)] n: usize) {
-        let seq = DynamicSeq::<u32>::zeroed(n);
-        assert!(seq.iter().all(|x| *x == 0));
-    }
-
-    #[proptest]
-    fn can_be_reinitialized_in_place(
-        #[strategy(..10usize)] m: usize,
-        #[strategy(..10usize)] n: usize,
-    ) {
-        let mut seq = DynamicSeq::<u32>::zeroed(m);
-
-        assert_eq!(seq.len(), m);
-        seq.zeroed_in_place(n);
-        assert_eq!(seq.len(), n);
-
+        let seq = HugeSeq::<u32>::zeroed(n);
         assert!(seq.iter().all(|x| *x == 0));
     }
 
@@ -426,7 +399,6 @@ mod tests {
     fn capacity_returns_maximum_number_of_elements(#[strategy(..10usize)] n: usize) {
         assert_eq!(ConstSeq::<u32, 64>::new(n.cast()).capacity(), 16);
         assert_eq!(StaticSeq::<u32, 16>::new(n.cast()).capacity(), 16);
-        assert_eq!(DynamicSeq::<u32>::new(n).capacity(), n);
         assert_eq!(HugeSeq::<u32>::new(n).capacity(), n);
     }
 
@@ -434,7 +406,6 @@ mod tests {
     fn len_returns_current_number_of_elements(#[strategy(..10usize)] n: usize) {
         assert_eq!(ConstSeq::<u32, 64>::zeroed(n.cast()).len(), n.cast());
         assert_eq!(StaticSeq::<u32, 16>::zeroed(n.cast()).len(), n.cast());
-        assert_eq!(DynamicSeq::<u32>::zeroed(n).len(), n);
         assert_eq!(HugeSeq::<u32>::zeroed(n).len(), n);
     }
 

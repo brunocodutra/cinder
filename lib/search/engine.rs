@@ -514,11 +514,151 @@ impl<'a> Searcher<'a> {
     ) -> Result<Pv<N>, Interrupted> {
         if self.stack.pos.ply() < N as i32 && depth > 0 && bounds.start + 1 < bounds.end {
             self.pvs::<true, N>(depth, bounds, cut)
-        } else if bounds.start + 1 < bounds.end {
+        } else if depth > 0 && bounds.start + 1 < bounds.end {
             Ok(self.pvs::<true, 0>(depth, bounds, cut)?.truncate())
-        } else {
+        } else if depth > 0 {
             Ok(self.pvs::<false, 0>(depth, bounds, cut)?.truncate())
+        } else if bounds.start + 1 < bounds.end {
+            Ok(self.quiesce::<true>(bounds)?.truncate())
+        } else {
+            Ok(self.quiesce::<false>(bounds)?.truncate())
         }
+    }
+
+    /// The quiescent search.
+    #[inline(always)]
+    fn quiesce<const IS_PV: bool>(&mut self, bounds: Range<Score>) -> Result<Pv<0>, Interrupted> {
+        self.stack.nodes.update(1);
+        let ply = self.stack.pos.ply();
+        if self.ctrl.check(Depth::new(0), ply, &self.stack.pv) == Abort {
+            return Err(Interrupted);
+        }
+
+        let (alpha, beta) = match self.stack.pos.outcome() {
+            None => self.mdp(&bounds),
+            Some(o) if o.is_draw() => return Ok(Pv::empty(Score::drawn())),
+            Some(_) => return Ok(Pv::empty(Score::mated(ply))),
+        };
+
+        if alpha >= beta {
+            return Ok(Pv::empty(alpha));
+        }
+
+        let correction = self.correction().to_int::<i16>();
+        self.stack.value[ply.cast::<usize>()] = self.evaluate() + correction;
+
+        let is_check = self.stack.pos.is_check();
+        let transposition = self.transposition();
+        let transposed = match transposition {
+            None => Pv::empty(self.stack.value[ply.cast::<usize>()].saturate()),
+            Some(t) => t.transpose(ply),
+        };
+
+        let was_pv = IS_PV || transposition.as_ref().is_some_and(Transposition::was_pv);
+
+        #[expect(clippy::collapsible_if)]
+        if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
+            if let Some(t) = transposition {
+                let (lower, upper) = t.score().range(ply).into_inner();
+                if upper <= alpha || lower >= beta {
+                    return Ok(transposed.truncate());
+                }
+            }
+        }
+
+        let improving = self.improving();
+        let alpha = alpha.max(transposed.score());
+        if alpha >= beta || ply >= Ply::MAX {
+            return Ok(transposed.truncate());
+        }
+
+        let mut moves = Moves::from_iter(self.stack.pos.moves().unpack_if(|ms| !ms.is_quiet()));
+
+        moves.sort(|m| {
+            if Some(m) == transposed.head() {
+                return Bounded::upper();
+            }
+
+            let mut rating = 0.;
+            let pos = &self.stack.pos;
+
+            let history = self.local.history.get(pos, m).to_float::<f32>();
+            rating = Params::history_rating(0).mul_add(history / History::LIMIT as f32, rating);
+
+            let replies = &mut self.stack.replies;
+            let mut reply = replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
+            let counter = reply.get(pos, m).to_float::<f32>();
+            rating = Params::counter_rating(0).mul_add(counter / History::LIMIT as f32, rating);
+
+            if pos.winning(m, Params::winning_rating_margin(0).to_int()) {
+                rating += convolve([
+                    (pos.gain(m).to_float(), Params::winning_rating_gain(..)),
+                    (1., Params::winning_rating_scalar(..)),
+                ]);
+            }
+
+            rating.to_int()
+        });
+
+        #[expect(clippy::blocks_in_conditions)]
+        let (mut head, mut tail) = match { moves.sorted().next() } {
+            Some(m) => (m, -self.next(Some(m)).quiesce::<IS_PV>(-beta..-alpha)?),
+            None => return Ok(transposed.truncate()),
+        };
+
+        for (index, m) in moves.sorted().skip(1).enumerate() {
+            let alpha = match tail.score() {
+                s if s >= beta => break,
+                s => s.max(alpha),
+            };
+
+            let mut lmp = *Params::lmp_baseline(0);
+            lmp = Params::lmp_is_pv(0).mul_add(IS_PV.to_float(), lmp);
+            lmp = Params::lmp_was_pv(0).mul_add(was_pv.to_float(), lmp);
+            lmp = Params::lmp_is_check(0).mul_add(is_check.to_float(), lmp);
+            lmp = Params::lmp_improving(0).mul_add(improving, lmp);
+            if index.to_float::<f32>() > Self::lmp(Depth::new(0)) * lmp {
+                break;
+            }
+
+            let pos = &self.stack.pos;
+            let gain = pos.gain(m).to_float::<f32>();
+
+            let mut fut = Self::futility(Depth::new(0));
+            fut = Params::fut_margin_is_pv(0).mul_add(IS_PV.to_float(), fut);
+            fut = Params::fut_margin_was_pv(0).mul_add(was_pv.to_float(), fut);
+            fut = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), fut);
+            fut = Params::fut_margin_improving(0).mul_add(improving, fut);
+            fut = Params::fut_margin_gain(0).mul_add(gain, fut);
+            if self.stack.value[ply.cast::<usize>()] + fut.to_int::<i16>().max(0) <= alpha {
+                continue;
+            }
+
+            if !pos.winning(m, Self::nsp(Depth::new(0)).to_int()) {
+                continue;
+            }
+
+            let mut next = self.next(Some(m));
+            let pv = match -next.quiesce::<false>(-alpha - 1..-alpha)? {
+                pv if pv <= alpha || pv >= beta => pv,
+                _ => -next.quiesce::<IS_PV>(-beta..-alpha)?,
+            };
+
+            if pv > tail {
+                (head, tail) = (m, pv);
+            }
+        }
+
+        let tail = tail.clamp(transposed.score(), Score::upper());
+        let score = ScoreBound::new(bounds, tail.score(), ply);
+        let tpos = Transposition::new(score, Depth::new(0), Some(head), was_pv);
+        self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
+
+        if matches!(score, ScoreBound::Lower(_)) {
+            self.update_history(Depth::new(0), head, &moves);
+        }
+
+        Ok(tail.transpose(head))
     }
 
     /// The principal variation search.
@@ -555,9 +695,11 @@ impl<'a> Searcher<'a> {
             Some(t) => t.transpose(ply),
         };
 
-        if depth > 0 {
-            depth += is_check as i8;
-            depth -= transposition.is_none() as i8;
+        depth += is_check as i8;
+        depth -= transposition.is_none() as i8;
+
+        if depth <= 0 {
+            return Ok(self.quiesce::<IS_PV>(bounds)?.truncate());
         }
 
         let was_pv = IS_PV || transposition.as_ref().is_some_and(Transposition::was_pv);
@@ -586,24 +728,20 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let (lower, upper) = if depth <= 0 {
-            (transposed.score(), Score::upper())
-        } else {
-            match self.shared.syzygy.wdl_after_zeroing(&self.stack.pos) {
-                None => (Score::lower(), Score::upper()),
-                Some(wdl) => {
-                    let bounds = Score::losing(Ply::upper())..Score::winning(Ply::upper());
-                    let score = ScoreBound::new(bounds, wdl.to_score(ply), ply);
-                    let (lower, upper) = score.range(ply).into_inner();
-                    if lower >= upper || upper <= alpha || lower >= beta {
-                        let bonus = Params::tb_cut_depth_bonus(0).to_int::<i8>();
-                        let tpos = Transposition::new(score, depth + bonus, None, was_pv);
-                        self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
-                        return Ok(tpos.transpose(ply).truncate());
-                    }
-
-                    (lower, upper)
+        let (lower, upper) = match self.shared.syzygy.wdl_after_zeroing(&self.stack.pos) {
+            None => (Score::lower(), Score::upper()),
+            Some(wdl) => {
+                let bounds = Score::losing(Ply::upper())..Score::winning(Ply::upper());
+                let score = ScoreBound::new(bounds, wdl.to_score(ply), ply);
+                let (lower, upper) = score.range(ply).into_inner();
+                if lower >= upper || upper <= alpha || lower >= beta {
+                    let bonus = Params::tb_cut_depth_bonus(0).to_int::<i8>();
+                    let tpos = Transposition::new(score, depth + bonus, None, was_pv);
+                    self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
+                    return Ok(tpos.transpose(ply).truncate());
                 }
+
+                (lower, upper)
             }
         };
 
@@ -612,7 +750,7 @@ impl<'a> Searcher<'a> {
         let transposed = transposed.clamp(lower, upper);
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
-        } else if !IS_PV && !is_check && depth > 0 {
+        } else if !IS_PV && !is_check {
             #[expect(clippy::collapsible_if)]
             if let Some(margin) = Self::razoring(depth) {
                 if self.stack.value[ply.cast::<usize>()] + margin.to_int::<i16>() <= alpha {
@@ -649,8 +787,7 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let move_pack = self.stack.pos.moves();
-        let mut moves = Moves::from_iter(move_pack.unpack_if(|ms| depth > 0 || !ms.is_quiet()));
+        let mut moves = Moves::from_iter(self.stack.pos.moves().unpack());
         let killer = self.stack.killers[ply.cast::<usize>()];
 
         moves.sort(|m| {
@@ -716,39 +853,37 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        #[expect(clippy::blocks_in_conditions)]
-        let (mut head, mut tail) = match { moves.sorted().next() } {
-            None => return Ok(transposed.truncate()),
-            Some(m) => {
-                let mut extension = 0i8;
-                #[expect(clippy::collapsible_if)]
-                if let Some(t) = transposition {
-                    if t.score().lower(ply) >= beta && t.depth() >= depth - 3 && depth >= 6 {
-                        extension = 2 + m.is_quiet() as i8;
-                        let s_depth = (depth - 1) / 2;
-                        let s_beta = beta - Self::single(depth).to_int::<i16>();
-                        let d_beta = beta - Self::double(depth).to_int::<i16>();
-                        let t_beta = beta - Self::triple(depth).to_int::<i16>();
-                        for m in moves.sorted().skip(1) {
-                            let pv = -self.next(Some(m)).nw(s_depth - 1, -s_beta + 1, !cut)?;
-                            if pv >= beta {
-                                return Ok(pv.transpose(m));
-                            } else if pv >= s_beta {
-                                cut = true;
-                                extension = -1;
-                                break;
-                            } else if pv >= d_beta {
-                                extension = extension.min(1);
-                            } else if pv >= t_beta {
-                                extension = extension.min(2);
-                            }
+        let mut head = moves.sorted().next().assume();
+
+        let mut tail = {
+            let mut extension = 0i8;
+            #[expect(clippy::collapsible_if)]
+            if let Some(t) = transposition {
+                if t.score().lower(ply) >= beta && t.depth() >= depth - 3 && depth >= 6 {
+                    extension = 2 + head.is_quiet() as i8;
+                    let s_depth = (depth - 1) / 2;
+                    let s_beta = beta - Self::single(depth).to_int::<i16>();
+                    let d_beta = beta - Self::double(depth).to_int::<i16>();
+                    let t_beta = beta - Self::triple(depth).to_int::<i16>();
+                    for m in moves.sorted().skip(1) {
+                        let pv = -self.next(Some(m)).nw(s_depth - 1, -s_beta + 1, !cut)?;
+                        if pv >= beta {
+                            return Ok(pv.transpose(m));
+                        } else if pv >= s_beta {
+                            cut = true;
+                            extension = -1;
+                            break;
+                        } else if pv >= d_beta {
+                            extension = extension.min(1);
+                        } else if pv >= t_beta {
+                            extension = extension.min(2);
                         }
                     }
                 }
-
-                let mut next = self.next(Some(m));
-                (m, -next.ab(depth + extension - 1, -beta..-alpha, false)?)
             }
+
+            let mut next = self.next(Some(head));
+            -next.ab(depth + extension - 1, -beta..-alpha, false)?
         };
 
         let mut is_noisy_node = is_check || is_noisy_pv;
@@ -815,8 +950,9 @@ impl<'a> Searcher<'a> {
             lmr = Params::lmr_history(0).mul_add(history / History::LIMIT as f32, lmr);
             lmr = Params::lmr_counter(0).mul_add(counter / History::LIMIT as f32, lmr);
 
-            let pv = match -next.nw(depth - lmr.to_int::<i8>().max(0) - 1, -alpha, !cut)? {
-                pv if pv <= alpha || (pv >= beta && lmr < 1.) => pv,
+            let lmr = lmr.to_int::<i8>().clamp(0, depth.get().max(1) - 1);
+            let pv = match -next.nw(depth - lmr - 1, -alpha, !cut)? {
+                pv if pv <= alpha || (pv >= beta && lmr < 1) => pv,
                 _ => -next.ab(depth - 1, -beta..-alpha, false)?,
             };
 
@@ -916,8 +1052,9 @@ impl<'a> Searcher<'a> {
             lmr = Params::lmr_is_noisy_pv(0).mul_add(is_noisy_pv.to_float(), lmr);
             lmr = Params::lmr_history(0).mul_add(history / History::LIMIT as f32, lmr);
 
-            let pv = match -next.nw(depth - lmr.to_int::<i8>().max(0) - 1, -alpha, false)? {
-                pv if pv <= alpha || (pv >= beta && lmr < 1.) => pv,
+            let lmr = lmr.to_int::<i8>().clamp(0, depth.get().max(1) - 1);
+            let pv = match -next.nw(depth - lmr - 1, -alpha, false)? {
+                pv if pv <= alpha || (pv >= beta && lmr < 1) => pv,
                 _ => -next.ab(depth - 1, -beta..-alpha, false)?,
             };
 

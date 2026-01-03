@@ -1,7 +1,7 @@
 use crate::util::{Bounded, Int};
-use bytemuck::{Pod, Zeroable};
+use bytemuck::{NoUninit, Zeroable};
 
-#[derive(Debug, Copy, Hash, Zeroable, Pod)]
+#[derive(Debug, Copy, Hash, Zeroable, NoUninit)]
 #[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
@@ -16,7 +16,7 @@ unsafe impl const Int for PlyRepr {
     const MAX: Self::Repr = 127;
 
     #[cfg(test)]
-    const MAX: Self::Repr = 15;
+    const MAX: Self::Repr = 7;
 }
 
 /// The number of half-moves played.

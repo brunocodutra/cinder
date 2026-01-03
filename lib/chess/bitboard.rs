@@ -598,7 +598,7 @@ mod tests {
     fn flipping_a_bitboard_flips_every_square(bb: Bitboard) {
         assert_eq!(
             HashSet::<Square>::from_iter(bb.flip()),
-            HashSet::<Square>::from_iter(bb.iter().map(|sq| sq.flip()))
+            HashSet::<Square>::from_iter(bb.iter().map(Square::flip))
         );
     }
 

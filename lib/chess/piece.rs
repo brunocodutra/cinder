@@ -304,7 +304,7 @@ mod tests {
         b: Bitboard,
     ) {
         for sq in p.moves(wc, a, b) {
-            assert!(a.inverse().union(b).contains(sq))
+            assert!(a.inverse().union(b).contains(sq));
         }
     }
 

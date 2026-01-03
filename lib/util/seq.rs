@@ -61,7 +61,7 @@ impl<T: Arbitrary, M: Memory<T, Usize: From<u8>>> Arbitrary for Seq<T, M> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         any::<u8>()
             .prop_flat_map(|cap| {
                 vec(any::<T>(), 0..=cap.cast()).prop_map(move |items| {
@@ -521,6 +521,6 @@ mod tests {
     ) {
         let len = seq.len().cast::<usize>();
         seq.extend(v.iter().copied());
-        assert_eq!(&seq[len..], &v[..]);
+        assert_eq!(&seq[len..], &*v);
     }
 }

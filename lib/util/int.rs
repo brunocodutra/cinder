@@ -345,8 +345,8 @@ mod tests {
 
     unsafe impl const Int for Digit {
         type Repr = u16;
-        const MIN: Self::Repr = Digit::One as _;
-        const MAX: Self::Repr = Digit::Nine as _;
+        const MIN: Self::Repr = Digit::One as u16;
+        const MAX: Self::Repr = Digit::Nine as u16;
     }
 
     #[proptest]
@@ -365,6 +365,7 @@ mod tests {
     }
 
     #[proptest]
+    #[expect(clippy::float_cmp)]
     fn int_can_be_cast_to_float(d: Digit) {
         assert_eq!(d.to_float::<f32>(), d.get() as f32);
     }
@@ -443,7 +444,7 @@ mod tests {
 
     #[proptest]
     fn primitive_can_be_converted_with_saturation(i: u16) {
-        assert_eq!(i.saturate::<i8>(), i.min(i8::MAX as _) as i8);
+        assert_eq!(i.saturate::<i8>(), i.min(i8::MAX as u16) as i8);
         assert_eq!(i.saturate::<u32>(), u32::from(i));
     }
 }

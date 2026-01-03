@@ -86,7 +86,7 @@ impl Executor {
 mod tests {
     use super::*;
     use derive_more::with_trait::Deref;
-    use std::{fmt::Debug, mem::forget};
+    use std::{fmt::Debug, iter::repeat_with, mem::forget};
     use test_strategy::proptest;
 
     #[proptest]
@@ -95,7 +95,7 @@ mod tests {
         let count = Arc::new(AtomicUsize::new(0));
 
         let execution = {
-            let count = count.clone();
+            let count = Arc::clone(&count);
             executor.execute(move |_| {
                 count.fetch_add(1, Ordering::SeqCst);
             })
@@ -108,10 +108,12 @@ mod tests {
     #[proptest]
     fn executor_runs_task_exactly_once_per_thread(c: ThreadCount) {
         let mut executor = Executor::new(c);
-        let count = Arc::new(Vec::from_iter((0..c.get()).map(|_| AtomicUsize::new(0))));
+        let count = Arc::new(Vec::from_iter(
+            repeat_with(|| AtomicUsize::new(0)).take(c.cast()),
+        ));
 
         let execution = {
-            let count = count.clone();
+            let count = Arc::clone(&count);
             executor.execute(move |idx| {
                 count[idx].fetch_add(1, Ordering::SeqCst);
             })
@@ -138,7 +140,7 @@ mod tests {
 
         let mut executor = Executor::new(c);
         let count = Arc::new(AtomicUsize::new(0));
-        let drop_counter = CountDrops(count.clone());
+        let drop_counter = CountDrops(Arc::clone(&count));
 
         let execution = executor.execute(move |_| {
             assert_eq!(drop_counter.load(Ordering::SeqCst), 0);

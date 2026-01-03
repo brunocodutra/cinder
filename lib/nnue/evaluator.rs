@@ -97,7 +97,7 @@ impl Arbitrary for Evaluator {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (any::<Ply>(), any::<Selector>(), any::<Position>())
             .prop_map(|(plies, selector, pos)| {
                 let mut pos = Evaluator::new(pos);
@@ -441,7 +441,7 @@ mod tests {
         assert_eq!(
             pos.evaluate(),
             Evaluator::new(pos.deref().clone()).evaluate()
-        )
+        );
     }
 
     #[proptest]

@@ -158,6 +158,7 @@ mod tests {
     }
 
     #[proptest]
+    #[expect(clippy::float_cmp)]
     fn float_can_be_cast_from_repr(#[strategy(Unit::MIN..Unit::MAX)] f: f64) {
         assert_eq!(Unit::new(f).get(), f);
     }
@@ -173,6 +174,7 @@ mod tests {
     }
 
     #[proptest]
+    #[expect(clippy::float_cmp)]
     fn float_can_interpolate(#[filter(#f.get() >= 0.)] f: Unit, a: Unit, b: Unit) {
         assert_eq!(
             f.lerp(a, b).get(),
@@ -181,6 +183,7 @@ mod tests {
     }
 
     #[proptest]
+    #[expect(clippy::float_cmp)]
     fn float_is_eq_by_repr(a: Unit, b: Unit) {
         assert_eq!(a == b, a.get() == b.get());
     }

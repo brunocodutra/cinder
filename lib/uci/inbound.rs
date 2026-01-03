@@ -208,6 +208,7 @@ mod tests {
     use super::*;
     use proptest::{collection::hash_set, prelude::*, sample::Selector};
     use rand::seq::SliceRandom;
+    use std::fmt::Write;
     use test_strategy::proptest;
 
     #[proptest]
@@ -263,7 +264,7 @@ mod tests {
     ) {
         let mut input = String::new();
 
-        input.push_str(&format!("position fen {pos} moves"));
+        write!(input, "position fen {pos} moves")?;
 
         for _ in 0..n {
             prop_assume!(pos.outcome().is_none());
@@ -285,7 +286,7 @@ mod tests {
         mut p: UciParser,
         #[filter(#s.parse::<Position>().is_err())] s: String,
     ) {
-        assert!(p.parse(&format!("position fen {s}")).is_err());
+        p.parse(&format!("position fen {s}")).expect_err("is err");
     }
 
     #[proptest]
@@ -294,7 +295,8 @@ mod tests {
         mut p: UciParser,
         #[strategy("[^[:ascii:]]+")] s: String,
     ) {
-        assert!(p.parse(&format!("position startpos moves {}", s)).is_err());
+        p.parse(&format!("position startpos moves {s}"))
+            .expect_err("is err");
     }
 
     #[proptest]
@@ -305,7 +307,7 @@ mod tests {
         m: Move,
     ) {
         assert_eq!(
-            p.parse(&format!("position startpos moves {}", m)),
+            p.parse(&format!("position startpos moves {m}")),
             Err(ParseUciError::IllegalMove(&m.to_string()))
         );
     }
@@ -321,7 +323,7 @@ mod tests {
         idx: usize,
     ) {
         let mut input = [
-            "go".to_string(),
+            "go".to_owned(),
             format!("wtime {wt}"),
             format!("btime {bt}"),
             format!("winc {wi}"),
@@ -470,31 +472,31 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn parsing_stop_succeeds(mut p: UciParser) {
-        assert_eq!(p.parse(&"stop"), Ok(Inbound::Stop));
+        assert_eq!(p.parse("stop"), Ok(Inbound::Stop));
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn parsing_quit_succeeds(mut p: UciParser) {
-        assert_eq!(p.parse(&"quit"), Ok(Inbound::Quit));
+        assert_eq!(p.parse("quit"), Ok(Inbound::Quit));
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn parsing_uci_succeeds(mut p: UciParser) {
-        assert_eq!(p.parse(&"uci"), Ok(Inbound::Uci));
+        assert_eq!(p.parse("uci"), Ok(Inbound::Uci));
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn parsing_new_game_succeeds(mut p: UciParser) {
-        assert_eq!(p.parse(&"ucinewgame"), Ok(Inbound::UciNewGame));
+        assert_eq!(p.parse("ucinewgame"), Ok(Inbound::UciNewGame));
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn parsing_isready_succeeds(mut p: UciParser) {
-        assert_eq!(p.parse(&"isready"), Ok(Inbound::IsReady));
+        assert_eq!(p.parse("isready"), Ok(Inbound::IsReady));
     }
 
     #[proptest]
@@ -513,7 +515,7 @@ mod tests {
         #[filter(#s.trim().parse::<HashSize>().is_err())] s: String,
     ) {
         let input = format!("setoption name Hash value {s}");
-        assert!(p.parse(&input).is_err());
+        p.parse(&input).expect_err("is err");
     }
 
     #[proptest]
@@ -532,7 +534,7 @@ mod tests {
         #[filter(#s.trim().parse::<ThreadCount>().is_err())] s: String,
     ) {
         let input = format!("setoption name Threads value {s}");
-        assert!(p.parse(&input).is_err());
+        p.parse(&input).expect_err("is err");
     }
 
     #[proptest]
@@ -552,6 +554,6 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn parsing_unsupported_command_fails(mut p: UciParser, #[strategy("[^[:ascii:]]*")] s: String) {
-        assert!(p.parse(&s).is_err());
+        p.parse(&s).expect_err("is err");
     }
 }

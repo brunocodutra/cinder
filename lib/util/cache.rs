@@ -116,7 +116,8 @@ where
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    #[expect(clippy::iter_over_hash_type)]
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (hash_map(any::<Key>(), any::<T>(), ..32), ..128usize)
             .prop_map(|(map, size)| {
                 let data: HugeSeq<Atomic<Vault<T, U>>> =

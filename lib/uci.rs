@@ -79,7 +79,7 @@ where
                         clock,
                     };
 
-                    let mut search = self.engine.search(&mut self.pos, limits);
+                    let mut search = self.engine.search(&self.pos, limits);
                     let mut pinned = unsafe { Pin::new_unchecked(&mut search) };
 
                     loop {
@@ -178,7 +178,7 @@ mod tests {
     fn handles_position(
         #[any(MockStream::new([Inbound::Position(Default::default())]))] mut uci: MockUci,
     ) {
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert_eq!(uci.pos, Default::default());
         assert_eq!(&*uci.output, &[]);
     }
@@ -206,7 +206,7 @@ mod tests {
             mate: None,
         }]);
 
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert!(matches!(
             uci.output.last(),
             Some(Outbound::BestMove(Some(..)))
@@ -237,7 +237,7 @@ mod tests {
             mate: None,
         }]);
 
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert!(matches!(
             uci.output.last(),
             Some(Outbound::BestMove(Some(..)))
@@ -264,7 +264,7 @@ mod tests {
             mate: None,
         }]);
 
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert!(matches!(
             uci.output.last(),
             Some(Outbound::BestMove(Some(..)))
@@ -291,7 +291,7 @@ mod tests {
             mate: None,
         }]);
 
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert!(matches!(
             uci.output.last(),
             Some(Outbound::BestMove(Some(..)))
@@ -318,7 +318,7 @@ mod tests {
             mate: Some(mate),
         }]);
 
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert!(matches!(
             uci.output.last(),
             Some(Outbound::BestMove(Some(..)))
@@ -345,7 +345,7 @@ mod tests {
             mate: None,
         }]);
 
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert!(matches!(
             uci.output.last(),
             Some(Outbound::BestMove(Some(..)))
@@ -360,7 +360,7 @@ mod tests {
         #[any(MockStream::new([Inbound::go_infinite()]))]
         mut uci: MockUci,
     ) {
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert!(matches!(
             uci.output.last(),
             Some(Outbound::BestMove(Some(..)))
@@ -375,14 +375,14 @@ mod tests {
         #[any(MockStream::new([Inbound::go_infinite()]))]
         mut uci: MockUci,
     ) {
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert!(matches!(uci.output.last(), Some(Outbound::BestMove(None))));
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn handles_stop(#[any(MockStream::new([Inbound::Stop]))] mut uci: MockUci) {
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert_eq!(&*uci.output, &[]);
     }
 
@@ -394,7 +394,7 @@ mod tests {
         #[any(MockStream::new([Inbound::go_infinite(), Inbound::Stop]))]
         mut uci: MockUci,
     ) {
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert!(matches!(
             uci.output.last(),
             Some(Outbound::BestMove(Some(..)))
@@ -404,7 +404,7 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn handles_quit(#[any(MockStream::new([Inbound::Quit]))] mut uci: MockUci) {
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert_eq!(&*uci.output, &[]);
     }
 
@@ -416,7 +416,7 @@ mod tests {
         #[any(MockStream::new([Inbound::go_infinite(), Inbound::Quit]))]
         mut uci: MockUci,
     ) {
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
     }
 
     #[proptest]
@@ -424,28 +424,28 @@ mod tests {
     fn handles_perft(mut uci: MockUci, #[strategy(..3u8)] p: u8) {
         uci.input = MockStream::new([Inbound::Perft(p)]);
 
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert!(matches!(&*uci.output, [Outbound::Info { .. }]));
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn handles_uci(#[any(MockStream::new([Inbound::Uci]))] mut uci: MockUci) {
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert_eq!(&*uci.output, &[Outbound::UciOk]);
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn handles_new_game(#[any(MockStream::new([Inbound::UciNewGame]))] mut uci: MockUci) {
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert_eq!(&*uci.output, &[]);
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn handles_ready(#[any(MockStream::new([Inbound::IsReady]))] mut uci: MockUci) {
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert_eq!(&*uci.output, &[Outbound::ReadyOk]);
     }
 
@@ -454,7 +454,7 @@ mod tests {
     fn handles_option_hash(mut uci: MockUci, h: HashSize) {
         uci.input = MockStream::new([Inbound::SetOptionHash(h)]);
 
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert_eq!(&*uci.output, &[]);
     }
 
@@ -463,7 +463,7 @@ mod tests {
     fn handles_option_threads(mut uci: MockUci, t: ThreadCount) {
         uci.input = MockStream::new([Inbound::SetOptionThreads(t)]);
 
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert_eq!(&*uci.output, &[]);
     }
 
@@ -472,7 +472,7 @@ mod tests {
     fn handles_option_syzygy_path(mut uci: MockUci, ps: HashSet<String>) {
         uci.input = MockStream::new([Inbound::SetOptionSyzygyPath(ps)]);
 
-        assert!(block_on(uci.run()).is_ok());
+        block_on(uci.run()).expect("is ok");
         assert_eq!(&*uci.output, &[]);
     }
 }

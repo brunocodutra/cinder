@@ -194,7 +194,7 @@ mod tests {
     fn bound_returns_score_bound(
         #[filter(!#b.is_empty())] b: Range<Score>,
         s: Score,
-        #[filter((0..=(Score::MAX - #s.get().abs()) as _).contains(&#p.get()))] p: Ply,
+        #[filter((0..=(Score::MAX - #s.get().abs()) as i8).contains(&#p.get()))] p: Ply,
     ) {
         assert_eq!(ScoreBound::new(b, s, p).bound(p), s);
     }
@@ -204,7 +204,7 @@ mod tests {
     fn lower_returns_score_lower_bound(
         #[filter(!#b.is_empty())] b: Range<Score>,
         #[filter(#s > #b.start)] s: Score,
-        #[filter((0..=(Score::MAX - #s.get().abs()) as _).contains(&#p.get()))] p: Ply,
+        #[filter((0..=(Score::MAX - #s.get().abs()) as i8).contains(&#p.get()))] p: Ply,
     ) {
         assert_eq!(ScoreBound::new(b, s, p).lower(p), s);
     }
@@ -214,7 +214,7 @@ mod tests {
     fn upper_returns_score_upper_bound(
         #[filter(!#b.is_empty())] b: Range<Score>,
         #[filter(#s < #b.end)] s: Score,
-        #[filter((0..=(Score::MAX - #s.get().abs()) as _).contains(&#p.get()))] p: Ply,
+        #[filter((0..=(Score::MAX - #s.get().abs()) as i8).contains(&#p.get()))] p: Ply,
     ) {
         assert_eq!(ScoreBound::new(b, s, p).upper(p), s);
     }
@@ -224,7 +224,7 @@ mod tests {
     fn bound_is_within_range(
         #[filter(!#b.is_empty())] b: Range<Score>,
         s: Score,
-        #[filter((0..=(Score::MAX - #s.get().abs()) as _).contains(&#p.get()))] p: Ply,
+        #[filter((0..=(Score::MAX - #s.get().abs()) as i8).contains(&#p.get()))] p: Ply,
     ) {
         assert!(ScoreBound::new(b, s, p).range(p).contains(&s));
     }

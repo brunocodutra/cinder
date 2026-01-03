@@ -1,7 +1,7 @@
 use crate::nnue::Value;
 use crate::util::{Binary, Bits, Bounded, Int};
 use crate::{chess::Flip, search::Ply};
-use bytemuck::{Pod, Zeroable};
+use bytemuck::{NoUninit, Zeroable};
 
 /// Number of [plies][`Ply`] to mate.
 #[derive(Debug, Copy, Hash)]
@@ -24,7 +24,7 @@ impl Mate {
     }
 }
 
-#[derive(Debug, Copy, Hash, Zeroable, Pod)]
+#[derive(Debug, Copy, Hash, Zeroable, NoUninit)]
 #[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]

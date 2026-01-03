@@ -1,6 +1,6 @@
 use crate::chess::Move;
 use crate::search::{Depth, Line, Ply, Pv, Score};
-use crate::util::{Assume, Binary, Bits, Int};
+use crate::util::{Assume, Binary, Bits, Int, Valuable};
 use derive_more::with_trait::Debug;
 use std::hint::unreachable_unchecked;
 use std::ops::{Range, RangeInclusive};
@@ -156,6 +156,15 @@ impl Transposition {
             self.score.bound(ply),
             self.best.map_or_else(Line::empty, Line::singular),
         )
+    }
+}
+
+impl const Valuable for Transposition {
+    type Worth = Depth;
+
+    #[inline(always)]
+    fn worth(&self) -> Self::Worth {
+        self.depth()
     }
 }
 

@@ -2,7 +2,7 @@ use crate::util::*;
 use bytemuck::{Pod, Zeroable};
 use derive_more::with_trait::{Debug, Deref, DerefMut};
 use std::ops::{Div, Index, IndexMut};
-use std::{marker::PhantomData, sync::atomic::Ordering};
+use std::{cmp::Ordering, marker::PhantomData, sync::atomic::Ordering::Relaxed};
 
 #[cfg(test)]
 use proptest::{collection::*, prelude::*};
@@ -28,37 +28,87 @@ impl<T> const IndexMut<Key> for [T] {
     }
 }
 
+/// Trait for types that are worth storing in a [`Vault`].
+pub const trait Valuable {
+    type Worth: PartialOrd;
+
+    fn worth(&self) -> Self::Worth;
+}
+
 /// A checksum-guarded container.
 #[derive(Debug)]
 #[debug("Vault({bits:?})")]
 #[repr(transparent)]
-pub struct Vault<T: Binary, U: Unsigned> {
+pub struct Vault<T: Valuable + Binary, U: Unsigned> {
     bits: U,
     phantom: PhantomData<T>,
 }
 
-unsafe impl<T: Binary, U: Unsigned> Zeroable for Vault<T, U> {}
-unsafe impl<T: Binary, U: Unsigned> Pod for Vault<T, U> {}
+unsafe impl<T: Valuable + Binary, U: Unsigned> Zeroable for Vault<T, U> {}
+unsafe impl<T: Valuable + Binary, U: Unsigned> Pod for Vault<T, U> {}
 
-impl<T: Binary, U: Unsigned> Copy for Vault<T, U> {}
+impl<T: Valuable + Binary, U: Unsigned> Copy for Vault<T, U> {}
 
-impl<T: Binary, U: Unsigned> Clone for Vault<T, U> {
+impl<T: Valuable + Binary, U: Unsigned> Clone for Vault<T, U> {
     #[inline(always)]
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T, U, R, const M: u32> Vault<T, U>
+impl<T, U, R, const N: u32> PartialEq for Vault<T, U>
 where
-    T: Binary<Bits = Bits<R, M>>,
+    T: Valuable + Binary<Bits = Bits<R, N>>,
+    U: Unsigned,
+    R: Unsigned,
+{
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        if self.is_empty() || other.is_empty() {
+            return self.bits == other.bits;
+        }
+
+        let a = T::decode(self.bits.convert::<Key>().assume().pop());
+        let b = T::decode(other.bits.convert::<Key>().assume().pop());
+        a.worth().eq(&b.worth())
+    }
+}
+
+impl<T, U, R, const N: u32> PartialOrd for Vault<T, U>
+where
+    T: Valuable + Binary<Bits = Bits<R, N>>,
+    U: Unsigned,
+    R: Unsigned,
+{
+    #[inline(always)]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match (self.is_empty(), other.is_empty()) {
+            (true, true) => Some(Ordering::Equal),
+            (true, false) => Some(Ordering::Less),
+            (false, true) => Some(Ordering::Greater),
+            (false, false) => {
+                let a = T::decode(self.bits.convert::<Key>().assume().pop());
+                let b = T::decode(other.bits.convert::<Key>().assume().pop());
+                a.worth().partial_cmp(&b.worth())
+            }
+        }
+    }
+}
+
+impl<T, U, R, const N: u32> Vault<T, U>
+where
+    T: Valuable + Binary<Bits = Bits<R, N>>,
     U: Unsigned,
     R: Unsigned,
 {
     const SIZE: usize = size_of::<Self>();
 
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn is_empty(&self) -> bool {
+        self.bits == zero()
+    }
+
+    #[inline(always)]
     pub fn empty() -> Self {
         Vault {
             bits: zero(),
@@ -70,7 +120,7 @@ where
     #[expect(clippy::needless_pass_by_value)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn close(mut key: Key, value: T) -> Self {
-        const { assert!(U::BITS >= M) }
+        const { assert!(U::BITS >= N) }
         key.push(value.encode());
 
         Vault {
@@ -82,31 +132,35 @@ where
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn open(self, key: Key) -> Option<T> {
-        const { assert!(U::BITS >= M) }
+        const { assert!(U::BITS >= N) }
 
-        if self.bits == zero() {
+        if self.is_empty() {
             return None;
         }
 
         let mut bits = self.bits.convert::<Key>().assume();
         let encoded: T::Bits = bits.pop();
-        if bits == key.slice(..(U::BITS - M)) {
+        if bits == key.slice(..(U::BITS - N)) {
             Some(Binary::decode(encoded))
         } else {
             None
         }
     }
-}
 
-/// A [`Cache`] backed by [`StaticMemory`].
-pub type StaticCache<T, U, const N: usize> = Cache<T, U, StaticMemory<Atomic<Vault<T, U>>, N>>;
+    /// Whether this key matches the lock.
+    #[inline(always)]
+    pub fn matches(&self, key: Key) -> bool {
+        !self.is_empty() && (self.bits >> N.cast()) == key.slice(..(U::BITS - N)).cast()
+    }
+}
 
 /// A [`Cache`] backed by [`HugePage`].
 pub type HugeCache<T, U> = Cache<T, U, HugePages<Atomic<Vault<T, U>>>>;
 
 /// A generic memoization cache.
 #[derive(Debug, Deref, DerefMut)]
-pub struct Cache<T: Binary, U: Unsigned, M: Memory<Atomic<Vault<T, U>>>> {
+pub struct Cache<T: Valuable + Binary, U: Unsigned, M: Memory<Atomic<Vault<T, U>>>>
+{
     #[deref(forward)]
     #[deref_mut(forward)]
     data: M,
@@ -116,7 +170,7 @@ pub struct Cache<T: Binary, U: Unsigned, M: Memory<Atomic<Vault<T, U>>>> {
 #[cfg(test)]
 impl<T, U, R, const N: u32> Arbitrary for HugeCache<T, U>
 where
-    T: Arbitrary + Binary<Bits = Bits<R, N>>,
+    T: Arbitrary + Valuable + Binary<Bits = Bits<R, N>>,
     U: Unsigned,
     R: Unsigned,
 {
@@ -134,7 +188,7 @@ where
 
                 if size > 0 {
                     for (k, v) in map {
-                        cache.data[k].store(Vault::close(k, v), Ordering::Relaxed);
+                        cache.data[k].store(Vault::close(k, v), Relaxed);
                     }
                 }
 
@@ -144,39 +198,9 @@ where
     }
 }
 
-unsafe impl<T: Binary, U: Unsigned, const N: usize> Zeroable for StaticCache<T, U, N> {}
-
-impl<T, U, R, const N: u32, const M: usize> Default for StaticCache<T, U, M>
-where
-    T: Binary<Bits = Bits<R, N>>,
-    U: Unsigned,
-    R: Unsigned,
-{
-    #[inline(always)]
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T, U, R, const N: u32, const M: usize> StaticCache<T, U, M>
-where
-    T: Binary<Bits = Bits<R, N>>,
-    U: Unsigned,
-    R: Unsigned,
-{
-    /// Initializes the cache with space for `M` entries.
-    #[inline(always)]
-    pub fn new() -> Self {
-        Self {
-            data: StaticMemory::default(),
-            phantom: PhantomData,
-        }
-    }
-}
-
 impl<T, U, R, const N: u32> HugeCache<T, U>
 where
-    T: Binary<Bits = Bits<R, N>>,
+    T: Valuable + Binary<Bits = Bits<R, N>>,
     U: Unsigned,
     R: Unsigned,
 {
@@ -192,7 +216,7 @@ where
 
 impl<T, U, R, M, const N: u32> Cache<T, U, M>
 where
-    T: Binary<Bits = Bits<R, N>>,
+    T: Valuable + Binary<Bits = Bits<R, N>>,
     U: Unsigned,
     M: Memory<Atomic<Vault<T, U>>> + Deref<Target = [Atomic<Vault<T, U>>]>,
     R: Unsigned,
@@ -228,7 +252,16 @@ where
     #[inline(always)]
     pub fn store(&self, key: Key, value: T) {
         if !self.data.is_empty() {
-            self.data[key].store(Vault::close(key, value), Ordering::Relaxed);
+            if size_of::<T::Worth>() == 0 {
+                self.data[key].store(Vault::close(key, value), Relaxed);
+            } else {
+                let slot = &self.data[key];
+                let current = slot.load(Relaxed);
+                let vault = Vault::close(key, value);
+                if !current.matches(key) || vault >= current {
+                    slot.store(vault, Relaxed);
+                }
+            }
         }
     }
 
@@ -236,7 +269,7 @@ where
     #[inline(always)]
     pub fn load(&self, key: Key) -> Option<T> {
         if !self.data.is_empty() {
-            self.data[key].load(Ordering::Relaxed).open(key)
+            self.data[key].load(Relaxed).open(key)
         } else {
             None
         }
@@ -247,18 +280,42 @@ where
 mod tests {
     use super::*;
     use std::fmt::Debug;
-    use test_strategy::proptest;
+    use test_strategy::{Arbitrary, proptest};
 
-    type MockVault = Vault<u8, u64>;
-    type MockCache = HugeCache<u8, u64>;
+    #[derive(Debug, Copy, Hash, Arbitrary)]
+    #[derive_const(Clone, Eq, PartialEq)]
+    struct MockValuable(u8);
+
+    impl Valuable for MockValuable {
+        type Worth = u8;
+
+        fn worth(&self) -> Self::Worth {
+            self.0
+        }
+    }
+
+    impl Binary for MockValuable {
+        type Bits = <u8 as Binary>::Bits;
+
+        fn encode(&self) -> Self::Bits {
+            self.0.encode()
+        }
+
+        fn decode(bits: Self::Bits) -> Self {
+            Self(u8::decode(bits))
+        }
+    }
+
+    type MockVault = Vault<MockValuable, u64>;
+    type MockCache = HugeCache<MockValuable, u64>;
 
     #[proptest]
-    fn opening_vault_with_correct_key_succeeds(k: Key, v: u8) {
+    fn opening_vault_with_correct_key_succeeds(k: Key, v: MockValuable) {
         assert_eq!(MockVault::close(k, v).open(k), Some(v));
     }
 
     #[proptest]
-    fn opening_vault_with_wrong_key_fails(k: Key, #[filter(#l != #k)] l: Key, v: u8) {
+    fn opening_vault_with_wrong_key_fails(k: Key, #[filter(#l != #k)] l: Key, v: MockValuable) {
         assert_eq!(MockVault::close(k, v).open(l), None);
     }
 
@@ -295,7 +352,7 @@ mod tests {
         #[filter(!#c.is_empty())]
         mut c: MockCache,
         k: Key,
-        v: u8,
+        v: MockValuable,
     ) {
         *c[k].get_mut() = Vault::close(!k, v);
         assert_eq!(c.load(k), None);
@@ -307,14 +364,14 @@ mod tests {
         #[filter(!#c.is_empty())]
         mut c: MockCache,
         k: Key,
-        v: u8,
+        v: MockValuable,
     ) {
         *c[k].get_mut() = Vault::close(k, v);
         assert_eq!(c.load(k), Some(v));
     }
 
     #[proptest]
-    fn set_does_nothing_if_capacity_is_zero(k: Key, v: u8) {
+    fn set_does_nothing_if_capacity_is_zero(k: Key, v: MockValuable) {
         MockCache::new(0).store(k, v);
     }
 
@@ -324,7 +381,7 @@ mod tests {
         #[filter(!#c.is_empty())]
         mut c: MockCache,
         k: Key,
-        v: u8,
+        v: MockValuable,
     ) {
         c[k] = zero();
         c.store(k, v);
@@ -337,9 +394,9 @@ mod tests {
         #[filter(!#c.is_empty())]
         mut c: MockCache,
         k: Key,
-        u: u8,
+        u: MockValuable,
         l: Key,
-        v: u8,
+        v: MockValuable,
     ) {
         *c[k].get_mut() = Vault::close(l, v);
         c.store(k, u);

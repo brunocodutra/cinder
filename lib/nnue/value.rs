@@ -1,5 +1,5 @@
 use crate::chess::Flip;
-use crate::util::{Binary, Bits, Bounded, Int};
+use crate::util::{Binary, Bits, Bounded, Int, Valuable};
 use bytemuck::{NoUninit, Zeroable};
 
 #[derive(Debug, Copy, Hash, Zeroable, NoUninit)]
@@ -22,6 +22,13 @@ impl const Flip for Value {
     fn flip(self) -> Self {
         -self
     }
+}
+
+impl const Valuable for Value {
+    type Worth = ();
+
+    #[inline(always)]
+    fn worth(&self) -> Self::Worth {}
 }
 
 impl const Binary for Value {

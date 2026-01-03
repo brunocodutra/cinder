@@ -1,8 +1,8 @@
 use crate::chess::Flip;
 use crate::util::{Binary, Bits, Bounded, Int};
-use bytemuck::{Pod, Zeroable};
+use bytemuck::{NoUninit, Zeroable};
 
-#[derive(Debug, Copy, Hash, Zeroable, Pod)]
+#[derive(Debug, Copy, Hash, Zeroable, NoUninit)]
 #[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]

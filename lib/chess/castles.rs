@@ -206,6 +206,7 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
+    #[expect(clippy::string_slice)]
     fn parsing_castles_fails_for_invalid_string(
         c: Castles,
         #[strategy(..=#c.to_string().len())] n: usize,

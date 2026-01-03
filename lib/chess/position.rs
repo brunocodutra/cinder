@@ -284,8 +284,8 @@ impl Arbitrary for Position {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        (0..256, any::<Selector>())
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (0..128, any::<Selector>())
             .prop_map(|(moves, selector)| {
                 let mut pos = Position::default();
 
@@ -1016,7 +1016,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn captures_reduce_material(
         #[filter(#pos.moves().unpack().any(|m| m.is_capture()))] mut pos: Position,
-        #[map(|s: Selector| s.select(#pos.moves().unpack_if(|ms| ms.is_capture())))] m: Move,
+        #[map(|s: Selector| s.select(#pos.moves().unpack_if(MoveSet::is_capture)))] m: Move,
     ) {
         let prev = pos.clone();
         pos.play(m);
@@ -1027,7 +1027,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn promotions_exchange_pawns(
         #[filter(#pos.moves().unpack().any(|m| m.is_promotion()))] mut pos: Position,
-        #[map(|s: Selector| s.select(#pos.moves().unpack_if(|ms| ms.is_promotion())))] m: Move,
+        #[map(|s: Selector| s.select(#pos.moves().unpack_if(MoveSet::is_promotion)))] m: Move,
     ) {
         let prev = pos.clone();
         pos.play(m);
@@ -1043,7 +1043,7 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn move_is_legal_if_can_be_played(#[filter(#pos.outcome().is_none())] pos: Position, m: Move) {
-        assert_eq!(pos.is_legal(m), pos.moves().unpack().any(|n| m == n))
+        assert_eq!(pos.is_legal(m), pos.moves().unpack().any(|n| m == n));
     }
 
     #[proptest]

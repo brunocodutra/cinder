@@ -1,19 +1,23 @@
 use crate::util::{Int, Signed};
-use bytemuck::{Pod, Zeroable};
+use bytemuck::{NoUninit, Zeroable};
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::{cmp::Ordering, num::Saturating as S, str::FromStr};
 
 /// A saturating bounded integer.
-#[derive(Debug, Copy, Hash, Zeroable, Pod)]
+#[derive(Debug, Copy, Hash, Zeroable)]
 #[derive_const(Default, Clone)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, arbitrary(bound(T, Self: Debug)))]
 #[debug("Bounded({self})")]
-#[debug(bounds(T: Int<Repr: Signed>, T::Repr: Display))]
+#[debug(bounds(T::Repr: Display))]
 #[repr(transparent)]
-pub struct Bounded<T>(T);
+pub struct Bounded<T>(T)
+where
+    T: Int<Repr: Signed>;
+
+unsafe impl<T: Int<Repr: Signed>> NoUninit for Bounded<T> {}
 
 unsafe impl<T: Int<Repr: [const] Signed>> const Int for Bounded<T> {
     type Repr = T::Repr;
@@ -356,7 +360,7 @@ mod tests {
         #[filter(#s.parse::<i16>().is_err())] s: String,
     ) {
         assert_eq!(
-            s.to_string().parse::<Bounded<Asymmetric>>(),
+            s.parse::<Bounded<Asymmetric>>(),
             Err(ParseBoundedIntegerError)
         );
     }

@@ -52,6 +52,7 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
+    #[expect(clippy::iter_over_hash_type)]
     fn insert_keeps_most_recent(#[any(size_range(2..10).lift())] ms: HashSet<Move>, m: Move) {
         let mut k = Killers::default();
 

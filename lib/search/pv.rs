@@ -183,6 +183,6 @@ mod tests {
 
     #[proptest]
     fn transpose_prepends_move(pv: Pv, m: Move) {
-        assert_eq!(pv.clone().transpose(m).head(), Some(m));
+        assert_eq!(pv.transpose(m).head(), Some(m));
     }
 }

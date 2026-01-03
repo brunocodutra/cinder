@@ -164,6 +164,6 @@ mod tests {
             Outbound::BestMove(..) => bestmove,
         };
 
-        assert!(parser.parse(&o.to_string()).is_ok());
+        parser.parse(&o.to_string()).expect("is ok");
     }
 }

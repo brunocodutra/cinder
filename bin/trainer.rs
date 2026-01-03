@@ -63,7 +63,7 @@ impl SparseInputType for KingBuckets {
     }
 
     fn description(&self) -> String {
-        "Horizontally mirrored, king bucketed psqt chess inputs".to_string()
+        "Horizontally mirrored, king bucketed psqt chess inputs".to_owned()
     }
 }
 

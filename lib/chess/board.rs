@@ -57,7 +57,7 @@ pub struct Board {
         let mut roles = [Bitboard::empty(); 6];
         for (i, o) in #pieces.iter().enumerate() {
             if let Some(p) = o {
-                roles[p.role() as usize] |= <Square as Int>::new(i as _).bitboard();
+                roles[p.role() as usize] |= <Square as Int>::new(i as i8).bitboard();
             }
         }
 
@@ -68,7 +68,7 @@ pub struct Board {
         let mut colors = [Bitboard::empty(); 2];
         for (i, o) in #pieces.iter().enumerate() {
             if let Some(p) = o {
-                colors[p.color() as usize] |= <Square as Int>::new(i as _).bitboard();
+                colors[p.color() as usize] |= <Square as Int>::new(i as i8).bitboard();
             }
         }
 
@@ -599,6 +599,7 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
+    #[expect(clippy::string_slice)]
     fn parsing_board_fails_for_invalid_fen(
         b: Board,
         #[strategy(..=#b.to_string().len())] n: usize,

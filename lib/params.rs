@@ -26,8 +26,7 @@ use proptest::{collection::vec, prelude::*};
 #[cfg_attr(feature = "spsa", serde(into = "Box<[f32]>", try_from = "Box<[f32]>"))]
 struct Param<const BYTES: ConstBytes<32>> {
     #[cfg(feature = "spsa")]
-    #[cfg_attr(test, strategy(vec(-1e3f32..=1e3f32, Self::VALUES.len().cast::<usize>())
-        .prop_map(|vs| Seq::from_iter(vs))))]
+    #[cfg_attr(test, strategy(vec(-1e3f32..=1e3f32, Self::VALUES.len().cast::<usize>()).prop_map(Seq::from_iter)))]
     values: ConstSeq<f32, 32>,
 }
 

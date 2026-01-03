@@ -1,6 +1,6 @@
 use crate::chess::Position;
 use crate::util::{Assume, Int, zero};
-use bytemuck::{Pod, Zeroable};
+use bytemuck::{NoUninit, Zeroable};
 use derive_more::with_trait::Debug;
 use std::{marker::Destruct, ptr::NonNull};
 
@@ -120,11 +120,13 @@ impl<T: [const] Stat> const Stat for NonNull<T> {
 }
 
 /// A saturating accumulator that implements the "gravity" formula.
-#[derive(Debug, Copy, Hash, Zeroable, Pod)]
+#[derive(Debug, Copy, Hash, Zeroable)]
 #[derive_const(Default, Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct Graviton<const MIN: i16, const MAX: i16>(i16);
+
+unsafe impl<const MIN: i16, const MAX: i16> NoUninit for Graviton<MIN, MAX> {}
 
 unsafe impl<const MIN: i16, const MAX: i16> const Int for Graviton<MIN, MAX> {
     type Repr = i16;

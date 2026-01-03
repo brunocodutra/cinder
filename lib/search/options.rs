@@ -200,7 +200,7 @@ mod tests {
     fn parsing_hash_size_fails_for_invalid_number(
         #[filter(#s.parse::<usize>().is_err())] s: String,
     ) {
-        assert_eq!(s.to_string().parse::<HashSize>(), Err(ParseHashSizeError));
+        assert_eq!(s.parse::<HashSize>(), Err(ParseHashSizeError));
     }
 
     #[proptest]
@@ -240,9 +240,6 @@ mod tests {
     fn parsing_thread_count_fails_for_invalid_number(
         #[filter(#s.parse::<usize>().is_err())] s: String,
     ) {
-        assert_eq!(
-            s.to_string().parse::<ThreadCount>(),
-            Err(ParseThreadCountError)
-        );
+        assert_eq!(s.parse::<ThreadCount>(), Err(ParseThreadCountError));
     }
 }

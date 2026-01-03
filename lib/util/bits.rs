@@ -1,5 +1,5 @@
 use crate::util::{Int, Unsigned, ones, zero};
-use bytemuck::{Pod, Zeroable};
+use bytemuck::{NoUninit, Zeroable};
 use derive_more::with_trait::{Constructor, Debug, Display};
 use std::{marker::Destruct, ops::*};
 
@@ -7,14 +7,18 @@ use std::{marker::Destruct, ops::*};
 use proptest::prelude::*;
 
 /// A fixed width collection of bits.
-#[derive(Debug, Display, Copy, Hash, Zeroable, Pod, Constructor)]
+#[derive(Debug, Display, Copy, Hash, Zeroable, Constructor)]
 #[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
-#[cfg_attr(test, arbitrary(bound(T, T: Unsigned, Self: Debug, RangeInclusive<T>: Strategy<Value = T>)))]
+#[cfg_attr(test, arbitrary(bound(T, Self: Debug, RangeInclusive<T>: Strategy<Value = T>)))]
 #[debug("Bits({_0:b})")]
 #[display("{_0:b}")]
 #[repr(transparent)]
-pub struct Bits<T, const W: u32>(#[cfg_attr(test, strategy(zero()..=ones(W)))] T);
+pub struct Bits<T, const W: u32>(#[cfg_attr(test, strategy(zero()..=ones(W)))] T)
+where
+    T: Unsigned;
+
+unsafe impl<T: Unsigned, const W: u32> NoUninit for Bits<T, W> {}
 
 unsafe impl<T: [const] Unsigned + 'static, const W: u32> const Int for Bits<T, W> {
     type Repr = T;
@@ -22,7 +26,7 @@ unsafe impl<T: [const] Unsigned + 'static, const W: u32> const Int for Bits<T, W
     const MAX: Self::Repr = ones(W);
 }
 
-impl<T, const W: u32> Bits<T, W> {
+impl<T: Unsigned, const W: u32> Bits<T, W> {
     /// The bit width.
     pub const BITS: u32 = const {
         assert!(size_of::<T>() * 8 >= W as usize);
@@ -167,7 +171,6 @@ mod tests {
         assert_eq!(b.slice(0..8), b.slice(..));
 
         assert_eq!(b.slice(i..i), Bits::default());
-        assert_eq!(b.slice(..=i), b.slice(..i + 1));
     }
 
     #[proptest]

@@ -1132,7 +1132,7 @@ impl<'a> Searcher<'a> {
 #[derive(Debug)]
 pub struct Search<'e, 'p> {
     engine: &'e mut Engine,
-    pos: &'p mut Evaluator,
+    pos: &'p Evaluator,
     ctrl: GlobalControl,
     result: Info,
     channel: Option<UnboundedReceiver<Info>>,
@@ -1140,7 +1140,7 @@ pub struct Search<'e, 'p> {
 }
 
 impl<'e, 'p> Search<'e, 'p> {
-    fn new(engine: &'e mut Engine, pos: &'p mut Evaluator, limits: Limits) -> Self {
+    fn new(engine: &'e mut Engine, pos: &'p Evaluator, limits: Limits) -> Self {
         Search {
             ctrl: GlobalControl::new(pos, limits),
             result: Pv::empty(Score::lower()).into(),
@@ -1207,7 +1207,7 @@ impl Stream for Search<'_, '_> {
             search.channel = Some(rx);
 
             let ctrl: &GlobalControl = unsafe { &*(&raw const search.ctrl) };
-            let pos: &mut Evaluator = unsafe { &mut *(&raw mut *search.pos) };
+            let pos: &Evaluator = unsafe { &*(&raw const *search.pos) };
             let executor: &mut Executor = unsafe { &mut *(&raw mut search.engine.executor) };
             let shared: &SharedData = unsafe { &*(&raw const search.engine.shared) };
             let local: &[SyncUnsafeCell<LocalData>] =
@@ -1272,7 +1272,7 @@ impl Arbitrary for Engine {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         any::<Options>()
             .prop_map(|o| Engine::with_options(&o))
             .boxed()
@@ -1348,7 +1348,7 @@ impl Engine {
     }
 
     /// Initiates a [`Search`].
-    pub fn search<'p>(&mut self, pos: &'p mut Evaluator, limits: Limits) -> Search<'_, 'p> {
+    pub fn search<'p>(&mut self, pos: &'p Evaluator, limits: Limits) -> Search<'_, 'p> {
         Search::new(self, pos, limits)
     }
 }
@@ -1382,7 +1382,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn nw_returns_transposition_if_beta_too_low(
         #[by_ref]
-        #[filter(#e.shared.tt.len() > 0)]
+        #[filter(!#e.shared.tt.is_empty())]
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
@@ -1409,7 +1409,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn nw_returns_transposition_if_beta_too_high(
         #[by_ref]
-        #[filter(#e.shared.tt.len() > 0)]
+        #[filter(!#e.shared.tt.is_empty())]
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
@@ -1436,7 +1436,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn nw_returns_transposition_if_exact(
         #[by_ref]
-        #[filter(#e.shared.tt.len() > 0)]
+        #[filter(!#e.shared.tt.is_empty())]
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
@@ -1552,7 +1552,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Position,
         s: Score,
     ) {
-        let pos = Evaluator::new(pos.clone());
+        let pos = Evaluator::new(pos);
         let moves = Moves::from_iter(pos.moves().unpack());
         let global = GlobalControl::new(&pos, Limits::time(Duration::ZERO));
         let ctrl = LocalControl::active(&global);
@@ -1569,7 +1569,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Position,
         s: Score,
     ) {
-        let pos = Evaluator::new(pos.clone());
+        let pos = Evaluator::new(pos);
         let moves = Moves::from_iter(pos.moves().unpack());
         let global = GlobalControl::new(&pos, Limits::depth(Depth::lower()));
         let ctrl = LocalControl::active(&global);
@@ -1586,7 +1586,7 @@ mod tests {
         #[filter(#pos.outcome().is_none())] pos: Position,
         s: Score,
     ) {
-        let pos = Evaluator::new(pos.clone());
+        let pos = Evaluator::new(pos);
         let moves = Moves::from_iter(pos.moves().unpack());
         let global = GlobalControl::new(&pos, Limits::nodes(0));
         let ctrl = LocalControl::active(&global);

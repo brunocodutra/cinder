@@ -1,6 +1,5 @@
 #![allow(long_running_const_eval)]
 #![warn(
-    clippy::absolute_paths,
     clippy::as_ptr_cast_mut,
     clippy::as_underscore,
     clippy::assertions_on_result_states,
@@ -33,7 +32,6 @@
     clippy::empty_structs_with_brackets,
     clippy::equatable_if_let,
     clippy::error_impl_error,
-    clippy::expect_used,
     clippy::expl_impl_clone_on_copy,
     clippy::explicit_into_iter_loop,
     clippy::explicit_iter_loop,
@@ -148,7 +146,6 @@
     clippy::semicolon_if_nothing_returned,
     clippy::separated_literal_suffix,
     clippy::set_contains_or_insert,
-    clippy::should_panic_without_expect,
     clippy::significant_drop_in_scrutinee,
     clippy::single_char_pattern,
     clippy::single_match_else,

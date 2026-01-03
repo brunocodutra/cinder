@@ -34,7 +34,7 @@ struct Interrupted;
 
 #[derive(Debug, Deref, DerefMut)]
 #[debug("TranspositionTable({})", _0.len())]
-struct TranspositionTable(HugeCache<Transposition, u64>);
+struct TranspositionTable(HugeCache<Transposition, u64, 2>);
 
 impl TranspositionTable {
     #[inline(always)]
@@ -50,7 +50,7 @@ impl TranspositionTable {
 
 #[derive(Debug, Deref, DerefMut)]
 #[debug("ValuesTable({})", _0.len())]
-struct ValuesTable(HugeCache<Value, u64>);
+struct ValuesTable(HugeCache<Value, u64, 1>);
 
 impl ValuesTable {
     #[inline(always)]

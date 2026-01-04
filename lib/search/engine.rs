@@ -32,6 +32,13 @@ fn convolve<const N: usize>(data: [(f32, &[f32]); N]) -> f32 {
 #[display("the search was interrupted")]
 struct Interrupted;
 
+#[derive(Debug)]
+struct SharedData {
+    syzygy: Syzygy,
+    tt: TranspositionTable,
+    vt: ValueTable,
+}
+
 #[derive(Debug, Zeroable)]
 struct Corrections {
     pawns: Correction,
@@ -46,50 +53,6 @@ struct LocalData {
     history: History,
     continuation: Continuation,
     corrections: Corrections,
-}
-
-#[derive(Debug, Deref, DerefMut)]
-#[debug("TranspositionTable({})", _0.len())]
-struct TranspositionTable(Cache<Transposition>);
-
-impl TranspositionTable {
-    #[inline(always)]
-    fn new(size: HashSize) -> Self {
-        Self(Cache::new(size.get()))
-    }
-
-    #[inline(always)]
-    fn resize(&mut self, size: HashSize) {
-        self.0.resize(size.get());
-    }
-}
-
-#[derive(Debug, Deref, DerefMut)]
-#[debug("ValuesTable({})", _0.len())]
-struct ValuesTable(Cache<Value, u64>);
-
-impl ValuesTable {
-    #[inline(always)]
-    fn size(threads: ThreadCount) -> usize {
-        (2 + threads.cast::<usize>().next_multiple_of(2)) << 20
-    }
-
-    #[inline(always)]
-    fn new(threads: ThreadCount) -> Self {
-        Self(Cache::new(Self::size(threads)))
-    }
-
-    #[inline(always)]
-    fn resize(&mut self, threads: ThreadCount) {
-        self.0.resize(Self::size(threads));
-    }
-}
-
-#[derive(Debug)]
-struct SharedData {
-    syzygy: Syzygy,
-    tt: TranspositionTable,
-    values: ValuesTable,
 }
 
 #[derive(Debug)]
@@ -149,12 +112,12 @@ impl<'a> Searcher<'a> {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn evaluate(&mut self) -> Value {
         let zobrist = self.stack.pos.zobrists().hash;
-        if let Some(value) = self.shared.values.load(zobrist) {
+        if let Some(value) = self.shared.vt.load(zobrist) {
             return value;
         }
 
         let value = self.stack.pos.evaluate();
-        self.shared.values.store(zobrist, value);
+        self.shared.vt.store(zobrist, value);
         value
     }
 
@@ -487,7 +450,7 @@ impl<'a> Searcher<'a> {
         });
 
         self.stack.pos.push(m);
-        self.shared.values.prefetch(self.stack.pos.zobrists().hash);
+        self.shared.vt.prefetch(self.stack.pos.zobrists().hash);
         self.shared.tt.prefetch(self.stack.pos.zobrists().hash);
 
         RecursionGuard::new(self)
@@ -1264,7 +1227,7 @@ impl Stream for Search<'_, '_> {
 pub struct Engine {
     executor: Executor,
     shared: SharedData,
-    local: HugeSeq<LocalData>,
+    local: HugePages<LocalData>,
 }
 
 #[cfg(test)]
@@ -1295,11 +1258,11 @@ impl Engine {
     pub fn with_options(options: &Options) -> Self {
         Engine {
             executor: Executor::new(options.threads),
-            local: HugeSeq::zeroed(options.threads.cast()),
+            local: HugePages::zeroed(options.threads.cast()),
             shared: SharedData {
                 syzygy: Syzygy::new(&options.syzygy),
                 tt: TranspositionTable::new(options.hash),
-                values: ValuesTable::new(options.threads),
+                vt: ValueTable::new(options.threads),
             },
         }
     }
@@ -1313,7 +1276,7 @@ impl Engine {
     pub fn set_threads(&mut self, threads: ThreadCount) {
         self.executor = Executor::new(threads);
         self.local.zeroed_in_place(threads.cast());
-        self.shared.values.resize(threads);
+        self.shared.vt.resize(threads);
     }
 
     /// Resets the Syzygy path.
@@ -1324,23 +1287,24 @@ impl Engine {
     /// Resets the engine state.
     pub fn reset(&mut self) {
         let local: &[SyncUnsafeCell<LocalData>] = unsafe { &*(&raw mut *self.local as *const _) };
-        let values: &[SyncUnsafeCell<Atomic<Vault<Value, u64>>>] =
-            unsafe { &*(&raw mut **self.shared.values as *const _) };
-        let tt: &[SyncUnsafeCell<Atomic<Vault<Transposition>>>] =
+
+        let vt: &[SyncUnsafeCell<Atomic<Vault<Value, u64>>>] =
+            unsafe { &*(&raw mut **self.shared.vt as *const _) };
+        let tt: &[SyncUnsafeCell<Atomic<Vault<Transposition, u64>>>] =
             unsafe { &*(&raw mut **self.shared.tt as *const _) };
 
-        let values_chunk_size = values.len().div_ceil(local.len());
+        let vt_chunk_size = vt.len().div_ceil(local.len());
         let tt_chunk_size = tt.len().div_ceil(local.len());
 
         self.executor.execute(move |idx| unsafe {
-            let offset = idx * values_chunk_size;
-            let len = values.len().saturating_sub(offset).min(values_chunk_size);
-            let ptr = values.as_ptr().add(offset) as *mut Atomic<Vault<Value, u64>>;
+            let offset = idx * vt_chunk_size;
+            let len = vt.len().saturating_sub(offset).min(vt_chunk_size);
+            let ptr = vt.as_ptr().add(offset) as *mut Atomic<Vault<Value, u64>>;
             fill_zeroes(slice::from_raw_parts_mut(ptr, len));
 
             let offset = idx * tt_chunk_size;
             let len = tt.len().saturating_sub(offset).min(tt_chunk_size);
-            let ptr = tt.as_ptr().add(offset) as *mut Atomic<Vault<Transposition>>;
+            let ptr = tt.as_ptr().add(offset) as *mut Atomic<Vault<Transposition, u64>>;
             fill_zeroes(slice::from_raw_parts_mut(ptr, len));
 
             *local.get(idx).assume().get() = zeroed();
@@ -1373,9 +1337,9 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn vt_can_be_resized(s: ThreadCount, t: ThreadCount) {
-        let mut vt = ValuesTable::new(s);
+        let mut vt = ValueTable::new(s);
         vt.resize(t);
-        assert_eq!(vt.len(), ValuesTable::new(t).len());
+        assert_eq!(vt.len(), ValueTable::new(t).len());
     }
 
     #[proptest]

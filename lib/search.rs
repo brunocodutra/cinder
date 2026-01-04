@@ -16,6 +16,7 @@ mod ply;
 mod pv;
 mod score;
 mod statistics;
+mod tables;
 mod transposition;
 
 pub use attention::*;
@@ -36,4 +37,5 @@ pub use ply::*;
 pub use pv::*;
 pub use score::*;
 pub use statistics::*;
+pub use tables::*;
 pub use transposition::*;

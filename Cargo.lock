@@ -166,7 +166,6 @@ dependencies = [
  "ctor",
  "derive_more",
  "futures",
- "libc",
  "memmap2",
  "no-panic",
  "nom",

@@ -245,8 +245,6 @@ params! {
     triple_extension_margin_scalar: [144.23958],
     tt_cut_halfmove_limit: [87.07959],
     tb_cut_depth_bonus: [3.8686926],
-    flp_margin_depth: [24.092096, 343.5552],
-    flp_margin_scalar: [-132.51001],
     fhp_margin_depth: [32.207886, 63.049282],
     fhp_margin_scalar: [-47.862656],
     nmp_margin_depth: [0.55535954, 10.07757],

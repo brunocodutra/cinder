@@ -292,20 +292,6 @@ impl<'a> Searcher<'a> {
         }
     }
 
-    /// Computes the fail-low pruning reduction.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn flp(depth: Depth) -> Option<f32> {
-        match depth.get() {
-            5.. => None,
-            ..1 => Some(0.),
-            d @ 1..5 => Some(convolve([
-                (d.to_float(), Params::flp_margin_depth(..)),
-                (1., Params::flp_margin_scalar(..)),
-            ])),
-        }
-    }
-
     /// Computes fail-high pruning reduction.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -675,11 +661,8 @@ impl<'a> Searcher<'a> {
             if let Some(t) = transposition {
                 let (lower, upper) = t.score().range(ply).into_inner();
 
-                #[expect(clippy::collapsible_if)]
-                if let Some(margin) = Self::flp(depth - t.depth()) {
-                    if upper + margin.to_int::<i16>() <= alpha {
-                        return Ok(transposed.truncate());
-                    }
+                if depth <= t.depth() && upper <= alpha {
+                    return Ok(transposed.truncate());
                 }
 
                 #[expect(clippy::collapsible_if)]

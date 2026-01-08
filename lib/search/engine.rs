@@ -674,7 +674,7 @@ impl<'a> Searcher<'a> {
 
                 #[expect(clippy::collapsible_if)]
                 if let Some(margin) = Self::fhp(depth - t.depth()) {
-                    if lower - margin.to_int::<i16>() >= beta {
+                    if cut && lower - margin.to_int::<i16>() >= beta {
                         return Ok(transposed.truncate());
                     }
                 }
@@ -1334,33 +1334,6 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn nw_returns_transposition_if_beta_too_low(
-        #[by_ref]
-        #[filter(!#e.shared.tt.is_empty())]
-        mut e: Engine,
-        #[filter(#pos.outcome().is_none())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
-        #[filter(!#b.is_winning() && !#b.is_losing())] b: Score,
-        was_pv: bool,
-        d: Depth,
-        #[filter(!#s.is_winning() && #s >= #b)] s: Score,
-        cut: bool,
-    ) {
-        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0));
-
-        let tpos = Transposition::new(ScoreBound::Lower(s), Depth::upper(), Some(m), was_pv);
-        e.shared.tt.store(pos.zobrists().hash, tpos);
-
-        let global = GlobalControl::new(&pos, Limits::none());
-        let ctrl = LocalControl::active(&global);
-        let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
-        let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
-        searcher.stack.nodes = searcher.ctrl.attention(m);
-        assert_eq!(searcher.nw(d, b, cut), Ok(Pv::empty(s)));
-    }
-
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
     fn nw_returns_transposition_if_beta_too_high(
         #[by_ref]
         #[filter(!#e.shared.tt.is_empty())]
@@ -1388,6 +1361,32 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
+    fn nw_returns_transposition_if_beta_too_low(
+        #[by_ref]
+        #[filter(!#e.shared.tt.is_empty())]
+        mut e: Engine,
+        #[filter(#pos.outcome().is_none())] pos: Evaluator,
+        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
+        #[filter(!#b.is_winning() && !#b.is_losing())] b: Score,
+        was_pv: bool,
+        d: Depth,
+        #[filter(!#s.is_winning() && #s >= #b)] s: Score,
+    ) {
+        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0));
+
+        let tpos = Transposition::new(ScoreBound::Lower(s), Depth::upper(), Some(m), was_pv);
+        e.shared.tt.store(pos.zobrists().hash, tpos);
+
+        let global = GlobalControl::new(&pos, Limits::none());
+        let ctrl = LocalControl::active(&global);
+        let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
+        let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
+        searcher.stack.nodes = searcher.ctrl.attention(m);
+        assert_eq!(searcher.nw(d, b, true), Ok(Pv::empty(s)));
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn nw_returns_transposition_if_exact(
         #[by_ref]
         #[filter(!#e.shared.tt.is_empty())]
@@ -1398,7 +1397,6 @@ mod tests {
         was_pv: bool,
         d: Depth,
         #[filter(!#s.is_winning() && !#s.is_losing())] s: Score,
-        cut: bool,
     ) {
         prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0));
 
@@ -1410,7 +1408,7 @@ mod tests {
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         searcher.stack.nodes = searcher.ctrl.attention(m);
-        assert_eq!(searcher.nw(d, b, cut), Ok(Pv::empty(s)));
+        assert_eq!(searcher.nw(d, b, true), Ok(Pv::empty(s)));
     }
 
     #[proptest]

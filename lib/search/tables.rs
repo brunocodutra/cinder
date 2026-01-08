@@ -1,12 +1,18 @@
+use crate::chess::{Move, Zobrist};
+use crate::nnue::Value;
 use crate::search::{HashSize, ThreadCount, Transposition};
 use crate::util::{Atomic, HugePages, Int, Memory, Prefetch, Vault};
-use crate::{chess::Zobrist, nnue::Value};
-use derive_more::with_trait::{Debug, Deref, DerefMut};
-use std::{ptr, sync::atomic::Ordering};
+use derive_more::with_trait::Debug;
+use std::ops::{Deref, DerefMut};
+use std::sync::atomic::Ordering::Relaxed;
+use std::{cell::UnsafeCell, mem::MaybeUninit};
+use std::{ptr, slice};
 
-#[derive(Debug, Deref, DerefMut)]
-#[debug("TranspositionTable({})", _0.len())]
-pub struct TranspositionTable(HugePages<Atomic<Vault<Transposition, u64>>>);
+#[derive(Debug)]
+#[debug("TranspositionTable({})", entries.len())]
+pub struct TranspositionTable {
+    entries: HugePages<Atomic<Vault<Transposition, u64>>>,
+}
 
 impl TranspositionTable {
     #[inline(always)]
@@ -16,27 +22,36 @@ impl TranspositionTable {
 
     #[inline(always)]
     pub fn new(size: HashSize) -> Self {
-        Self(HugePages::zeroed(Self::size_to_len(size).cast()))
+        Self {
+            entries: HugePages::zeroed(Self::size_to_len(size).cast()),
+        }
     }
 
     #[inline(always)]
     pub fn resize(&mut self, size: HashSize) {
-        self.0.zeroed_in_place(Self::size_to_len(size).cast());
+        self.entries.zeroed_in_place(Self::size_to_len(size).cast());
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn store(&self, zobrist: Zobrist, tpos: Transposition) {
-        if !self.0.is_empty() {
-            self.0[zobrist].store(Vault::close(zobrist, tpos), Ordering::Relaxed);
+    pub fn store(&self, key: Zobrist, new: Transposition) {
+        if !self.entries.is_empty() {
+            let slot = &self.entries[key];
+            let Some(old) = slot.load(Relaxed).open(key) else {
+                return slot.store(Vault::close(key, new), Relaxed);
+            };
+
+            if new.best.is_some_and(|m| m.is_quiet()) || new.depth > old.depth {
+                slot.store(Vault::close(key, new), Relaxed);
+            }
         }
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn load(&self, zobrist: Zobrist) -> Option<Transposition> {
-        if !self.0.is_empty() {
-            self.0[zobrist].load(Ordering::Relaxed).open(zobrist)
+    pub fn load(&self, key: Zobrist) -> Option<Transposition> {
+        if !self.entries.is_empty() {
+            self.entries[key].load(Relaxed).open(key)
         } else {
             None
         }
@@ -44,16 +59,34 @@ impl TranspositionTable {
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn prefetch(&self, zobrist: Zobrist) {
-        if !self.0.is_empty() {
-            ptr::from_ref(&self.0[zobrist]).prefetch();
+    pub fn prefetch(&self, key: Zobrist) {
+        if !self.entries.is_empty() {
+            ptr::from_ref(&self.entries[key]).prefetch();
         }
     }
 }
 
-#[derive(Debug, Deref, DerefMut)]
-#[debug("ValueTable({})", _0.len())]
-pub struct ValueTable(HugePages<Atomic<Vault<Value, u64>>>);
+impl const Deref for TranspositionTable {
+    type Target = [UnsafeCell<MaybeUninit<u64>>];
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        unsafe { slice::from_raw_parts(self.entries.as_ptr().cast(), self.entries.len()) }
+    }
+}
+
+impl const DerefMut for TranspositionTable {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { slice::from_raw_parts_mut(self.entries.as_mut_ptr().cast(), self.entries.len()) }
+    }
+}
+
+#[derive(Debug)]
+#[debug("ValueTable({})", entries.len())]
+pub struct ValueTable {
+    entries: HugePages<Atomic<Vault<Value, u64>>>,
+}
 
 impl ValueTable {
     #[inline(always)]
@@ -63,30 +96,49 @@ impl ValueTable {
 
     #[inline(always)]
     pub fn new(threads: ThreadCount) -> Self {
-        Self(HugePages::zeroed(Self::size_to_len(threads).cast()))
+        Self {
+            entries: HugePages::zeroed(Self::size_to_len(threads).cast()),
+        }
     }
 
     #[inline(always)]
     pub fn resize(&mut self, threads: ThreadCount) {
-        self.0.zeroed_in_place(Self::size_to_len(threads).cast());
+        self.entries
+            .zeroed_in_place(Self::size_to_len(threads).cast());
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn store(&self, zobrist: Zobrist, value: Value) {
-        self.0[zobrist].store(Vault::close(zobrist, value), Ordering::Relaxed);
+    pub fn store(&self, key: Zobrist, value: Value) {
+        self.entries[key].store(Vault::close(key, value), Relaxed);
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn load(&self, zobrist: Zobrist) -> Option<Value> {
-        self.0[zobrist].load(Ordering::Relaxed).open(zobrist)
+    pub fn load(&self, key: Zobrist) -> Option<Value> {
+        self.entries[key].load(Relaxed).open(key)
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn prefetch(&self, zobrist: Zobrist) {
-        ptr::from_ref(&self.0[zobrist]).prefetch();
+    pub fn prefetch(&self, key: Zobrist) {
+        ptr::from_ref(&self.entries[key]).prefetch();
+    }
+}
+
+impl const Deref for ValueTable {
+    type Target = [UnsafeCell<MaybeUninit<u64>>];
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        unsafe { slice::from_raw_parts(self.entries.as_ptr().cast(), self.entries.len()) }
+    }
+}
+
+impl const DerefMut for ValueTable {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { slice::from_raw_parts_mut(self.entries.as_mut_ptr().cast(), self.entries.len()) }
     }
 }
 
@@ -117,21 +169,21 @@ mod tests {
     #[proptest]
     fn tt_load_returns_none_if_slot_is_empty(s: HashSize, k: Zobrist) {
         let mut tt = TranspositionTable::new(s);
-        tt[k] = zero();
+        tt.entries[k] = zero();
         assert_eq!(tt.load(k), None);
     }
 
     #[proptest]
     fn tt_load_returns_none_if_key_does_not_match(s: HashSize, k: Zobrist, v: Transposition) {
         let mut tt = TranspositionTable::new(s);
-        *tt[k].get_mut() = Vault::close(!k, v);
+        *tt.entries[k].get_mut() = Vault::close(!k, v);
         assert_eq!(tt.load(k), None);
     }
 
     #[proptest]
     fn tt_load_returns_some_if_key_matches(s: HashSize, k: Zobrist, v: Transposition) {
         let mut tt = TranspositionTable::new(s);
-        *tt[k].get_mut() = Vault::close(k, v);
+        *tt.entries[k].get_mut() = Vault::close(k, v);
         assert_eq!(tt.load(k), Some(v));
     }
 
@@ -157,38 +209,38 @@ mod tests {
         v: Transposition,
     ) {
         let mut tt = TranspositionTable::new(s);
-        *tt[k].get_mut() = Vault::close(l, v);
+        *tt.entries[k].get_mut() = Vault::close(l, v);
         tt.store(k, u);
         assert_eq!(tt.load(k), Some(u));
     }
 
     #[proptest]
     fn vt_load_returns_none_if_slot_is_empty(s: ThreadCount, k: Zobrist) {
-        let mut tt = ValueTable::new(s);
-        tt[k] = zero();
-        assert_eq!(tt.load(k), None);
+        let mut vt = ValueTable::new(s);
+        vt.entries[k] = zero();
+        assert_eq!(vt.load(k), None);
     }
 
     #[proptest]
     fn vt_load_returns_none_if_key_does_not_match(s: ThreadCount, k: Zobrist, v: Value) {
-        let mut tt = ValueTable::new(s);
-        *tt[k].get_mut() = Vault::close(!k, v);
-        assert_eq!(tt.load(k), None);
+        let mut vt = ValueTable::new(s);
+        *vt.entries[k].get_mut() = Vault::close(!k, v);
+        assert_eq!(vt.load(k), None);
     }
 
     #[proptest]
     fn vt_load_returns_some_if_key_matches(s: ThreadCount, k: Zobrist, v: Value) {
-        let mut tt = ValueTable::new(s);
-        *tt[k].get_mut() = Vault::close(k, v);
-        assert_eq!(tt.load(k), Some(v));
+        let mut vt = ValueTable::new(s);
+        *vt.entries[k].get_mut() = Vault::close(k, v);
+        assert_eq!(vt.load(k), Some(v));
     }
 
     #[proptest]
     fn vt_stores_value_if_slot_is_empty(s: ThreadCount, k: Zobrist, v: Value) {
-        let mut tt = ValueTable::new(s);
-        tt[k] = zero();
-        tt.store(k, v);
-        assert_eq!(tt.load(k), Some(v));
+        let mut vt = ValueTable::new(s);
+        vt[k] = zero();
+        vt.store(k, v);
+        assert_eq!(vt.load(k), Some(v));
     }
 
     #[proptest]
@@ -199,9 +251,9 @@ mod tests {
         l: Zobrist,
         v: Value,
     ) {
-        let mut tt = ValueTable::new(s);
-        *tt[k].get_mut() = Vault::close(l, v);
-        tt.store(k, u);
-        assert_eq!(tt.load(k), Some(u));
+        let mut vt = ValueTable::new(s);
+        *vt.entries[k].get_mut() = Vault::close(l, v);
+        vt.store(k, u);
+        assert_eq!(vt.load(k), Some(u));
     }
 }

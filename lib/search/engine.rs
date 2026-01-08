@@ -6,7 +6,8 @@ use derive_more::with_trait::{Constructor, Debug, Deref, DerefMut, Display, Erro
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
 use std::task::{Context, Poll};
-use std::{cell::SyncUnsafeCell, ops::Range, path::Path, pin::Pin, ptr::NonNull, slice};
+use std::{cell::SyncUnsafeCell, mem::MaybeUninit};
+use std::{ops::Range, path::Path, pin::Pin, ptr::NonNull, slice};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -105,7 +106,7 @@ impl<'a> Searcher<'a> {
     fn transposition(&self) -> Option<Transposition> {
         let pos = &self.stack.pos;
         let tpos = self.shared.tt.load(pos.zobrists().hash)?;
-        tpos.best().is_none_or(|m| pos.is_legal(m)).then_some(tpos)
+        tpos.best.is_none_or(|m| pos.is_legal(m)).then_some(tpos)
     }
 
     #[inline(always)]
@@ -517,12 +518,12 @@ impl<'a> Searcher<'a> {
             Some(t) => t.transpose(ply),
         };
 
-        let was_pv = IS_PV || transposition.as_ref().is_some_and(Transposition::was_pv);
+        let was_pv = IS_PV || transposition.as_ref().is_some_and(|t| t.was_pv);
 
         #[expect(clippy::collapsible_if)]
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
             if let Some(t) = transposition {
-                let (lower, upper) = t.score().range(ply).into_inner();
+                let (lower, upper) = t.score.range(ply).into_inner();
                 if upper <= alpha || lower >= beta {
                     return Ok(transposed.truncate());
                 }
@@ -665,25 +666,25 @@ impl<'a> Searcher<'a> {
             return Ok(self.quiesce::<IS_PV>(bounds)?.truncate());
         }
 
-        let was_pv = IS_PV || transposition.as_ref().is_some_and(Transposition::was_pv);
+        let was_pv = IS_PV || transposition.as_ref().is_some_and(|t| t.was_pv);
         let is_noisy_pv = transposition.is_some_and(|t| {
-            t.best().is_some_and(|m| !m.is_quiet()) && !matches!(t.score(), ScoreBound::Upper(_))
+            t.best.is_some_and(|m| !m.is_quiet()) && !matches!(t.score, ScoreBound::Upper(_))
         });
 
         #[expect(clippy::collapsible_if)]
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
             if let Some(t) = transposition {
-                let (lower, upper) = t.score().range(ply).into_inner();
+                let (lower, upper) = t.score.range(ply).into_inner();
 
                 #[expect(clippy::collapsible_if)]
-                if let Some(margin) = Self::flp(depth - t.depth()) {
+                if let Some(margin) = Self::flp(depth - t.depth) {
                     if upper + margin.to_int::<i16>() <= alpha {
                         return Ok(transposed.truncate());
                     }
                 }
 
                 #[expect(clippy::collapsible_if)]
-                if let Some(margin) = Self::fhp(depth - t.depth()) {
+                if let Some(margin) = Self::fhp(depth - t.depth) {
                     if lower - margin.to_int::<i16>() >= beta {
                         return Ok(transposed.truncate());
                     }
@@ -785,9 +786,9 @@ impl<'a> Searcher<'a> {
 
             if !was_pv
                 && depth >= 6
-                && t.depth() >= p_depth
-                && t.score().lower(ply) >= p_beta
-                && t.best().is_none_or(|m| !m.is_quiet())
+                && t.depth >= p_depth
+                && t.score.lower(ply) >= p_beta
+                && t.best.is_none_or(|m| !m.is_quiet())
             {
                 for m in moves.sorted() {
                     if m.is_quiet() {
@@ -822,7 +823,7 @@ impl<'a> Searcher<'a> {
             let mut extension = 0i8;
             #[expect(clippy::collapsible_if)]
             if let Some(t) = transposition {
-                if t.score().lower(ply) >= beta && t.depth() >= depth - 3 && depth >= 6 {
+                if t.score.lower(ply) >= beta && t.depth >= depth - 3 && depth >= 6 {
                     extension = 2 + head.is_quiet() as i8;
                     let s_depth = (depth - 1) / 2;
                     let s_beta = beta - Self::single(depth).to_int::<i16>();
@@ -1288,10 +1289,10 @@ impl Engine {
     pub fn reset(&mut self) {
         let local: &[SyncUnsafeCell<LocalData>] = unsafe { &*(&raw mut *self.local as *const _) };
 
-        let vt: &[SyncUnsafeCell<Atomic<Vault<Value, u64>>>] =
-            unsafe { &*(&raw mut **self.shared.vt as *const _) };
-        let tt: &[SyncUnsafeCell<Atomic<Vault<Transposition, u64>>>] =
-            unsafe { &*(&raw mut **self.shared.tt as *const _) };
+        let vt: &[SyncUnsafeCell<MaybeUninit<u64>>] =
+            unsafe { &*(&raw mut *self.shared.vt as *const _) };
+        let tt: &[SyncUnsafeCell<MaybeUninit<u64>>] =
+            unsafe { &*(&raw mut *self.shared.tt as *const _) };
 
         let vt_chunk_size = vt.len().div_ceil(local.len());
         let tt_chunk_size = tt.len().div_ceil(local.len());
@@ -1299,12 +1300,12 @@ impl Engine {
         self.executor.execute(move |idx| unsafe {
             let offset = idx * vt_chunk_size;
             let len = vt.len().saturating_sub(offset).min(vt_chunk_size);
-            let ptr = vt.as_ptr().add(offset) as *mut Atomic<Vault<Value, u64>>;
+            let ptr = vt.as_ptr().add(offset) as *mut MaybeUninit<u64>;
             fill_zeroes(slice::from_raw_parts_mut(ptr, len));
 
             let offset = idx * tt_chunk_size;
             let len = tt.len().saturating_sub(offset).min(tt_chunk_size);
-            let ptr = tt.as_ptr().add(offset) as *mut Atomic<Vault<Transposition, u64>>;
+            let ptr = tt.as_ptr().add(offset) as *mut MaybeUninit<u64>;
             fill_zeroes(slice::from_raw_parts_mut(ptr, len));
 
             *local.get(idx).assume().get() = zeroed();

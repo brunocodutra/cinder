@@ -102,10 +102,10 @@ impl const Binary for ScoreBound {
 #[derive_const(Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Transposition {
-    score: ScoreBound,
-    depth: Depth,
-    best: Option<Move>,
-    was_pv: bool,
+    pub score: ScoreBound,
+    pub depth: Depth,
+    pub best: Option<Move>,
+    pub was_pv: bool,
 }
 
 impl Transposition {
@@ -123,30 +123,6 @@ impl Transposition {
             best,
             was_pv,
         }
-    }
-
-    /// The score bound.
-    #[inline(always)]
-    pub const fn score(&self) -> ScoreBound {
-        self.score
-    }
-
-    /// The depth searched.
-    #[inline(always)]
-    pub const fn depth(&self) -> Depth {
-        self.depth
-    }
-
-    /// Whether this position was ever in the PV.
-    #[inline(always)]
-    pub const fn was_pv(&self) -> bool {
-        self.was_pv
-    }
-
-    /// The best move.
-    #[inline(always)]
-    pub const fn best(&self) -> Option<Move> {
-        self.best
     }
 
     /// The principal variation normalized to [`Ply`].
@@ -244,7 +220,7 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn transposed_score_is_within_bounds(t: Transposition, p: Ply) {
-        assert!(t.score().range(p).contains(&t.transpose(p).score()));
+        assert!(t.score.range(p).contains(&t.transpose(p).score()));
     }
 
     #[proptest]

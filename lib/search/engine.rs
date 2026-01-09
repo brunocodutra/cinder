@@ -456,17 +456,6 @@ impl<'a> Searcher<'a> {
         RecursionGuard::new(self)
     }
 
-    /// The zero-window alpha-beta search.
-    #[inline(always)]
-    fn nw<const N: usize>(
-        &mut self,
-        depth: Depth,
-        beta: Score,
-        cut: bool,
-    ) -> Result<Pv<N>, Interrupted> {
-        self.ab(depth, beta - 1..beta, cut)
-    }
-
     /// The alpha-beta search.
     #[inline(always)]
     fn ab<const N: usize>(
@@ -475,16 +464,24 @@ impl<'a> Searcher<'a> {
         bounds: Range<Score>,
         cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
-        if self.stack.pos.ply() < N as i32 && depth > 0 && bounds.start + 1 < bounds.end {
-            self.pvs::<true, N>(depth, bounds, cut)
-        } else if depth > 0 && bounds.start + 1 < bounds.end {
-            Ok(self.pvs::<true, 0>(depth, bounds, cut)?.truncate())
-        } else if depth > 0 {
-            Ok(self.pvs::<false, 0>(depth, bounds, cut)?.truncate())
-        } else if bounds.start + 1 < bounds.end {
+        if bounds.start + 1 >= bounds.end {
+            Ok(self.nw(depth, bounds.end, cut)?.truncate())
+        } else if depth <= 0 {
             Ok(self.quiesce::<true>(bounds)?.truncate())
+        } else if self.stack.pos.ply() < N as i32 {
+            self.pvs::<true, N>(depth, bounds, cut)
         } else {
-            Ok(self.quiesce::<false>(bounds)?.truncate())
+            Ok(self.pvs::<true, 0>(depth, bounds, cut)?.truncate())
+        }
+    }
+
+    /// The zero-window alpha-beta search.
+    #[inline(always)]
+    fn nw(&mut self, depth: Depth, beta: Score, cut: bool) -> Result<Pv<0>, Interrupted> {
+        if depth > 0 {
+            self.pvs::<false, 0>(depth, beta - 1..beta, cut)
+        } else {
+            self.quiesce::<false>(beta - 1..beta)
         }
     }
 
@@ -493,7 +490,7 @@ impl<'a> Searcher<'a> {
     fn quiesce<const IS_PV: bool>(&mut self, bounds: Range<Score>) -> Result<Pv<0>, Interrupted> {
         self.stack.nodes.update(1);
         let ply = self.stack.pos.ply();
-        if self.ctrl.check(Depth::new(0), ply, &self.stack.pv) == Abort {
+        if self.ctrl.check(zero(), ply, &self.stack.pv) == Abort {
             return Err(Interrupted);
         }
 
@@ -510,14 +507,11 @@ impl<'a> Searcher<'a> {
         let correction = self.correction().to_int::<i16>();
         self.stack.value[ply.cast::<usize>()] = self.evaluate() + correction;
 
-        let is_check = self.stack.pos.is_check();
         let transposition = self.transposition();
         let transposed = match transposition {
             None => Pv::empty(self.stack.value[ply.cast::<usize>()].saturate()),
             Some(t) => t.transpose(ply),
         };
-
-        let was_pv = IS_PV || transposition.as_ref().is_some_and(Transposition::was_pv);
 
         #[expect(clippy::collapsible_if)]
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
@@ -529,12 +523,14 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let improving = self.improving();
         let alpha = alpha.max(transposed.score());
         if alpha >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
         }
 
+        let improving = self.improving();
+        let is_check = self.stack.pos.is_check();
+        let was_pv = IS_PV || transposition.as_ref().is_some_and(Transposition::was_pv);
         let mut moves = Moves::from_iter(self.stack.pos.moves().unpack_if(|ms| !ms.is_quiet()));
 
         moves.sort(|m| {
@@ -563,13 +559,13 @@ impl<'a> Searcher<'a> {
             rating.to_int()
         });
 
-        #[expect(clippy::blocks_in_conditions)]
-        let (mut head, mut tail) = match { moves.sorted().next() } {
+        let mut sorted_moves = moves.sorted();
+        let (mut head, mut tail) = match sorted_moves.next() {
             Some(m) => (m, -self.next(Some(m)).quiesce::<IS_PV>(-beta..-alpha)?),
             None => return Ok(transposed.truncate()),
         };
 
-        for (index, m) in moves.sorted().skip(1).enumerate() {
+        for (index, m) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
@@ -580,14 +576,14 @@ impl<'a> Searcher<'a> {
             lmp = Params::lmp_was_pv(0).mul_add(was_pv.to_float(), lmp);
             lmp = Params::lmp_is_check(0).mul_add(is_check.to_float(), lmp);
             lmp = Params::lmp_improving(0).mul_add(improving, lmp);
-            if index.to_float::<f32>() > Self::lmp(Depth::new(0)) * lmp {
+            if index.to_float::<f32>() > Self::lmp(zero()) * lmp {
                 break;
             }
 
             let pos = &self.stack.pos;
             let gain = pos.gain(m).to_float::<f32>();
 
-            let mut fut = Self::futility(Depth::new(0));
+            let mut fut = Self::futility(zero());
             fut = Params::fut_margin_is_pv(0).mul_add(IS_PV.to_float(), fut);
             fut = Params::fut_margin_was_pv(0).mul_add(was_pv.to_float(), fut);
             fut = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), fut);
@@ -597,7 +593,7 @@ impl<'a> Searcher<'a> {
                 continue;
             }
 
-            if !pos.winning(m, Self::nsp(Depth::new(0)).to_int()) {
+            if !pos.winning(m, Self::nsp(zero()).to_int()) {
                 continue;
             }
 
@@ -614,13 +610,8 @@ impl<'a> Searcher<'a> {
 
         let tail = tail.clamp(transposed.score(), Score::upper());
         let score = ScoreBound::new(bounds, tail.score(), ply);
-        let tpos = Transposition::new(score, Depth::new(0), Some(head), was_pv);
+        let tpos = Transposition::new(score, zero(), Some(head), was_pv);
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
-
-        if matches!(score, ScoreBound::Lower(_)) {
-            self.update_history(Depth::new(0), head, &moves);
-        }
-
         Ok(tail.transpose(head))
     }
 
@@ -717,9 +708,9 @@ impl<'a> Searcher<'a> {
             #[expect(clippy::collapsible_if)]
             if let Some(margin) = Self::razoring(depth) {
                 if self.stack.value[ply.cast::<usize>()] + margin.to_int::<i16>() <= alpha {
-                    let pv = self.nw(Depth::new(0), beta, cut)?;
+                    let pv = self.nw(zero(), beta, cut)?;
                     if pv <= alpha {
-                        return Ok(pv);
+                        return Ok(pv.truncate());
                     }
                 }
             }
@@ -743,7 +734,7 @@ impl<'a> Searcher<'a> {
 
                 if let Some(r) = Self::nmr(depth, transposed.score() - beta) {
                     let d = depth - r.to_int::<i8>();
-                    if -self.next(None).nw::<0>(d - 1, -beta + 1, !cut)? >= beta {
+                    if -self.next(None).nw(d - 1, -beta + 1, !cut)? >= beta {
                         return Ok(transposed.truncate());
                     }
                 }
@@ -800,7 +791,7 @@ impl<'a> Searcher<'a> {
                     }
 
                     let mut next = self.next(Some(m));
-                    let pv = match -next.nw::<0>(Depth::new(0), -p_beta + 1, !cut)? {
+                    let pv = match -next.nw(zero(), -p_beta + 1, !cut)? {
                         pv if pv < p_beta => continue,
                         _ => -next.nw(p_depth - 1, -p_beta + 1, !cut)?,
                     };
@@ -810,7 +801,7 @@ impl<'a> Searcher<'a> {
                         let score = ScoreBound::new(bounds, pv.score(), ply);
                         let tpos = Transposition::new(score, p_depth, Some(m), was_pv);
                         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
-                        return Ok(pv.transpose(m));
+                        return Ok(pv.truncate().transpose(m));
                     }
                 }
             }
@@ -831,7 +822,7 @@ impl<'a> Searcher<'a> {
                     for m in moves.sorted().skip(1) {
                         let pv = -self.next(Some(m)).nw(s_depth - 1, -s_beta + 1, !cut)?;
                         if pv >= beta {
-                            return Ok(pv.transpose(m));
+                            return Ok(pv.truncate().transpose(m));
                         } else if pv >= s_beta {
                             cut = true;
                             extension = -1;
@@ -915,7 +906,7 @@ impl<'a> Searcher<'a> {
 
             let lmr = lmr.to_int::<i8>().clamp(0, depth.get().max(1) - 1);
             let pv = match -next.nw(depth - lmr - 1, -alpha, !cut)? {
-                pv if pv <= alpha || (pv >= beta && lmr < 1) => pv,
+                pv if pv <= alpha || (pv >= beta && lmr < 1) => pv.truncate(),
                 _ => -next.ab(depth - 1, -beta..-alpha, false)?,
             };
 
@@ -954,7 +945,7 @@ impl<'a> Searcher<'a> {
         bounds: Range<Score>,
     ) -> Result<Pv, Interrupted> {
         let (alpha, beta) = (bounds.start, bounds.end);
-        if self.ctrl.check(depth, Ply::new(0), &self.stack.pv) != Continue {
+        if self.ctrl.check(depth, zero(), &self.stack.pv) != Continue {
             return Err(Interrupted);
         }
 
@@ -1017,7 +1008,7 @@ impl<'a> Searcher<'a> {
 
             let lmr = lmr.to_int::<i8>().clamp(0, depth.get().max(1) - 1);
             let pv = match -next.nw(depth - lmr - 1, -alpha, false)? {
-                pv if pv <= alpha || (pv >= beta && lmr < 1) => pv,
+                pv if pv <= alpha || (pv >= beta && lmr < 1) => pv.truncate(),
                 _ => -next.ab(depth - 1, -beta..-alpha, false)?,
             };
 
@@ -1027,7 +1018,7 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let score = ScoreBound::new(bounds, tail.score(), Ply::new(0));
+        let score = ScoreBound::new(bounds, tail.score(), zero());
         let tpos = Transposition::new(score, depth, Some(head), true);
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
 
@@ -1039,7 +1030,7 @@ impl<'a> Searcher<'a> {
         }
 
         let value = self.stack.value[0];
-        if !is_noisy_node && !score.range(Ply::new(0)).contains(&value) {
+        if !is_noisy_node && !score.range(zero()).contains(&value) {
             self.update_correction(depth, score);
         }
 
@@ -1186,7 +1177,7 @@ impl Stream for Search<'_, '_> {
                 let pv = if let Some(m) = moves.iter().next() {
                     Pv::new(Score::drawn(), Line::singular(m))
                 } else if pos.is_check() {
-                    Pv::empty(Score::mated(Ply::new(0)))
+                    Pv::empty(Score::mated(zero()))
                 } else {
                     Pv::empty(Score::drawn())
                 };
@@ -1366,7 +1357,7 @@ mod tests {
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         searcher.stack.nodes = searcher.ctrl.attention(m);
-        assert_eq!(searcher.nw::<1>(d, b, cut), Ok(Pv::empty(s)));
+        assert_eq!(searcher.nw(d, b, cut), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -1393,7 +1384,7 @@ mod tests {
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         searcher.stack.nodes = searcher.ctrl.attention(m);
-        assert_eq!(searcher.nw::<1>(d, b, cut), Ok(Pv::empty(s)));
+        assert_eq!(searcher.nw(d, b, cut), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -1420,7 +1411,7 @@ mod tests {
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         searcher.stack.nodes = searcher.ctrl.attention(m);
-        assert_eq!(searcher.nw::<1>(d, b, cut), Ok(Pv::empty(s)));
+        assert_eq!(searcher.nw(d, b, cut), Ok(Pv::empty(s)));
     }
 
     #[proptest]

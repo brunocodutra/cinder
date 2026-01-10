@@ -1047,7 +1047,7 @@ impl<'a> Searcher<'a> {
                 let mut upper = self.stack.pv.score() + window.to_int::<i16>();
 
                 loop {
-                    let draft = depth - reduction.to_int::<i8>();
+                    let draft = depth - reduction.to_int::<i8>().min(3);
                     window = window.mul_add(*Params::aw_gamma(0), *Params::aw_delta(0));
                     let Ok(partial) = self.root(&mut moves, draft, lower..upper) else {
                         return;

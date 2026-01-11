@@ -1,6 +1,7 @@
+use crate::chess::{Move, MoveSet};
 use crate::nnue::{Evaluator, Value};
 use crate::search::{ControlFlow::*, *};
-use crate::{chess::Move, params::Params, syzygy::Syzygy, util::*};
+use crate::{params::Params, syzygy::Syzygy, util::*};
 use bytemuck::{Zeroable, fill_zeroes, zeroed};
 use derive_more::with_trait::{Constructor, Debug, Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
@@ -105,7 +106,7 @@ impl<'a> Searcher<'a> {
     fn transposition(&self) -> Option<Transposition> {
         let pos = &self.stack.pos;
         let tpos = self.shared.tt.load(pos.zobrists().hash)?;
-        tpos.best().is_none_or(|m| pos.is_legal(m)).then_some(tpos)
+        tpos.best.is_none_or(|m| pos.is_legal(m)).then_some(tpos)
     }
 
     #[inline(always)]
@@ -480,8 +481,14 @@ impl<'a> Searcher<'a> {
         if depth > 0 {
             self.pvs::<false, 0>(depth, beta - 1..beta, cut)
         } else {
-            self.quiesce::<false>(beta - 1..beta)
+            self.qnw(beta)
         }
+    }
+
+    /// The zero-window quiescent search.
+    #[inline(always)]
+    fn qnw(&mut self, beta: Score) -> Result<Pv<0>, Interrupted> {
+        self.quiesce::<false>(beta - 1..beta)
     }
 
     /// The quiescent search.
@@ -515,7 +522,7 @@ impl<'a> Searcher<'a> {
         #[expect(clippy::collapsible_if)]
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
             if let Some(t) = transposition {
-                let (lower, upper) = t.score().range(ply).into_inner();
+                let (lower, upper) = t.score.range(ply).into_inner();
                 if upper <= alpha || lower >= beta {
                     return Ok(transposed.truncate());
                 }
@@ -529,8 +536,8 @@ impl<'a> Searcher<'a> {
 
         let improving = self.improving();
         let is_check = self.stack.pos.is_check();
-        let was_pv = IS_PV || transposition.as_ref().is_some_and(Transposition::was_pv);
-        let mut moves = Moves::from_iter(self.stack.pos.moves().unpack_if(|ms| !ms.is_quiet()));
+        let was_pv = IS_PV || transposition.is_some_and(|t| t.was_pv);
+        let mut moves = Moves::from_iter(self.stack.pos.moves().unpack_if(MoveSet::is_noisy));
 
         moves.sort(|m| {
             if Some(m) == transposed.head() {
@@ -596,7 +603,7 @@ impl<'a> Searcher<'a> {
             }
 
             let mut next = self.next(Some(m));
-            let pv = match -next.quiesce::<false>(-alpha - 1..-alpha)? {
+            let pv = match -next.qnw(-alpha)? {
                 pv if pv <= alpha || pv >= beta => pv,
                 _ => -next.quiesce::<IS_PV>(-beta..-alpha)?,
             };
@@ -621,6 +628,8 @@ impl<'a> Searcher<'a> {
         bounds: Range<Score>,
         mut cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
+        const { assert!(IS_PV || N == 0) }
+
         self.stack.nodes.update(1);
         let ply = self.stack.pos.ply();
         if self.ctrl.check(depth, ply, &self.stack.pv) == Abort {
@@ -654,25 +663,25 @@ impl<'a> Searcher<'a> {
             return Ok(self.quiesce::<IS_PV>(bounds)?.truncate());
         }
 
-        let was_pv = IS_PV || transposition.as_ref().is_some_and(Transposition::was_pv);
+        let was_pv = IS_PV || transposition.is_some_and(|t| t.was_pv);
         let is_noisy_pv = transposition.is_some_and(|t| {
-            t.best().is_some_and(|m| !m.is_quiet()) && !matches!(t.score(), ScoreBound::Upper(_))
+            t.best.is_some_and(Move::is_noisy) && !matches!(t.score, ScoreBound::Upper(_))
         });
 
         #[expect(clippy::collapsible_if)]
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
             if let Some(t) = transposition {
-                let (lower, upper) = t.score().range(ply).into_inner();
+                let (lower, upper) = t.score.range(ply).into_inner();
 
                 #[expect(clippy::collapsible_if)]
-                if let Some(margin) = Self::flp(depth - t.depth()) {
+                if let Some(margin) = Self::flp(depth - t.depth) {
                     if upper + margin.to_int::<i16>() <= alpha {
                         return Ok(transposed.truncate());
                     }
                 }
 
                 #[expect(clippy::collapsible_if)]
-                if let Some(margin) = Self::fhp(depth - t.depth()) {
+                if let Some(margin) = Self::fhp(depth - t.depth) {
                     if cut && lower - margin.to_int::<i16>() >= beta {
                         return Ok(transposed.truncate());
                     }
@@ -706,7 +715,7 @@ impl<'a> Searcher<'a> {
             #[expect(clippy::collapsible_if)]
             if let Some(margin) = Self::razoring(depth) {
                 if self.stack.value[ply.cast::<usize>()] + margin.to_int::<i16>() <= alpha {
-                    let pv = self.nw(zero(), beta, cut)?;
+                    let pv = self.qnw(beta)?;
                     if pv <= alpha {
                         return Ok(pv.truncate());
                     }
@@ -758,7 +767,7 @@ impl<'a> Searcher<'a> {
             let counter = reply.get(pos, m).to_float::<f32>();
             rating = Params::counter_rating(0).mul_add(counter / History::LIMIT as f32, rating);
 
-            if !m.is_quiet() && pos.winning(m, Params::winning_rating_margin(0).to_int()) {
+            if m.is_noisy() && pos.winning(m, Params::winning_rating_margin(0).to_int()) {
                 rating += convolve([
                     (pos.gain(m).to_float(), Params::winning_rating_gain(..)),
                     (1., Params::winning_rating_scalar(..)),
@@ -774,9 +783,9 @@ impl<'a> Searcher<'a> {
 
             if !was_pv
                 && depth >= 6
-                && t.depth() >= p_depth
-                && t.score().lower(ply) >= p_beta
-                && t.best().is_none_or(|m| !m.is_quiet())
+                && t.depth >= p_depth
+                && t.score.lower(ply) >= p_beta
+                && t.best.is_none_or(Move::is_noisy)
             {
                 for m in moves.sorted() {
                     if m.is_quiet() {
@@ -789,7 +798,7 @@ impl<'a> Searcher<'a> {
                     }
 
                     let mut next = self.next(Some(m));
-                    let pv = match -next.nw(zero(), -p_beta + 1, !cut)? {
+                    let pv = match -next.qnw(-p_beta + 1)? {
                         pv if pv < p_beta => continue,
                         _ => -next.nw(p_depth - 1, -p_beta + 1, !cut)?,
                     };
@@ -811,7 +820,7 @@ impl<'a> Searcher<'a> {
             let mut extension = 0i8;
             #[expect(clippy::collapsible_if)]
             if let Some(t) = transposition {
-                if t.score().lower(ply) >= beta && t.depth() >= depth - 3 && depth >= 6 {
+                if t.score.lower(ply) >= beta && t.depth >= depth - 3 && depth >= 6 {
                     extension = 2 + head.is_quiet() as i8;
                     let s_depth = (depth - 1) / 2;
                     let s_beta = beta - Self::single(depth).to_int::<i16>();
@@ -839,7 +848,7 @@ impl<'a> Searcher<'a> {
         };
 
         let mut is_noisy_node = is_check || is_noisy_pv;
-        is_noisy_node |= !head.is_quiet() && tail > alpha;
+        is_noisy_node |= head.is_noisy() && tail > alpha;
         for (index, m) in moves.sorted().skip(1).enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -863,7 +872,6 @@ impl<'a> Searcher<'a> {
             let counter = reply.get(pos, m).to_float::<f32>();
             let gain = pos.gain(m).to_float::<f32>();
             let is_killer = killer.contains(m);
-            let is_quiet = m.is_quiet();
 
             let mut fut = Self::futility(lmr_depth);
             fut = Params::fut_margin_is_pv(0).mul_add(IS_PV.to_float(), fut);
@@ -876,13 +884,13 @@ impl<'a> Searcher<'a> {
                 continue;
             }
 
-            let mut spt = if is_quiet {
+            let mut spt = if m.is_quiet() {
                 Self::qsp(lmr_depth)
             } else {
                 Self::nsp(depth)
             };
 
-            spt = Params::sp_margin_is_killer(0).mul_add(is_killer.to_float(), spt);
+            spt = Params::qsp_margin_is_killer(0).mul_add(is_killer.to_float(), spt);
             if !pos.winning(m, spt.to_int()) {
                 continue;
             }
@@ -909,7 +917,7 @@ impl<'a> Searcher<'a> {
 
             if pv > tail {
                 (head, tail) = (m, pv);
-                is_noisy_node |= !head.is_quiet() && tail > alpha;
+                is_noisy_node |= head.is_noisy() && tail > alpha;
             }
         }
 
@@ -947,7 +955,7 @@ impl<'a> Searcher<'a> {
         }
 
         let is_check = self.stack.pos.is_check();
-        let is_noisy_pv = self.stack.pv.head().is_some_and(|m| !m.is_quiet());
+        let is_noisy_pv = self.stack.pv.head().is_some_and(Move::is_noisy);
         let correction = self.correction().to_int::<i16>();
         self.stack.value[0] = self.evaluate() + correction;
 
@@ -961,7 +969,7 @@ impl<'a> Searcher<'a> {
             let history = self.local.history.get(pos, m).to_float::<f32>();
             rating = Params::history_rating(0).mul_add(history / History::LIMIT as f32, rating);
 
-            if !m.is_quiet() && pos.winning(m, Params::winning_rating_margin(0).to_int()) {
+            if m.is_noisy() && pos.winning(m, Params::winning_rating_margin(0).to_int()) {
                 rating += convolve([
                     (pos.gain(m).to_float(), Params::winning_rating_gain(..)),
                     (1., Params::winning_rating_scalar(..)),
@@ -977,7 +985,7 @@ impl<'a> Searcher<'a> {
         let mut tail = -self.next(Some(head)).ab(depth - 1, -beta..-alpha, false)?;
 
         let mut is_noisy_node = is_check || is_noisy_pv;
-        is_noisy_node |= !head.is_quiet() && tail > alpha;
+        is_noisy_node |= head.is_noisy() && tail > alpha;
         for (index, m) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -1004,7 +1012,7 @@ impl<'a> Searcher<'a> {
 
             if pv > tail {
                 (head, tail) = (m, pv);
-                is_noisy_node |= !head.is_quiet() && tail > alpha;
+                is_noisy_node |= head.is_noisy() && tail > alpha;
             }
         }
 
@@ -1301,7 +1309,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess::Position;
+    use crate::chess::{Outcome, Position};
     use proptest::sample::Selector;
     use std::fmt::Debug;
     use std::{thread, time::Duration};
@@ -1331,7 +1339,7 @@ mod tests {
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
-        #[filter(!#b.is_winning() && !#b.is_losing())] b: Score,
+        #[filter(!#b.is_decisive())] b: Score,
         was_pv: bool,
         d: Depth,
         #[filter(!#s.is_losing() && #s < #b)] s: Score,
@@ -1358,7 +1366,7 @@ mod tests {
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
-        #[filter(!#b.is_winning() && !#b.is_losing())] b: Score,
+        #[filter(!#b.is_decisive())] b: Score,
         was_pv: bool,
         d: Depth,
         #[filter(!#s.is_winning() && #s >= #b)] s: Score,
@@ -1384,10 +1392,10 @@ mod tests {
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
-        #[filter(!#b.is_winning() && !#b.is_losing())] b: Score,
+        #[filter(!#b.is_decisive())] b: Score,
         was_pv: bool,
         d: Depth,
-        #[filter(!#s.is_winning() && !#s.is_losing())] s: Score,
+        #[filter(!#s.is_decisive())] s: Score,
     ) {
         prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0));
 
@@ -1448,7 +1456,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn ab_returns_drawn_score_if_game_ends_in_a_draw(
         mut e: Engine,
-        #[filter(#pos.outcome().is_some_and(|o| o.is_draw()))] pos: Evaluator,
+        #[filter(#pos.outcome().is_some_and(Outcome::is_draw))] pos: Evaluator,
         m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
@@ -1468,7 +1476,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn ab_returns_lost_score_if_game_ends_in_checkmate(
         mut e: Engine,
-        #[filter(#pos.outcome().is_some_and(|o| o.is_decisive()))] pos: Evaluator,
+        #[filter(#pos.outcome().is_some_and(Outcome::is_decisive))] pos: Evaluator,
         m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,

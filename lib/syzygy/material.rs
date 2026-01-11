@@ -19,37 +19,37 @@ pub struct Material(
 
 impl Material {
     #[inline(always)]
-    pub fn left(&self, role: Role) -> usize {
+    pub fn left(self, role: Role) -> usize {
         self.0[0][role.cast::<usize>()].into()
     }
 
     #[inline(always)]
-    pub fn right(&self, role: Role) -> usize {
+    pub fn right(self, role: Role) -> usize {
         self.0[1][role.cast::<usize>()].into()
     }
 
     #[inline(always)]
-    pub fn is_symmetric(&self) -> bool {
+    pub fn is_symmetric(self) -> bool {
         self.0[0] == self.0[1]
     }
 
     #[inline(always)]
-    pub fn count(&self) -> usize {
+    pub fn count(self) -> usize {
         self.0.iter().flatten().sum::<u8>().into()
     }
 
     #[inline(always)]
-    pub fn has_pawns(&self) -> bool {
+    pub fn has_pawns(self) -> bool {
         self.left(Role::Pawn) > 0 || self.right(Role::Pawn) > 0
     }
 
     #[inline(always)]
-    pub fn unique_pieces(&self) -> usize {
+    pub fn unique_pieces(self) -> usize {
         self.0.iter().flatten().filter(|c| **c == 1).count()
     }
 
     #[inline(always)]
-    pub fn min_like_man(&self) -> usize {
+    pub fn min_like_man(self) -> usize {
         let repeated = self.0.iter().flatten().filter(|c| **c > 1);
         repeated.copied().min().unwrap_or(0).into()
     }
@@ -60,7 +60,7 @@ impl Material {
     }
 
     #[inline(always)]
-    pub fn iter(&self) -> impl Iterator<Item = Piece> {
+    pub fn iter(self) -> impl Iterator<Item = Piece> {
         Color::iter().zip(self.0).flat_map(|(c, s)| {
             let pieces = move |(r, n)| repeat_n(Piece::new(r, c), n as usize);
             Role::iter().zip(s).flat_map(pieces)

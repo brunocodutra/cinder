@@ -33,7 +33,7 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>>> Synapse for Hidden<S> {
             acc = each(|j| each(|k| ws[i][k][j].mul_add(Simd::splat(xs[k]), acc[j][k])));
         }
 
-        let mut output = self.bias;
+        let mut output = self.bias.clone();
         let os: &mut [V2<f32>; O / W2] = output.cast_mut();
         *os = each(|j| os[j] + acc[j].iter().sum::<V2<f32>>());
 

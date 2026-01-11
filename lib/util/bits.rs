@@ -35,7 +35,7 @@ impl<T: Unsigned, const W: u32> Bits<T, W> {
 
     /// Whether this is a superset of `bits`.
     #[inline(always)]
-    pub const fn contains(&self, bits: &Self) -> bool
+    pub const fn contains(self, bits: &Self) -> bool
     where
         T: [const] Unsigned,
     {
@@ -44,7 +44,7 @@ impl<T: Unsigned, const W: u32> Bits<T, W> {
 
     /// Returns a slice of bits.
     #[inline(always)]
-    pub const fn slice<R: [const] Destruct + [const] RangeBounds<u32>>(&self, r: R) -> Self
+    pub const fn slice<R: [const] Destruct + [const] RangeBounds<u32>>(self, r: R) -> Self
     where
         T: [const] Unsigned,
     {

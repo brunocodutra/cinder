@@ -10,7 +10,7 @@ use std::str::{self, FromStr};
 #[cfg(test)]
 use proptest::strategy::LazyJust;
 
-#[derive(Debug, Copy, Hash, Zeroable)]
+#[derive(Debug, Hash, Zeroable)]
 #[derive_const(Default, Clone, Eq, PartialEq)]
 pub struct Zobrists {
     pub hash: Zobrist,
@@ -169,13 +169,13 @@ impl Board {
     /// The [`Color`] of the piece on the given [`Square`], if any.
     #[inline(always)]
     pub const fn color_on(&self, sq: Square) -> Option<Color> {
-        self.piece_on(sq).as_ref().map(Piece::color)
+        self.piece_on(sq).map(Piece::color)
     }
 
     /// The [`Role`] of the piece on the given [`Square`], if any.
     #[inline(always)]
     pub const fn role_on(&self, sq: Square) -> Option<Role> {
-        self.piece_on(sq).as_ref().map(Piece::role)
+        self.piece_on(sq).map(Piece::role)
     }
 
     /// The [`Piece`] on the given [`Square`], if any.
@@ -521,7 +521,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn by_color_returns_squares_occupied_by_pieces_of_a_color(b: Board, c: Color) {
         for sq in b.by_color(c) {
-            assert_eq!(b.piece_on(sq).map(|p| p.color()), Some(c));
+            assert_eq!(b.piece_on(sq).map(Piece::color), Some(c));
         }
     }
 
@@ -529,7 +529,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn by_color_returns_squares_occupied_by_pieces_of_a_role(b: Board, r: Role) {
         for sq in b.by_role(r) {
-            assert_eq!(b.piece_on(sq).map(|p| p.role()), Some(r));
+            assert_eq!(b.piece_on(sq).map(Piece::role), Some(r));
         }
     }
 

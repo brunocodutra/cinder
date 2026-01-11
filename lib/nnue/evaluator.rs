@@ -18,7 +18,7 @@ struct CachedAccumulator {
     occupied: Bitboard,
 }
 
-impl const Default for CachedAccumulator {
+impl Default for CachedAccumulator {
     fn default() -> Self {
         let mut cache = CachedAccumulator {
             accumulator: zeroed(),
@@ -160,7 +160,7 @@ impl Evaluator {
     pub fn gain(&self, m: Move) -> Value {
         let mut gain = 0.;
 
-        if !m.is_quiet() {
+        if m.is_noisy() {
             let piece_values = self.piece_values();
 
             if let Some(victim) = self.role_on(m.whither()) {
@@ -363,12 +363,12 @@ impl Evaluator {
             Nnue::transformer().accumulate_in_place(&mut cache.accumulator, sub, add);
         }
 
-        self.cache[side.cast::<usize>()][bucket].occupied = pos.occupied();
-        self.cache[side.cast::<usize>()][bucket].pieces = *pos.pieces();
+        let cache = &mut self.cache[side.cast::<usize>()][bucket];
+        cache.pieces = pos.pieces().clone();
+        cache.occupied = pos.occupied();
 
         self.pending[side.cast::<usize>()][idx] = None;
-        self.accumulator[side.cast::<usize>()][idx]
-            .clone_from(&self.cache[side.cast::<usize>()][bucket].accumulator);
+        self.accumulator[side.cast::<usize>()][idx].clone_from(&cache.accumulator);
     }
 
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]

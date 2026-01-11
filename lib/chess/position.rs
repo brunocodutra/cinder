@@ -20,8 +20,8 @@ impl MovePack {
     }
 
     #[inline(always)]
-    pub fn unpack_if<F: FnMut(&MoveSet) -> bool>(&self, f: F) -> impl Iterator<Item = Move> {
-        self.iter().copied().filter(f).flatten()
+    pub fn unpack_if<F: FnMut(MoveSet) -> bool>(&self, mut f: F) -> impl Iterator<Item = Move> {
+        self.iter().copied().filter(move |&m| f(m)).flatten()
     }
 }
 
@@ -1015,7 +1015,7 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn captures_reduce_material(
-        #[filter(#pos.moves().unpack().any(|m| m.is_capture()))] mut pos: Position,
+        #[filter(#pos.moves().unpack().any(Move::is_capture))] mut pos: Position,
         #[map(|s: Selector| s.select(#pos.moves().unpack_if(MoveSet::is_capture)))] m: Move,
     ) {
         let prev = pos.clone();
@@ -1026,7 +1026,7 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn promotions_exchange_pawns(
-        #[filter(#pos.moves().unpack().any(|m| m.is_promotion()))] mut pos: Position,
+        #[filter(#pos.moves().unpack().any(Move::is_promotion))] mut pos: Position,
         #[map(|s: Selector| s.select(#pos.moves().unpack_if(MoveSet::is_promotion)))] m: Move,
     ) {
         let prev = pos.clone();

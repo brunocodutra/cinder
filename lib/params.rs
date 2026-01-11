@@ -276,8 +276,6 @@ params! {
     lmp_depth: [0.6850875, 0.48997375],
     lmp_scalar: [1.4648903],
     lmp_baseline: [0.4489871],
-    lmp_is_pv: [0.719374],
-    lmp_was_pv: [0.4451552],
     lmp_improving: [0.5886963],
     lmr_depth: [0.0, 0.23456715, 0.10055269],
     lmr_index: [0.0, 0.09870157],

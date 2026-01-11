@@ -570,10 +570,8 @@ impl<'a> Searcher<'a> {
                 s => s.max(alpha),
             };
 
-            if !is_check {
+            if !IS_PV && !is_check {
                 let mut lmp = *Params::lmp_baseline(0);
-                lmp = Params::lmp_is_pv(0).mul_add(IS_PV.to_float(), lmp);
-                lmp = Params::lmp_was_pv(0).mul_add(was_pv.to_float(), lmp);
                 lmp = Params::lmp_improving(0).mul_add(improving, lmp);
                 if index.to_float::<f32>() > Self::lmp(zero()) * lmp {
                     break;
@@ -848,10 +846,8 @@ impl<'a> Searcher<'a> {
                 s => s.max(alpha),
             };
 
-            if !is_check {
+            if !IS_PV && !is_check {
                 let mut lmp = *Params::lmp_baseline(0);
-                lmp = Params::lmp_is_pv(0).mul_add(IS_PV.to_float(), lmp);
-                lmp = Params::lmp_was_pv(0).mul_add(was_pv.to_float(), lmp);
                 lmp = Params::lmp_improving(0).mul_add(improving, lmp);
                 if index.to_float::<f32>() > Self::lmp(depth) * lmp {
                     break;
@@ -987,10 +983,6 @@ impl<'a> Searcher<'a> {
                 s if s >= beta => break,
                 s => s.max(alpha),
             };
-
-            if !is_check && index.to_float::<f32>() > Self::lmp(depth) {
-                break;
-            }
 
             let pos = &self.stack.pos;
             let history = self.local.history.get(pos, m).to_float::<f32>();

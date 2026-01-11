@@ -272,7 +272,7 @@ params! {
     nsp_margin_scalar: [8.325452],
     qsp_margin_depth: [-8.862688, -0.8800826],
     qsp_margin_scalar: [8.587346],
-    sp_margin_is_killer: [-7.17011],
+    qsp_margin_is_killer: [-7.17011],
     lmp_depth: [0.6850875, 0.48997375],
     lmp_scalar: [1.4648903],
     lmp_baseline: [0.4489871],

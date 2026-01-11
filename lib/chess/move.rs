@@ -44,19 +44,19 @@ impl Move {
 
     /// The source [`Square`].
     #[inline(always)]
-    pub const fn whence(&self) -> Square {
+    pub const fn whence(self) -> Square {
         Square::decode(self.bits(10..).pop())
     }
 
     /// The destination [`Square`].
     #[inline(always)]
-    pub const fn whither(&self) -> Square {
+    pub const fn whither(self) -> Square {
         Square::decode(self.bits(4..).pop())
     }
 
     /// The promotion specifier.
     #[inline(always)]
-    pub const fn promotion(&self) -> Option<Role> {
+    pub const fn promotion(self) -> Option<Role> {
         if self.is_promotion() {
             Some(Role::new(self.bits(..2).cast::<u8>() + 1))
         } else {
@@ -66,27 +66,33 @@ impl Move {
 
     /// Whether this is a capture move.
     #[inline(always)]
-    pub const fn is_capture(&self) -> bool {
+    pub const fn is_capture(self) -> bool {
         self.bits(2..=2) != Bits::new(0)
     }
 
     /// Whether this is a promotion move.
     #[inline(always)]
-    pub const fn is_promotion(&self) -> bool {
+    pub const fn is_promotion(self) -> bool {
         self.bits(3..=3) != Bits::new(0)
     }
 
     /// Whether this move is neither a capture nor a promotion.
     #[inline(always)]
-    pub const fn is_quiet(&self) -> bool {
+    pub const fn is_quiet(self) -> bool {
         self.bits(2..=3) == Bits::new(0)
+    }
+
+    /// Whether this move is not quiet.
+    #[inline(always)]
+    pub const fn is_noisy(self) -> bool {
+        !self.is_quiet()
     }
 }
 
 impl Debug for Move {
     #[coverage(off)]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Display::fmt(&self, f)?;
+        Display::fmt(self, f)?;
 
         if self.is_capture() {
             f.write_char('x')?;
@@ -157,38 +163,44 @@ impl MoveSet {
 
     /// The source [`Square`].
     #[inline(always)]
-    pub const fn whence(&self) -> Square {
+    pub const fn whence(self) -> Square {
         self.base.whence()
     }
 
     /// The destination [`Square`]s.
     #[inline(always)]
-    pub const fn whither(&self) -> Bitboard {
+    pub const fn whither(self) -> Bitboard {
         self.whither
     }
 
     /// Whether the moves in this set are captures.
     #[inline(always)]
-    pub const fn is_capture(&self) -> bool {
+    pub const fn is_capture(self) -> bool {
         self.base.is_capture()
     }
 
     /// Whether the moves in this set are promotions.
     #[inline(always)]
-    pub const fn is_promotion(&self) -> bool {
+    pub const fn is_promotion(self) -> bool {
         self.base.is_promotion()
     }
 
     /// Whether the moves in this set are neither captures nor promotions.
     #[inline(always)]
-    pub const fn is_quiet(&self) -> bool {
+    pub const fn is_quiet(self) -> bool {
         self.base.is_quiet()
+    }
+
+    /// Whether the moves in this set are not quiet.
+    #[inline(always)]
+    pub const fn is_noisy(self) -> bool {
+        self.base.is_noisy()
     }
 
     /// An iterator over the [`Move`]s in this bitboard.
     #[inline(always)]
-    pub const fn iter(&self) -> MoveSetIter {
-        MoveSetIter::new(*self)
+    pub const fn iter(self) -> MoveSetIter {
+        MoveSetIter::new(self)
     }
 }
 
@@ -303,23 +315,23 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn promotions_are_never_quiet(
+    fn promotions_are_noisy(
         wc: Square,
         #[filter(#wc != #wt)] wt: Square,
         #[strategy(select(&[Role::Knight, Role::Bishop, Role::Rook, Role::Queen]))] p: Role,
     ) {
-        assert!(!Move::regular(wc, wt, Some(p)).is_quiet());
+        assert!(Move::regular(wc, wt, Some(p)).is_noisy());
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn captures_are_never_quiet(
+    fn captures_are_noisy(
         wc: Square,
         #[filter(#wc != #wt)] wt: Square,
         #[strategy(select(&[Role::Knight, Role::Bishop, Role::Rook, Role::Queen]))] p: Role,
     ) {
-        assert!(!Move::capture(wc, wt, None).is_quiet());
-        assert!(!Move::capture(wc, wt, Some(p)).is_quiet());
+        assert!(Move::capture(wc, wt, None).is_noisy());
+        assert!(Move::capture(wc, wt, Some(p)).is_noisy());
     }
 
     #[proptest]
@@ -336,6 +348,7 @@ mod tests {
             assert_eq!(m.is_promotion(), ml.is_promotion());
             assert_eq!(m.is_capture(), ml.is_capture());
             assert_eq!(m.is_quiet(), ml.is_quiet());
+            assert_eq!(m.is_noisy(), ml.is_noisy());
         }
     }
 

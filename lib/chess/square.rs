@@ -31,13 +31,13 @@ impl Square {
 
     /// This square's [`File`].
     #[inline(always)]
-    pub const fn file(&self) -> File {
+    pub const fn file(self) -> File {
         File::new(self.get() & 0b111)
     }
 
     /// This square's [`Rank`].
     #[inline(always)]
-    pub const fn rank(&self) -> Rank {
+    pub const fn rank(self) -> Rank {
         Rank::new(self.get() >> 3)
     }
 

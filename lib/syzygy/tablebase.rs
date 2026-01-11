@@ -216,7 +216,7 @@ impl<'a> ProbeResult<'a> {
             return Some(self.wdl.into());
         }
 
-        let is_pawn_push = |ms: &MoveSet| {
+        let is_pawn_push = |ms: MoveSet| {
             let turn = self.pos.turn();
             !ms.is_capture() && self.pos.pawns(turn).contains(ms.whence())
         };
@@ -242,7 +242,7 @@ impl<'a> ProbeResult<'a> {
         };
 
         // Otherwise, do a 1-ply search to find the best DTZ.
-        let is_not_zeroing = |ms: &MoveSet| ms.is_quiet() && !is_pawn_push(ms);
+        let is_not_zeroing = |ms: MoveSet| ms.is_quiet() && !is_pawn_push(ms);
         for m in self.moves.unpack_if(is_not_zeroing) {
             let mut next = self.pos.clone();
             next.play(m);

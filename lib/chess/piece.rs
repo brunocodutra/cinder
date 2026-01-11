@@ -138,19 +138,19 @@ impl Piece {
 
     /// This piece's [`Role`].
     #[inline(always)]
-    pub const fn role(&self) -> Role {
+    pub const fn role(self) -> Role {
         Int::new(self.get() >> 1)
     }
 
     /// This piece's [`Color`].
     #[inline(always)]
-    pub const fn color(&self) -> Color {
+    pub const fn color(self) -> Color {
         Int::new(self.get() & 0b1)
     }
 
     /// This piece's possible attacks from a given square.
     #[inline(always)]
-    pub const fn attacks(&self, wc: Square, occupied: Bitboard) -> Bitboard {
+    pub const fn attacks(self, wc: Square, occupied: Bitboard) -> Bitboard {
         match self.role() {
             Role::Pawn => Self::forks(wc, self.color()),
             Role::Knight => Self::jumps(wc),
@@ -184,7 +184,7 @@ impl Piece {
 
     /// This piece's possible moves from a given square.
     #[inline(always)]
-    pub const fn moves(&self, wc: Square, ours: Bitboard, theirs: Bitboard) -> Bitboard {
+    pub const fn moves(self, wc: Square, ours: Bitboard, theirs: Bitboard) -> Bitboard {
         let occ = ours ^ theirs;
         if self.role() != Role::Pawn {
             self.attacks(wc, occ) & !ours

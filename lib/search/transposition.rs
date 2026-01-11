@@ -33,8 +33,8 @@ impl ScoreBound {
 
     // The score bound.
     #[inline(always)]
-    pub const fn bound(&self, ply: Ply) -> Score {
-        match *self {
+    pub const fn bound(self, ply: Ply) -> Score {
+        match self {
             ScoreBound::Lower(s) | ScoreBound::Upper(s) | ScoreBound::Exact(s) => {
                 s.relative_to_ply(ply)
             }
@@ -43,8 +43,8 @@ impl ScoreBound {
 
     /// A lower bound for the score normalized to [`Ply`].
     #[inline(always)]
-    pub const fn lower(&self, ply: Ply) -> Score {
-        match *self {
+    pub const fn lower(self, ply: Ply) -> Score {
+        match self {
             ScoreBound::Upper(_) => Score::mated(ply),
             _ => self.bound(ply),
         }
@@ -52,8 +52,8 @@ impl ScoreBound {
 
     /// An upper bound for the score normalized to [`Ply`].
     #[inline(always)]
-    pub const fn upper(&self, ply: Ply) -> Score {
-        match *self {
+    pub const fn upper(self, ply: Ply) -> Score {
+        match self {
             ScoreBound::Lower(_) => Score::mating(ply),
             _ => self.bound(ply),
         }
@@ -61,7 +61,7 @@ impl ScoreBound {
 
     /// The score range normalized to [`Ply`].
     #[inline(always)]
-    pub const fn range(&self, ply: Ply) -> RangeInclusive<Score> {
+    pub const fn range(self, ply: Ply) -> RangeInclusive<Score> {
         self.lower(ply)..=self.upper(ply)
     }
 }
@@ -102,10 +102,10 @@ impl const Binary for ScoreBound {
 #[derive_const(Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Transposition {
-    score: ScoreBound,
-    depth: Depth,
-    best: Option<Move>,
-    was_pv: bool,
+    pub score: ScoreBound,
+    pub depth: Depth,
+    pub best: Option<Move>,
+    pub was_pv: bool,
 }
 
 impl Transposition {
@@ -125,33 +125,9 @@ impl Transposition {
         }
     }
 
-    /// The score bound.
-    #[inline(always)]
-    pub const fn score(&self) -> ScoreBound {
-        self.score
-    }
-
-    /// The depth searched.
-    #[inline(always)]
-    pub const fn depth(&self) -> Depth {
-        self.depth
-    }
-
-    /// Whether this position was ever in the PV.
-    #[inline(always)]
-    pub const fn was_pv(&self) -> bool {
-        self.was_pv
-    }
-
-    /// The best move.
-    #[inline(always)]
-    pub const fn best(&self) -> Option<Move> {
-        self.best
-    }
-
     /// The principal variation normalized to [`Ply`].
     #[inline(always)]
-    pub const fn transpose(&self, ply: Ply) -> Pv<1> {
+    pub const fn transpose(self, ply: Ply) -> Pv<1> {
         Pv::new(
             self.score.bound(ply),
             self.best.map_or_else(Line::empty, Line::singular),
@@ -244,7 +220,7 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn transposed_score_is_within_bounds(t: Transposition, p: Ply) {
-        assert!(t.score().range(p).contains(&t.transpose(p).score()));
+        assert!(t.score.range(p).contains(&t.transpose(p).score()));
     }
 
     #[proptest]

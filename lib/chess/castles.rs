@@ -39,14 +39,14 @@ impl Castles {
 
     /// A unique number the represents this castling rights configuration.
     #[inline(always)]
-    pub const fn index(&self) -> u8 {
+    pub const fn index(self) -> u8 {
         self.0.get()
     }
 
     /// Whether the rights for the given castling square.
     #[inline(always)]
-    pub const fn has(&self, sq: Square) -> bool {
-        *self & Castles::from(Castles::rook(sq).assume().whence()) != Castles::none()
+    pub const fn has(self, sq: Square) -> bool {
+        self & Castles::from(Castles::rook(sq).assume().whence()) != Castles::none()
     }
 }
 

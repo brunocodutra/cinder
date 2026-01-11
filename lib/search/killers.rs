@@ -18,7 +18,7 @@ impl Killers {
 
     /// Whether a move is in the set.
     #[inline(always)]
-    pub const fn contains(&self, m: Move) -> bool {
+    pub const fn contains(self, m: Move) -> bool {
         self.0 == Some(m) || self.1 == Some(m)
     }
 }

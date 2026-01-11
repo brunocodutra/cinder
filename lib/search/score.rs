@@ -16,8 +16,8 @@ pub enum Mate {
 
 impl Mate {
     #[inline(always)]
-    pub const fn plies(&self) -> Option<Ply> {
-        match *self {
+    pub const fn plies(self) -> Option<Ply> {
+        match self {
             Mate::Mating(ply) | Mate::Mated(ply) => Some(ply),
             Mate::None => None,
         }
@@ -78,11 +78,11 @@ impl Score {
 
     /// Returns number of plies to mate, if one is in the horizon.
     #[inline(always)]
-    pub const fn mate(&self) -> Mate {
+    pub const fn mate(self) -> Mate {
         if self.is_loss() {
-            Mate::Mated((*self - Score::lower()).saturate())
+            Mate::Mated((self - Score::lower()).saturate())
         } else if self.is_win() {
-            Mate::Mating((Score::upper() - *self).saturate())
+            Mate::Mating((Score::upper() - self).saturate())
         } else {
             Mate::None
         }
@@ -90,50 +90,62 @@ impl Score {
 
     /// Normalizes mate scores from `ply` relative to the root node.
     #[inline(always)]
-    pub const fn relative_to_root(&self, ply: Ply) -> Self {
+    pub const fn relative_to_root(self, ply: Ply) -> Self {
         if self.is_winning() {
-            *self + ply.cast::<i16>()
+            self + ply.cast::<i16>()
         } else if self.is_losing() {
-            *self - ply.cast::<i16>()
+            self - ply.cast::<i16>()
         } else {
-            *self
+            self
         }
     }
 
     /// Normalizes mate scores from the root node relative to `ply`.
     #[inline(always)]
-    pub const fn relative_to_ply(&self, ply: Ply) -> Self {
+    pub const fn relative_to_ply(self, ply: Ply) -> Self {
         if self.is_winning() {
-            *self - ply.cast::<i16>()
+            self - ply.cast::<i16>()
         } else if self.is_losing() {
-            *self + ply.cast::<i16>()
+            self + ply.cast::<i16>()
         } else {
-            *self
+            self
         }
     }
 
     /// Returns true if the score represents a winning position.
     #[inline(always)]
-    pub const fn is_winning(&self) -> bool {
-        *self > Value::MAX
+    pub const fn is_winning(self) -> bool {
+        self > Value::MAX
     }
 
     /// Returns true if the score represents a losing position.
     #[inline(always)]
-    pub const fn is_losing(&self) -> bool {
-        *self < Value::MIN
+    pub const fn is_losing(self) -> bool {
+        self < Value::MIN
+    }
+
+    /// Returns true if the score represents a winning or losing position.
+    #[inline(always)]
+    pub const fn is_decisive(self) -> bool {
+        self.is_winning() || self.is_losing()
     }
 
     /// Returns true if the score represents a won position.
     #[inline(always)]
-    pub const fn is_win(&self) -> bool {
-        *self > Self::winning(Ply::new(0))
+    pub const fn is_win(self) -> bool {
+        self > Self::winning(Ply::new(0))
     }
 
     /// Returns true if the score represents a lost position.
     #[inline(always)]
-    pub const fn is_loss(&self) -> bool {
-        *self < Self::losing(Ply::new(0))
+    pub const fn is_loss(self) -> bool {
+        self < Self::losing(Ply::new(0))
+    }
+
+    /// Returns true if the score represents a won or lost position.
+    #[inline(always)]
+    pub const fn is_decided(self) -> bool {
+        self.is_winning() || self.is_losing()
     }
 }
 

@@ -3,7 +3,7 @@ use derive_more::with_trait::IntoIterator;
 use std::mem::transmute;
 use std::ops::{Deref, DerefMut};
 
-#[derive(Debug, Copy, Hash, Zeroable, IntoIterator)]
+#[derive(Debug, Hash, Zeroable, IntoIterator)]
 #[derive_const(Default, Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(align(64))]

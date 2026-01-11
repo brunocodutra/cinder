@@ -88,7 +88,7 @@ impl Syzygy {
             let mut next = pos.clone();
             next.play(m);
 
-            let gaining = !m.is_quiet();
+            let gaining = m.is_noisy();
             let probe = self.tablebase.probe(&next)?;
             let (wdl, dtz) = if next.halfmoves() == 0 {
                 let wdl = probe.wdl_after_zeroing();

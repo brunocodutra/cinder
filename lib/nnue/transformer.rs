@@ -18,8 +18,8 @@ pub struct Transformer {
 impl Transformer {
     /// Refreshes `accumulator`.
     #[inline(always)]
-    pub const fn refresh(&self, accumulator: &mut Aligned<[i16; N]>) {
-        *accumulator = self.bias;
+    pub fn refresh(&self, accumulator: &mut Aligned<[i16; N]>) {
+        accumulator.clone_from(&self.bias);
     }
 
     /// Updates `acc` by adding and removing features.
@@ -122,7 +122,7 @@ impl Transformer {
     ) {
         match (sub, add) {
             ([None, None], [None, None]) => {
-                *dst = *src;
+                dst.clone_from(src);
             }
 
             ([None, None], [Some(a1), None]) => {

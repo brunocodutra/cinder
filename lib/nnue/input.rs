@@ -99,7 +99,7 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Input
             }
         }
 
-        let mut output = self.bias;
+        let mut output = self.bias.clone();
         let os: &mut [V2<f32>; O / W2] = output.cast_mut();
 
         *os = each(|j| {

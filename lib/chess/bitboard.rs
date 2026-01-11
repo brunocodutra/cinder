@@ -169,62 +169,62 @@ impl Bitboard {
 
     /// The number of [`Square`]s in the set.
     #[inline(always)]
-    pub const fn len(&self) -> usize {
+    pub const fn len(self) -> usize {
         self.0.count_ones() as usize
     }
 
     /// Whether the board is empty.
     #[inline(always)]
-    pub const fn is_empty(&self) -> bool {
+    pub const fn is_empty(self) -> bool {
         self.len() == 0
     }
 
     /// Whether this [`Square`] is in the set.
     #[inline(always)]
-    pub const fn contains(&self, sq: Square) -> bool {
-        !sq.bitboard().intersection(*self).is_empty()
+    pub const fn contains(self, sq: Square) -> bool {
+        !sq.bitboard().intersection(self).is_empty()
     }
 
     /// Adds a [`Square`] to this bitboard.
     #[inline(always)]
-    pub const fn with(&self, sq: Square) -> Self {
-        sq.bitboard().union(*self)
+    pub const fn with(self, sq: Square) -> Self {
+        sq.bitboard().union(self)
     }
 
     /// Removes a [`Square`]s from this bitboard.
     #[inline(always)]
-    pub const fn without(&self, sq: Square) -> Self {
-        sq.bitboard().inverse().intersection(*self)
+    pub const fn without(self, sq: Square) -> Self {
+        sq.bitboard().inverse().intersection(self)
     }
 
     /// The set of [`Square`]s not in this bitboard.
     #[inline(always)]
-    pub const fn inverse(&self) -> Self {
+    pub const fn inverse(self) -> Self {
         Bitboard(!self.0)
     }
 
     /// The set of [`Square`]s in both bitboards.
     #[inline(always)]
-    pub const fn intersection(&self, bb: Bitboard) -> Self {
+    pub const fn intersection(self, bb: Bitboard) -> Self {
         Bitboard(self.0 & bb.0)
     }
 
     /// The set of [`Square`]s in either bitboard.
     #[inline(always)]
-    pub const fn union(&self, bb: Bitboard) -> Self {
+    pub const fn union(self, bb: Bitboard) -> Self {
         Bitboard(self.0 | bb.0)
     }
 
     /// An iterator over the [`Square`]s in this bitboard.
     #[inline(always)]
-    pub const fn iter(&self) -> Squares {
-        Squares::new(*self)
+    pub const fn iter(self) -> Squares {
+        Squares::new(self)
     }
 
     /// An iterator over the subsets of this bitboard.
     #[inline(always)]
-    pub const fn subsets(&self) -> Subsets {
-        Subsets::new(*self)
+    pub const fn subsets(self) -> Subsets {
+        Subsets::new(self)
     }
 }
 
@@ -613,8 +613,8 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn can_iterate_over_subsets_of_a_bitboard(a: [Square; 6], b: [Square; 3]) {
-        let a = a.into_iter().fold(Bitboard::empty(), |bb, sq| bb.with(sq));
-        let b = b.into_iter().fold(Bitboard::empty(), |bb, sq| bb.with(sq));
+        let a = a.into_iter().fold(Bitboard::empty(), Bitboard::with);
+        let b = b.into_iter().fold(Bitboard::empty(), Bitboard::with);
         let set: HashSet<_> = a.subsets().collect();
         assert_eq!(a & b == b, set.contains(&b));
     }

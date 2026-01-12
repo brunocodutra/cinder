@@ -458,20 +458,20 @@ impl<'a> Searcher<'a> {
 
     /// The alpha-beta search.
     #[inline(always)]
-    fn ab<const N: usize>(
+    fn ab<const IS_PV: bool, const N: usize>(
         &mut self,
         depth: Depth,
         bounds: Range<Score>,
         cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
-        if bounds.start + 1 >= bounds.end {
-            Ok(self.nw(depth, bounds.end, cut)?.truncate())
-        } else if depth <= 0 {
-            Ok(self.quiesce::<true>(bounds)?.truncate())
-        } else if self.stack.pos.ply() < N as i32 {
-            self.pvs::<true, N>(depth, bounds, cut)
+        const { assert!(IS_PV || N == 0) }
+
+        if depth <= 0 {
+            Ok(self.quiesce::<IS_PV>(bounds)?.truncate())
+        } else if self.stack.pos.ply() >= N as i32 {
+            Ok(self.pvs::<IS_PV, 0>(depth, bounds, cut)?.truncate())
         } else {
-            Ok(self.pvs::<true, 0>(depth, bounds, cut)?.truncate())
+            self.pvs::<IS_PV, N>(depth, bounds, cut)
         }
     }
 
@@ -844,7 +844,7 @@ impl<'a> Searcher<'a> {
             }
 
             let mut next = self.next(Some(head));
-            -next.ab(depth + extension - 1, -beta..-alpha, false)?
+            -next.ab::<IS_PV, _>(depth + extension - 1, -beta..-alpha, false)?
         };
 
         let mut is_noisy_node = is_check || is_noisy_pv;
@@ -912,7 +912,7 @@ impl<'a> Searcher<'a> {
             let lmr = lmr.to_int::<i8>().clamp(0, depth.get().max(1) - 1);
             let pv = match -next.nw(depth - lmr - 1, -alpha, !cut)? {
                 pv if pv <= alpha || (pv >= beta && lmr < 1) => pv.truncate(),
-                _ => -next.ab(depth - 1, -beta..-alpha, false)?,
+                _ => -next.ab::<IS_PV, _>(depth - 1, -beta..-alpha, false)?,
             };
 
             if pv > tail {
@@ -982,7 +982,10 @@ impl<'a> Searcher<'a> {
         let mut sorted_moves = moves.sorted();
         let mut head = sorted_moves.next().assume();
         self.stack.nodes = self.ctrl.attention(head);
-        let mut tail = -self.next(Some(head)).ab(depth - 1, -beta..-alpha, false)?;
+
+        let mut next = self.next(Some(head));
+        let mut tail = -next.ab::<true, _>(depth - 1, -beta..-alpha, false)?;
+        drop(next);
 
         let mut is_noisy_node = is_check || is_noisy_pv;
         is_noisy_node |= head.is_noisy() && tail > alpha;
@@ -1007,7 +1010,7 @@ impl<'a> Searcher<'a> {
             let lmr = lmr.to_int::<i8>().clamp(0, depth.get().max(1) - 1);
             let pv = match -next.nw(depth - lmr - 1, -alpha, false)? {
                 pv if pv <= alpha || (pv >= beta && lmr < 1) => pv.truncate(),
-                _ => -next.ab(depth - 1, -beta..-alpha, false)?,
+                _ => -next.ab::<true, _>(depth - 1, -beta..-alpha, false)?,
             };
 
             if pv > tail {
@@ -1428,7 +1431,7 @@ mod tests {
         searcher.stack.nodes = searcher.ctrl.attention(m);
         thread::sleep(Duration::from_millis(1));
 
-        assert_eq!(searcher.ab::<1>(d, b, cut), Err(Interrupted));
+        assert_eq!(searcher.ab::<true, 1>(d, b, cut), Err(Interrupted));
     }
 
     #[proptest]
@@ -1449,7 +1452,7 @@ mod tests {
         searcher.stack.nodes = searcher.ctrl.attention(m);
         global.abort();
 
-        assert_eq!(searcher.ab::<1>(d, b, cut), Err(Interrupted));
+        assert_eq!(searcher.ab::<true, 1>(d, b, cut), Err(Interrupted));
     }
 
     #[proptest]
@@ -1469,7 +1472,10 @@ mod tests {
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         searcher.stack.nodes = searcher.ctrl.attention(m);
 
-        assert_eq!(searcher.ab::<1>(d, b, cut), Ok(Pv::empty(Score::drawn())));
+        assert_eq!(
+            searcher.ab::<true, 1>(d, b, cut),
+            Ok(Pv::empty(Score::drawn()))
+        );
     }
 
     #[proptest]
@@ -1491,7 +1497,7 @@ mod tests {
         searcher.stack.nodes = searcher.ctrl.attention(m);
 
         assert_eq!(
-            searcher.ab::<1>(d, b, cut),
+            searcher.ab::<true, 1>(d, b, cut),
             Ok(Pv::empty(Score::mated(ply)))
         );
     }

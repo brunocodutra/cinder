@@ -15,24 +15,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
-      with:
-        lfs: true
     - run: cargo fmt --all -- --check
 
   clippy:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
-      with:
-        lfs: true
     - run: cargo clippy --workspace --all-targets --features spsa,trainer,bullet/cpu -- -D warnings
 
   audit:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
-      with:
-        lfs: true
     - run: cargo install --force cargo-audit
     - run: cargo generate-lockfile
     - run: cargo audit
@@ -41,8 +35,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
-      with:
-        lfs: true
     - run: cargo check --workspace --all-targets --features spsa,trainer,bullet/cpu
     - run: cargo build --release --workspace --features no_panic
 
@@ -50,8 +42,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
-      with:
-        lfs: true
     - run: cargo doc --workspace --features spsa,trainer,bullet/cpu --no-deps
 
   test:
@@ -66,8 +56,6 @@ jobs:
         path: target/tmp/syzygy
         key: syzygy-tables-v1
     - uses: actions/checkout@v5
-      with:
-        lfs: true
     - run: cargo test --workspace --all-targets --features spsa,trainer,bullet/cpu
 
   miri:
@@ -75,8 +63,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
-      with:
-        lfs: true
     - run: rustup component add miri rust-src
     - run: cargo miri test --workspace --lib
       env:
@@ -91,8 +77,6 @@ jobs:
         sanitizer: [address, leak, memory, thread]
     steps:
     - uses: actions/checkout@v5
-      with:
-        lfs: true
     - run: rustup component add rust-src
     - run: cargo test --workspace --lib --features spsa,trainer,bullet/cpu -Zbuild-std --config='build.rustflags=["-Zsanitizer=${{ matrix.sanitizer }}"]' --target x86_64-unknown-linux-gnu -- --test-threads=1
       env:
@@ -111,8 +95,6 @@ jobs:
         path: target/tmp/syzygy
         key: syzygy-tables-v1
     - uses: actions/checkout@v5
-      with:
-        lfs: true
     - run: cargo install --force cargo-llvm-cov
     - run: cargo llvm-cov --workspace --all-targets --features spsa,trainer,bullet/cpu --lcov --output-path lcov.info
       env:
@@ -131,8 +113,6 @@ jobs:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
     - uses: actions/checkout@v5
-      with:
-        lfs: true
     - run: make linux-x86-64-sse4 linux-x86-64-avx2
       if: runner.os == 'Linux'
     - run: make windows-x86-64-sse4 windows-x86-64-avx2

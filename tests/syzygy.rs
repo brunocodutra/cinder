@@ -1,13 +1,16 @@
 #![allow(long_running_const_eval)]
 
+use anyhow::Error as Failure;
 use cinder::syzygy::{Dtz, Syzygy, Wdl};
-use cinder::{chess::Position, search::Ply, util::Int};
+use cinder::util::{Assume, Int};
+use cinder::{chess::Position, search::Ply};
 use proptest::sample::select;
-use reqwest::blocking::get as fetch;
-use std::{env, fmt::Debug, fs, io::Write, path::PathBuf, sync::LazyLock};
+use reqwest::blocking::Client;
+use std::io::{Write, stderr};
+use std::{env, fmt::Debug, fs, path::PathBuf, sync::LazyLock};
 use test_strategy::proptest;
 
-static SYZYGY: LazyLock<Syzygy> = LazyLock::new(|| {
+static SYZYGY: LazyLock<Result<Syzygy, Failure>> = LazyLock::new(|| {
     const TEST_SYZYGY_TABLES: &[&str] = &[
         "https://tablebase.lichess.ovh/tables/standard/3-4-5-wdl/KBvK.rtbw",
         "https://tablebase.lichess.ovh/tables/standard/3-4-5-dtz/KBvK.rtbz",
@@ -165,21 +168,25 @@ static SYZYGY: LazyLock<Syzygy> = LazyLock::new(|| {
 
     let root = env!("CARGO_TARGET_TMPDIR");
     let syzygy = PathBuf::from(root).join("syzygy");
-    fs::create_dir_all(&syzygy).unwrap();
+    fs::create_dir_all(&syzygy)?;
+    let mut stderr = stderr().lock();
+    let client = Client::builder().timeout(None).build()?;
     for url in TEST_SYZYGY_TABLES {
-        let file = syzygy.join(url.split('/').next_back().unwrap());
-        if !file.exists() {
-            println!("fetching {url}");
-            let mut file = fs::File::create_new(file).unwrap();
-            let body = fetch(*url).unwrap().bytes().unwrap();
-            file.write_all(&body).unwrap();
+        let file = url.split('/').next_back().assume();
+        let path = syzygy.join(file);
+        if !path.exists() {
+            write!(&mut stderr, "fetching {file} ... ")?;
+            let mut file = fs::File::create_new(path)?;
+            let body = client.get(*url).send()?.bytes()?;
+            file.write_all(&body)?;
+            writeln!(&mut stderr, "ok")?;
         }
     }
 
     let syzygy = Syzygy::new(&[syzygy]);
     assert_eq!(syzygy.max_pieces(), 7);
 
-    syzygy
+    Ok(syzygy)
 });
 
 #[rustfmt::skip]
@@ -413,7 +420,7 @@ fn probing_syzygy_tablebase_finds_wdl(
 ) {
     let (fen, wdl, _, _) = entry;
     let pos = fen.parse()?;
-    assert_eq!(SYZYGY.wdl(&pos), Some(wdl));
+    assert_eq!(SYZYGY.as_ref().unwrap().wdl(&pos), Some(wdl));
 }
 
 #[proptest]
@@ -423,7 +430,7 @@ fn probing_syzygy_tablebase_finds_dtz(
 ) {
     let (fen, _, dtz, _) = entry;
     let pos = fen.parse()?;
-    assert_eq!(SYZYGY.dtz(&pos), Some(Dtz::new(dtz)));
+    assert_eq!(SYZYGY.as_ref().unwrap().dtz(&pos), Some(Dtz::new(dtz)));
 }
 
 #[proptest]
@@ -434,10 +441,11 @@ fn probing_syzygy_tablebase_finds_best_move(
     let (fen, wdl, _, m) = entry;
     let pos: Position = fen.parse()?;
 
+    let moves = pos.moves().unpack().collect();
+    let best = SYZYGY.as_ref().unwrap().best(&pos, &moves);
+
     assert_eq!(
-        SYZYGY
-            .best(&pos, &pos.moves().unpack().collect())
-            .and_then(|pv| Some((pv.score(), pv.head()?.to_string()))),
+        best.and_then(|pv| Some((pv.score(), pv.head()?.to_string()))),
         if !m.is_empty() {
             Some((wdl.to_score(Ply::new(0)), m.to_string()))
         } else {

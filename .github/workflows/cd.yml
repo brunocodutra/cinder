@@ -12,8 +12,6 @@ jobs:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
     - uses: actions/checkout@v5
-      with:
-        lfs: true
     - run: make linux-x86-64-sse4 linux-x86-64-avx2
       if: runner.os == 'Linux'
     - run: make windows-x86-64-sse4 windows-x86-64-avx2

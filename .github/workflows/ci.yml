@@ -61,6 +61,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
+    - uses: actions/cache@v5
+      with:
+        path: target/tmp/syzygy
+        key: syzygy-tables-v1
     - uses: actions/checkout@v5
       with:
         lfs: true
@@ -102,6 +106,10 @@ jobs:
     needs: [test]
     runs-on: ubuntu-latest
     steps:
+    - uses: actions/cache@v5
+      with:
+        path: target/tmp/syzygy
+        key: syzygy-tables-v1
     - uses: actions/checkout@v5
       with:
         lfs: true

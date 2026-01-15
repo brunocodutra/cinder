@@ -262,8 +262,6 @@ params! {
     rfp_margin_improving: [-5.70555],
     fut_margin_depth: [1.6328477, 26.032167],
     fut_margin_scalar: [53.843964],
-    fut_margin_is_pv: [7.0337334],
-    fut_margin_was_pv: [5.7520294],
     fut_margin_is_check: [7.6654572],
     fut_margin_is_killer: [6.9119344],
     fut_margin_improving: [4.4097533],

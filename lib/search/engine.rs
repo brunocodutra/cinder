@@ -589,8 +589,6 @@ impl<'a> Searcher<'a> {
             let gain = pos.gain(m).to_float::<f32>();
 
             let mut fut = Self::futility(zero());
-            fut = Params::fut_margin_is_pv(0).mul_add(IS_PV.to_float(), fut);
-            fut = Params::fut_margin_was_pv(0).mul_add(was_pv.to_float(), fut);
             fut = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), fut);
             fut = Params::fut_margin_improving(0).mul_add(improving, fut);
             fut = Params::fut_margin_gain(0).mul_add(gain, fut);
@@ -872,8 +870,6 @@ impl<'a> Searcher<'a> {
             let is_killer = killer.contains(m);
 
             let mut fut = Self::futility(lmr_depth);
-            fut = Params::fut_margin_is_pv(0).mul_add(IS_PV.to_float(), fut);
-            fut = Params::fut_margin_was_pv(0).mul_add(was_pv.to_float(), fut);
             fut = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), fut);
             fut = Params::fut_margin_is_killer(0).mul_add(is_killer.to_float(), fut);
             fut = Params::fut_margin_improving(0).mul_add(improving, fut);

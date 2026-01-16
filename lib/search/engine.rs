@@ -663,11 +663,6 @@ impl<'a> Searcher<'a> {
             return Ok(self.quiesce::<IS_PV>(bounds)?.truncate());
         }
 
-        let was_pv = IS_PV || transposition.is_some_and(|t| t.was_pv);
-        let is_noisy_pv = transposition.is_some_and(|t| {
-            t.best.is_some_and(Move::is_noisy) && !matches!(t.score, ScoreBound::Upper(_))
-        });
-
         #[expect(clippy::collapsible_if)]
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
             if let Some(t) = transposition {
@@ -689,6 +684,7 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        let was_pv = IS_PV || transposition.is_some_and(|t| t.was_pv);
         let (lower, upper) = match self.shared.syzygy.wdl_after_zeroing(&self.stack.pos) {
             None => (Score::lower(), Score::upper()),
             Some(wdl) => {
@@ -847,8 +843,10 @@ impl<'a> Searcher<'a> {
             -next.ab::<IS_PV, _>(depth + extension - 1, -beta..-alpha, false)?
         };
 
-        let mut is_noisy_node = is_check || is_noisy_pv;
-        is_noisy_node |= head.is_noisy() && tail > alpha;
+        let is_noisy_pv = transposition.is_some_and(|t| {
+            t.best.is_some_and(Move::is_noisy) && !matches!(t.score, ScoreBound::Upper(_))
+        });
+
         for (index, m) in moves.sorted().skip(1).enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -917,7 +915,6 @@ impl<'a> Searcher<'a> {
 
             if pv > tail {
                 (head, tail) = (m, pv);
-                is_noisy_node |= head.is_noisy() && tail > alpha;
             }
         }
 
@@ -934,7 +931,7 @@ impl<'a> Searcher<'a> {
         }
 
         let value = self.stack.value[ply.cast::<usize>()];
-        if !is_noisy_node && !score.range(ply).contains(&value) {
+        if head.is_quiet() && !score.range(ply).contains(&value) {
             self.update_correction(depth, score);
         }
 
@@ -954,8 +951,6 @@ impl<'a> Searcher<'a> {
             return Err(Interrupted);
         }
 
-        let is_check = self.stack.pos.is_check();
-        let is_noisy_pv = self.stack.pv.head().is_some_and(Move::is_noisy);
         let correction = self.correction().to_int::<i16>();
         self.stack.value[0] = self.evaluate() + correction;
 
@@ -987,8 +982,7 @@ impl<'a> Searcher<'a> {
         let mut tail = -next.ab::<true, _>(depth - 1, -beta..-alpha, false)?;
         drop(next);
 
-        let mut is_noisy_node = is_check || is_noisy_pv;
-        is_noisy_node |= head.is_noisy() && tail > alpha;
+        let is_noisy_pv = self.stack.pv.head().is_some_and(Move::is_noisy);
         for (index, m) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -1015,7 +1009,6 @@ impl<'a> Searcher<'a> {
 
             if pv > tail {
                 (head, tail) = (m, pv);
-                is_noisy_node |= head.is_noisy() && tail > alpha;
             }
         }
 
@@ -1031,7 +1024,7 @@ impl<'a> Searcher<'a> {
         }
 
         let value = self.stack.value[0];
-        if !is_noisy_node && !score.range(zero()).contains(&value) {
+        if head.is_quiet() && !score.range(zero()).contains(&value) {
             self.update_correction(depth, score);
         }
 

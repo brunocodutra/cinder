@@ -6,7 +6,7 @@ use derive_more::with_trait::Debug;
 
 #[derive(Debug, Clone, Hash, Zeroable)]
 #[derive_const(Eq, PartialEq)]
-pub struct Reply([[<Reply as Statistics<Move>>::Stat; 64]; 6]);
+pub struct Reply(PieceTo<<Reply as Statistics<Move>>::Stat>);
 
 impl const Default for Reply {
     #[inline(always)]
@@ -19,8 +19,8 @@ impl Reply {
     #[inline(always)]
     const fn graviton(&mut self, pos: &Position, m: Move) -> &mut <Self as Statistics<Move>>::Stat {
         let (wc, wt) = (m.whence(), m.whither());
-        let role = pos.role_on(wc).assume() as usize;
-        &mut self.0[role][wt as usize]
+        let piece = pos.piece_on(wc).assume();
+        &mut self.0[piece as usize][wt as usize]
     }
 }
 

@@ -220,8 +220,11 @@ impl<'a> Searcher<'a> {
 
         let bonus = Self::continuation_bonus(depth);
         let replies = &mut self.stack.replies;
-        let mut reply = replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
-        reply.update(pos, best, bonus.to_int());
+
+        for i in 1..3 {
+            let mut reply = replies.get_mut(ply.cast::<usize>().wrapping_sub(i));
+            reply.update(pos, best, bonus.to_int());
+        }
 
         for m in moves.iter() {
             if m == best {
@@ -232,8 +235,11 @@ impl<'a> Searcher<'a> {
 
                 let penalty = Self::continuation_penalty(depth);
                 let replies = &mut self.stack.replies;
-                let mut reply = replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
-                reply.update(pos, m, penalty.to_int());
+
+                for i in 1..3 {
+                    let mut reply = replies.get_mut(ply.cast::<usize>().wrapping_sub(i));
+                    reply.update(pos, m, penalty.to_int());
+                }
             }
         }
     }
@@ -550,10 +556,12 @@ impl<'a> Searcher<'a> {
             let history = self.local.history.get(pos, m).to_float::<f32>();
             rating = Params::history_rating(0).mul_add(history / History::LIMIT as f32, rating);
 
-            let replies = &mut self.stack.replies;
-            let mut reply = replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
-            let counter = reply.get(pos, m).to_float::<f32>();
-            rating = Params::counter_rating(0).mul_add(counter / History::LIMIT as f32, rating);
+            for i in 1..3 {
+                let replies = &mut self.stack.replies;
+                let mut reply = replies.get_mut(ply.cast::<usize>().wrapping_sub(i));
+                let history = reply.get(pos, m).to_float::<f32>();
+                rating = Params::history_rating(i).mul_add(history / History::LIMIT as f32, rating);
+            }
 
             if pos.winning(m, Params::winning_rating_margin(0).to_int()) {
                 rating += convolve([
@@ -756,10 +764,12 @@ impl<'a> Searcher<'a> {
             let history = self.local.history.get(pos, m).to_float::<f32>();
             rating = Params::history_rating(0).mul_add(history / History::LIMIT as f32, rating);
 
-            let replies = &mut self.stack.replies;
-            let mut reply = replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
-            let counter = reply.get(pos, m).to_float::<f32>();
-            rating = Params::counter_rating(0).mul_add(counter / History::LIMIT as f32, rating);
+            for i in 1..3 {
+                let replies = &mut self.stack.replies;
+                let mut reply = replies.get_mut(ply.cast::<usize>().wrapping_sub(i));
+                let history = reply.get(pos, m).to_float::<f32>();
+                rating = Params::history_rating(i).mul_add(history / History::LIMIT as f32, rating);
+            }
 
             if m.is_noisy() && pos.winning(m, Params::winning_rating_margin(0).to_int()) {
                 rating += convolve([

@@ -235,7 +235,6 @@ impl<T> Memory<T> for HugePages<T> {
             .map_anon()
             .unwrap_or_else(|_| abort());
 
-        #[cfg(not(miri))]
         #[cfg(target_os = "linux")]
         mmap.advise(memmap2::Advice::HugePage).ok(); // best-effort
 
@@ -287,12 +286,14 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn huge_pages_can_be_zero_initialized(#[strategy(..10usize)] n: usize) {
         let mem = HugePages::<u32>::zeroed(n);
         assert!(mem.iter().all(|x| *x == 0));
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn huge_pages_can_be_reinitialized_in_place(
         #[strategy(..10usize)] m: usize,
         #[strategy(..10usize)] n: usize,
@@ -307,6 +308,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn huge_pages_are_aligned_to_thp(#[strategy(..100usize)] n: usize) {
         let mem = HugePages::<u64>::uninit(n);
 

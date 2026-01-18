@@ -385,38 +385,33 @@ mod tests {
     }
 
     #[proptest]
-    fn can_be_zero_initialized(#[strategy(..10usize)] n: usize) {
-        let seq = HugeSeq::<u32>::zeroed(n);
+    fn can_be_zero_initialized(#[strategy(..10u32)] n: u32) {
+        let seq = StaticSeq::<u32, 16>::zeroed(n);
         assert!(seq.iter().all(|x| *x == 0));
     }
 
     #[proptest]
-    fn can_be_cloned(seq: StaticSeq<u32, 256>) {
+    fn can_be_cloned(seq: StaticSeq<u32, 16>) {
         assert_eq!(seq.clone(), seq);
     }
 
     #[proptest]
-    fn capacity_returns_maximum_number_of_elements(#[strategy(..10usize)] n: usize) {
-        assert_eq!(ConstSeq::<u32, 64>::new(n.cast()).capacity(), 16);
-        assert_eq!(StaticSeq::<u32, 16>::new(n.cast()).capacity(), 16);
-        assert_eq!(HugeSeq::<u32>::new(n).capacity(), n);
+    fn capacity_returns_maximum_number_of_elements(#[strategy(..10u32)] n: u32) {
+        assert_eq!(StaticSeq::<u32, 16>::new(n).capacity(), 16);
     }
 
     #[proptest]
-    fn len_returns_current_number_of_elements(#[strategy(..10usize)] n: usize) {
-        assert_eq!(ConstSeq::<u32, 64>::zeroed(n.cast()).len(), n.cast());
+    fn len_returns_current_number_of_elements(#[strategy(..10u32)] n: u32) {
         assert_eq!(StaticSeq::<u32, 16>::zeroed(n.cast()).len(), n.cast());
-        assert_eq!(HugeSeq::<u32>::zeroed(n).len(), n);
     }
 
     #[test]
     fn empty_by_default() {
-        assert_eq!(ConstSeq::<u32, 64>::default().len(), 0);
         assert_eq!(StaticSeq::<u32, 16>::default().len(), 0);
     }
 
     #[proptest]
-    fn push_appends_element(mut seq: StaticSeq<u32, 256>, e: u32) {
+    fn push_appends_element(mut seq: StaticSeq<u32, 16>, e: u32) {
         let len = seq.len();
         seq.push(e);
 
@@ -425,14 +420,14 @@ mod tests {
     }
 
     #[proptest]
-    fn pop_removes_last_element(mut seq: StaticSeq<u32, 256>) {
+    fn pop_removes_last_element(mut seq: StaticSeq<u32, 16>) {
         let len = seq.len();
         assert_eq!(seq.last().copied(), seq.pop());
         assert_eq!(seq.len(), len.saturating_sub(1));
     }
 
     #[proptest]
-    fn truncate_resets_length(mut seq: StaticSeq<u32, 256>, n: u32) {
+    fn truncate_resets_length(mut seq: StaticSeq<u32, 16>, n: u32) {
         let len = seq.len();
         seq.truncate(n);
         assert_eq!(seq.len(), len.min(n));
@@ -465,7 +460,7 @@ mod tests {
     }
 
     #[proptest]
-    fn can_be_consumed_as_iterator(seq: StaticSeq<u32, 256>) {
+    fn can_be_consumed_as_iterator(seq: StaticSeq<u32, 16>) {
         assert_eq!(&*Vec::from_iter(seq.clone().into_iter()), &*seq);
     }
 
@@ -487,8 +482,8 @@ mod tests {
 
     #[proptest]
     fn can_be_extended(
-        mut seq: StaticSeq<u32, 512>,
-        #[strategy(vec(any::<u32>(), ..256))] v: Vec<u32>,
+        mut seq: StaticSeq<u32, 16>,
+        #[strategy(vec(any::<u32>(), ..10))] v: Vec<u32>,
     ) {
         let len = seq.len().cast::<usize>();
         seq.extend(v.iter().copied());

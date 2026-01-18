@@ -213,33 +213,29 @@ impl<'a> Searcher<'a> {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn update_history(&mut self, depth: Depth, best: Move, moves: &Moves) {
         let pos = &self.stack.pos;
-        let ply = pos.ply();
+        let idx = pos.ply().cast::<usize>();
+        let history_bonus = Self::history_bonus(depth).to_int();
+        let history_penalty = Self::history_penalty(depth).to_int();
+        let continuation_bonus = Self::continuation_bonus(depth).to_int();
+        let continuation_penalty = Self::continuation_penalty(depth).to_int();
 
-        let bonus = Self::history_bonus(depth);
-        self.local.history.update(pos, best, bonus.to_int());
+        self.local.history.update(pos, best, history_bonus);
 
-        let bonus = Self::continuation_bonus(depth);
-        let replies = &mut self.stack.replies;
-
-        for i in 1..3 {
-            let mut reply = replies.get_mut(ply.cast::<usize>().wrapping_sub(i));
-            reply.update(pos, best, bonus.to_int());
+        for i in 1..=idx.min(2) {
+            let reply = self.stack.replies.get_mut(idx - i).assume();
+            reply.update(pos, best, continuation_bonus);
         }
 
         for m in moves.iter() {
             if m == best {
                 break;
-            } else {
-                let penalty = Self::history_penalty(depth);
-                self.local.history.update(pos, m, penalty.to_int());
+            }
 
-                let penalty = Self::continuation_penalty(depth);
-                let replies = &mut self.stack.replies;
+            self.local.history.update(pos, m, history_penalty);
 
-                for i in 1..3 {
-                    let mut reply = replies.get_mut(ply.cast::<usize>().wrapping_sub(i));
-                    reply.update(pos, m, penalty.to_int());
-                }
+            for i in 1..=idx.min(2) {
+                let reply = self.stack.replies.get_mut(idx - i).assume();
+                reply.update(pos, m, continuation_penalty);
             }
         }
     }
@@ -553,14 +549,13 @@ impl<'a> Searcher<'a> {
             let mut rating = 0.;
             let pos = &self.stack.pos;
 
-            let history = self.local.history.get(pos, m).to_float::<f32>();
-            rating = Params::history_rating(0).mul_add(history / History::LIMIT as f32, rating);
+            let history = self.local.history.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
+            rating = Params::history_rating(0).mul_add(history, rating);
 
-            for i in 1..3 {
-                let replies = &mut self.stack.replies;
-                let mut reply = replies.get_mut(ply.cast::<usize>().wrapping_sub(i));
-                let history = reply.get(pos, m).to_float::<f32>();
-                rating = Params::history_rating(i).mul_add(history / History::LIMIT as f32, rating);
+            for i in 1..=ply.cast::<usize>().min(2) {
+                let reply = self.stack.replies.get_mut(ply.cast::<usize>() - i).assume();
+                let history = reply.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
+                rating = Params::history_rating(i).mul_add(history, rating);
             }
 
             if pos.winning(m, Params::good_noisy_margin(0).to_int()) {
@@ -592,12 +587,9 @@ impl<'a> Searcher<'a> {
             }
 
             let pos = &self.stack.pos;
-            let gain = pos.gain(m).to_float::<f32>();
-
             let mut fut = Self::futility(zero());
             fut = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), fut);
-            fut = Params::fut_margin_improving(0).mul_add(improving, fut);
-            fut = Params::fut_margin_gain(0).mul_add(gain, fut);
+            fut = Params::fut_margin_gain(0).mul_add(pos.gain(m).to_float(), fut);
             if self.stack.value[ply.cast::<usize>()] + fut.to_int::<i16>().max(0) <= alpha {
                 continue;
             }
@@ -759,14 +751,13 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             let mut rating = *Params::killer_rating(0) * killer.contains(m).to_float::<f32>();
 
-            let history = self.local.history.get(pos, m).to_float::<f32>();
-            rating = Params::history_rating(0).mul_add(history / History::LIMIT as f32, rating);
+            let history = self.local.history.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
+            rating = Params::history_rating(0).mul_add(history, rating);
 
-            for i in 1..3 {
-                let replies = &mut self.stack.replies;
-                let mut reply = replies.get_mut(ply.cast::<usize>().wrapping_sub(i));
-                let history = reply.get(pos, m).to_float::<f32>();
-                rating = Params::history_rating(i).mul_add(history / History::LIMIT as f32, rating);
+            for i in 1..=ply.cast::<usize>().min(2) {
+                let reply = self.stack.replies.get_mut(ply.cast::<usize>() - i).assume();
+                let history = reply.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
+                rating = Params::history_rating(i).mul_add(history, rating);
             }
 
             if m.is_noisy() && pos.winning(m, Params::good_noisy_margin(0).to_int()) {
@@ -868,18 +859,15 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             let mut lmr = Self::lmr(depth, index);
             let lmr_depth = depth - lmr.to_int::<i8>();
-            let history = self.local.history.get(pos, m).to_float::<f32>();
-            let replies = &mut self.stack.replies;
-            let mut reply = replies.get_mut(ply.cast::<usize>().wrapping_sub(1));
-            let counter = reply.get(pos, m).to_float::<f32>();
-            let gain = pos.gain(m).to_float::<f32>();
+            let history = self.local.history.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
+            let reply = self.stack.replies.get_mut(ply.cast::<usize>() - 1).assume();
+            let counter = reply.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
             let is_killer = killer.contains(m);
 
             let mut fut = Self::futility(lmr_depth);
             fut = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), fut);
             fut = Params::fut_margin_is_killer(0).mul_add(is_killer.to_float(), fut);
-            fut = Params::fut_margin_improving(0).mul_add(improving, fut);
-            fut = Params::fut_margin_gain(0).mul_add(gain, fut);
+            fut = Params::fut_margin_gain(0).mul_add(pos.gain(m).to_float(), fut);
             if self.stack.value[ply.cast::<usize>()] + fut.to_int::<i16>().max(0) <= alpha {
                 continue;
             }
@@ -906,8 +894,8 @@ impl<'a> Searcher<'a> {
             lmr = Params::lmr_is_killer(0).mul_add(is_killer.to_float(), lmr);
             lmr = Params::lmr_cut(0).mul_add(cut.to_float(), lmr);
             lmr = Params::lmr_improving(0).mul_add(improving, lmr);
-            lmr = Params::lmr_history(0).mul_add(history / History::LIMIT as f32, lmr);
-            lmr = Params::lmr_counter(0).mul_add(counter / History::LIMIT as f32, lmr);
+            lmr = Params::lmr_history(0).mul_add(history, lmr);
+            lmr = Params::lmr_counter(0).mul_add(counter, lmr);
 
             let lmr = lmr.to_int::<i8>().clamp(0, depth.get().max(1) - 1);
             let pv = match -next.nw(depth - lmr - 1, -alpha, !cut)? {
@@ -963,8 +951,8 @@ impl<'a> Searcher<'a> {
 
             let mut rating = 0.;
             let pos = &self.stack.pos;
-            let history = self.local.history.get(pos, m).to_float::<f32>();
-            rating = Params::history_rating(0).mul_add(history / History::LIMIT as f32, rating);
+            let history = self.local.history.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
+            rating = Params::history_rating(0).mul_add(history, rating);
 
             if m.is_noisy() && pos.winning(m, Params::good_noisy_margin(0).to_int()) {
                 rating += pos.gain(m).to_float::<f32>();
@@ -990,7 +978,7 @@ impl<'a> Searcher<'a> {
             };
 
             let pos = &self.stack.pos;
-            let history = self.local.history.get(pos, m).to_float::<f32>();
+            let history = self.local.history.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
             self.stack.nodes = self.ctrl.attention(m);
 
             let mut next = self.next(Some(m));
@@ -999,7 +987,7 @@ impl<'a> Searcher<'a> {
             let mut lmr = Self::lmr(depth, index) + *Params::lmr_is_root(0);
             lmr = Params::lmr_gives_check(0).mul_add(gives_check.to_float(), lmr);
             lmr = Params::lmr_is_noisy_pv(0).mul_add(is_noisy_pv.to_float(), lmr);
-            lmr = Params::lmr_history(0).mul_add(history / History::LIMIT as f32, lmr);
+            lmr = Params::lmr_history(0).mul_add(history, lmr);
 
             let lmr = lmr.to_int::<i8>().clamp(0, depth.get().max(1) - 1);
             let pv = match -next.nw(depth - lmr - 1, -alpha, false)? {

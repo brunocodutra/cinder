@@ -98,11 +98,13 @@ mod tests {
     use test_strategy::proptest;
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn tt_allocates_up_to_hash_size(s: HashSize) {
         assert!(s >= TranspositionTable::new(s).len() * size_of::<Transposition>());
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn tt_resizes_up_to_hash_size(s: HashSize, t: HashSize) {
         let mut tt = TranspositionTable::new(s);
         tt.resize(t);
@@ -110,11 +112,13 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn tt_load_does_nothing_if_hash_size_is_zero(k: Zobrist) {
         assert_eq!(TranspositionTable::new(HashSize::new(0)).load(k), None);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn tt_load_returns_none_if_slot_is_empty(s: HashSize, k: Zobrist) {
         let mut tt = TranspositionTable::new(s);
         tt[k] = zero();
@@ -122,6 +126,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn tt_load_returns_none_if_key_does_not_match(s: HashSize, k: Zobrist, v: Transposition) {
         let mut tt = TranspositionTable::new(s);
         *tt[k].get_mut() = Vault::close(!k, v);
@@ -129,6 +134,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn tt_load_returns_some_if_key_matches(s: HashSize, k: Zobrist, v: Transposition) {
         let mut tt = TranspositionTable::new(s);
         *tt[k].get_mut() = Vault::close(k, v);
@@ -136,11 +142,13 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn tt_stores_nothing_if_hash_size_is_zero(k: Zobrist, v: Transposition) {
         TranspositionTable::new(HashSize::new(0)).store(k, v);
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn tt_stores_value_if_slot_is_empty(s: HashSize, k: Zobrist, v: Transposition) {
         let mut tt = TranspositionTable::new(s);
         tt[k] = zero();
@@ -149,6 +157,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn tt_store_always_replaces_value_if_one_exists(
         s: HashSize,
         k: Zobrist,
@@ -163,6 +172,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn vt_load_returns_none_if_slot_is_empty(s: ThreadCount, k: Zobrist) {
         let mut tt = ValueTable::new(s);
         tt[k] = zero();
@@ -170,6 +180,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn vt_load_returns_none_if_key_does_not_match(s: ThreadCount, k: Zobrist, v: Value) {
         let mut tt = ValueTable::new(s);
         *tt[k].get_mut() = Vault::close(!k, v);
@@ -177,6 +188,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn vt_load_returns_some_if_key_matches(s: ThreadCount, k: Zobrist, v: Value) {
         let mut tt = ValueTable::new(s);
         *tt[k].get_mut() = Vault::close(k, v);
@@ -184,6 +196,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn vt_stores_value_if_slot_is_empty(s: ThreadCount, k: Zobrist, v: Value) {
         let mut tt = ValueTable::new(s);
         tt[k] = zero();
@@ -192,6 +205,7 @@ mod tests {
     }
 
     #[proptest]
+    #[cfg_attr(miri, ignore)]
     fn vt_store_always_replaces_value_if_one_exists(
         s: ThreadCount,
         k: Zobrist,

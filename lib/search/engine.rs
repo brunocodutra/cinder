@@ -563,11 +563,9 @@ impl<'a> Searcher<'a> {
                 rating = Params::history_rating(i).mul_add(history / History::LIMIT as f32, rating);
             }
 
-            if pos.winning(m, Params::winning_rating_margin(0).to_int()) {
-                rating += convolve([
-                    (pos.gain(m).to_float(), Params::winning_rating_gain(..)),
-                    (1., Params::winning_rating_scalar(..)),
-                ]);
+            if pos.winning(m, Params::good_noisy_margin(0).to_int()) {
+                rating += pos.gain(m).to_float::<f32>();
+                rating += *Params::good_noisy_bonus(0);
             }
 
             rating.to_int()
@@ -771,11 +769,9 @@ impl<'a> Searcher<'a> {
                 rating = Params::history_rating(i).mul_add(history / History::LIMIT as f32, rating);
             }
 
-            if m.is_noisy() && pos.winning(m, Params::winning_rating_margin(0).to_int()) {
-                rating += convolve([
-                    (pos.gain(m).to_float(), Params::winning_rating_gain(..)),
-                    (1., Params::winning_rating_scalar(..)),
-                ]);
+            if m.is_noisy() && pos.winning(m, Params::good_noisy_margin(0).to_int()) {
+                rating += pos.gain(m).to_float::<f32>();
+                rating += *Params::good_noisy_bonus(0);
             }
 
             rating.to_int()
@@ -970,11 +966,9 @@ impl<'a> Searcher<'a> {
             let history = self.local.history.get(pos, m).to_float::<f32>();
             rating = Params::history_rating(0).mul_add(history / History::LIMIT as f32, rating);
 
-            if m.is_noisy() && pos.winning(m, Params::winning_rating_margin(0).to_int()) {
-                rating += convolve([
-                    (pos.gain(m).to_float(), Params::winning_rating_gain(..)),
-                    (1., Params::winning_rating_scalar(..)),
-                ]);
+            if m.is_noisy() && pos.winning(m, Params::good_noisy_margin(0).to_int()) {
+                rating += pos.gain(m).to_float::<f32>();
+                rating += *Params::good_noisy_bonus(0);
             }
 
             rating.to_int()

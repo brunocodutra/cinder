@@ -1,5 +1,5 @@
 use crate::chess::Move;
-use crate::util::{Assume, Bounded, Int, Memory, StaticMemory, StaticSeq};
+use crate::util::{Assume, Bounded, Capacity, ConstCapacity, Int, StaticSeq};
 
 #[cfg(test)]
 use proptest::{collection::vec, prelude::*};
@@ -20,7 +20,7 @@ pub struct Moves {
 
     // Index of the first unsorted move
     #[cfg_attr(test, strategy(Just(0)))]
-    unsorted: <StaticMemory<RatedMove, 254> as Memory<RatedMove>>::Usize,
+    unsorted: <ConstCapacity as Capacity>::Usize,
 }
 
 impl Moves {
@@ -73,7 +73,7 @@ impl FromIterator<Move> for Moves {
 #[derive(Debug)]
 struct SortedMovesIter<'a> {
     moves: &'a mut Moves,
-    cursor: <StaticMemory<RatedMove, 254> as Memory<RatedMove>>::Usize,
+    cursor: <ConstCapacity as Capacity>::Usize,
 }
 
 impl<'a> SortedMovesIter<'a> {

@@ -579,22 +579,21 @@ impl<'a> Searcher<'a> {
             };
 
             if !IS_PV && !is_check {
-                let mut lmp = *Params::lmp_baseline(0);
-                lmp = Params::lmp_improving(0).mul_add(improving, lmp);
-                if index.to_float::<f32>() > Self::lmp(zero()) * lmp {
+                let scale = Params::lmp_improving(0).mul_add(improving, 1.);
+                if index.to_float::<f32>() > Params::lmp_scalar(0) * scale {
                     break;
                 }
             }
 
             let pos = &self.stack.pos;
-            let mut fut = Self::futility(zero());
+            let mut fut = *Params::fut_margin_scalar(0);
             fut = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), fut);
             fut = Params::fut_margin_gain(0).mul_add(pos.gain(m).to_float(), fut);
             if self.stack.value[ply.cast::<usize>()] + fut.to_int::<i16>().max(0) <= alpha {
                 continue;
             }
 
-            if !pos.winning(m, Self::nsp(zero()).to_int()) {
+            if !pos.winning(m, Params::nsp_margin_scalar(0).to_int()) {
                 continue;
             }
 
@@ -849,9 +848,8 @@ impl<'a> Searcher<'a> {
             };
 
             if !IS_PV && !is_check {
-                let mut lmp = *Params::lmp_baseline(0);
-                lmp = Params::lmp_improving(0).mul_add(improving, lmp);
-                if index.to_float::<f32>() > Self::lmp(depth) * lmp {
+                let scale = Params::lmp_improving(0).mul_add(improving, 1.);
+                if index.to_float::<f32>() > Self::lmp(depth) * scale {
                     break;
                 }
             }

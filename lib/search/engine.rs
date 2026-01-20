@@ -578,7 +578,7 @@ impl<'a> Searcher<'a> {
                 s => s.max(alpha),
             };
 
-            if !IS_PV && !is_check {
+            if !IS_PV && !is_check && !tail.score().is_losing() {
                 let scale = Params::lmp_improving(0).mul_add(improving, 1.);
                 if index.to_float::<f32>() > Params::lmp_scalar(0) * scale {
                     break;
@@ -586,14 +586,17 @@ impl<'a> Searcher<'a> {
             }
 
             let pos = &self.stack.pos;
-            let mut fut = *Params::fut_margin_scalar(0);
-            fut = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), fut);
-            fut = Params::fut_margin_gain(0).mul_add(pos.gain(m).to_float(), fut);
-            if self.stack.value[ply.cast::<usize>()] + fut.to_int::<i16>().max(0) <= alpha {
-                continue;
+            if !tail.score().is_losing() {
+                let mut margin = *Params::fut_margin_scalar(0);
+                margin = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), margin);
+                margin = Params::fut_margin_gain(0).mul_add(pos.gain(m).to_float(), margin);
+                let futility = self.stack.value[ply.cast::<usize>()] + margin.to_int::<i16>();
+                if futility <= alpha {
+                    continue;
+                }
             }
 
-            if !pos.winning(m, Params::nsp_margin_scalar(0).to_int()) {
+            if !tail.score().is_losing() && !pos.winning(m, Params::nsp_margin_scalar(0).to_int()) {
                 continue;
             }
 
@@ -847,7 +850,7 @@ impl<'a> Searcher<'a> {
                 s => s.max(alpha),
             };
 
-            if !IS_PV && !is_check {
+            if !IS_PV && !is_check && !tail.score().is_losing() {
                 let scale = Params::lmp_improving(0).mul_add(improving, 1.);
                 if index.to_float::<f32>() > Self::lmp(depth) * scale {
                     break;
@@ -862,22 +865,25 @@ impl<'a> Searcher<'a> {
             let counter = reply.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
             let is_killer = killer.contains(m);
 
-            let mut fut = Self::futility(lmr_depth);
-            fut = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), fut);
-            fut = Params::fut_margin_is_killer(0).mul_add(is_killer.to_float(), fut);
-            fut = Params::fut_margin_gain(0).mul_add(pos.gain(m).to_float(), fut);
-            if self.stack.value[ply.cast::<usize>()] + fut.to_int::<i16>().max(0) <= alpha {
-                continue;
+            if !tail.score().is_losing() {
+                let mut margin = Self::futility(lmr_depth);
+                margin = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), margin);
+                margin = Params::fut_margin_is_killer(0).mul_add(is_killer.to_float(), margin);
+                margin = Params::fut_margin_gain(0).mul_add(pos.gain(m).to_float(), margin);
+                let futility = self.stack.value[ply.cast::<usize>()] + margin.to_int::<i16>();
+                if futility <= alpha {
+                    continue;
+                }
             }
 
-            let mut spt = if m.is_quiet() {
+            let mut margin = if m.is_quiet() {
                 Self::qsp(lmr_depth)
             } else {
                 Self::nsp(depth)
             };
 
-            spt = Params::qsp_margin_is_killer(0).mul_add(is_killer.to_float(), spt);
-            if !pos.winning(m, spt.to_int()) {
+            margin = Params::qsp_margin_is_killer(0).mul_add(is_killer.to_float(), margin);
+            if !tail.score().is_losing() && !pos.winning(m, margin.to_int()) {
                 continue;
             }
 

@@ -323,14 +323,11 @@ impl<'a> Searcher<'a> {
     /// Computes the razoring margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn razoring(depth: Depth) -> Option<f32> {
-        match depth.get() {
-            ..1 | 5.. => None,
-            d @ 1..5 => Some(convolve([
-                (d.to_float(), Params::razoring_depth(..)),
-                (1., Params::razoring_scalar(..)),
-            ])),
-        }
+    fn razoring(depth: Depth) -> f32 {
+        convolve([
+            (depth.to_float(), Params::razoring_depth(..)),
+            (1., Params::razoring_scalar(..)),
+        ])
     }
 
     /// Computes the reverse futility margin.
@@ -686,13 +683,11 @@ impl<'a> Searcher<'a> {
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
         } else if !IS_PV && !is_check {
-            #[expect(clippy::collapsible_if)]
-            if let Some(margin) = Self::razoring(depth) {
-                if self.stack.value[ply.cast::<usize>()] + margin.to_int::<i16>() <= alpha {
-                    let pv = self.qnw(beta)?;
-                    if pv <= alpha {
-                        return Ok(pv.truncate());
-                    }
+            let margin = Self::razoring(depth);
+            if self.stack.value[ply.cast::<usize>()] + margin.to_int::<i16>() <= alpha {
+                let pv = self.qnw(beta)?;
+                if pv <= alpha {
+                    return Ok(pv.truncate());
                 }
             }
 

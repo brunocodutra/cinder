@@ -336,14 +336,11 @@ impl<'a> Searcher<'a> {
     /// Computes the reverse futility margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn rfp(depth: Depth) -> Option<f32> {
-        match depth.get() {
-            ..1 | 9.. => None,
-            d @ 1..9 => Some(convolve([
-                (d.to_float(), Params::rfp_margin_depth(..)),
-                (1., Params::rfp_margin_scalar(..)),
-            ])),
-        }
+    fn rfp(depth: Depth) -> f32 {
+        convolve([
+            (depth.to_float(), Params::rfp_margin_depth(..)),
+            (1., Params::rfp_margin_scalar(..)),
+        ])
     }
 
     /// Computes the futility margin.
@@ -699,11 +696,10 @@ impl<'a> Searcher<'a> {
                 }
             }
 
-            if let Some(mut margin) = Self::rfp(depth) {
-                margin = Params::rfp_margin_improving(0).mul_add(improving, margin);
-                if transposed.score() - margin.to_int::<i16>() >= beta {
-                    return Ok(transposed.truncate());
-                }
+            let mut margin = Self::rfp(depth);
+            margin = Params::rfp_margin_improving(0).mul_add(improving, margin);
+            if transposed.score() - margin.to_int::<i16>() >= beta {
+                return Ok(transposed.truncate());
             }
 
             let turn = self.stack.pos.turn();

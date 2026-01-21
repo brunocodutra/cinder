@@ -286,8 +286,8 @@ impl<'a> Searcher<'a> {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn nmp(depth: Depth) -> Option<f32> {
         match depth.get() {
-            ..1 | 5.. => None,
-            d @ 1..5 => Some(convolve([
+            ..1 | 4.. => None,
+            d @ 1..4 => Some(convolve([
                 (d.to_float(), Params::nmp_margin_depth(..)),
                 (1., Params::nmp_margin_scalar(..)),
             ])),

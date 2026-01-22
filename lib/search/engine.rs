@@ -294,31 +294,29 @@ impl<'a> Searcher<'a> {
         }
     }
 
-    /// Computes the fail-low pruning reduction.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn flp(depth: Depth) -> Option<f32> {
-        match depth.get() {
-            5.. => None,
-            ..1 => Some(0.),
-            d @ 1..5 => Some(convolve([
-                (d.to_float(), Params::flp_margin_depth(..)),
-                (1., Params::flp_margin_scalar(..)),
-            ])),
-        }
-    }
-
     /// Computes fail-high pruning reduction.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn fhp(depth: Depth) -> Option<f32> {
+    fn fhp(depth: Depth) -> f32 {
         match depth.get() {
-            7.. => None,
-            ..1 => Some(0.),
-            d @ 1..7 => Some(convolve([
+            ..1 => 0.,
+            d @ 1.. => convolve([
                 (d.to_float(), Params::fhp_margin_depth(..)),
                 (1., Params::fhp_margin_scalar(..)),
-            ])),
+            ]),
+        }
+    }
+
+    /// Computes the fail-low pruning reduction.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn flp(depth: Depth) -> f32 {
+        match depth.get() {
+            ..1 => 0.,
+            d @ 1.. => convolve([
+                (d.to_float(), Params::flp_margin_depth(..)),
+                (1., Params::flp_margin_scalar(..)),
+            ]),
         }
     }
 
@@ -657,18 +655,12 @@ impl<'a> Searcher<'a> {
             if let Some(t) = transposition {
                 let (lower, upper) = t.score.range(ply).into_inner();
 
-                #[expect(clippy::collapsible_if)]
-                if let Some(margin) = Self::flp(depth - t.depth) {
-                    if upper + margin.to_int::<i16>() <= alpha {
-                        return Ok(transposed.truncate());
-                    }
+                if cut && lower - Self::fhp(depth - t.depth).to_int::<i16>() >= beta {
+                    return Ok(transposed.truncate());
                 }
 
-                #[expect(clippy::collapsible_if)]
-                if let Some(margin) = Self::fhp(depth - t.depth) {
-                    if cut && lower - margin.to_int::<i16>() >= beta {
-                        return Ok(transposed.truncate());
-                    }
+                if upper + Self::flp(depth - t.depth).to_int::<i16>() <= alpha {
+                    return Ok(transposed.truncate());
                 }
             }
         }

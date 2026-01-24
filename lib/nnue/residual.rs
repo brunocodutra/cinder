@@ -1,7 +1,7 @@
 use crate::nnue::{Layer, Ln, Synapse};
 use crate::simd::*;
 use bytemuck::Zeroable;
-use std::array::from_fn as each;
+use std::array;
 
 const N: usize = Ln::LEN;
 
@@ -23,7 +23,7 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Resid
 
         let xs: &[V2<f32>; N / W2] = input.cast();
         let ws: &[V2<f32>; N / W2] = self.weight.cast();
-        let res: [_; N / W2] = each(|i| ws[i] * xs[i]);
+        let res: [_; N / W2] = array::from_fn(|i| ws[i] * xs[i]);
         res.iter().sum::<V2<f32>>() + self.next.forward(input)
     }
 }

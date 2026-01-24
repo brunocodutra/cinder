@@ -80,13 +80,18 @@ reqwest = { version = "0.13.1", features = ["blocking"] }
 tempfile = "3.24.0"
 test-strategy = { version = "0.4.3" }
 
+[profile.dev]
+opt-level = 3
+
 [profile.release]
 codegen-units = 1
 strip = "none"
 lto = true
 
-[profile.dev]
-opt-level = 3
+[profile.dist]
+inherits = "release"
+panic = "abort"
+strip = true
 
 [lib]
 name = "cinder"

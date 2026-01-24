@@ -61,10 +61,10 @@ mac-aarch64-sme:
 
 define build
 	@echo "Building target $1"
-	cargo build --release --bin=cinder \
-		--config='build.rustflags=["-Ctarget-cpu=$3", "-Cpanic=abort", "-Cstrip=symbols", "-Zlocation-detail=none"]' \
+	cargo build --profile=dist --bin=cinder \
+		--config='build.rustflags=["-Ctarget-cpu=$3", "-Zlocation-detail=none"]' \
 		--target-dir=$(TARGET_DIR)/$1/ --target=$2 $4
 
 	@mkdir -p $(BIN_DIR)
-	@cp $(TARGET_DIR)/$1/$2/release/cinder$(POSTFIX) $(BIN_DIR)/cinder-v$(CRATE_VERSION)-$(PLATFORM)-$1$(POSTFIX)
+	@cp $(TARGET_DIR)/$1/$2/dist/cinder$(POSTFIX) $(BIN_DIR)/cinder-v$(CRATE_VERSION)-$(PLATFORM)-$1$(POSTFIX)
 endef

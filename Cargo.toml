@@ -71,7 +71,7 @@ serde = { version = "1.0.228", optional = true, default-features = false, featur
 bullet = { git = "https://github.com/jw1912/bullet", package = "bullet_lib", optional = true, default-features = false }
 
 # no_panic
-no-panic = { version = "0.1.35", default-features = false, optional = true }
+no-panic = { version = "0.1.36", default-features = false, optional = true }
 
 [dev-dependencies]
 proptest = { version = "1.9.0" }

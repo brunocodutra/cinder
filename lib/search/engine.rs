@@ -546,19 +546,10 @@ impl<'a> Searcher<'a> {
                 return Bounded::upper();
             }
 
-            let mut rating = 0.;
             let pos = &self.stack.pos;
-
             let history = self.local.history.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
-            rating = Params::history_rating(0).mul_add(history, rating);
-
-            for i in 1..=ply.cast::<usize>().min(2) {
-                let reply = self.stack.replies.get_mut(ply.cast::<usize>() - i).assume();
-                let history = reply.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
-                rating = Params::history_rating(i).mul_add(history, rating);
-            }
-
-            if pos.winning(m, Params::good_noisy_margin(0).to_int()) {
+            let mut rating = Params::history_rating(0) * history;
+            if pos.gaining(m, Params::good_noisy_margin(0).to_int()) {
                 rating += pos.gain(m).to_float::<f32>();
                 rating += *Params::good_noisy_bonus(0);
             }
@@ -596,7 +587,7 @@ impl<'a> Searcher<'a> {
                 }
             }
 
-            if !tail.score().is_losing() && !pos.winning(m, Params::nsp_margin_scalar(0).to_int()) {
+            if !tail.score().is_losing() && !pos.gaining(m, Params::nsp_margin_scalar(0).to_int()) {
                 continue;
             }
 
@@ -762,7 +753,7 @@ impl<'a> Searcher<'a> {
                 rating = Params::history_rating(i).mul_add(history, rating);
             }
 
-            if m.is_noisy() && pos.winning(m, Params::good_noisy_margin(0).to_int()) {
+            if m.is_noisy() && pos.gaining(m, Params::good_noisy_margin(0).to_int()) {
                 rating += pos.gain(m).to_float::<f32>();
                 rating += *Params::good_noisy_bonus(0);
             }
@@ -786,7 +777,7 @@ impl<'a> Searcher<'a> {
                     }
 
                     let margin = p_beta - self.stack.value[ply.cast::<usize>()];
-                    if !self.stack.pos.winning(m, margin.saturate()) {
+                    if !self.stack.pos.gaining(m, margin.saturate()) {
                         continue;
                     }
 
@@ -883,7 +874,7 @@ impl<'a> Searcher<'a> {
             };
 
             margin = Params::qsp_margin_is_killer(0).mul_add(is_killer.to_float(), margin);
-            if !tail.score().is_losing() && !pos.winning(m, margin.to_int()) {
+            if !tail.score().is_losing() && !pos.gaining(m, margin.to_int()) {
                 continue;
             }
 
@@ -958,7 +949,7 @@ impl<'a> Searcher<'a> {
             let history = self.local.history.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
             rating = Params::history_rating(0).mul_add(history, rating);
 
-            if m.is_noisy() && pos.winning(m, Params::good_noisy_margin(0).to_int()) {
+            if m.is_noisy() && pos.gaining(m, Params::good_noisy_margin(0).to_int()) {
                 rating += pos.gain(m).to_float::<f32>();
                 rating += *Params::good_noisy_bonus(0);
             }

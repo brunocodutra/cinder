@@ -180,7 +180,7 @@ impl Evaluator {
 
     /// Whether this move wins the exchange by at least `margin`.
     #[inline(always)]
-    pub fn winning(&self, m: Move, margin: Value) -> bool {
+    pub fn gaining(&self, m: Move, margin: Value) -> bool {
         margin == Value::lower() || self.see(m, margin - 1..margin) == margin
     }
 
@@ -532,8 +532,8 @@ mod tests {
         let m = e.moves().unpack().find(|m| m.to_string() == uci).unwrap();
         assert_eq!(e.see(m, Value::lower()..Value::upper()), value);
 
-        assert!(e.winning(m, Value::new(value)));
-        assert!(e.winning(m, Value::new(value - 1)));
-        assert!(!e.winning(m, Value::new(value + 1)));
+        assert!(e.gaining(m, Value::new(value)));
+        assert!(e.gaining(m, Value::new(value - 1)));
+        assert!(!e.gaining(m, Value::new(value + 1)));
     }
 }

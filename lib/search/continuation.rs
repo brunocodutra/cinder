@@ -4,8 +4,7 @@ use crate::util::Assume;
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 
-#[derive(Debug, Clone, Hash, Zeroable)]
-#[derive_const(Eq, PartialEq)]
+#[derive(Debug, Zeroable)]
 pub struct Reply(PieceTo<<Reply as Statistics<Move>>::Stat>);
 
 impl const Default for Reply {
@@ -38,8 +37,7 @@ impl const Statistics<Move> for Reply {
     }
 }
 
-#[derive(Debug, Clone, Hash, Zeroable)]
-#[derive_const(Eq, PartialEq)]
+#[derive(Debug, Zeroable)]
 #[debug("Continuation")]
 pub struct Continuation(PieceTo<[Reply; 2]>);
 

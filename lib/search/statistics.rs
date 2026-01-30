@@ -1,5 +1,5 @@
 use crate::chess::Position;
-use crate::util::{Assume, Int, zero};
+use crate::util::{Assume, Float, zero};
 use bytemuck::{NoUninit, Zeroable};
 use derive_more::with_trait::Debug;
 use std::{marker::Destruct, ptr::NonNull};
@@ -30,7 +30,11 @@ impl<C, T: [const] Statistics<C>> const Statistics<C> for &mut T {
     }
 }
 
-impl<C: [const] Destruct, T: [const] Statistics<C>> const Statistics<C> for Option<T> {
+impl<C, T> const Statistics<C> for Option<T>
+where
+    C: [const] Destruct,
+    T: [const] Statistics<C, Stat: Stat<Value: [const] Destruct>>,
+{
     type Stat = T::Stat;
 
     #[inline(always)]
@@ -66,7 +70,7 @@ impl<C, T: [const] Statistics<C>> const Statistics<C> for NonNull<T> {
 /// A trait for statistics counters.
 pub const trait Stat {
     /// The value type.
-    type Value: Int + Zeroable;
+    type Value: Zeroable;
 
     /// Returns the current [`Self::Value`].
     fn get(&mut self) -> Self::Value;
@@ -75,7 +79,7 @@ pub const trait Stat {
     fn update(&mut self, delta: Self::Value);
 }
 
-impl<T: [const] Stat> const Stat for &mut T {
+impl<T: [const] Stat<Value: [const] Destruct>> const Stat for &mut T {
     type Value = T::Value;
 
     #[inline(always)]
@@ -89,7 +93,7 @@ impl<T: [const] Stat> const Stat for &mut T {
     }
 }
 
-impl<T: [const] Stat> const Stat for Option<T> {
+impl<T: [const] Stat<Value: [const] Destruct>> const Stat for Option<T> {
     type Value = T::Value;
 
     #[inline(always)]
@@ -105,7 +109,7 @@ impl<T: [const] Stat> const Stat for Option<T> {
     }
 }
 
-impl<T: [const] Stat> const Stat for NonNull<T> {
+impl<T: [const] Stat<Value: [const] Destruct>> const Stat for NonNull<T> {
     type Value = T::Value;
 
     #[inline(always)]
@@ -120,32 +124,29 @@ impl<T: [const] Stat> const Stat for NonNull<T> {
 }
 
 /// A saturating accumulator that implements the "gravity" formula.
-#[derive(Debug, Copy, Hash, Zeroable)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Zeroable, NoUninit)]
+#[derive_const(Default, Clone, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct Graviton<const MIN: i16, const MAX: i16>(i16);
+pub struct Graviton(f32);
 
-unsafe impl<const MIN: i16, const MAX: i16> NoUninit for Graviton<MIN, MAX> {}
-
-unsafe impl<const MIN: i16, const MAX: i16> const Int for Graviton<MIN, MAX> {
-    type Repr = i16;
-    const MIN: Self::Repr = MIN;
-    const MAX: Self::Repr = MAX;
+unsafe impl const Float for Graviton {
+    type Repr = f32;
+    const MIN: Self::Repr = -Self::MAX;
+    const MAX: Self::Repr = 1.0;
 }
 
-impl<const MIN: i16, const MAX: i16> const Stat for Graviton<MIN, MAX> {
-    type Value = <Self as Int>::Repr;
+impl const Stat for Graviton {
+    type Value = <Self as Float>::Repr;
 
     #[inline(always)]
     fn get(&mut self) -> Self::Value {
-        const { assert!(MIN <= 0 && 0 <= MAX) }
         self.0
     }
 
     #[inline(always)]
     fn update(&mut self, delta: Self::Value) {
-        let delta = delta.clamp(Self::MIN, Self::MAX) as i32;
-        self.0 = (delta - delta.abs() * self.0 as i32 / Self::MAX as i32 + self.0 as i32) as i16;
+        self.0 += delta.abs().mul_add(-self.0, delta);
+        self.0 = self.0.clamp(Self::MIN, Self::MAX);
     }
 }

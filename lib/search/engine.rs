@@ -6,8 +6,9 @@ use bytemuck::{Zeroable, fill_zeroes, zeroed};
 use derive_more::with_trait::{Constructor, Debug, Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
+use std::ops::{Mul, Range};
 use std::task::{Context, Poll};
-use std::{cell::SyncUnsafeCell, ops::Range, path::Path, pin::Pin, ptr::NonNull, slice};
+use std::{cell::SyncUnsafeCell, path::Path, pin::Pin, ptr::NonNull, slice};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -137,11 +138,11 @@ impl<'a> Searcher<'a> {
     fn correction(&mut self) -> f32 {
         let pos = &self.stack.pos;
         let zbs = pos.zobrists();
-        let pawns = self.local.corrections.pawns.get(pos, zbs.pawns) as f32;
-        let minor = self.local.corrections.minor.get(pos, zbs.minor) as f32;
-        let major = self.local.corrections.major.get(pos, zbs.major) as f32;
-        let white = self.local.corrections.white.get(pos, zbs.white) as f32;
-        let black = self.local.corrections.black.get(pos, zbs.black) as f32;
+        let pawns = self.local.corrections.pawns.get(pos, zbs.pawns);
+        let minor = self.local.corrections.minor.get(pos, zbs.minor);
+        let major = self.local.corrections.major.get(pos, zbs.major);
+        let white = self.local.corrections.white.get(pos, zbs.white);
+        let black = self.local.corrections.black.get(pos, zbs.black);
 
         let mut correction = 0.;
         correction = Params::pawns_correction(0).mul_add(pawns, correction);
@@ -149,64 +150,43 @@ impl<'a> Searcher<'a> {
         correction = Params::major_correction(0).mul_add(major, correction);
         correction = Params::pieces_correction(0).mul_add(white, correction);
         correction = Params::pieces_correction(0).mul_add(black, correction);
-        correction / Correction::LIMIT as f32
+        correction
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn update_correction(&mut self, depth: Depth, score: ScoreBound) {
         let pos = &self.stack.pos;
-        let ply = pos.ply();
-        let zbs = pos.zobrists();
+        let (ply, zbs) = (pos.ply(), pos.zobrists());
         let diff = score.bound(ply) - self.stack.value[ply.cast::<usize>()];
-        let error = diff.to_float::<f32>() * depth.get().max(1).ilog2().to_float::<f32>();
+        let error = diff.to_float::<f32>() * depth.to_float::<f32>();
+
+        let pawns_bonus = error
+            .mul(*Params::pawns_correction_bonus(0))
+            .max(*Params::pawns_correction_bonus(1))
+            .min(*Params::pawns_correction_bonus(2));
+
+        let minor_bonus = error
+            .mul(*Params::minor_correction_bonus(0))
+            .max(*Params::minor_correction_bonus(1))
+            .min(*Params::minor_correction_bonus(2));
+
+        let major_bonus = error
+            .mul(*Params::major_correction_bonus(0))
+            .max(*Params::major_correction_bonus(1))
+            .min(*Params::major_correction_bonus(2));
+
+        let pieces_bonus = error
+            .mul(*Params::pieces_correction_bonus(0))
+            .max(*Params::pieces_correction_bonus(1))
+            .min(*Params::pieces_correction_bonus(2));
 
         let corrections = &mut self.local.corrections;
-        let bonus = Params::pawns_correction_bonus(0) * error;
-        corrections.pawns.update(pos, zbs.pawns, bonus.to_int());
-        let bonus = Params::minor_correction_bonus(0) * error;
-        corrections.minor.update(pos, zbs.minor, bonus.to_int());
-        let bonus = Params::major_correction_bonus(0) * error;
-        corrections.major.update(pos, zbs.major, bonus.to_int());
-        let bonus = Params::pieces_correction_bonus(0) * error;
-        corrections.white.update(pos, zbs.white, bonus.to_int());
-        corrections.black.update(pos, zbs.black, bonus.to_int());
-    }
-
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn history_bonus(depth: Depth) -> f32 {
-        convolve([
-            (depth.to_float(), Params::history_bonus_depth(..)),
-            (1., Params::history_bonus_scalar(..)),
-        ])
-    }
-
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn continuation_bonus(depth: Depth) -> f32 {
-        convolve([
-            (depth.to_float(), Params::continuation_bonus_depth(..)),
-            (1., Params::continuation_bonus_scalar(..)),
-        ])
-    }
-
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn history_penalty(depth: Depth) -> f32 {
-        convolve([
-            (depth.to_float(), Params::history_penalty_depth(..)),
-            (1., Params::history_penalty_scalar(..)),
-        ])
-    }
-
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn continuation_penalty(depth: Depth) -> f32 {
-        convolve([
-            (depth.to_float(), Params::continuation_penalty_depth(..)),
-            (1., Params::continuation_penalty_scalar(..)),
-        ])
+        corrections.pawns.update(pos, zbs.pawns, pawns_bonus);
+        corrections.minor.update(pos, zbs.minor, minor_bonus);
+        corrections.major.update(pos, zbs.major, major_bonus);
+        corrections.white.update(pos, zbs.white, pieces_bonus);
+        corrections.black.update(pos, zbs.black, pieces_bonus);
     }
 
     #[inline(always)]
@@ -214,10 +194,22 @@ impl<'a> Searcher<'a> {
     fn update_history(&mut self, depth: Depth, best: Move, moves: &Moves) {
         let pos = &self.stack.pos;
         let idx = pos.ply().cast::<usize>();
-        let history_bonus = Self::history_bonus(depth).to_int();
-        let history_penalty = Self::history_penalty(depth).to_int();
-        let continuation_bonus = Self::continuation_bonus(depth).to_int();
-        let continuation_penalty = Self::continuation_penalty(depth).to_int();
+
+        let history_bonus = Params::history_bonus(0)
+            .mul_add(depth.to_float(), *Params::history_bonus(1))
+            .min(*Params::history_bonus(2));
+
+        let history_penalty = Params::history_penalty(0)
+            .mul_add(depth.to_float(), *Params::history_penalty(1))
+            .max(*Params::history_penalty(2));
+
+        let continuation_bonus = Params::continuation_bonus(0)
+            .mul_add(depth.to_float(), *Params::continuation_bonus(1))
+            .min(*Params::continuation_bonus(2));
+
+        let continuation_penalty = Params::continuation_penalty(0)
+            .mul_add(depth.to_float(), *Params::continuation_penalty(1))
+            .max(*Params::continuation_penalty(2));
 
         self.local.history.update(pos, best, history_bonus);
 
@@ -538,9 +530,9 @@ impl<'a> Searcher<'a> {
                 return Bounded::upper();
             }
 
+            let mut rating = 0.;
             let pos = &self.stack.pos;
-            let history = self.local.history.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
-            let mut rating = Params::history_rating(0) * history;
+            rating = Params::history_rating(0).mul_add(self.local.history.get(pos, m), rating);
             if pos.gaining(m, Params::good_noisy_margin(0).to_int()) {
                 rating += pos.gain(m).to_float::<f32>();
                 rating += *Params::good_noisy_bonus(0);
@@ -726,14 +718,11 @@ impl<'a> Searcher<'a> {
 
             let pos = &self.stack.pos;
             let mut rating = *Params::killer_rating(0) * killer.contains(m).to_float::<f32>();
-
-            let history = self.local.history.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
-            rating = Params::history_rating(0).mul_add(history, rating);
+            rating = Params::history_rating(0).mul_add(self.local.history.get(pos, m), rating);
 
             for i in 1..=ply.cast::<usize>().min(2) {
                 let reply = self.stack.replies.get_mut(ply.cast::<usize>() - i).assume();
-                let history = reply.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
-                rating = Params::history_rating(i).mul_add(history, rating);
+                rating = Params::history_rating(i).mul_add(reply.get(pos, m), rating);
             }
 
             if m.is_noisy() && pos.gaining(m, Params::good_noisy_margin(0).to_int()) {
@@ -834,9 +823,9 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             let mut lmr = Self::lmr(depth, index);
             let lmr_depth = depth - lmr.to_int::<i8>();
-            let history = self.local.history.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
+            let history = self.local.history.get(pos, m);
             let reply = self.stack.replies.get_mut(ply.cast::<usize>() - 1).assume();
-            let counter = reply.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
+            let counter = reply.get(pos, m);
             let is_killer = killer.contains(m);
 
             if !tail.score().is_losing() {
@@ -929,9 +918,7 @@ impl<'a> Searcher<'a> {
 
             let mut rating = 0.;
             let pos = &self.stack.pos;
-            let history = self.local.history.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
-            rating = Params::history_rating(0).mul_add(history, rating);
-
+            rating = Params::history_rating(0).mul_add(self.local.history.get(pos, m), rating);
             if m.is_noisy() && pos.gaining(m, Params::good_noisy_margin(0).to_int()) {
                 rating += pos.gain(m).to_float::<f32>();
                 rating += *Params::good_noisy_bonus(0);
@@ -956,7 +943,7 @@ impl<'a> Searcher<'a> {
             };
 
             let pos = &self.stack.pos;
-            let history = self.local.history.get(pos, m).to_float::<f32>() / History::LIMIT as f32;
+            let history = self.local.history.get(pos, m);
             self.stack.nodes = self.ctrl.attention(m);
 
             let mut next = self.next(Some(m));

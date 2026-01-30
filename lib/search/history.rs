@@ -4,8 +4,7 @@ use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 
 /// Historical statistics about a [`Move`].
-#[derive(Debug, Clone, Hash, Zeroable)]
-#[derive_const(Eq, PartialEq)]
+#[derive(Debug, Zeroable)]
 #[debug("History")]
 pub struct History(
     #[expect(clippy::type_complexity)]
@@ -20,8 +19,6 @@ impl const Default for History {
 }
 
 impl History {
-    pub const LIMIT: i16 = 256;
-
     #[inline(always)]
     const fn graviton(&mut self, pos: &Position, m: Move) -> &mut <Self as Statistics<Move>>::Stat {
         let (wc, wt) = (m.whence(), m.whither());
@@ -32,7 +29,7 @@ impl History {
 }
 
 impl const Statistics<Move> for History {
-    type Stat = Graviton<{ -Self::LIMIT }, { Self::LIMIT }>;
+    type Stat = Graviton;
 
     #[inline(always)]
     fn get(&mut self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {

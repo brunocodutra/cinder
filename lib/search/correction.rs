@@ -7,8 +7,7 @@ use derive_more::with_trait::Debug;
 const BUCKETS: usize = 16384;
 
 /// Historical statistics about a [`Move`](`crate::chess::Move`).
-#[derive(Debug, Clone, Hash, Zeroable)]
-#[derive_const(Eq, PartialEq)]
+#[derive(Debug, Zeroable)]
 #[debug("Correction")]
 pub struct Correction([[<Correction as Statistics<Zobrist>>::Stat; BUCKETS]; 2]);
 
@@ -20,8 +19,6 @@ impl const Default for Correction {
 }
 
 impl Correction {
-    pub const LIMIT: i16 = 1024;
-
     #[inline(always)]
     const fn graviton(
         &mut self,
@@ -34,7 +31,7 @@ impl Correction {
 }
 
 impl const Statistics<Zobrist> for Correction {
-    type Stat = Graviton<{ -Self::LIMIT }, { Self::LIMIT }>;
+    type Stat = Graviton;
 
     #[inline(always)]
     fn get(&mut self, pos: &Position, key: Zobrist) -> <Self::Stat as Stat>::Value {

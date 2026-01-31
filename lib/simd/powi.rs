@@ -1,5 +1,5 @@
 use std::ops::MulAssign;
-use std::simd::{LaneCount, SimdElement, SupportedLaneCount, prelude::*};
+use std::simd::{SimdElement, prelude::*};
 
 /// Trait for [`Simd<_, _>` ] types that implement `powi`.
 pub trait Powi {
@@ -10,7 +10,6 @@ pub trait Powi {
 impl<T, const N: usize> Powi for Simd<T, N>
 where
     T: SimdElement + From<i8>,
-    LaneCount<N>: SupportedLaneCount,
     Self: MulAssign,
 {
     #[inline(always)]

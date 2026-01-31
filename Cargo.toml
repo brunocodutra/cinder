@@ -78,7 +78,7 @@ proptest = { version = "1.9.0" }
 rand = { version = "0.9.2" }
 reqwest = { version = "0.13.1", features = ["blocking"] }
 tempfile = "3.24.0"
-test-strategy = { version = "0.4.3" }
+test-strategy = { version = "0.4.4" }
 
 [profile.dev]
 opt-level = 3

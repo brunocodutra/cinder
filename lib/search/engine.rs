@@ -48,7 +48,7 @@ struct Corrections {
     major: Correction<16384>,
     white: Correction<16384>,
     black: Correction<16384>,
-    counter: Correction<4096>,
+    continuation: [Correction<4096>; 2],
 }
 
 #[derive(Debug, Zeroable)]
@@ -65,7 +65,7 @@ struct Stack {
     nodes: Option<NonNull<Nodes>>,
     replies: [Option<NonNull<Reply>>; Ply::MAX as usize + 1],
     killers: [Killers; Ply::MAX as usize + 1],
-    value: [Value; Ply::MAX as usize + 1],
+    values: [Value; Ply::MAX as usize + 1],
 }
 
 impl Stack {
@@ -77,8 +77,15 @@ impl Stack {
             nodes: None,
             replies: [None; Ply::MAX as usize + 1],
             killers: [Default::default(); Ply::MAX as usize + 1],
-            value: [Default::default(); Ply::MAX as usize + 1],
+            values: [Default::default(); Ply::MAX as usize + 1],
         }
+    }
+
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn value(&self, i: usize) -> Value {
+        let idx = self.pos.ply().cast::<usize>().wrapping_sub(i);
+        *self.values.get(idx).assume()
     }
 
     #[inline(always)]
@@ -155,16 +162,12 @@ impl<'a> Searcher<'a> {
         let penalty = [history_penalty, counter_penalty, followup_penalty];
 
         self.local.history.update(pos, best, bonus[0]);
-
-        #[expect(clippy::needless_range_loop)]
         for i in 1..=bonus[1..].len().min(pos.ply().cast()) {
             self.stack.reply(i).update(pos, best, bonus[i]);
         }
 
         for m in moves.iter().take_while(|&m| m != best) {
             self.local.history.update(pos, m, penalty[0]);
-
-            #[expect(clippy::needless_range_loop)]
             for i in 1..=penalty[1..].len().min(pos.ply().cast()) {
                 self.stack.reply(i).update(pos, m, penalty[i]);
             }
@@ -176,46 +179,51 @@ impl<'a> Searcher<'a> {
     fn update_correction(&mut self, depth: Depth, score: ScoreBound) {
         let pos = &self.stack.pos;
         let (ply, zbs) = (pos.ply(), pos.zobrists());
-        let diff = score.bound(ply) - self.stack.value[ply.cast::<usize>()];
+        let diff = score.bound(ply) - self.stack.value(0);
         let error = diff.to_float::<f32>() * depth.to_float::<f32>();
 
-        let pawns_bonus = error
-            .mul(*Params::pawns_correction_bonus(0))
-            .max(*Params::pawns_correction_bonus(1))
-            .min(*Params::pawns_correction_bonus(2));
+        let pawns_delta = error
+            .mul(*Params::pawns_correction_delta(0))
+            .max(*Params::pawns_correction_delta(1))
+            .min(*Params::pawns_correction_delta(2));
 
-        let minor_bonus = error
-            .mul(*Params::minor_correction_bonus(0))
-            .max(*Params::minor_correction_bonus(1))
-            .min(*Params::minor_correction_bonus(2));
+        let minor_delta = error
+            .mul(*Params::minor_correction_delta(0))
+            .max(*Params::minor_correction_delta(1))
+            .min(*Params::minor_correction_delta(2));
 
-        let major_bonus = error
-            .mul(*Params::major_correction_bonus(0))
-            .max(*Params::major_correction_bonus(1))
-            .min(*Params::major_correction_bonus(2));
+        let major_delta = error
+            .mul(*Params::major_correction_delta(0))
+            .max(*Params::major_correction_delta(1))
+            .min(*Params::major_correction_delta(2));
 
-        let pieces_bonus = error
-            .mul(*Params::pieces_correction_bonus(0))
-            .max(*Params::pieces_correction_bonus(1))
-            .min(*Params::pieces_correction_bonus(2));
+        let pieces_delta = error
+            .mul(*Params::pieces_correction_delta(0))
+            .max(*Params::pieces_correction_delta(1))
+            .min(*Params::pieces_correction_delta(2));
 
-        let counter_bonus = error
-            .mul(*Params::counter_correction_bonus(0))
-            .max(*Params::counter_correction_bonus(1))
-            .min(*Params::counter_correction_bonus(2));
+        let counter_delta = error
+            .mul(*Params::counter_correction_delta(0))
+            .max(*Params::counter_correction_delta(1))
+            .min(*Params::counter_correction_delta(2));
+
+        let followup_delta = error
+            .mul(*Params::followup_correction_delta(0))
+            .max(*Params::followup_correction_delta(1))
+            .min(*Params::followup_correction_delta(2));
 
         let corrections = &mut self.local.corrections;
-        corrections.pawns.update(pos, zbs.pawns, pawns_bonus);
-        corrections.minor.update(pos, zbs.minor, minor_bonus);
-        corrections.major.update(pos, zbs.major, major_bonus);
-        corrections.white.update(pos, zbs.white, pieces_bonus);
-        corrections.black.update(pos, zbs.black, pieces_bonus);
+        corrections.pawns.update(pos, zbs.pawns, pawns_delta);
+        corrections.minor.update(pos, zbs.minor, minor_delta);
+        corrections.major.update(pos, zbs.major, major_delta);
+        corrections.white.update(pos, zbs.white, pieces_delta);
+        corrections.black.update(pos, zbs.black, pieces_delta);
 
-        if ply > 0 {
-            #[expect(clippy::collapsible_if)]
-            if let Some(m) = pos.line().get(ply.cast::<usize>() - 1).assume() {
+        let continuation_delta = [counter_delta, followup_delta];
+        for i in 0..corrections.continuation.len().min(ply.cast()) {
+            if let Some(m) = pos.line().get(ply.cast::<usize>() - i - 1).assume() {
                 let key = m.encode().slice(4..);
-                corrections.counter.update(pos, key, counter_bonus);
+                corrections.continuation[i].update(pos, key, continuation_delta[i]);
             }
         }
     }
@@ -238,12 +246,11 @@ impl<'a> Searcher<'a> {
         let black = self.local.corrections.black.get(pos, zbs.black);
         correction = Params::pieces_correction(0).mul_add(black, correction);
 
-        if ply > 0 {
-            #[expect(clippy::collapsible_if)]
-            if let Some(m) = pos.line().get(ply.cast::<usize>() - 1).assume() {
+        for i in 0..self.local.corrections.continuation.len().min(ply.cast()) {
+            if let Some(m) = pos.line().get(ply.cast::<usize>() - i - 1).assume() {
                 let key = m.encode().slice(4..);
-                let counter = self.local.corrections.counter.get(pos, key);
-                correction = Params::counter_correction(0).mul_add(counter, correction);
+                let continuation = self.local.corrections.continuation[i].get(pos, key);
+                correction = Params::continuation_correction(i).mul_add(continuation, correction);
             }
         }
 
@@ -263,16 +270,13 @@ impl<'a> Searcher<'a> {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn improving(&self) -> f32 {
         let pos = &self.stack.pos;
+        let ply = pos.ply();
         if pos.is_check() {
             return 0.;
         }
 
-        let ply = pos.ply();
-        let idx = ply.cast::<usize>();
-        let value = self.stack.value[idx];
-
-        let a = idx >= 2 && !pos[ply - 2].is_check() && value > self.stack.value[idx - 2];
-        let b = idx >= 4 && !pos[ply - 4].is_check() && value > self.stack.value[idx - 4];
+        let a = ply >= 2 && !pos[ply - 2].is_check() && self.stack.value(0) > self.stack.value(2);
+        let b = ply >= 4 && !pos[ply - 4].is_check() && self.stack.value(0) > self.stack.value(4);
 
         let mut idx = Bits::<u8, 2>::new(0);
         idx.push(Bits::<u8, 1>::new(b.cast()));
@@ -533,11 +537,11 @@ impl<'a> Searcher<'a> {
         }
 
         let correction = self.correction().to_int::<i16>();
-        self.stack.value[ply.cast::<usize>()] = self.evaluate() + correction;
+        self.stack.values[ply.cast::<usize>()] = self.evaluate() + correction;
 
         let transposition = self.transposition();
         let transposed = match transposition {
-            None => Pv::empty(self.stack.value[ply.cast::<usize>()].saturate()),
+            None => Pv::empty(self.stack.value(0).saturate()),
             Some(t) => t.transpose(ply),
         };
 
@@ -602,7 +606,7 @@ impl<'a> Searcher<'a> {
                 let mut margin = *Params::fut_margin_scalar(0);
                 margin = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), margin);
                 margin = Params::fut_margin_gain(0).mul_add(pos.gain(m).to_float(), margin);
-                let futility = self.stack.value[ply.cast::<usize>()] + margin.to_int::<i16>();
+                let futility = self.stack.value(0) + margin.to_int::<i16>();
                 if futility <= alpha {
                     continue;
                 }
@@ -657,12 +661,12 @@ impl<'a> Searcher<'a> {
         }
 
         let correction = self.correction().to_int::<i16>();
-        self.stack.value[ply.cast::<usize>()] = self.evaluate() + correction;
+        self.stack.values[ply.cast::<usize>()] = self.evaluate() + correction;
 
         let is_check = self.stack.pos.is_check();
         let transposition = self.transposition();
         let transposed = match transposition {
-            None => Pv::empty(self.stack.value[ply.cast::<usize>()].saturate()),
+            None => Pv::empty(self.stack.value(0).saturate()),
             Some(t) => t.transpose(ply),
         };
 
@@ -713,7 +717,7 @@ impl<'a> Searcher<'a> {
             return Ok(transposed.truncate());
         } else if !IS_PV && !is_check {
             let margin = Self::razoring(depth);
-            if self.stack.value[ply.cast::<usize>()] + margin.to_int::<i16>() <= alpha {
+            if self.stack.value(0) + margin.to_int::<i16>() <= alpha {
                 let pv = self.qnw(beta)?;
                 if pv <= alpha {
                     return Ok(pv.truncate());
@@ -787,7 +791,7 @@ impl<'a> Searcher<'a> {
                         continue;
                     }
 
-                    let margin = p_beta - self.stack.value[ply.cast::<usize>()];
+                    let margin = p_beta - self.stack.value(0);
                     if !self.stack.pos.gaining(m, margin.saturate()) {
                         continue;
                     }
@@ -871,7 +875,7 @@ impl<'a> Searcher<'a> {
                 margin = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), margin);
                 margin = Params::fut_margin_is_killer(0).mul_add(is_killer.to_float(), margin);
                 margin = Params::fut_margin_gain(0).mul_add(pos.gain(m).to_float(), margin);
-                let futility = self.stack.value[ply.cast::<usize>()] + margin.to_int::<i16>();
+                let futility = self.stack.value(0) + margin.to_int::<i16>();
                 if futility <= alpha {
                     continue;
                 }
@@ -925,8 +929,7 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let value = self.stack.value[ply.cast::<usize>()];
-        if head.is_quiet() && !score.range(ply).contains(&value) {
+        if head.is_quiet() && !score.range(ply).contains(&self.stack.value(0)) {
             self.update_correction(depth, score);
         }
 
@@ -947,7 +950,7 @@ impl<'a> Searcher<'a> {
         }
 
         let correction = self.correction().to_int::<i16>();
-        self.stack.value[0] = self.evaluate() + correction;
+        self.stack.values[0] = self.evaluate() + correction;
 
         moves.sort(|m| {
             if Some(m) == self.stack.pv.head() {
@@ -1015,8 +1018,7 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let value = self.stack.value[0];
-        if head.is_quiet() && !score.range(zero()).contains(&value) {
+        if head.is_quiet() && !score.range(zero()).contains(&self.stack.value(0)) {
             self.update_correction(depth, score);
         }
 

@@ -27,11 +27,11 @@ unsafe impl<T: [const] Unsigned + 'static, const W: u32> const Int for Bits<T, W
 }
 
 impl<T: Unsigned, const W: u32> Bits<T, W> {
+    #[expect(dead_code)]
+    const ASSERT: () = const { assert!(size_of::<T>() * 8 >= W as usize) };
+
     /// The bit width.
-    pub const BITS: u32 = const {
-        assert!(size_of::<T>() * 8 >= W as usize);
-        W
-    };
+    pub const BITS: u32 = W;
 
     /// Whether this is a superset of `bits`.
     #[inline(always)]

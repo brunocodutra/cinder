@@ -1,45 +1,38 @@
-use crate::chess::{Position, Zobrist};
+use crate::chess::Position;
 use crate::search::{Graviton, Stat, Statistics};
-use crate::util::Int;
+use crate::util::{Bits, Int, Unsigned};
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
-
-const BUCKETS: usize = 16384;
 
 /// Historical statistics about a [`Move`](`crate::chess::Move`).
 #[derive(Debug, Zeroable)]
 #[debug("Correction")]
-pub struct Correction([[<Correction as Statistics<Zobrist>>::Stat; BUCKETS]; 2]);
+pub struct Correction<const N: usize>([[Graviton; N]; 2]);
 
-impl const Default for Correction {
+impl<const N: usize> const Default for Correction<N> {
     #[inline(always)]
     fn default() -> Self {
         zeroed()
     }
 }
 
-impl Correction {
-    #[inline(always)]
-    const fn graviton(
-        &mut self,
-        pos: &Position,
-        key: Zobrist,
-    ) -> &mut <Self as Statistics<Zobrist>>::Stat {
-        const { assert!(BUCKETS.is_power_of_two()) }
-        &mut self.0[pos.turn() as usize][key.slice(..BUCKETS.trailing_zeros()).cast::<usize>()]
-    }
-}
-
-impl const Statistics<Zobrist> for Correction {
+impl<U, const B: u32, const N: usize> const Statistics<Bits<U, B>> for Correction<N>
+where
+    U: [const] Unsigned,
+{
     type Stat = Graviton;
 
     #[inline(always)]
-    fn get(&mut self, pos: &Position, key: Zobrist) -> <Self::Stat as Stat>::Value {
-        self.graviton(pos, key).get()
+    fn get(&self, pos: &Position, key: Bits<U, B>) -> <Self::Stat as Stat>::Value {
+        const { assert!(N.is_power_of_two()) }
+        const { assert!(N.trailing_zeros() <= B) }
+        self.0[pos.turn() as usize][key.slice(..N.trailing_zeros()).cast::<usize>()].get()
     }
 
     #[inline(always)]
-    fn update(&mut self, pos: &Position, key: Zobrist, delta: <Self::Stat as Stat>::Value) {
-        self.graviton(pos, key).update(delta);
+    fn update(&mut self, pos: &Position, key: Bits<U, B>, delta: <Self::Stat as Stat>::Value) {
+        const { assert!(N.is_power_of_two()) }
+        const { assert!(N.trailing_zeros() <= B) }
+        self.0[pos.turn() as usize][key.slice(..N.trailing_zeros()).cast::<usize>()].update(delta);
     }
 }

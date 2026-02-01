@@ -18,7 +18,7 @@ impl const Stat for Nodes {
     type Value = <Self as Int>::Repr;
 
     #[inline(always)]
-    fn get(&mut self) -> Self::Value {
+    fn get(&self) -> Self::Value {
         self.0
     }
 

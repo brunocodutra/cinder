@@ -1,21 +1,16 @@
 use crate::chess::{Bitboard, Flip, Perspective, Piece, Rank, Role, Square, Squares};
-use crate::util::{Assume, Binary, Bits, Int};
+use crate::util::{Assume, Binary, Bits, Int, zero};
 use std::fmt::{self, Debug, Display, Formatter, Write};
-use std::{marker::Destruct, num::NonZeroU16, ops::RangeBounds};
+use std::num::NonZeroU16;
 
 /// A chess move.
 #[derive(Copy, Hash)]
 #[derive_const(Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
-#[cfg_attr(test, filter(#self.is_promotion() || #self.bits(..2) == Bits::new(0)))]
+#[cfg_attr(test, filter(#self.is_promotion() || #self.encode().slice(..2) == zero()))]
 pub struct Move(NonZeroU16);
 
 impl Move {
-    #[inline(always)]
-    const fn bits<R: [const] Destruct + [const] RangeBounds<u32>>(self, r: R) -> Bits<u16, 16> {
-        self.encode().slice(r)
-    }
-
     /// Constructs a regular move.
     #[inline(always)]
     pub const fn regular(whence: Square, whither: Square, promotion: Option<Role>) -> Self {
@@ -26,7 +21,7 @@ impl Move {
         match promotion {
             None => bits.push(Bits::<u8, 4>::new(0b0000)),
             Some(r) => {
-                bits.push(Bits::<u8, 2>::new(0b10));
+                bits.push(Bits::<u8, 2>::new(0b01));
                 bits.push(Bits::<u8, 2>::new(r.get() - 1));
             }
         }
@@ -38,27 +33,27 @@ impl Move {
     #[inline(always)]
     pub const fn capture(whence: Square, whither: Square, promotion: Option<Role>) -> Self {
         let mut m = Self::regular(whence, whither, promotion);
-        m.0 |= 0b100;
+        m.0 |= 0b1000;
         m
     }
 
     /// The source [`Square`].
     #[inline(always)]
     pub const fn whence(self) -> Square {
-        Square::decode(self.bits(10..).pop())
+        Square::decode(self.encode().slice(10..).pop())
     }
 
     /// The destination [`Square`].
     #[inline(always)]
     pub const fn whither(self) -> Square {
-        Square::decode(self.bits(4..).pop())
+        Square::decode(self.encode().slice(4..).pop())
     }
 
     /// The promotion specifier.
     #[inline(always)]
     pub const fn promotion(self) -> Option<Role> {
         if self.is_promotion() {
-            Some(Role::new(self.bits(..2).cast::<u8>() + 1))
+            Some(Role::new(self.encode().slice(..2).cast::<u8>() + 1))
         } else {
             None
         }
@@ -67,19 +62,19 @@ impl Move {
     /// Whether this is a capture move.
     #[inline(always)]
     pub const fn is_capture(self) -> bool {
-        self.bits(2..=2) != Bits::new(0)
+        self.encode().slice(3..=3) != zero()
     }
 
     /// Whether this is a promotion move.
     #[inline(always)]
     pub const fn is_promotion(self) -> bool {
-        self.bits(3..=3) != Bits::new(0)
+        self.encode().slice(2..=2) != zero()
     }
 
     /// Whether this move is neither a capture nor a promotion.
     #[inline(always)]
     pub const fn is_quiet(self) -> bool {
-        self.bits(2..=3) == Bits::new(0)
+        self.encode().slice(2..=3) == zero()
     }
 
     /// Whether this move is not quiet.
@@ -157,7 +152,7 @@ impl MoveSet {
     #[inline(always)]
     pub const fn capture(piece: Piece, whence: Square, whither: Bitboard) -> Self {
         let mut moves = Self::regular(piece, whence, whither);
-        moves.base.0 |= 0b100;
+        moves.base.0 |= 0b1000;
         moves
     }
 

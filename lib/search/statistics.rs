@@ -10,7 +10,7 @@ pub const trait Statistics<C> {
     type Stat: Stat;
 
     /// Returns the accumulated [`Self::Stat`]s.
-    fn get(&mut self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value;
+    fn get(&self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value;
 
     /// Updates [`Self::Stat`]s.
     fn update(&mut self, pos: &Position, ctx: C, delta: <Self::Stat as Stat>::Value);
@@ -20,13 +20,13 @@ impl<C, T: [const] Statistics<C>> const Statistics<C> for &mut T {
     type Stat = T::Stat;
 
     #[inline(always)]
-    fn get(&mut self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value {
-        (*self).get(pos, ctx)
+    fn get(&self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value {
+        (**self).get(pos, ctx)
     }
 
     #[inline(always)]
     fn update(&mut self, pos: &Position, ctx: C, delta: <Self::Stat as Stat>::Value) {
-        (*self).update(pos, ctx, delta);
+        (**self).update(pos, ctx, delta);
     }
 }
 
@@ -38,7 +38,7 @@ where
     type Stat = T::Stat;
 
     #[inline(always)]
-    fn get(&mut self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value {
+    fn get(&self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value {
         match self {
             Some(g) => g.get(pos, ctx),
             None => zero(),
@@ -57,7 +57,7 @@ impl<C, T: [const] Statistics<C>> const Statistics<C> for NonNull<T> {
     type Stat = T::Stat;
 
     #[inline(always)]
-    fn get(&mut self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value {
+    fn get(&self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value {
         self.assume().get(pos, ctx)
     }
 
@@ -73,7 +73,7 @@ pub const trait Stat {
     type Value: Zeroable;
 
     /// Returns the current [`Self::Value`].
-    fn get(&mut self) -> Self::Value;
+    fn get(&self) -> Self::Value;
 
     /// Updates and returns the current [`Self::Value`].
     fn update(&mut self, delta: Self::Value);
@@ -83,13 +83,13 @@ impl<T: [const] Stat<Value: [const] Destruct>> const Stat for &mut T {
     type Value = T::Value;
 
     #[inline(always)]
-    fn get(&mut self) -> Self::Value {
-        (*self).get()
+    fn get(&self) -> Self::Value {
+        (**self).get()
     }
 
     #[inline(always)]
     fn update(&mut self, delta: Self::Value) {
-        (*self).update(delta);
+        (**self).update(delta);
     }
 }
 
@@ -97,8 +97,8 @@ impl<T: [const] Stat<Value: [const] Destruct>> const Stat for Option<T> {
     type Value = T::Value;
 
     #[inline(always)]
-    fn get(&mut self) -> Self::Value {
-        self.as_mut().map_or_else(zero, Stat::get)
+    fn get(&self) -> Self::Value {
+        self.as_ref().map_or_else(zero, Stat::get)
     }
 
     #[inline(always)]
@@ -113,7 +113,7 @@ impl<T: [const] Stat<Value: [const] Destruct>> const Stat for NonNull<T> {
     type Value = T::Value;
 
     #[inline(always)]
-    fn get(&mut self) -> Self::Value {
+    fn get(&self) -> Self::Value {
         self.assume().get()
     }
 
@@ -140,7 +140,7 @@ impl const Stat for Graviton {
     type Value = <Self as Float>::Repr;
 
     #[inline(always)]
-    fn get(&mut self) -> Self::Value {
+    fn get(&self) -> Self::Value {
         self.0
     }
 

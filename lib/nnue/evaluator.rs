@@ -140,6 +140,12 @@ impl Evaluator {
         self.ply
     }
 
+    /// The sequence of moves up to current [`Ply`].
+    #[inline(always)]
+    pub fn line(&self) -> &[Option<Move>] {
+        self.moves.get(..self.ply.cast::<usize>()).assume()
+    }
+
     /// Piece values at this phase of the game.
     #[inline(always)]
     pub fn piece_values(&self) -> [f32; Role::MAX as usize + 1] {

@@ -134,24 +134,39 @@ impl<'a> Searcher<'a> {
             .mul_add(depth.to_float(), *Params::history_penalty(1))
             .max(*Params::history_penalty(2));
 
-        let continuation_bonus = Params::continuation_bonus(0)
-            .mul_add(depth.to_float(), *Params::continuation_bonus(1))
-            .min(*Params::continuation_bonus(2));
+        let counter_bonus = Params::counter_bonus(0)
+            .mul_add(depth.to_float(), *Params::counter_bonus(1))
+            .min(*Params::counter_bonus(2));
 
-        let continuation_penalty = Params::continuation_penalty(0)
-            .mul_add(depth.to_float(), *Params::continuation_penalty(1))
-            .max(*Params::continuation_penalty(2));
+        let counter_penalty = Params::counter_penalty(0)
+            .mul_add(depth.to_float(), *Params::counter_penalty(1))
+            .max(*Params::counter_penalty(2));
+
+        let followup_bonus = Params::followup_bonus(0)
+            .mul_add(depth.to_float(), *Params::followup_bonus(1))
+            .min(*Params::followup_bonus(2));
+
+        let followup_penalty = Params::followup_penalty(0)
+            .mul_add(depth.to_float(), *Params::followup_penalty(1))
+            .max(*Params::followup_penalty(2));
 
         let pos = &self.stack.pos;
-        self.local.history.update(pos, best, history_bonus);
-        for i in 1..=pos.ply().cast::<usize>().min(2) {
-            self.stack.reply(i).update(pos, best, continuation_bonus);
+        let bonus = [history_bonus, counter_bonus, followup_bonus];
+        let penalty = [history_penalty, counter_penalty, followup_penalty];
+
+        self.local.history.update(pos, best, bonus[0]);
+
+        #[expect(clippy::needless_range_loop)]
+        for i in 1..=bonus[1..].len().min(pos.ply().cast()) {
+            self.stack.reply(i).update(pos, best, bonus[i]);
         }
 
         for m in moves.iter().take_while(|&m| m != best) {
-            self.local.history.update(pos, m, history_penalty);
-            for i in 1..=pos.ply().cast::<usize>().min(2) {
-                self.stack.reply(i).update(pos, m, continuation_penalty);
+            self.local.history.update(pos, m, penalty[0]);
+
+            #[expect(clippy::needless_range_loop)]
+            for i in 1..=penalty[1..].len().min(pos.ply().cast()) {
+                self.stack.reply(i).update(pos, m, penalty[i]);
             }
         }
     }
@@ -744,7 +759,7 @@ impl<'a> Searcher<'a> {
             let history = self.local.history.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
 
-            for i in 1..=ply.cast::<usize>().min(2) {
+            for i in 1..=Params::history_rating(1..).len().min(ply.cast()) {
                 let history = self.stack.reply(i).get(pos, m);
                 rating = Params::history_rating(i).mul_add(history, rating);
             }

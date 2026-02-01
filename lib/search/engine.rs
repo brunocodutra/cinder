@@ -48,7 +48,7 @@ struct Corrections {
     major: Correction<16384>,
     white: Correction<16384>,
     black: Correction<16384>,
-    continuation: [Correction<4096>; 2],
+    continuation: [Correction<16384>; 2],
 }
 
 #[derive(Debug, Zeroable)]
@@ -222,7 +222,10 @@ impl<'a> Searcher<'a> {
         let continuation_delta = [counter_delta, followup_delta];
         for i in 0..corrections.continuation.len().min(ply.cast()) {
             if let Some(m) = pos.line().get(ply.cast::<usize>() - i - 1).assume() {
-                let key = m.encode().slice(4..);
+                let threats = self.stack.pos[ply - i as i8 - 1].threats();
+                let mut key: Bits<u16, 14> = m.encode().slice(4..).pop();
+                key.push(Bits::<u8, 1>::new(threats.contains(m.whence()).cast()));
+                key.push(Bits::<u8, 1>::new(threats.contains(m.whither()).cast()));
                 corrections.continuation[i].update(pos, key, continuation_delta[i]);
             }
         }
@@ -248,7 +251,10 @@ impl<'a> Searcher<'a> {
 
         for i in 0..self.local.corrections.continuation.len().min(ply.cast()) {
             if let Some(m) = pos.line().get(ply.cast::<usize>() - i - 1).assume() {
-                let key = m.encode().slice(4..);
+                let threats = self.stack.pos[ply - i as i8 - 1].threats();
+                let mut key: Bits<u16, 14> = m.encode().slice(4..).pop();
+                key.push(Bits::<u8, 1>::new(threats.contains(m.whence()).cast()));
+                key.push(Bits::<u8, 1>::new(threats.contains(m.whither()).cast()));
                 let continuation = self.local.corrections.continuation[i].get(pos, key);
                 correction = Params::continuation_correction(i).mul_add(continuation, correction);
             }

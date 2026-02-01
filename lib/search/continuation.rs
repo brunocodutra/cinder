@@ -1,11 +1,11 @@
 use crate::chess::{Move, PieceTo, Position};
-use crate::search::{History, Stat, Statistics};
+use crate::search::{Graviton, Stat, Statistics};
 use crate::util::Assume;
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 
 #[derive(Debug, Zeroable)]
-pub struct Reply(PieceTo<<Reply as Statistics<Move>>::Stat>);
+pub struct Reply(PieceTo<Graviton>);
 
 impl const Default for Reply {
     #[inline(always)]
@@ -14,26 +14,21 @@ impl const Default for Reply {
     }
 }
 
-impl Reply {
+impl const Statistics<Move> for Reply {
+    type Stat = Graviton;
+
     #[inline(always)]
-    const fn graviton(&mut self, pos: &Position, m: Move) -> &mut <Self as Statistics<Move>>::Stat {
+    fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
         let (wc, wt) = (m.whence(), m.whither());
         let piece = pos.piece_on(wc).assume();
-        &mut self.0[piece as usize][wt as usize]
-    }
-}
-
-impl const Statistics<Move> for Reply {
-    type Stat = <History as Statistics<Move>>::Stat;
-
-    #[inline(always)]
-    fn get(&mut self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
-        self.graviton(pos, m).get()
+        self.0[piece as usize][wt as usize].get()
     }
 
     #[inline(always)]
     fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
-        self.graviton(pos, m).update(delta);
+        let (wc, wt) = (m.whence(), m.whither());
+        let piece = pos.piece_on(wc).assume();
+        self.0[piece as usize][wt as usize].update(delta);
     }
 }
 

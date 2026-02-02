@@ -401,30 +401,10 @@ impl<'a> Searcher<'a> {
     /// Computes the singular extension margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn single(depth: Depth) -> f32 {
+    fn sem(depth: Depth) -> f32 {
         convolve([
-            (depth.to_float(), Params::single_extension_margin_depth(..)),
-            (1., Params::single_extension_margin_scalar(..)),
-        ])
-    }
-
-    /// Computes the double extension margin.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn double(depth: Depth) -> f32 {
-        convolve([
-            (depth.to_float(), Params::double_extension_margin_depth(..)),
-            (1., Params::double_extension_margin_scalar(..)),
-        ])
-    }
-
-    /// Computes the triple extension margin.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn triple(depth: Depth) -> f32 {
-        convolve([
-            (depth.to_float(), Params::triple_extension_margin_depth(..)),
-            (1., Params::triple_extension_margin_scalar(..)),
+            (depth.to_float(), Params::singular_margin_depth(..)),
+            (1., Params::singular_margin_scalar(..)),
         ])
     }
 
@@ -826,11 +806,16 @@ impl<'a> Searcher<'a> {
             #[expect(clippy::collapsible_if)]
             if let Some(t) = transposition {
                 if t.score.lower(ply) >= beta && t.depth >= depth - 3 && depth >= 6 {
-                    extension = 2 + head.is_quiet() as i8;
+                    let single = Self::sem(depth);
+                    let double = single + Params::singular_margin_scalar(1);
+                    let triple = double + Params::singular_margin_scalar(2);
+
                     let s_depth = (depth - 1) / 2;
-                    let s_beta = beta - Self::single(depth).to_int::<i16>();
-                    let d_beta = beta - Self::double(depth).to_int::<i16>();
-                    let t_beta = beta - Self::triple(depth).to_int::<i16>();
+                    let s_beta = beta - single.to_int::<i16>();
+                    let d_beta = beta - double.to_int::<i16>();
+                    let t_beta = beta - triple.to_int::<i16>();
+
+                    extension = 2 + head.is_quiet() as i8;
                     for m in moves.sorted().skip(1) {
                         let pv = -self.next(Some(m)).nw(s_depth - 1, -s_beta + 1, !cut)?;
                         if pv >= beta {

@@ -48,13 +48,13 @@ struct Corrections {
     major: Correction<16384>,
     white: Correction<16384>,
     black: Correction<16384>,
-    continuation: [Correction<16384>; 2],
+    history: HistoryCorrection,
 }
 
 #[derive(Debug, Zeroable)]
 struct LocalData {
     history: History,
-    continuation: Continuation,
+    continuation: ContinuationHistory,
     corrections: Corrections,
 }
 
@@ -63,7 +63,8 @@ struct Stack {
     pv: Pv,
     pos: Evaluator,
     nodes: Option<NonNull<Nodes>>,
-    replies: [Option<NonNull<Reply>>; Ply::MAX as usize + 1],
+    replies: [Option<NonNull<ContinuationHistoryReply>>; Ply::MAX as usize + 1],
+    correction: [Option<NonNull<Correction<1>>>; Ply::MAX as usize + 1],
     killers: [Killers; Ply::MAX as usize + 1],
     values: [Value; Ply::MAX as usize + 1],
 }
@@ -76,6 +77,7 @@ impl Stack {
             pos,
             nodes: None,
             replies: [None; Ply::MAX as usize + 1],
+            correction: [None; Ply::MAX as usize + 1],
             killers: [Default::default(); Ply::MAX as usize + 1],
             values: [Default::default(); Ply::MAX as usize + 1],
         }
@@ -90,9 +92,16 @@ impl Stack {
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn reply(&self, i: usize) -> Option<NonNull<Reply>> {
+    fn reply(&self, i: usize) -> Option<NonNull<ContinuationHistoryReply>> {
         let idx = self.pos.ply().cast::<usize>().wrapping_sub(i);
         *self.replies.get(idx)?
+    }
+
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn correction(&self, i: usize) -> Option<NonNull<Correction<1>>> {
+        let idx = self.pos.ply().cast::<usize>().wrapping_sub(i);
+        *self.correction.get(idx)?
     }
 }
 
@@ -219,15 +228,10 @@ impl<'a> Searcher<'a> {
         corrections.white.update(pos, zbs.white, pieces_delta);
         corrections.black.update(pos, zbs.black, pieces_delta);
 
-        let continuation_delta = [counter_delta, followup_delta];
-        for i in 0..corrections.continuation.len().min(ply.cast()) {
-            if let Some(m) = pos.line().get(ply.cast::<usize>() - i - 1).assume() {
-                let threats = self.stack.pos[ply - i as i8 - 1].threats();
-                let mut key: Bits<u16, 14> = m.encode().slice(4..).pop();
-                key.push(Bits::<u8, 1>::new(threats.contains(m.whence()).cast()));
-                key.push(Bits::<u8, 1>::new(threats.contains(m.whither()).cast()));
-                corrections.continuation[i].update(pos, key, continuation_delta[i]);
-            }
+        let history_deltas = [counter_delta, followup_delta];
+        for i in 1..=history_deltas.len().min(ply.cast()) {
+            let delta = history_deltas[i - 1];
+            self.stack.correction(i).update(pos, (), delta);
         }
     }
 
@@ -249,15 +253,9 @@ impl<'a> Searcher<'a> {
         let black = self.local.corrections.black.get(pos, zbs.black);
         correction = Params::pieces_correction(0).mul_add(black, correction);
 
-        for i in 0..self.local.corrections.continuation.len().min(ply.cast()) {
-            if let Some(m) = pos.line().get(ply.cast::<usize>() - i - 1).assume() {
-                let threats = self.stack.pos[ply - i as i8 - 1].threats();
-                let mut key: Bits<u16, 14> = m.encode().slice(4..).pop();
-                key.push(Bits::<u8, 1>::new(threats.contains(m.whence()).cast()));
-                key.push(Bits::<u8, 1>::new(threats.contains(m.whither()).cast()));
-                let continuation = self.local.corrections.continuation[i].get(pos, key);
-                correction = Params::continuation_correction(i).mul_add(continuation, correction);
-            }
+        for i in 1..=Params::continuation_correction(..).len().min(ply.cast()) {
+            let history = self.stack.correction(i).get(pos, ());
+            correction = Params::continuation_correction(i - 1).mul_add(history, correction);
         }
 
         correction
@@ -458,6 +456,11 @@ impl<'a> Searcher<'a> {
     fn next(&mut self, m: Option<Move>) -> RecursionGuard<'_, 'a> {
         self.stack.replies[self.stack.pos.ply().cast::<usize>()] = m.map(|m| {
             let reply = self.local.continuation.reply(&self.stack.pos, m);
+            NonNull::from_mut(reply)
+        });
+
+        self.stack.correction[self.stack.pos.ply().cast::<usize>()] = m.map(|m| {
+            let reply = self.local.corrections.history.get(&self.stack.pos, m);
             NonNull::from_mut(reply)
         });
 

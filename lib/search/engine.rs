@@ -808,20 +808,25 @@ impl<'a> Searcher<'a> {
             let mut extension = 0i8;
             #[expect(clippy::collapsible_if)]
             if let Some(t) = transposition {
-                if t.score.lower(ply) >= beta && t.depth >= depth - 3 && depth >= 6 {
+                if !matches!(t.score, ScoreBound::Upper(_)) && t.depth >= depth - 3 && depth >= 6 {
                     let single = Self::sem(depth);
                     let double = single + Params::singular_margin_scalar(1);
                     let triple = double + Params::singular_margin_scalar(2);
 
                     let s_depth = (depth - 1) / 2;
-                    let s_beta = beta - single.to_int::<i16>();
-                    let d_beta = beta - double.to_int::<i16>();
-                    let t_beta = beta - triple.to_int::<i16>();
+                    let s_beta = t.score.bound(ply) - single.to_int::<i16>();
+                    let d_beta = t.score.bound(ply) - double.to_int::<i16>();
+                    let t_beta = t.score.bound(ply) - triple.to_int::<i16>();
 
-                    extension = 2 + head.is_quiet() as i8;
+                    if t.score.lower(ply) >= beta {
+                        extension = 2 + head.is_quiet() as i8;
+                    } else {
+                        extension = 1;
+                    }
+
                     for m in moves.sorted().skip(1) {
                         let pv = -self.next(Some(m)).nw(s_depth - 1, -s_beta + 1, !cut)?;
-                        if pv >= beta {
+                        if pv.score().min(s_beta) >= beta {
                             return Ok(pv.truncate().transpose(m));
                         } else if pv >= s_beta {
                             cut = true;

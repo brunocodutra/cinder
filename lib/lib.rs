@@ -243,7 +243,6 @@
     negative_impls,
     pointer_is_aligned_to,
     portable_simd,
-    ptr_as_ref_unchecked,
     slice_swap_unchecked,
     sync_unsafe_cell
 )]

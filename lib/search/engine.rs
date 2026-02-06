@@ -731,7 +731,7 @@ impl<'a> Searcher<'a> {
 
                 if let Some(r) = Self::nmr(depth, transposed.score() - beta) {
                     let d = depth - r.to_int::<i8>();
-                    if -self.next(None).nw(d - 1, -beta + 1, !cut)? >= beta {
+                    if -self.next(None).nw(d - 1, -beta + 1, false)? >= beta {
                         return Ok(transposed.truncate());
                     }
                 }
@@ -788,7 +788,7 @@ impl<'a> Searcher<'a> {
                     let mut next = self.next(Some(m));
                     let pv = match -next.qnw(-p_beta + 1)? {
                         pv if pv < p_beta => continue,
-                        _ => -next.nw(p_depth - 1, -p_beta + 1, !cut)?,
+                        _ => -next.nw(p_depth - 1, -p_beta + 1, false)?,
                     };
 
                     drop(next);
@@ -812,13 +812,14 @@ impl<'a> Searcher<'a> {
                     let single = Self::sem(depth);
                     let double = single + Params::singular_margin_scalar(1);
                     let triple = double + Params::singular_margin_scalar(2);
+                    let expected_cut = cut || t.score.lower(ply) >= beta;
 
                     let s_depth = (depth - 1) / 2;
                     let s_beta = t.score.bound(ply) - single.to_int::<i16>();
                     let d_beta = t.score.bound(ply) - double.to_int::<i16>();
                     let t_beta = t.score.bound(ply) - triple.to_int::<i16>();
 
-                    if t.score.lower(ply) >= beta {
+                    if expected_cut {
                         extension = 2 + head.is_quiet() as i8;
                     } else {
                         extension = 1;
@@ -829,8 +830,8 @@ impl<'a> Searcher<'a> {
                         if pv.score().min(s_beta) >= beta {
                             return Ok(pv.truncate().transpose(m));
                         } else if pv >= s_beta {
-                            cut = true;
-                            extension = -1;
+                            extension = -2 * expected_cut.cast::<i8>();
+                            cut = expected_cut;
                             break;
                         } else if pv >= d_beta {
                             extension = extension.min(1);

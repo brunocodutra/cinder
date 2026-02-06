@@ -32,12 +32,6 @@ impl Info {
         self.nodes
     }
 
-    /// The number of nodes searched per second.
-    #[inline(always)]
-    pub const fn nps(&self) -> f64 {
-        self.nodes as f64 / self.time().as_secs_f64().max(1E-6)
-    }
-
     /// The search score.
     #[inline(always)]
     pub const fn score(&self) -> Score {

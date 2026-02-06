@@ -8,12 +8,12 @@ use bytemuck::{NoUninit, Zeroable};
 pub struct PlyRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <PlyRepr as Int>::Repr);
 
 unsafe impl const Int for PlyRepr {
-    type Repr = i8;
+    type Repr = i16;
 
     const MIN: Self::Repr = 0;
 
     #[cfg(not(test))]
-    const MAX: Self::Repr = 127;
+    const MAX: Self::Repr = 159;
 
     #[cfg(test)]
     const MAX: Self::Repr = 7;

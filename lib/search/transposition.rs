@@ -1,6 +1,6 @@
 use crate::chess::Move;
 use crate::search::{Depth, Line, Ply, Pv, Score};
-use crate::util::{Assume, Binary, Bits, Int};
+use crate::util::{Assume, Binary, Bits, Int, zero};
 use derive_more::with_trait::Debug;
 use std::hint::unreachable_unchecked;
 use std::ops::{Range, RangeInclusive};
@@ -79,7 +79,7 @@ impl const Binary for ScoreBound {
             ScoreBound::Exact(_) => bits.push(Bits::<u8, 2>::new(0b11)),
         }
 
-        bits.push(self.bound(Ply::new(0)).encode());
+        bits.push(self.bound(zero()).encode());
 
         bits
     }
@@ -170,7 +170,7 @@ mod tests {
     fn bound_returns_score_bound(
         #[filter(!#b.is_empty())] b: Range<Score>,
         s: Score,
-        #[filter((0..=(Score::MAX - #s.get().abs()) as i8).contains(&#p.get()))] p: Ply,
+        #[filter((0..=(Score::MAX - #s.get().abs())).contains(&#p.get()))] p: Ply,
     ) {
         assert_eq!(ScoreBound::new(b, s, p).bound(p), s);
     }
@@ -180,7 +180,7 @@ mod tests {
     fn lower_returns_score_lower_bound(
         #[filter(!#b.is_empty())] b: Range<Score>,
         #[filter(#s > #b.start)] s: Score,
-        #[filter((0..=(Score::MAX - #s.get().abs()) as i8).contains(&#p.get()))] p: Ply,
+        #[filter((0..=(Score::MAX - #s.get().abs())).contains(&#p.get()))] p: Ply,
     ) {
         assert_eq!(ScoreBound::new(b, s, p).lower(p), s);
     }
@@ -190,7 +190,7 @@ mod tests {
     fn upper_returns_score_upper_bound(
         #[filter(!#b.is_empty())] b: Range<Score>,
         #[filter(#s < #b.end)] s: Score,
-        #[filter((0..=(Score::MAX - #s.get().abs()) as i8).contains(&#p.get()))] p: Ply,
+        #[filter((0..=(Score::MAX - #s.get().abs())).contains(&#p.get()))] p: Ply,
     ) {
         assert_eq!(ScoreBound::new(b, s, p).upper(p), s);
     }
@@ -200,7 +200,7 @@ mod tests {
     fn bound_is_within_range(
         #[filter(!#b.is_empty())] b: Range<Score>,
         s: Score,
-        #[filter((0..=(Score::MAX - #s.get().abs()) as i8).contains(&#p.get()))] p: Ply,
+        #[filter((0..=(Score::MAX - #s.get().abs())).contains(&#p.get()))] p: Ply,
     ) {
         assert!(ScoreBound::new(b, s, p).range(p).contains(&s));
     }

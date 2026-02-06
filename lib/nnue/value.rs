@@ -11,7 +11,7 @@ pub struct ValueRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <ValueRe
 unsafe impl const Int for ValueRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
-    const MAX: Self::Repr = 3839;
+    const MAX: Self::Repr = 7871;
 }
 
 /// A position's static evaluation.
@@ -25,7 +25,7 @@ impl const Flip for Value {
 }
 
 impl const Binary for Value {
-    type Bits = Bits<u16, 13>;
+    type Bits = Bits<u16, 14>;
 
     #[inline(always)]
     fn encode(&self) -> Self::Bits {

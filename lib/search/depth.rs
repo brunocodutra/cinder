@@ -13,7 +13,7 @@ unsafe impl const Int for DepthRepr {
     const MIN: Self::Repr = 0;
 
     #[cfg(not(test))]
-    const MAX: Self::Repr = 63;
+    const MAX: Self::Repr = 127;
 
     #[cfg(test)]
     const MAX: Self::Repr = 3;
@@ -23,7 +23,7 @@ unsafe impl const Int for DepthRepr {
 pub type Depth = Bounded<DepthRepr>;
 
 impl const Binary for Depth {
-    type Bits = Bits<u8, 6>;
+    type Bits = Bits<u8, 7>;
 
     #[inline(always)]
     fn encode(&self) -> Self::Bits {

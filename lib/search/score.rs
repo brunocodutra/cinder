@@ -1,5 +1,5 @@
 use crate::nnue::Value;
-use crate::util::{Binary, Bits, Bounded, Int};
+use crate::util::{Binary, Bits, Bounded, Int, zero};
 use crate::{chess::Flip, search::Ply};
 use bytemuck::{NoUninit, Zeroable};
 
@@ -33,7 +33,7 @@ pub struct ScoreRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Score a
 unsafe impl const Int for ScoreRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
-    const MAX: Self::Repr = 4095;
+    const MAX: Self::Repr = 8191;
 }
 
 /// The minimax score.
@@ -42,8 +42,8 @@ pub type Score = Bounded<ScoreRepr>;
 impl Score {
     #[expect(dead_code)]
     const ASSERT: () = const {
-        assert!(Value::MAX + 2 * (Ply::MAX as i16 + 1) <= Self::MAX);
-        assert!(Value::MIN + 2 * (Ply::MIN as i16 - 1) >= Self::MIN);
+        assert!(Value::MAX + 2 * (Ply::MAX + 1) <= Self::MAX);
+        assert!(Value::MIN - 2 * (Ply::MAX + 1) >= Self::MIN);
     };
 
     /// The drawn score.
@@ -92,9 +92,9 @@ impl Score {
     #[inline(always)]
     pub const fn relative_to_root(self, ply: Ply) -> Self {
         if self.is_winning() {
-            self + ply.cast::<i16>()
+            self + ply
         } else if self.is_losing() {
-            self - ply.cast::<i16>()
+            self - ply
         } else {
             self
         }
@@ -104,9 +104,9 @@ impl Score {
     #[inline(always)]
     pub const fn relative_to_ply(self, ply: Ply) -> Self {
         if self.is_winning() {
-            self - ply.cast::<i16>()
+            self - ply
         } else if self.is_losing() {
-            self + ply.cast::<i16>()
+            self + ply
         } else {
             self
         }
@@ -133,13 +133,13 @@ impl Score {
     /// Returns true if the score represents a won position.
     #[inline(always)]
     pub const fn is_win(self) -> bool {
-        self > Self::winning(Ply::new(0))
+        self > Self::winning(zero())
     }
 
     /// Returns true if the score represents a lost position.
     #[inline(always)]
     pub const fn is_loss(self) -> bool {
-        self < Self::losing(Ply::new(0))
+        self < Self::losing(zero())
     }
 
     /// Returns true if the score represents a won or lost position.
@@ -157,7 +157,7 @@ impl const Flip for Score {
 }
 
 impl const Binary for Score {
-    type Bits = Bits<u16, 13>;
+    type Bits = Bits<u16, 14>;
 
     #[inline(always)]
     fn encode(&self) -> Self::Bits {

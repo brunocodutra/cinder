@@ -1,9 +1,9 @@
 #![allow(long_running_const_eval)]
 
 use anyhow::Error as Failure;
+use cinder::chess::Position;
 use cinder::syzygy::{Dtz, Syzygy, Wdl};
-use cinder::util::{Assume, Int};
-use cinder::{chess::Position, search::Ply};
+use cinder::util::{Assume, Int, zero};
 use proptest::sample::select;
 use reqwest::blocking::Client;
 use std::io::{Write, stderr};
@@ -447,7 +447,7 @@ fn probing_syzygy_tablebase_finds_best_move(
     assert_eq!(
         best.and_then(|pv| Some((pv.score(), pv.head()?.to_string()))),
         if !m.is_empty() {
-            Some((wdl.to_score(Ply::new(0)), m.to_string()))
+            Some((wdl.to_score(zero()), m.to_string()))
         } else {
             None
         },

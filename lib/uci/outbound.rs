@@ -3,16 +3,16 @@ use crate::{chess::Move, util::Int};
 use std::fmt::{self, Display, Formatter};
 use std::time::Duration;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
+#[allow(clippy::large_enum_variant)]
 pub enum Outbound {
     BestMove(Option<Move>),
     ReadyOk,
     Info {
-        depth: Option<u8>,
-        time: Option<Duration>,
-        nodes: Option<u64>,
-        nps: Option<f64>,
+        depth: u8,
+        nodes: u64,
+        time: Duration,
         pv: Option<Pv>,
     },
     UciOk,
@@ -27,10 +27,9 @@ impl From<Option<Move>> for Outbound {
 impl From<Info> for Outbound {
     fn from(info: Info) -> Self {
         Outbound::Info {
-            depth: Some(info.depth().cast()),
-            time: Some(info.time()),
-            nodes: Some(info.nodes()),
-            nps: Some(info.nps()),
+            depth: info.depth().cast(),
+            nodes: info.nodes(),
+            time: info.time(),
             pv: Some(info.pv().clone()),
         }
     }
@@ -44,28 +43,13 @@ impl Display for Outbound {
             Outbound::ReadyOk => f.write_str("readyok"),
             Outbound::Info {
                 depth,
-                time,
                 nodes,
-                nps,
+                time,
                 pv,
             } => {
-                f.write_str("info")?;
-
-                if let Some(d) = depth {
-                    write!(f, " depth {d}")?;
-                }
-
-                if let Some(t) = time {
-                    write!(f, " time {}", t.as_millis())?;
-                }
-
-                if let Some(n) = nodes {
-                    write!(f, " nodes {n}")?;
-                }
-
-                if let Some(nps) = nps {
-                    write!(f, " nps {}", *nps as u64)?;
-                }
+                let ms = time.as_millis();
+                let nps = *nodes as u128 * 1000 / ms.max(1);
+                write!(f, "info depth {depth} time {ms} nodes {nodes} nps {nps}")?;
 
                 if let Some(pv) = pv {
                     const NORMALIZE_TO_PAWN_VALUE: i32 = 68;
@@ -130,23 +114,13 @@ mod tests {
     }
 
     fn info(input: &str) -> IResult<&str, &str, ParseError<&str>> {
-        let depth = field("depth", int::<i64>);
-        let time = field("time", int::<i64>);
-        let nodes = field("nodes", int::<i64>);
-        let nps = field("nps", int::<i64>);
+        let depth = field("depth", int::<u64>);
+        let time = field("time", millis);
+        let nodes = field("nodes", int::<u64>);
+        let nps = field("nps", int::<u64>);
         let score = field("score", (t(alt([tag("cp"), tag("mate")])), int::<i64>));
         let pv = field("pv", separated_list1(tag(" "), word));
-
-        let info = (
-            tag("info"),
-            opt(depth),
-            opt(time),
-            opt(nodes),
-            opt(nps),
-            opt(score),
-            opt(pv),
-        );
-
+        let info = (tag("info"), depth, time, nodes, nps, opt((score, opt(pv))));
         recognize((info, eof)).parse(input)
     }
 

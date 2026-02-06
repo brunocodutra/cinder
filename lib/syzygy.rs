@@ -1,5 +1,6 @@
-use crate::search::{Line, Moves, Ply, Pv};
-use crate::{chess::Position, util::Int, warn};
+use crate::search::{Line, Moves, Pv};
+use crate::util::{Int, zero};
+use crate::{chess::Position, warn};
 use std::{fs::read_dir, path::Path};
 
 mod dtz;
@@ -101,7 +102,7 @@ impl Syzygy {
             if wdl > best_wdl {
                 continue;
             } else if wdl == Wdl::Loss && next.is_checkmate() {
-                return Some(Pv::new(Wdl::Win.to_score(Ply::new(0)), Line::singular(m)));
+                return Some(Pv::new(Wdl::Win.to_score(zero()), Line::singular(m)));
             } else if best_move.is_none() || wdl < best_wdl {
                 (best_wdl, best_gaining, best_dtz, best_move) = (wdl, gaining, dtz, Some(m));
             } else if (gaining, dtz) > (best_gaining, best_dtz) {
@@ -109,7 +110,7 @@ impl Syzygy {
             }
         }
 
-        let score = -best_wdl.to_score(Ply::new(0));
+        let score = -best_wdl.to_score(zero());
         Some(Pv::new(score, Line::singular(best_move?)))
     }
 }

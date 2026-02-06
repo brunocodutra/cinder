@@ -113,10 +113,9 @@ where
                     let time = timer.elapsed();
 
                     let info = Outbound::Info {
-                        depth: Some(plies),
-                        time: Some(time),
-                        nodes: Some(nodes),
-                        nps: Some(nodes as f64 / time.as_secs_f64().max(1E-6)),
+                        depth: plies,
+                        nodes,
+                        time,
                         pv: None,
                     };
 

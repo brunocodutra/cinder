@@ -1,5 +1,5 @@
 use crate::nnue::{Accumulator, Bucket, Feature, Nnue, Synapse, Value};
-use crate::util::{Assume, Float, Int};
+use crate::util::{Assume, Float, Int, zero};
 use crate::{chess::*, params::Params, search::Ply, simd::*};
 use bytemuck::zeroed;
 use derive_more::with_trait::Debug;
@@ -122,7 +122,7 @@ impl Evaluator {
     #[expect(clippy::needless_pass_by_value)]
     pub fn new(pos: Position) -> Self {
         let mut evaluator = Evaluator {
-            ply: Ply::new(0),
+            ply: zero(),
             positions: array::from_fn(|_| pos.clone()),
             accumulator: zeroed(),
             pending: [[None; Ply::MAX as usize + 1]; 2],
@@ -296,7 +296,7 @@ impl Evaluator {
             unsafe { self.accumulator[1].swap_unchecked(0, idx) };
             unsafe { self.pending[0].swap_unchecked(0, idx) };
             unsafe { self.pending[1].swap_unchecked(0, idx) };
-            self.ply = Ply::new(0);
+            self.ply = zero();
         }
     }
 

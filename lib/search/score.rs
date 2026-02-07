@@ -1,6 +1,6 @@
-use crate::nnue::Value;
+use crate::chess::Flip;
+use crate::search::{Ply, Value};
 use crate::util::{Binary, Bits, Bounded, Int, zero};
-use crate::{chess::Flip, search::Ply};
 use bytemuck::{NoUninit, Zeroable};
 
 /// Number of [plies][`Ply`] to mate.
@@ -40,12 +40,6 @@ unsafe impl const Int for ScoreRepr {
 pub type Score = Bounded<ScoreRepr>;
 
 impl Score {
-    #[expect(dead_code)]
-    const ASSERT: () = const {
-        assert!(Value::MAX + 2 * (Ply::MAX + 1) <= Self::MAX);
-        assert!(Value::MIN - 2 * (Ply::MAX + 1) >= Self::MIN);
-    };
-
     /// The drawn score.
     #[inline(always)]
     pub const fn drawn() -> Self {

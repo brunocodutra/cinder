@@ -1,6 +1,6 @@
-use crate::search::{HashSize, ThreadCount, Transposition};
+use crate::chess::Zobrist;
+use crate::search::{HashSize, ThreadCount, Transposition, Value};
 use crate::util::{Atomic, HugePages, Int, Memory, Prefetch, Vault};
-use crate::{chess::Zobrist, nnue::Value};
 use derive_more::with_trait::{Debug, Deref, DerefMut};
 use std::{ptr, sync::atomic::Ordering};
 

@@ -1,6 +1,5 @@
-use crate::nnue::{FTQ, HLS, L1, Layer, Ln, Synapse, Value};
-use crate::simd::*;
-use crate::util::{Assume, Float};
+use crate::nnue::{FTQ, HLS, L1, Layer, Ln, Synapse};
+use crate::{simd::*, util::Assume};
 use bytemuck::Zeroable;
 use std::{array, ops::Mul};
 
@@ -38,7 +37,7 @@ pub struct Input<S> {
 
 impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Input<S> {
     type Input<'a> = L1<'a>;
-    type Output = Value;
+    type Output = f32;
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -141,6 +140,6 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Input
         ]);
 
         let result = self.next.forward(active.cast()).reduce_sum();
-        result.mul(HLS as f32).round_ties_even().to_int()
+        result.mul(HLS as f32)
     }
 }

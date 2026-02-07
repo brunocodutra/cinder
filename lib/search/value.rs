@@ -1,4 +1,5 @@
 use crate::chess::Flip;
+use crate::search::{Ply, Score};
 use crate::util::{Binary, Bits, Bounded, Int};
 use bytemuck::{NoUninit, Zeroable};
 
@@ -11,7 +12,7 @@ pub struct ValueRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <ValueRe
 unsafe impl const Int for ValueRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
-    const MAX: Self::Repr = 7871;
+    const MAX: Self::Repr = Score::MAX - 2 * (Ply::MAX + 1);
 }
 
 /// A position's static evaluation.

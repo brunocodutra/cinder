@@ -26,7 +26,7 @@ bytemuck = { version = "1.25.0", default-features = false, features = [
     "latest_stable_rust",
 ] }
 byteorder = { version = "1.5.0", default-features = false, features = ["std"] }
-clap = { version = "4.5.56", default-features = false, features = [
+clap = { version = "4.5.57", default-features = false, features = [
     "derive",
     "error-context",
     "help",

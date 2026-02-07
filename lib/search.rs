@@ -13,6 +13,8 @@ mod moves;
 mod options;
 mod ply;
 mod pv;
+mod value;
+
 mod score;
 mod statistics;
 mod tables;
@@ -37,3 +39,4 @@ pub use score::*;
 pub use statistics::*;
 pub use tables::*;
 pub use transposition::*;
+pub use value::*;

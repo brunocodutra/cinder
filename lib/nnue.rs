@@ -12,7 +12,6 @@ mod output;
 mod residual;
 mod synapse;
 mod transformer;
-mod value;
 
 pub use accumulator::*;
 pub use evaluator::*;
@@ -24,7 +23,6 @@ pub use output::*;
 pub use residual::*;
 pub use synapse::*;
 pub use transformer::*;
-pub use value::*;
 
 /// Quantization constant for the feature transformer.
 pub const FTQ: i16 = 255;

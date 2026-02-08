@@ -51,7 +51,6 @@ impl Zobrists {
 #[derive_const(Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Board({self})")]
-#[expect(clippy::partial_pub_fields)]
 pub struct Board {
     #[cfg_attr(test, strategy(LazyJust::new(move || {
         let mut roles = [Bitboard::empty(); 6];

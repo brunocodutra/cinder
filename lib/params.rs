@@ -24,14 +24,14 @@ use proptest::{collection::vec, prelude::*};
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(feature = "spsa", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "spsa", serde(into = "Box<[f32]>", try_from = "Box<[f32]>"))]
-struct Param<const BYTES: ConstBytes<32>> {
+struct Param<const BYTES: ConstBytes<64>> {
     #[cfg(feature = "spsa")]
     #[cfg_attr(test, strategy(vec(-1e3f32..=1e3f32, Self::VALUES.len().cast::<usize>()).prop_map(Seq::from_iter)))]
-    values: ConstSeq<f32, 32>,
+    values: ConstSeq<f32, 64>,
 }
 
-impl<const BYTES: ConstBytes<32>> Param<BYTES> {
-    const VALUES: &ConstSeq<f32, 32> = unsafe { &Seq::reify(BYTES) };
+impl<const BYTES: ConstBytes<64>> Param<BYTES> {
+    const VALUES: &ConstSeq<f32, 64> = unsafe { &Seq::reify(BYTES) };
 
     const fn new() -> Self {
         Self {
@@ -63,13 +63,13 @@ impl<const BYTES: ConstBytes<32>> Param<BYTES> {
     }
 }
 
-impl<const BYTES: ConstBytes<32>> const Default for Param<BYTES> {
+impl<const BYTES: ConstBytes<64>> const Default for Param<BYTES> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const BYTES: ConstBytes<32>> const Deref for Param<BYTES> {
+impl<const BYTES: ConstBytes<64>> const Deref for Param<BYTES> {
     type Target = [f32];
 
     #[inline(always)]
@@ -87,14 +87,14 @@ impl<const BYTES: ConstBytes<32>> const Deref for Param<BYTES> {
 }
 
 #[cfg(feature = "spsa")]
-impl<const BYTES: ConstBytes<32>> From<Param<BYTES>> for Box<[f32]> {
+impl<const BYTES: ConstBytes<64>> From<Param<BYTES>> for Box<[f32]> {
     fn from(param: Param<BYTES>) -> Self {
         param.values.into_iter().collect()
     }
 }
 
 #[cfg(feature = "spsa")]
-impl<const BYTES: ConstBytes<32>> TryFrom<Box<[f32]>> for Param<BYTES> {
+impl<const BYTES: ConstBytes<64>> TryFrom<Box<[f32]>> for Param<BYTES> {
     type Error = Error;
 
     fn try_from(values: Box<[f32]>) -> Result<Self, Self::Error> {
@@ -267,16 +267,17 @@ params! {
     lmr_depth: [0.0, 0.23456715, 0.10055269],
     lmr_index: [0.0, 0.09870157],
     lmr_scalar: [0.7319988],
-    lmr_baseline: [0.3194101],
-    lmr_is_root: [-0.25249255],
-    lmr_is_pv: [-0.75320363],
-    lmr_was_pv: [-0.2785572],
-    lmr_gives_check: [-0.9013785],
-    lmr_is_noisy_pv: [0.7057642],
-    lmr_is_killer: [-1.23418],
-    lmr_cut: [1.2753559],
-    lmr_improving: [-0.40549764],
-    lmr_history: [-0.85406846, -1.2011613],
+    lmr_is_root: [-0.25249255, 0.3528821, -0.45068925, -0.85406846],
+    lmr_not_root: [0.3194101, -0.37660182, -0.1392786, 0.63767795, -0.40549764, -0.61709, 0.3528821, -0.45068925, -0.85406846, -1.2011613],
+    lmr_is_pv: [-0.37660182, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    lmr_was_pv: [-0.1392786, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    lmr_is_cut: [0.63767795, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    lmr_improving: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    lmr_is_killer: [-0.61709, 0.0, 0.0, 0.0, 0.0],
+    lmr_is_noisy_pv: [0.3528821, 0.0, 0.0, 0.0],
+    lmr_gives_check: [-0.45068925, 0.0, 0.0],
+    lmr_history: [0.0, 0.0],
+    lmr_counter: [0.0],
     killer_rating: [53.16652],
     history_rating: [108.39066, 124.212105, 124.212105],
     good_noisy_margin: [-20.445045],

@@ -114,7 +114,6 @@
     clippy::option_option,
     clippy::or_fun_call,
     clippy::panic,
-    clippy::partial_pub_fields,
     clippy::path_buf_push_overwrite,
     clippy::pathbuf_init_then_push,
     clippy::pointer_format,

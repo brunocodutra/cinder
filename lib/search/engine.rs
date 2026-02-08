@@ -20,8 +20,7 @@ fn convolve<const N: usize>(data: [(f32, &[f32]); N]) -> f32 {
     for i in 0..N {
         for j in i..N {
             let param = *data[i].1.get(j - i).assume();
-            // The order of operands matters to code gen!
-            acc[(i + j) % N] = data[i].0.mul_add(param * data[j].0, acc[(i + j) % N]);
+            acc[(i + j) % N] = param.mul_add(data[i].0 * data[j].0, acc[(i + j) % N]);
         }
     }
 
@@ -892,16 +891,18 @@ impl<'a> Searcher<'a> {
             let mut next = self.next(Some(m));
             let gives_check = next.stack.pos.is_check();
 
-            lmr += *Params::lmr_baseline(0);
-            lmr = Params::lmr_is_pv(0).mul_add(IS_PV.to_float(), lmr);
-            lmr = Params::lmr_was_pv(0).mul_add(was_pv.to_float(), lmr);
-            lmr = Params::lmr_gives_check(0).mul_add(gives_check.to_float(), lmr);
-            lmr = Params::lmr_is_noisy_pv(0).mul_add(is_noisy_pv.to_float(), lmr);
-            lmr = Params::lmr_is_killer(0).mul_add(is_killer.to_float(), lmr);
-            lmr = Params::lmr_cut(0).mul_add(cut.to_float(), lmr);
-            lmr = Params::lmr_improving(0).mul_add(improving, lmr);
-            lmr = Params::lmr_history(0).mul_add(history, lmr);
-            lmr = Params::lmr_history(1).mul_add(counter, lmr);
+            lmr += convolve([
+                (1.0, Params::lmr_not_root(..)),
+                (IS_PV.to_float(), Params::lmr_is_pv(..)),
+                (was_pv.to_float(), Params::lmr_was_pv(..)),
+                (cut.to_float(), Params::lmr_is_cut(..)),
+                (improving, Params::lmr_improving(..)),
+                (is_killer.to_float(), Params::lmr_is_killer(..)),
+                (is_noisy_pv.to_float(), Params::lmr_is_noisy_pv(..)),
+                (gives_check.to_float(), Params::lmr_gives_check(..)),
+                (history, Params::lmr_history(..)),
+                (counter, Params::lmr_counter(..)),
+            ]);
 
             let lmr = lmr.to_int::<i8>().clamp(0, depth.get().max(1) - 1);
             let pv = match -next.nw(depth - lmr - 1, -alpha, !cut)? {
@@ -982,16 +983,19 @@ impl<'a> Searcher<'a> {
             };
 
             let pos = &self.stack.pos;
+            let mut lmr = Self::lmr(depth, index);
             let history = self.local.history.get(pos, m);
             self.stack.nodes = self.ctrl.attention(m);
 
             let mut next = self.next(Some(m));
             let gives_check = next.stack.pos.is_check();
 
-            let mut lmr = Self::lmr(depth, index) + *Params::lmr_is_root(0);
-            lmr = Params::lmr_gives_check(0).mul_add(gives_check.to_float(), lmr);
-            lmr = Params::lmr_is_noisy_pv(0).mul_add(is_noisy_pv.to_float(), lmr);
-            lmr = Params::lmr_history(0).mul_add(history, lmr);
+            lmr += convolve([
+                (1.0, Params::lmr_is_root(..)),
+                (is_noisy_pv.to_float(), Params::lmr_is_noisy_pv(..)),
+                (gives_check.to_float(), Params::lmr_gives_check(..)),
+                (history, Params::lmr_history(..)),
+            ]);
 
             let lmr = lmr.to_int::<i8>().clamp(0, depth.get().max(1) - 1);
             let pv = match -next.nw(depth - lmr - 1, -alpha, false)? {

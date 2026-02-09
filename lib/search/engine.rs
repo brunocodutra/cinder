@@ -15,7 +15,7 @@ use proptest::prelude::*;
 #[inline(always)]
 #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
 fn convolve<const N: usize>(data: [(f32, &[f32]); N]) -> f32 {
-    let mut acc = [0.; N];
+    let mut acc = [0.0; N];
 
     for i in 0..N {
         for j in i..N {
@@ -137,29 +137,29 @@ impl<'a> Searcher<'a> {
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn update_history(&mut self, depth: Depth, best: Move, moves: &Moves) {
+    fn update_history(&mut self, depth: f32, best: Move, moves: &Moves) {
         let history_bonus = Params::history_bonus(0)
-            .mul_add(depth.to_float(), *Params::history_bonus(1))
+            .mul_add(depth, *Params::history_bonus(1))
             .min(*Params::history_bonus(2));
 
         let history_penalty = Params::history_penalty(0)
-            .mul_add(depth.to_float(), *Params::history_penalty(1))
+            .mul_add(depth, *Params::history_penalty(1))
             .max(*Params::history_penalty(2));
 
         let counter_bonus = Params::counter_bonus(0)
-            .mul_add(depth.to_float(), *Params::counter_bonus(1))
+            .mul_add(depth, *Params::counter_bonus(1))
             .min(*Params::counter_bonus(2));
 
         let counter_penalty = Params::counter_penalty(0)
-            .mul_add(depth.to_float(), *Params::counter_penalty(1))
+            .mul_add(depth, *Params::counter_penalty(1))
             .max(*Params::counter_penalty(2));
 
         let followup_bonus = Params::followup_bonus(0)
-            .mul_add(depth.to_float(), *Params::followup_bonus(1))
+            .mul_add(depth, *Params::followup_bonus(1))
             .min(*Params::followup_bonus(2));
 
         let followup_penalty = Params::followup_penalty(0)
-            .mul_add(depth.to_float(), *Params::followup_penalty(1))
+            .mul_add(depth, *Params::followup_penalty(1))
             .max(*Params::followup_penalty(2));
 
         let pos = &self.stack.pos;
@@ -181,11 +181,11 @@ impl<'a> Searcher<'a> {
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn update_correction(&mut self, depth: Depth, score: ScoreBound) {
+    fn update_correction(&mut self, depth: f32, score: ScoreBound) {
         let pos = &self.stack.pos;
         let (ply, zbs) = (pos.ply(), pos.zobrists());
         let diff = score.bound(ply) - self.stack.value(0);
-        let error = diff.to_float::<f32>() * depth.to_float::<f32>();
+        let error = depth * diff.to_float::<f32>();
 
         let pawns_delta = error
             .mul(*Params::pawns_correction_delta(0))
@@ -237,7 +237,7 @@ impl<'a> Searcher<'a> {
         let pos = &self.stack.pos;
         let (ply, zbs) = (pos.ply(), pos.zobrists());
 
-        let mut correction = 0.;
+        let mut correction = 0.0;
         let pawns = self.local.corrections.pawns.get(pos, zbs.pawns);
         correction = Params::pawns_correction(0).mul_add(pawns, correction);
         let minor = self.local.corrections.minor.get(pos, zbs.minor);
@@ -272,7 +272,7 @@ impl<'a> Searcher<'a> {
         let pos = &self.stack.pos;
         let ply = pos.ply();
         if pos.is_check() {
-            return 0.;
+            return 0.0;
         }
 
         let a = ply >= 2 && !pos[ply - 2].is_check() && self.stack.value(0) > self.stack.value(2);
@@ -297,17 +297,17 @@ impl<'a> Searcher<'a> {
     /// Computes the null move reduction.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn nmr(depth: Depth, surplus: Score) -> Option<f32> {
-        match depth.get() {
-            ..3 => None,
-            d @ 3.. => match surplus.get() {
+    fn nmr(depth: f32, surplus: Score) -> Option<f32> {
+        match depth {
+            ..3.0 => None,
+            d => match surplus.get() {
                 ..1 => None,
                 s @ 1.. => {
                     let gamma = *Params::nmr_score(0);
                     let delta = *Params::nmr_score(1);
                     let limit = *Params::nmr_score(2);
                     let flat = gamma.mul_add(s.to_float(), delta).min(limit);
-                    Some(Params::nmr_depth(0).mul_add(d.to_float(), flat))
+                    Some(Params::nmr_depth(0).mul_add(d, flat))
                 }
             },
         }
@@ -316,12 +316,12 @@ impl<'a> Searcher<'a> {
     /// Computes the null move pruning margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn nmp(depth: Depth) -> Option<f32> {
-        match depth.get() {
-            ..1 | 4.. => None,
-            d @ 1..4 => Some(convolve([
-                (d.to_float(), Params::nmp_margin_depth(..)),
-                (1., Params::nmp_margin_scalar(..)),
+    fn nmp(depth: f32) -> Option<f32> {
+        match depth {
+            ..0.0 | 4.0.. => None,
+            d => Some(convolve([
+                (d, Params::nmp_margin_depth(..)),
+                (1.0, Params::nmp_margin_scalar(..)),
             ])),
         }
     }
@@ -329,12 +329,12 @@ impl<'a> Searcher<'a> {
     /// Computes fail-high pruning reduction.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn fhp(depth: Depth) -> f32 {
-        match depth.get() {
-            ..1 => 0.,
-            d @ 1.. => convolve([
-                (d.to_float(), Params::fhp_margin_depth(..)),
-                (1., Params::fhp_margin_scalar(..)),
+    fn fhp(depth: f32) -> f32 {
+        match depth {
+            ..0.0 => 0.0,
+            d => convolve([
+                (d, Params::fhp_margin_depth(..)),
+                (1.0, Params::fhp_margin_scalar(..)),
             ]),
         }
     }
@@ -342,12 +342,12 @@ impl<'a> Searcher<'a> {
     /// Computes the fail-low pruning reduction.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn flp(depth: Depth) -> f32 {
-        match depth.get() {
-            ..1 => 0.,
-            d @ 1.. => convolve([
-                (d.to_float(), Params::flp_margin_depth(..)),
-                (1., Params::flp_margin_scalar(..)),
+    fn flp(depth: f32) -> f32 {
+        match depth {
+            ..0.0 => 0.0,
+            d => convolve([
+                (d, Params::flp_margin_depth(..)),
+                (1.0, Params::flp_margin_scalar(..)),
             ]),
         }
     }
@@ -355,94 +355,91 @@ impl<'a> Searcher<'a> {
     /// Computes the razoring margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn razoring(depth: Depth) -> f32 {
+    fn razoring(depth: f32) -> f32 {
         convolve([
-            (depth.to_float(), Params::razoring_depth(..)),
-            (1., Params::razoring_scalar(..)),
+            (depth, Params::razoring_depth(..)),
+            (1.0, Params::razoring_scalar(..)),
         ])
     }
 
     /// Computes the reverse futility margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn rfp(depth: Depth) -> f32 {
+    fn rfp(depth: f32) -> f32 {
         convolve([
-            (depth.to_float(), Params::rfp_margin_depth(..)),
-            (1., Params::rfp_margin_scalar(..)),
+            (depth, Params::rfp_margin_depth(..)),
+            (1.0, Params::rfp_margin_scalar(..)),
         ])
     }
 
     /// Computes the futility margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn futility(depth: Depth) -> f32 {
+    fn futility(depth: f32) -> f32 {
         convolve([
-            (depth.to_float(), Params::fut_margin_depth(..)),
-            (1., Params::fut_margin_scalar(..)),
+            (depth, Params::fut_margin_depth(..)),
+            (1.0, Params::fut_margin_scalar(..)),
         ])
     }
 
     /// Computes the probcut margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn probcut(depth: Depth) -> f32 {
+    fn probcut(depth: f32) -> f32 {
         convolve([
-            (depth.to_float(), Params::probcut_margin_depth(..)),
-            (1., Params::probcut_margin_scalar(..)),
+            (depth, Params::probcut_margin_depth(..)),
+            (1.0, Params::probcut_margin_scalar(..)),
         ])
     }
 
     /// Computes the singular extension margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn sem(depth: Depth) -> f32 {
+    fn singular(depth: f32) -> f32 {
         convolve([
-            (depth.to_float(), Params::singular_margin_depth(..)),
-            (1., Params::singular_margin_scalar(..)),
+            (depth, Params::singular_margin_depth(..)),
+            (1.0, Params::singular_margin_scalar(..)),
         ])
     }
 
     /// Computes the noisy SEE pruning margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn nsp(depth: Depth) -> f32 {
+    fn nsp(depth: f32) -> f32 {
         convolve([
-            (depth.to_float(), Params::nsp_margin_depth(..)),
-            (1., Params::nsp_margin_scalar(..)),
+            (depth, Params::nsp_margin_depth(..)),
+            (1.0, Params::nsp_margin_scalar(..)),
         ])
     }
 
     /// Computes the quiet SEE pruning margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn qsp(depth: Depth) -> f32 {
+    fn qsp(depth: f32) -> f32 {
         convolve([
-            (depth.to_float(), Params::qsp_margin_depth(..)),
-            (1., Params::qsp_margin_scalar(..)),
+            (depth, Params::qsp_margin_depth(..)),
+            (1.0, Params::qsp_margin_scalar(..)),
         ])
     }
 
     /// Computes the late move pruning threshold.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn lmp(depth: Depth) -> f32 {
+    fn lmp(depth: f32) -> f32 {
         convolve([
-            (depth.to_float(), Params::lmp_depth(..)),
-            (1., Params::lmp_scalar(..)),
+            (depth, Params::lmp_depth(..)),
+            (1.0, Params::lmp_scalar(..)),
         ])
     }
 
     /// Computes the late move reduction.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn lmr(depth: Depth, index: usize) -> f32 {
-        let log_depth = depth.get().max(1).ilog2();
-        let log_index = index.max(1).ilog2();
-
+    fn lmr(depth: f32, index: usize) -> f32 {
         convolve([
-            (log_depth.to_float(), Params::lmr_depth(..)),
-            (log_index.to_float(), Params::lmr_index(..)),
-            (1., Params::lmr_scalar(..)),
+            (index.max(1).to_float::<f32>().ln(), Params::lmr_index(..)),
+            (depth.ln(), Params::lmr_depth(..)),
+            (1.0, Params::lmr_scalar(..)),
         ])
     }
 
@@ -471,13 +468,13 @@ impl<'a> Searcher<'a> {
     #[inline(always)]
     fn ab<const IS_PV: bool, const N: usize>(
         &mut self,
-        depth: Depth,
+        depth: f32,
         bounds: Range<Score>,
         cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
         const { assert!(IS_PV || N == 0) }
 
-        if depth <= 0 {
+        if depth < 1.0 {
             Ok(self.quiesce::<IS_PV>(bounds)?.truncate())
         } else if self.stack.pos.ply() >= N as i32 {
             Ok(self.pvs::<IS_PV, 0>(depth, bounds, cut)?.truncate())
@@ -488,8 +485,8 @@ impl<'a> Searcher<'a> {
 
     /// The zero-window alpha-beta search.
     #[inline(always)]
-    fn nw(&mut self, depth: Depth, beta: Score, cut: bool) -> Result<Pv<0>, Interrupted> {
-        if depth > 0 {
+    fn nw(&mut self, depth: f32, beta: Score, cut: bool) -> Result<Pv<0>, Interrupted> {
+        if depth >= 1.0 {
             self.pvs::<false, 0>(depth, beta - 1..beta, cut)
         } else {
             self.qnw(beta)
@@ -555,7 +552,7 @@ impl<'a> Searcher<'a> {
                 return Bounded::upper();
             }
 
-            let mut rating = 0.;
+            let mut rating = 0.0;
             let pos = &self.stack.pos;
             let history = self.local.history.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
@@ -580,7 +577,7 @@ impl<'a> Searcher<'a> {
             };
 
             if !IS_PV && !is_check && !tail.score().is_losing() {
-                let scale = Params::lmp_improving(0).mul_add(improving, 1.);
+                let scale = Params::lmp_improving(0).mul_add(improving, 1.0);
                 if index.to_float::<f32>() > Params::lmp_scalar(0) * scale {
                     break;
                 }
@@ -623,7 +620,7 @@ impl<'a> Searcher<'a> {
     #[inline(always)]
     fn pvs<const IS_PV: bool, const N: usize>(
         &mut self,
-        mut depth: Depth,
+        mut depth: f32,
         bounds: Range<Score>,
         mut cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
@@ -631,7 +628,7 @@ impl<'a> Searcher<'a> {
 
         self.stack.nodes.update(1);
         let ply = self.stack.pos.ply();
-        if self.ctrl.check(depth, ply, &self.stack.pv) == Abort {
+        if self.ctrl.check(depth.to_int(), ply, &self.stack.pv) == Abort {
             return Err(Interrupted);
         }
 
@@ -655,29 +652,34 @@ impl<'a> Searcher<'a> {
             Some(t) => t.transpose(ply),
         };
 
-        depth += is_check as i8;
-        depth -= transposition.is_none() as i8;
+        depth += is_check.to_float::<f32>();
+        depth -= transposition.is_none().to_float::<f32>();
 
-        if depth <= 0 {
+        if depth < 1.0 {
             return Ok(self.quiesce::<IS_PV>(bounds)?.truncate());
         }
 
         #[expect(clippy::collapsible_if)]
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
             if let Some(t) = transposition {
+                let tt_depth = t.depth.to_float::<f32>();
                 let (lower, upper) = t.score.range(ply).into_inner();
 
-                if cut && lower - Self::fhp(depth - t.depth).to_int::<i16>() >= beta {
+                if cut && lower - Self::fhp(depth - tt_depth).to_int::<i16>() >= beta {
                     return Ok(transposed.truncate());
                 }
 
-                if upper + Self::flp(depth - t.depth).to_int::<i16>() <= alpha {
+                if upper + Self::flp(depth - tt_depth).to_int::<i16>() <= alpha {
                     return Ok(transposed.truncate());
                 }
             }
         }
 
         let was_pv = IS_PV || transposition.is_some_and(|t| t.was_pv);
+        let is_noisy_pv = transposition.is_some_and(|t| {
+            t.best.is_some_and(Move::is_noisy) && !matches!(t.score, ScoreBound::Upper(_))
+        });
+
         let (lower, upper) = match self.shared.syzygy.wdl_after_zeroing(&self.stack.pos) {
             None => (Score::lower(), Score::upper()),
             Some(wdl) => {
@@ -685,8 +687,8 @@ impl<'a> Searcher<'a> {
                 let score = ScoreBound::new(bounds, wdl.to_score(ply), ply);
                 let (lower, upper) = score.range(ply).into_inner();
                 if lower >= upper || upper <= alpha || lower >= beta {
-                    let bonus = Params::tb_cut_depth_bonus(0).to_int::<i8>();
-                    let tpos = Transposition::new(score, depth + bonus, None, was_pv);
+                    let tt_depth = depth + Params::tb_cut_depth_bonus(0);
+                    let tpos = Transposition::new(score, tt_depth.to_int(), None, was_pv);
                     self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
                     return Ok(tpos.transpose(ply).truncate());
                 }
@@ -725,9 +727,9 @@ impl<'a> Searcher<'a> {
                     }
                 }
 
+                #[expect(clippy::collapsible_if)]
                 if let Some(r) = Self::nmr(depth, transposed.score() - beta) {
-                    let d = depth - r.to_int::<i8>();
-                    if -self.next(None).nw(d - 1, -beta + 1, false)? >= beta {
+                    if -self.next(None).nw(depth - r - 1.0, -beta + 1, false)? >= beta {
                         return Ok(transposed.truncate());
                     }
                 }
@@ -762,35 +764,39 @@ impl<'a> Searcher<'a> {
         });
 
         if let Some(t) = transposition {
-            let p_beta = beta + Self::probcut(depth).to_int::<i16>();
-            let p_depth = depth - 3;
+            let gamma = *Params::probcut_depth(0);
+            let delta = *Params::probcut_depth(1);
+            let pc_depth = gamma.mul_add(depth, delta);
+            let pc_beta = beta + Self::probcut(depth).to_int::<i16>();
+
+            let max_depth = t.depth.to_float::<f32>() + *Params::probcut_depth_bounds(1);
+            let depth_bounds = *Params::probcut_depth_bounds(0)..max_depth;
 
             if !was_pv
-                && depth >= 6
-                && t.depth >= p_depth
-                && t.score.lower(ply) >= p_beta
-                && t.best.is_none_or(Move::is_noisy)
+                && depth_bounds.contains(&depth)
+                && t.score.lower(ply) >= pc_beta
+                && is_noisy_pv
             {
                 for m in moves.sorted() {
                     if m.is_quiet() {
                         continue;
                     }
 
-                    let margin = p_beta - self.stack.value(0);
+                    let margin = pc_beta - self.stack.value(0);
                     if !self.stack.pos.gaining(m, margin.to_float()) {
                         continue;
                     }
 
                     let mut next = self.next(Some(m));
-                    let pv = match -next.qnw(-p_beta + 1)? {
-                        pv if pv < p_beta => continue,
-                        _ => -next.nw(p_depth - 1, -p_beta + 1, false)?,
+                    let pv = match -next.qnw(-pc_beta + 1)? {
+                        pv if pv < pc_beta => continue,
+                        _ => -next.nw(pc_depth - 1.0, -pc_beta + 1, false)?,
                     };
 
                     drop(next);
-                    if pv >= p_beta {
+                    if pv >= pc_beta {
                         let score = ScoreBound::new(bounds, pv.score(), ply);
-                        let tpos = Transposition::new(score, p_depth, Some(m), was_pv);
+                        let tpos = Transposition::new(score, pc_depth.to_int(), Some(m), was_pv);
                         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
                         return Ok(pv.truncate().transpose(m));
                     }
@@ -801,50 +807,50 @@ impl<'a> Searcher<'a> {
         let mut head = moves.sorted().next().assume();
 
         let mut tail = {
-            let mut extension = 0i8;
-            #[expect(clippy::collapsible_if)]
+            let mut extension = 0f32;
             if let Some(t) = transposition {
-                if !matches!(t.score, ScoreBound::Upper(_)) && t.depth >= depth - 3 && depth >= 6 {
-                    let single = Self::sem(depth);
+                let max_depth = t.depth.to_float::<f32>() + *Params::singular_depth_bounds(1);
+                let depth_bounds = *Params::singular_depth_bounds(0)..max_depth;
+                if !matches!(t.score, ScoreBound::Upper(_)) && depth_bounds.contains(&depth) {
+                    let single = Self::singular(depth);
                     let double = single + Params::singular_margin_scalar(1);
                     let triple = double + Params::singular_margin_scalar(2);
                     let expected_cut = cut || t.score.lower(ply) >= beta;
 
-                    let s_depth = (depth - 1) / 2;
-                    let s_beta = t.score.bound(ply) - single.to_int::<i16>();
-                    let d_beta = t.score.bound(ply) - double.to_int::<i16>();
-                    let t_beta = t.score.bound(ply) - triple.to_int::<i16>();
+                    let gamma = *Params::singular_depth(0);
+                    let delta = *Params::singular_depth(1);
+                    let se_depth = gamma.mul_add(depth, delta);
+
+                    let se_beta = t.score.bound(ply) - single.to_int::<i16>();
+                    let de_beta = t.score.bound(ply) - double.to_int::<i16>();
+                    let te_beta = t.score.bound(ply) - triple.to_int::<i16>();
 
                     if expected_cut {
-                        extension = 2 + head.is_quiet() as i8;
+                        extension = 2.0 + head.is_quiet().to_float::<f32>();
                     } else {
-                        extension = 1;
+                        extension = 1.0;
                     }
 
                     for m in moves.sorted().skip(1) {
-                        let pv = -self.next(Some(m)).nw(s_depth - 1, -s_beta + 1, !cut)?;
-                        if pv.score().min(s_beta) >= beta {
+                        let pv = -self.next(Some(m)).nw(se_depth - 1.0, -se_beta + 1, !cut)?;
+                        if pv.score().min(se_beta) >= beta {
                             return Ok(pv.truncate().transpose(m));
-                        } else if pv >= s_beta {
-                            extension = -2 * expected_cut.cast::<i8>();
+                        } else if pv >= se_beta {
+                            extension = -2.0 * expected_cut.to_float::<f32>();
                             cut = expected_cut;
                             break;
-                        } else if pv >= d_beta {
-                            extension = extension.min(1);
-                        } else if pv >= t_beta {
-                            extension = extension.min(2);
+                        } else if pv >= de_beta {
+                            extension = extension.min(1.0);
+                        } else if pv >= te_beta {
+                            extension = extension.min(2.0);
                         }
                     }
                 }
             }
 
             let mut next = self.next(Some(head));
-            -next.ab::<IS_PV, _>(depth + extension - 1, -beta..-alpha, false)?
+            -next.ab::<IS_PV, _>(depth + extension - 1.0, -beta..-alpha, false)?
         };
-
-        let is_noisy_pv = transposition.is_some_and(|t| {
-            t.best.is_some_and(Move::is_noisy) && !matches!(t.score, ScoreBound::Upper(_))
-        });
 
         for (index, m) in moves.sorted().skip(1).enumerate() {
             let alpha = match tail.score() {
@@ -853,7 +859,7 @@ impl<'a> Searcher<'a> {
             };
 
             if !IS_PV && !is_check && !tail.score().is_losing() {
-                let scale = Params::lmp_improving(0).mul_add(improving, 1.);
+                let scale = Params::lmp_improving(0).mul_add(improving, 1.0);
                 if index.to_float::<f32>() > Self::lmp(depth) * scale {
                     break;
                 }
@@ -861,7 +867,7 @@ impl<'a> Searcher<'a> {
 
             let pos = &self.stack.pos;
             let mut lmr = Self::lmr(depth, index);
-            let lmr_depth = depth - lmr.to_int::<i8>();
+            let lmr_depth = depth - lmr.clamp(0.0, depth.max(1.0) - 1.0);
             let history = self.local.history.get(pos, m);
             let counter = self.stack.reply(1).get(pos, m);
             let is_killer = killer.contains(m);
@@ -904,10 +910,10 @@ impl<'a> Searcher<'a> {
                 (counter, Params::lmr_counter(..)),
             ]);
 
-            let lmr = lmr.to_int::<i8>().clamp(0, depth.get().max(1) - 1);
-            let pv = match -next.nw(depth - lmr - 1, -alpha, !cut)? {
-                pv if pv <= alpha || (pv >= beta && lmr < 1) => pv.truncate(),
-                _ => -next.ab::<IS_PV, _>(depth - 1, -beta..-alpha, false)?,
+            let lmr = lmr.clamp(0.0, depth.max(1.0) - 1.0);
+            let pv = match -next.nw(depth - lmr - 1.0, -alpha, !cut)? {
+                pv if pv <= alpha || (pv >= beta && lmr < 1.0) => pv.truncate(),
+                _ => -next.ab::<IS_PV, _>(depth - 1.0, -beta..-alpha, false)?,
             };
 
             if pv > tail {
@@ -917,7 +923,7 @@ impl<'a> Searcher<'a> {
 
         let tail = tail.clamp(lower, upper);
         let score = ScoreBound::new(bounds, tail.score(), ply);
-        let tpos = Transposition::new(score, depth, Some(head), was_pv);
+        let tpos = Transposition::new(score, depth.to_int(), Some(head), was_pv);
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
 
         if matches!(score, ScoreBound::Lower(_)) {
@@ -939,11 +945,11 @@ impl<'a> Searcher<'a> {
     fn root(
         &mut self,
         moves: &mut Moves,
-        depth: Depth,
+        depth: f32,
         bounds: Range<Score>,
     ) -> Result<Pv, Interrupted> {
         let (alpha, beta) = (bounds.start, bounds.end);
-        if self.ctrl.check(depth, zero(), &self.stack.pv) != Continue {
+        if self.ctrl.check(depth.to_int(), zero(), &self.stack.pv) != Continue {
             return Err(Interrupted);
         }
 
@@ -955,7 +961,7 @@ impl<'a> Searcher<'a> {
                 return Bounded::upper();
             }
 
-            let mut rating = 0.;
+            let mut rating = 0.0;
             let pos = &self.stack.pos;
             let history = self.local.history.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
@@ -972,7 +978,7 @@ impl<'a> Searcher<'a> {
         self.stack.nodes = self.ctrl.attention(head);
 
         let mut next = self.next(Some(head));
-        let mut tail = -next.ab::<true, _>(depth - 1, -beta..-alpha, false)?;
+        let mut tail = -next.ab::<true, _>(depth - 1.0, -beta..-alpha, false)?;
         drop(next);
 
         let is_noisy_pv = self.stack.pv.head().is_some_and(Move::is_noisy);
@@ -997,10 +1003,10 @@ impl<'a> Searcher<'a> {
                 (history, Params::lmr_history(..)),
             ]);
 
-            let lmr = lmr.to_int::<i8>().clamp(0, depth.get().max(1) - 1);
-            let pv = match -next.nw(depth - lmr - 1, -alpha, false)? {
-                pv if pv <= alpha || (pv >= beta && lmr < 1) => pv.truncate(),
-                _ => -next.ab::<true, _>(depth - 1, -beta..-alpha, false)?,
+            let lmr = lmr.clamp(0.0, depth.get().max(1.0) - 1.0);
+            let pv = match -next.nw(depth - lmr - 1.0, -alpha, false)? {
+                pv if pv <= alpha || (pv >= beta && lmr < 1.0) => pv.truncate(),
+                _ => -next.ab::<true, _>(depth - 1.0, -beta..-alpha, false)?,
             };
 
             if pv > tail {
@@ -1009,7 +1015,7 @@ impl<'a> Searcher<'a> {
         }
 
         let score = ScoreBound::new(bounds, tail.score(), zero());
-        let tpos = Transposition::new(score, depth, Some(head), true);
+        let tpos = Transposition::new(score, depth.to_int(), Some(head), true);
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
 
         if matches!(score, ScoreBound::Lower(_)) {
@@ -1031,29 +1037,29 @@ impl<'a> Searcher<'a> {
     fn aw(&mut self, mut moves: Moves) -> impl Iterator<Item = Info> {
         gen move {
             for depth in Depth::iter() {
-                let mut reduction = 0.;
+                let mut reduction = 0.0;
                 let mut window = *Params::aw_baseline(depth.cast::<usize>().min(5));
                 let mut lower = self.stack.pv.score() - window.to_int::<i16>();
                 let mut upper = self.stack.pv.score() + window.to_int::<i16>();
 
                 loop {
-                    let draft = depth - reduction.to_int::<i8>().min(3);
+                    let aw_depth = depth.to_float::<f32>() - Params::aw_reduction(1).min(reduction);
                     window = window.mul_add(*Params::aw_gamma(0), *Params::aw_delta(0));
-                    let Ok(partial) = self.root(&mut moves, draft, lower..upper) else {
+                    let Ok(partial) = self.root(&mut moves, aw_depth, lower..upper) else {
                         return;
                     };
 
                     match partial.score() {
                         score if (-lower..Score::upper()).contains(&-score) => {
-                            let blend = Params::aw_fail_low_blend(0);
+                            let blend = Params::aw_blend(0);
                             upper = blend.lerp(lower.to_float(), upper.to_float()).to_int();
                             lower = score - window.to_int::<i16>();
-                            reduction = 0.;
+                            reduction = 0.0;
                         }
 
                         score if (upper..Score::upper()).contains(&score) => {
                             upper = score + window.to_int::<i16>();
-                            reduction += *Params::aw_fail_high_reduction(0);
+                            reduction += *Params::aw_reduction(0);
                             self.stack.pv = partial;
                             let (time, nodes) = (self.ctrl.elapsed(), self.ctrl.visited());
                             yield Info::new(depth - 1, time, nodes, self.stack.pv.clone());
@@ -1346,7 +1352,7 @@ mod tests {
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         searcher.stack.nodes = searcher.ctrl.attention(m);
-        assert_eq!(searcher.nw(d, b, cut), Ok(Pv::empty(s)));
+        assert_eq!(searcher.nw(d.to_float(), b, cut), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -1372,7 +1378,7 @@ mod tests {
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         searcher.stack.nodes = searcher.ctrl.attention(m);
-        assert_eq!(searcher.nw(d, b, true), Ok(Pv::empty(s)));
+        assert_eq!(searcher.nw(d.to_float(), b, true), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -1398,7 +1404,7 @@ mod tests {
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         searcher.stack.nodes = searcher.ctrl.attention(m);
-        assert_eq!(searcher.nw(d, b, true), Ok(Pv::empty(s)));
+        assert_eq!(searcher.nw(d.to_float(), b, true), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -1419,7 +1425,10 @@ mod tests {
         searcher.stack.nodes = searcher.ctrl.attention(m);
         thread::sleep(Duration::from_millis(1));
 
-        assert_eq!(searcher.ab::<true, 1>(d, b, cut), Err(Interrupted));
+        assert_eq!(
+            searcher.ab::<true, 1>(d.to_float(), b, cut),
+            Err(Interrupted)
+        );
     }
 
     #[proptest]
@@ -1440,7 +1449,10 @@ mod tests {
         searcher.stack.nodes = searcher.ctrl.attention(m);
         global.abort();
 
-        assert_eq!(searcher.ab::<true, 1>(d, b, cut), Err(Interrupted));
+        assert_eq!(
+            searcher.ab::<true, 1>(d.to_float(), b, cut),
+            Err(Interrupted)
+        );
     }
 
     #[proptest]
@@ -1461,7 +1473,7 @@ mod tests {
         searcher.stack.nodes = searcher.ctrl.attention(m);
 
         assert_eq!(
-            searcher.ab::<true, 1>(d, b, cut),
+            searcher.ab::<true, 1>(d.to_float(), b, cut),
             Ok(Pv::empty(Score::drawn()))
         );
     }
@@ -1485,7 +1497,7 @@ mod tests {
         searcher.stack.nodes = searcher.ctrl.attention(m);
 
         assert_eq!(
-            searcher.ab::<true, 1>(d, b, cut),
+            searcher.ab::<true, 1>(d.to_float(), b, cut),
             Ok(Pv::empty(Score::mated(ply)))
         );
     }

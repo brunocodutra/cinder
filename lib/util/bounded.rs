@@ -1,4 +1,4 @@
-use crate::util::{Int, Signed};
+use crate::util::{Int, Num, Signed};
 use bytemuck::{NoUninit, Zeroable};
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter};
@@ -19,11 +19,13 @@ where
 
 unsafe impl<T: Int<Repr: Signed>> NoUninit for Bounded<T> {}
 
-unsafe impl<T: Int<Repr: [const] Signed>> const Int for Bounded<T> {
+unsafe impl<T: Int<Repr: [const] Signed>> const Num for Bounded<T> {
     type Repr = T::Repr;
     const MIN: Self::Repr = T::MIN;
     const MAX: Self::Repr = T::MAX;
 }
+
+unsafe impl<T: Int<Repr: [const] Signed>> const Int for Bounded<T> {}
 
 impl<T> const Eq for Bounded<T> where T: [const] Int<Repr: [const] Signed> {}
 
@@ -225,7 +227,7 @@ where
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<T::Repr>()
             .ok()
-            .and_then(Int::convert)
+            .and_then(Num::convert)
             .ok_or(ParseBoundedIntegerError)
     }
 }
@@ -240,13 +242,15 @@ mod tests {
     #[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
     #[cfg_attr(test, derive(test_strategy::Arbitrary))]
     #[repr(transparent)]
-    struct Asymmetric(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as Int>::Repr);
+    struct Asymmetric(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as Num>::Repr);
 
-    unsafe impl const Int for Asymmetric {
+    unsafe impl const Num for Asymmetric {
         type Repr = i16;
         const MIN: Self::Repr = -89;
         const MAX: Self::Repr = 131;
     }
+
+    unsafe impl const Int for Asymmetric {}
 
     #[proptest]
     fn comparison_coerces(a: Bounded<Asymmetric>, b: i8) {

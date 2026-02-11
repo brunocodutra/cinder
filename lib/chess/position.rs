@@ -1,4 +1,4 @@
-use crate::util::{Assume, Int, StaticSeq};
+use crate::util::{Assume, Int, Num, StaticSeq};
 use crate::{chess::*, simd::Aligned};
 use bytemuck::zeroed;
 use derive_more::with_trait::{Debug, Deref, DerefMut, Display, Error, From, IntoIterator};

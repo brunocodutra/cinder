@@ -1,6 +1,6 @@
 use crate::chess::{Castles, MovePack, MoveSet, Position};
 use crate::syzygy::{Dtz, DtzTable, Material, NormalizedMaterial, TableDescriptor, Wdl, WdlTable};
-use crate::util::Int;
+use crate::util::{Num, zero};
 use derive_more::with_trait::Debug;
 use rustc_hash::FxHashMap;
 use std::{collections::hash_map::Entry, ffi::OsStr, io, path::Path, str::FromStr};
@@ -249,7 +249,7 @@ impl<'a> ProbeResult<'a> {
             let v = -self.tb.probe(&next)?.dtz()?;
             if v == Dtz::new(1) && next.is_checkmate() {
                 best = Some(Dtz::new(1));
-            } else if v.signum() == self.wdl.signum() as i16 {
+            } else if v.cmp(&zero()) == self.wdl.cmp(&zero()) {
                 let v = v.stretch(1);
                 best = match best {
                     Some(best) => Some(v.min(best)),

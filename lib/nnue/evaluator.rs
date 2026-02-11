@@ -1,5 +1,5 @@
 use crate::nnue::{Accumulator, Bucket, Feature, Nnue, Synapse};
-use crate::util::{Assume, Int, zero};
+use crate::util::{Assume, Int, Num, zero};
 use crate::{chess::*, params::Params, search::Ply, simd::*};
 use bytemuck::zeroed;
 use derive_more::with_trait::Debug;

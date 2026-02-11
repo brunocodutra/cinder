@@ -1,6 +1,6 @@
 use crate::chess::Flip;
 use crate::search::{Ply, Value};
-use crate::util::{Binary, Bits, Bounded, Int, zero};
+use crate::util::{Binary, Bits, Bounded, Int, Num, zero};
 use bytemuck::{NoUninit, Zeroable};
 
 /// Number of [plies][`Ply`] to mate.
@@ -28,13 +28,15 @@ impl Mate {
 #[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct ScoreRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Score as Int>::Repr);
+pub struct ScoreRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <ScoreRepr as Num>::Repr);
 
-unsafe impl const Int for ScoreRepr {
+unsafe impl const Num for ScoreRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
     const MAX: Self::Repr = 8191;
 }
+
+unsafe impl const Int for ScoreRepr {}
 
 /// The minimax score.
 pub type Score = Bounded<ScoreRepr>;

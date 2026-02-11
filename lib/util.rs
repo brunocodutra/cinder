@@ -6,6 +6,7 @@ mod bounded;
 mod float;
 mod int;
 mod memory;
+mod num;
 mod seq;
 mod vault;
 
@@ -20,5 +21,6 @@ pub use bounded::*;
 pub use float::*;
 pub use int::*;
 pub use memory::*;
+pub use num::*;
 pub use seq::*;
 pub use vault::*;

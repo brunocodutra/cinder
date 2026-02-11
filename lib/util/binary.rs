@@ -1,4 +1,4 @@
-use crate::util::{Assume, Bits, Int, Unsigned};
+use crate::util::{Assume, Bits, Int, Num, Unsigned};
 
 /// Trait for types that can be encoded to binary.
 pub const trait Binary: 'static + Sized {

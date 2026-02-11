@@ -1,5 +1,5 @@
 use crate::chess::{Bitboard, Mirror, Rank, Transpose};
-use crate::util::{Assume, Int};
+use crate::util::{Assume, Int, Num};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{ops::Sub, str::FromStr};
@@ -28,11 +28,13 @@ impl File {
     }
 }
 
-unsafe impl const Int for File {
+unsafe impl const Num for File {
     type Repr = i8;
     const MIN: Self::Repr = File::A as i8;
     const MAX: Self::Repr = File::H as i8;
 }
+
+unsafe impl const Int for File {}
 
 impl const Mirror for File {
     /// Horizontally mirrors this file.
@@ -83,7 +85,7 @@ impl FromStr for File {
         };
 
         c.checked_sub(b'a')
-            .and_then(Int::convert)
+            .and_then(Num::convert)
             .ok_or(ParseFileError)
     }
 }

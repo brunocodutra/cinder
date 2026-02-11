@@ -1,4 +1,5 @@
 use crate::search::{Ply, Score};
+use crate::util::Num;
 use crate::{syzygy::Dtz, util::Int};
 use bytemuck::Zeroable;
 use std::ops::Neg;
@@ -22,11 +23,13 @@ pub enum Wdl {
     Win = 2,
 }
 
-unsafe impl const Int for Wdl {
+unsafe impl const Num for Wdl {
     type Repr = i8;
     const MIN: Self::Repr = Self::Loss as i8;
     const MAX: Self::Repr = Self::Win as i8;
 }
+
+unsafe impl const Int for Wdl {}
 
 impl Wdl {
     /// Convert to [`Score`].

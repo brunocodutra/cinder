@@ -1,4 +1,4 @@
-use crate::util::Int;
+use crate::util::{Int, Num};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::str::FromStr;
@@ -17,11 +17,13 @@ pub enum Role {
     King,
 }
 
-unsafe impl const Int for Role {
+unsafe impl const Num for Role {
     type Repr = u8;
     const MIN: Self::Repr = Role::Pawn as u8;
     const MAX: Self::Repr = Role::King as u8;
 }
+
+unsafe impl const Int for Role {}
 
 impl Display for Role {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

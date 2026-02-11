@@ -1,10 +1,10 @@
-use crate::util::Int;
+use crate::util::{Int, IntRepr, Num};
 use nom::{branch::*, bytes::complete::*, character::complete::*, combinator::*, multi::*};
 use nom::{error::*, sequence::*, *};
 use std::str::FromStr;
 use std::time::Duration;
 
-pub fn int<I: Int>(input: &str) -> IResult<&str, I> {
+pub fn int<I: Int<Repr: IntRepr>>(input: &str) -> IResult<&str, I> {
     recognize((opt(alt([tag("-"), tag("+")])), digit1))
         .map_res(i128::from_str)
         .map(i128::saturate)

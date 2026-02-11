@@ -1,5 +1,6 @@
+use crate::chess::Move;
 use crate::search::{HashSize, Info, Mate, Pv, ThreadCount};
-use crate::{chess::Move, util::Int};
+use crate::util::Num;
 use std::fmt::{self, Display, Formatter};
 use std::time::Duration;
 

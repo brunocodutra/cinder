@@ -1,5 +1,5 @@
 use crate::syzygy::Wdl;
-use crate::util::{Binary, Bits, Bounded, Int};
+use crate::util::{Binary, Bits, Bounded, Int, Num};
 use bytemuck::Zeroable;
 use derive_more::with_trait::Constructor;
 use std::ops::Neg;
@@ -8,13 +8,15 @@ use std::ops::Neg;
 #[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct DtzRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <DtzRepr as Int>::Repr);
+pub struct DtzRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <DtzRepr as Num>::Repr);
 
-unsafe impl const Int for DtzRepr {
+unsafe impl const Num for DtzRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
     const MAX: Self::Repr = 1023;
 }
+
+unsafe impl const Int for DtzRepr {}
 
 /// DTZ<sub>50</sub>. Based on the distance to zeroing of the half-move clock.
 ///
@@ -35,7 +37,7 @@ impl Dtz {
     /// Increases the absolute non-zero value by `plies`.
     #[inline(always)]
     pub const fn stretch(self, plies: u16) -> Dtz {
-        self + self.signum() as i32 * plies as i32
+        self + self.get().signum() as i32 * plies as i32
     }
 }
 
@@ -92,7 +94,7 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn stretching_dtz_increases_magnitude(dtz: Dtz, p: u16) {
-        assert_eq!(dtz.stretch(p).signum(), dtz.signum());
+        assert!(dtz.stretch(p).get().abs() >= dtz.get().abs());
     }
 
     #[proptest]

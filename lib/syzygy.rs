@@ -1,5 +1,5 @@
 use crate::search::{Line, Moves, Pv};
-use crate::util::{Int, zero};
+use crate::util::{Num, zero};
 use crate::{chess::Position, warn};
 use std::{fs::read_dir, path::Path};
 

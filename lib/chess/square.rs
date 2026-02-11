@@ -1,5 +1,5 @@
 use crate::chess::*;
-use crate::util::{Assume, Binary, Bits, Int};
+use crate::util::{Assume, Binary, Bits, Int, Num};
 use derive_more::with_trait::{Display, Error, From};
 use std::fmt::{self, Formatter};
 use std::ops::{Add, AddAssign, Sub, SubAssign};
@@ -26,7 +26,7 @@ impl Square {
     /// Constructs [`Square`] from a pair of [`File`] and [`Rank`].
     #[inline(always)]
     pub const fn new(f: File, r: Rank) -> Self {
-        Int::new(f.get() | (r.get() << 3))
+        Num::new(f.get() | (r.get() << 3))
     }
 
     /// This square's [`File`].
@@ -48,17 +48,19 @@ impl Square {
     }
 }
 
-unsafe impl const Int for Square {
+unsafe impl const Num for Square {
     type Repr = i8;
     const MIN: Self::Repr = Square::A1 as i8;
     const MAX: Self::Repr = Square::H8 as i8;
 }
 
+unsafe impl const Int for Square {}
+
 impl const Mirror for Square {
     /// Horizontally mirrors this square.
     #[inline(always)]
     fn mirror(self) -> Self {
-        Int::new(self.get() ^ Square::H1.get())
+        Num::new(self.get() ^ Square::H1.get())
     }
 }
 
@@ -66,7 +68,7 @@ impl const Flip for Square {
     /// Flips this square's [`Rank`].
     #[inline(always)]
     fn flip(self) -> Self {
-        Int::new(self.get() ^ Square::A8.get())
+        Num::new(self.get() ^ Square::A8.get())
     }
 }
 
@@ -76,7 +78,7 @@ impl const Transpose for Square {
     /// Diagonally flips this square.
     #[inline(always)]
     fn transpose(self) -> Self::Transposition {
-        Int::new((self.cast::<u32>().wrapping_mul(0x2080_0000) >> 26) as i8)
+        Num::new((self.cast::<u32>().wrapping_mul(0x2080_0000) >> 26) as i8)
     }
 }
 
@@ -108,7 +110,7 @@ impl Sub<i8> for Square {
 
     #[inline(always)]
     fn sub(self, rhs: i8) -> Self::Output {
-        Int::new(self.get() - rhs)
+        Num::new(self.get() - rhs)
     }
 }
 
@@ -117,7 +119,7 @@ impl Add<i8> for Square {
 
     #[inline(always)]
     fn add(self, rhs: i8) -> Self::Output {
-        Int::new(self.get() + rhs)
+        Num::new(self.get() + rhs)
     }
 }
 

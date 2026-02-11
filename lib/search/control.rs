@@ -1,7 +1,7 @@
 use crate::chess::{Move, Position};
 use crate::params::Params;
 use crate::search::{Attention, Depth, Limits, Nodes, Ply, Pv};
-use crate::util::{Float, Int};
+use crate::util::{Float, Num};
 use std::ops::{Deref, Range};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

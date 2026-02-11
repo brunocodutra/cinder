@@ -1,8 +1,6 @@
-use crate::util::{Assume, Float};
-use bytemuck::{Pod, Zeroable, zeroed};
-use std::fmt::{Binary, Debug, LowerHex, Octal, UpperHex};
-use std::marker::Destruct;
-use std::{cmp::Ordering, hash::Hash, hint::unreachable_unchecked, mem::transmute_copy};
+use crate::util::{Assume, Num, NumRepr};
+use bytemuck::{Zeroable, zeroed};
+use std::{cmp::Ordering, hint::unreachable_unchecked, mem::transmute_copy};
 use std::{num::*, ops::*};
 
 /// Trait for types that can be represented by a int range of primitive integers.
@@ -10,91 +8,10 @@ use std::{num::*, ops::*};
 /// # Safety
 ///
 /// Must only be implemented for types that can be safely transmuted to and from [`Int::Repr`].
-pub const unsafe trait Int: 'static + Send + Sync + Copy {
-    /// The primitive integer representation.
-    type Repr: [const] IntRepr;
-
-    /// The minimum repr.
-    const MIN: Self::Repr = <Self::Repr as Int>::MIN;
-
-    /// The maximum repr.
-    const MAX: Self::Repr = <Self::Repr as Int>::MAX;
-
-    /// The minimum value.
-    #[inline(always)]
-    fn lower() -> Self {
-        Self::new(Self::MIN)
-    }
-
-    /// The maximum value.
-    #[inline(always)]
-    fn upper() -> Self {
-        Self::new(Self::MAX)
-    }
-
-    /// Casts from [`Int::Repr`].
-    #[track_caller]
-    #[inline(always)]
-    fn new(i: Self::Repr) -> Self {
-        const { assert!(size_of::<Self>() == size_of::<Self::Repr>()) }
-        const { assert!(align_of::<Self>() == align_of::<Self::Repr>()) }
-
-        (Self::MIN..=Self::MAX).contains(&i).assume();
-        unsafe { transmute_copy(&i) }
-    }
-
-    /// Casts to [`Int::Repr`].
-    #[track_caller]
-    #[inline(always)]
-    fn get(self) -> Self::Repr {
-        let repr = unsafe { transmute_copy(&self) };
-        (Self::MIN..=Self::MAX).contains(&repr).assume();
-        repr
-    }
-
-    /// Returns the sign of `self`.
-    ///
-    /// * `1` if `self > 0`
-    /// * `0` if `self == 0`
-    /// * `-1` if `self < 0`
-    #[track_caller]
-    #[inline(always)]
-    fn signum(self) -> Self::Repr {
-        self.get().cmp(&zero()).cast()
-    }
-
-    /// Casts to a [`IntRepr`].
-    ///
-    /// This is equivalent to the operator `as`.
-    #[track_caller]
-    #[inline(always)]
-    fn cast<I: IntRepr>(self) -> I {
-        self.get().cast()
-    }
-
-    /// Casts to [`Float`].
-    #[track_caller]
-    #[inline(always)]
-    fn to_float<F: [const] Float>(self) -> F {
-        self.get().to_float()
-    }
-
-    /// Converts to another [`Int`], if not out of range.
-    #[track_caller]
-    #[inline(always)]
-    fn convert<I: [const] Int>(self) -> Option<I> {
-        self.get().convert()
-    }
-
-    /// Converts to another [`Int`] with saturation.
-    #[track_caller]
-    #[inline(always)]
-    fn saturate<I: [const] Int>(self) -> I {
-        let min = I::MIN.convert().unwrap_or(Self::MIN);
-        let max = I::MAX.convert().unwrap_or(Self::MAX);
-        I::new(self.get().clamp(min, max).cast::<I::Repr>())
-    }
-
+pub const unsafe trait Int: [const] Num
+where
+    Self::Repr: [const] IntRepr,
+{
     /// An iterator over all values in the range [`Int::MIN`]..=[`Int::MAX`].
     #[track_caller]
     #[inline(always)]
@@ -104,9 +21,9 @@ pub const unsafe trait Int: 'static + Send + Sync + Copy {
 }
 
 #[derive(Debug)]
-pub struct Ints<I: Int>(RangeInclusive<I::Repr>);
+pub struct Ints<I: Int<Repr: IntRepr>>(RangeInclusive<I::Repr>);
 
-impl<I: Int> ExactSizeIterator for Ints<I>
+impl<I: Int<Repr: IntRepr>> ExactSizeIterator for Ints<I>
 where
     RangeInclusive<I::Repr>: ExactSizeIterator<Item = I::Repr>,
 {
@@ -116,7 +33,7 @@ where
     }
 }
 
-impl<I: Int> Iterator for Ints<I>
+impl<I: Int<Repr: IntRepr>> Iterator for Ints<I>
 where
     RangeInclusive<I::Repr>: ExactSizeIterator<Item = I::Repr>,
 {
@@ -133,7 +50,7 @@ where
     }
 }
 
-impl<I: Int> DoubleEndedIterator for Ints<I>
+impl<I: Int<Repr: IntRepr>> DoubleEndedIterator for Ints<I>
 where
     RangeInclusive<I::Repr>: ExactSizeIterator<Item = I::Repr> + DoubleEndedIterator,
 {
@@ -158,21 +75,12 @@ pub const fn ones<U: Unsigned>(n: u32) -> U {
 
 /// Marker trait for primitive integers.
 pub const trait IntRepr:
-    [const] Int<Repr = Self>
-    + Debug
-    + Binary
-    + Octal
-    + LowerHex
-    + UpperHex
-    + [const] Destruct
-    + [const] Default
+    [const] NumRepr
+    + [const] Int<Repr = Self>
     + [const] Eq
     + [const] PartialEq
     + [const] Ord
     + [const] PartialOrd
-    + Hash
-    + Zeroable
-    + Pod
     + [const] Add<Output = Self>
     + [const] AddAssign
     + [const] Sub<Output = Self>
@@ -203,31 +111,39 @@ pub const trait Signed: [const] IntRepr {}
 /// Marker trait for unsigned primitive integers.
 pub const trait Unsigned: [const] IntRepr {}
 
-unsafe impl<I: [const] IntRepr> const Int for Saturating<I> {
+unsafe impl<I: [const] IntRepr> const Num for Saturating<I> {
     type Repr = I;
     const MIN: Self::Repr = I::MIN;
     const MAX: Self::Repr = I::MAX;
 }
 
-unsafe impl const Int for bool {
+unsafe impl<I: [const] IntRepr> const Int for Saturating<I> {}
+
+unsafe impl const Num for bool {
     type Repr = u8;
     const MIN: Self::Repr = 0x00;
     const MAX: Self::Repr = 0x01;
 }
 
-unsafe impl const Int for Ordering {
+unsafe impl const Int for bool {}
+
+unsafe impl const Num for Ordering {
     type Repr = i8;
     const MIN: Self::Repr = Ordering::Less as i8;
     const MAX: Self::Repr = Ordering::Greater as i8;
 }
 
+unsafe impl const Int for Ordering {}
+
 macro_rules! impl_int_for_non_zero {
     ($nz: ty, $repr: ty) => {
-        unsafe impl const Int for $nz {
+        unsafe impl const Num for $nz {
             type Repr = $repr;
             const MIN: Self::Repr = Self::MIN.get();
             const MAX: Self::Repr = Self::MAX.get();
         }
+
+        unsafe impl const Int for $nz {}
     };
 }
 
@@ -238,25 +154,32 @@ impl_int_for_non_zero!(NonZeroU64, u64);
 impl_int_for_non_zero!(NonZeroU128, u128);
 impl_int_for_non_zero!(NonZeroUsize, usize);
 
-macro_rules! impl_int_repr_for {
+macro_rules! impl_num_for {
     ($i: ty) => {
-        impl const IntRepr for $i {
-            const BITS: u32 = <$i>::BITS;
-        }
-
-        unsafe impl const Int for $i {
+        unsafe impl const Num for $i {
             type Repr = $i;
 
             const MIN: Self::Repr = <$i>::MIN;
             const MAX: Self::Repr = <$i>::MAX;
 
-            #[track_caller]
             #[inline(always)]
-            fn cast<I: IntRepr>(self) -> I {
-                if size_of::<I>() == size_of::<Self>() {
+            fn clip(self, min: Self, max: Self) -> Self {
+                (min <= max).assume();
+                Ord::clamp(self, min, max)
+            }
+
+            #[inline(always)]
+            fn cast<N: NumRepr>(self) -> N {
+                if size_of::<N>() == size_of::<Self>() {
                     unsafe { transmute_copy(&self) }
+                } else if N::IS_FLOAT {
+                    match size_of::<N>() {
+                        4 => (self as f32).cast(),
+                        8 => (self as f64).cast(),
+                        _ => unsafe { unreachable_unchecked() },
+                    }
                 } else {
-                    match size_of::<I>() {
+                    match size_of::<N>() {
                         1 => (self as u8).cast(),
                         2 => (self as u16).cast(),
                         4 => (self as u32).cast(),
@@ -267,29 +190,25 @@ macro_rules! impl_int_repr_for {
                 }
             }
 
-            #[track_caller]
             #[inline(always)]
-            fn to_float<F: Float>(self) -> F {
-                match size_of::<F>() {
-                    4 => unsafe { transmute_copy(&(self as f32)) },
-                    8 => unsafe { transmute_copy(&(self as f64)) },
-                    _ => unsafe { unreachable_unchecked() },
-                }
-            }
-
-            #[track_caller]
-            #[inline(always)]
-            fn convert<I: [const] Int>(self) -> Option<I> {
+            fn convert<N: [const] Num<Repr: [const] NumRepr>>(self) -> Option<N> {
                 let i = self.cast();
 
-                if (I::MIN..=I::MAX).contains(&i)
+                if (N::MIN..=N::MAX).contains(&i)
                     && i.cast::<Self>() == self
                     && (i < zero()) == (self < zero())
                 {
-                    Some(I::new(i))
+                    Some(N::new(i))
                 } else {
                     None
                 }
+            }
+
+            #[inline(always)]
+            fn saturate<N: [const] Num<Repr: [const] NumRepr>>(self) -> N {
+                let min = N::MIN.convert().unwrap_or(Self::MIN);
+                let max = N::MAX.convert().unwrap_or(Self::MAX);
+                N::new(self.clip(min, max).cast::<N::Repr>())
             }
         }
     };
@@ -297,7 +216,19 @@ macro_rules! impl_int_repr_for {
 
 macro_rules! impl_signed_for {
     ($i: ty) => {
-        impl_int_repr_for!($i);
+        impl_num_for!($i);
+
+        impl const NumRepr for $i {
+            const IS_FLOAT: bool = false;
+            const IS_SIGNED: bool = true;
+        }
+
+        unsafe impl const Int for $i {}
+
+        impl const IntRepr for $i {
+            const BITS: u32 = <$i>::BITS;
+        }
+
         impl const Signed for $i {}
     };
 }
@@ -311,7 +242,19 @@ impl_signed_for!(isize);
 
 macro_rules! impl_unsigned_for {
     ($i: ty) => {
-        impl_int_repr_for!($i);
+        impl_num_for!($i);
+
+        impl const NumRepr for $i {
+            const IS_FLOAT: bool = false;
+            const IS_SIGNED: bool = false;
+        }
+
+        unsafe impl const Int for $i {}
+
+        impl const IntRepr for $i {
+            const BITS: u32 = <$i>::BITS;
+        }
+
         impl const Unsigned for $i {}
     };
 }
@@ -343,11 +286,13 @@ mod tests {
         Nine,
     }
 
-    unsafe impl const Int for Digit {
+    unsafe impl const Num for Digit {
         type Repr = u16;
         const MIN: Self::Repr = Digit::One as u16;
         const MAX: Self::Repr = Digit::Nine as u16;
     }
+
+    unsafe impl const Int for Digit {}
 
     #[proptest]
     fn int_can_be_cast_from_repr(#[strategy(1u16..10)] i: u16) {
@@ -360,14 +305,14 @@ mod tests {
     }
 
     #[proptest]
-    fn int_can_be_cast_to_primitive(d: Digit) {
+    fn int_can_be_cast_to_int(d: Digit) {
         assert_eq!(d.cast::<i8>(), d.get() as i8);
     }
 
     #[proptest]
     #[expect(clippy::float_cmp)]
     fn int_can_be_cast_to_float(d: Digit) {
-        assert_eq!(d.to_float::<f32>(), d.get() as f32);
+        assert_eq!(d.cast::<f32>(), d.get() as f32);
     }
 
     #[proptest]
@@ -387,7 +332,7 @@ mod tests {
 
     #[proptest]
     fn int_can_be_converted_with_saturation(i: u8) {
-        assert_eq!(i.saturate::<Digit>(), Digit::new(i.clamp(1, 9).into()));
+        assert_eq!(i.saturate::<Digit>(), Digit::new(i.clip(1, 9).into()));
     }
 
     #[test]
@@ -419,6 +364,7 @@ mod tests {
     }
 
     #[proptest]
+    #[expect(clippy::float_cmp)]
     fn primitive_can_be_cast(i: i16) {
         assert_eq!(i.cast::<u8>(), i as u8);
         assert_eq!(i.cast::<i8>(), i as i8);
@@ -431,6 +377,9 @@ mod tests {
 
         assert_eq!(i.cast::<u32>().cast::<i8>(), i as u32 as i8);
         assert_eq!(i.cast::<i32>().cast::<u8>(), i as i32 as u8);
+
+        assert_eq!(i.cast::<f32>(), i as f32);
+        assert_eq!(i.cast::<f64>(), i as f64);
     }
 
     #[proptest]
@@ -440,11 +389,17 @@ mod tests {
 
         assert_eq!(i.convert::<u32>(), Some(i.into()));
         assert_eq!(i.convert::<i32>(), Some(i.into()));
+
+        assert_eq!(i.convert::<f32>(), Some(i.into()));
+        assert_eq!(i.convert::<f64>(), Some(i.into()));
     }
 
     #[proptest]
+    #[expect(clippy::float_cmp)]
     fn primitive_can_be_converted_with_saturation(i: u16) {
         assert_eq!(i.saturate::<i8>(), i.min(i8::MAX as u16) as i8);
         assert_eq!(i.saturate::<u32>(), u32::from(i));
+        assert_eq!(i.saturate::<f32>(), f32::from(i));
+        assert_eq!(i.saturate::<f64>(), f64::from(i));
     }
 }

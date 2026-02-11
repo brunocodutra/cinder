@@ -1,6 +1,6 @@
 use crate::chess::Move;
 use crate::search::{Depth, Line, Score};
-use crate::util::{Assume, Int};
+use crate::util::{Assume, Num};
 use derive_more::with_trait::Constructor;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
@@ -29,9 +29,9 @@ impl<const N: usize> Pv<N> {
 
     /// Constrains the score between `lower` and `upper`.
     #[inline(always)]
-    pub const fn clamp(self, lower: Score, upper: Score) -> Pv<N> {
+    pub const fn clip(self, lower: Score, upper: Score) -> Pv<N> {
         (lower <= upper).assume();
-        Pv::new(self.score.clamp(lower, upper), self.moves)
+        Pv::new(self.score.clip(lower, upper), self.moves)
     }
 
     /// The sequence of [`Move`]s in this principal variation.
@@ -145,12 +145,12 @@ mod tests {
 
     #[proptest]
     fn clamping_constrains_score_to_interval(pv: Pv, l: Score, #[filter(#r >= #l)] r: Score) {
-        assert_eq!(pv.clone().clamp(l, r).score(), pv.score().clamp(l, r));
+        assert_eq!(pv.clone().clip(l, r).score(), pv.score().clip(l, r));
     }
 
     #[proptest]
     fn clamping_preserves_moves(pv: Pv, l: Score, #[filter(#r >= #l)] r: Score) {
-        assert_eq!(pv.clone().clamp(l, r).moves(), pv.moves());
+        assert_eq!(pv.clone().clip(l, r).moves(), pv.moves());
     }
 
     #[proptest]

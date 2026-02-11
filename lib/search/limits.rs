@@ -1,4 +1,4 @@
-use crate::{search::Depth, util::Int};
+use crate::{search::Depth, util::Num};
 use std::time::Duration;
 
 /// Search limits that can be applied simultaneously.

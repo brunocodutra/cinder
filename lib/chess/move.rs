@@ -1,5 +1,5 @@
 use crate::chess::{Bitboard, Flip, Perspective, Piece, Rank, Role, Square, Squares};
-use crate::util::{Assume, Binary, Bits, Int, zero};
+use crate::util::{Assume, Binary, Bits, Num, zero};
 use std::fmt::{self, Debug, Display, Formatter, Write};
 use std::num::NonZeroU16;
 
@@ -235,13 +235,13 @@ impl Iterator for MoveSetIter {
         if self.base.is_promotion() {
             let mask = 0b1111111111111100;
             let promotion = [0b11, 0b00, 0b01, 0b10][(self.base.0.get() & !mask) as usize];
-            self.base.0 = <NonZeroU16 as Int>::new(self.base.0.get() & mask) | promotion;
+            self.base.0 = <NonZeroU16 as Num>::new(self.base.0.get() & mask) | promotion;
         }
 
         if matches!(self.base.promotion(), None | Some(Role::Queen)) {
             let whither = self.whither.next()?;
             let bits = (self.base.0.get() & 0b1111110000001111) | ((whither as u16) << 4);
-            self.base.0 = Int::new(bits);
+            self.base.0 = Num::new(bits);
         }
 
         Some(self.base)

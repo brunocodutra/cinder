@@ -1,4 +1,4 @@
-use crate::util::{Int, Unsigned, ones, zero};
+use crate::util::{Int, Num, Unsigned, ones, zero};
 use bytemuck::{NoUninit, Zeroable};
 use derive_more::with_trait::{Constructor, Debug, Display};
 use std::{marker::Destruct, ops::*};
@@ -20,11 +20,13 @@ where
 
 unsafe impl<T: Unsigned, const W: u32> NoUninit for Bits<T, W> {}
 
-unsafe impl<T: [const] Unsigned + 'static, const W: u32> const Int for Bits<T, W> {
+unsafe impl<T: [const] Unsigned + 'static, const W: u32> const Num for Bits<T, W> {
     type Repr = T;
     const MIN: Self::Repr = zero();
     const MAX: Self::Repr = ones(W);
 }
+
+unsafe impl<T: [const] Unsigned + 'static, const W: u32> const Int for Bits<T, W> {}
 
 impl<T: Unsigned, const W: u32> Bits<T, W> {
     #[expect(dead_code)]

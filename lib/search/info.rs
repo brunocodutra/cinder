@@ -1,5 +1,5 @@
 use crate::search::{Depth, Pv, Score};
-use crate::util::Int;
+use crate::util::Num;
 use derive_more::with_trait::Constructor;
 use std::time::Duration;
 

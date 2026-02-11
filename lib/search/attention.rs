@@ -1,4 +1,5 @@
 use crate::chess::{Butterfly, Move};
+use crate::util::Num;
 use crate::{search::Stat, util::Int};
 use bytemuck::{Pod, Zeroable, zeroed};
 use derive_more::with_trait::Debug;
@@ -8,14 +9,18 @@ use derive_more::with_trait::Debug;
 #[derive_const(Default, Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct Nodes(usize);
+pub struct Nodes(u64);
 
-unsafe impl const Int for Nodes {
-    type Repr = usize;
+unsafe impl const Num for Nodes {
+    type Repr = u64;
+    const MIN: Self::Repr = u64::MIN;
+    const MAX: Self::Repr = u64::MAX;
 }
 
+unsafe impl const Int for Nodes {}
+
 impl const Stat for Nodes {
-    type Value = <Self as Int>::Repr;
+    type Value = <Self as Num>::Repr;
 
     #[inline(always)]
     fn get(&self) -> Self::Value {

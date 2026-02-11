@@ -3,7 +3,7 @@
 use anyhow::Error as Failure;
 use cinder::chess::Position;
 use cinder::syzygy::{Dtz, Syzygy, Wdl};
-use cinder::util::{Assume, Int, zero};
+use cinder::util::{Assume, Num, zero};
 use proptest::sample::select;
 use reqwest::blocking::Client;
 use std::io::{Write, stderr};

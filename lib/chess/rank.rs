@@ -1,5 +1,5 @@
 use crate::chess::{Bitboard, File, Flip, Transpose};
-use crate::util::{Assume, Int};
+use crate::util::{Assume, Int, Num};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{ops::Sub, str::FromStr};
@@ -28,11 +28,13 @@ impl Rank {
     }
 }
 
-unsafe impl const Int for Rank {
+unsafe impl const Num for Rank {
     type Repr = i8;
     const MIN: Self::Repr = Rank::First as i8;
     const MAX: Self::Repr = Rank::Eighth as i8;
 }
+
+unsafe impl const Int for Rank {}
 
 impl const Flip for Rank {
     /// This rank from the opponent's perspective.
@@ -83,7 +85,7 @@ impl FromStr for Rank {
         };
 
         c.checked_sub(b'1')
-            .and_then(Int::convert)
+            .and_then(Num::convert)
             .ok_or(ParseRankError)
     }
 }

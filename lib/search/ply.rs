@@ -1,13 +1,13 @@
-use crate::util::{Bounded, Int};
+use crate::util::{Bounded, Int, Num};
 use bytemuck::{NoUninit, Zeroable};
 
 #[derive(Debug, Copy, Hash, Zeroable, NoUninit)]
 #[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct PlyRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <PlyRepr as Int>::Repr);
+pub struct PlyRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <PlyRepr as Num>::Repr);
 
-unsafe impl const Int for PlyRepr {
+unsafe impl const Num for PlyRepr {
     type Repr = i16;
 
     const MIN: Self::Repr = 0;
@@ -18,6 +18,8 @@ unsafe impl const Int for PlyRepr {
     #[cfg(test)]
     const MAX: Self::Repr = 7;
 }
+
+unsafe impl const Int for PlyRepr {}
 
 /// The number of half-moves played.
 pub type Ply = Bounded<PlyRepr>;

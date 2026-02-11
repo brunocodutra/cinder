@@ -1,5 +1,5 @@
 use crate::chess::{Butterfly, File, Flip, Rank, Square};
-use crate::util::{Assume, Int};
+use crate::util::{Assume, Int, Num};
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::{Constructor, Debug};
 use std::fmt::{self, Formatter, Write};
@@ -96,12 +96,12 @@ impl Bitboard {
 
             let mut i = Square::MIN;
             while i <= Square::MAX {
-                let wc: Square = Int::new(i);
+                let wc: Square = Num::new(i);
                 i += 1;
 
                 let mut j = Square::MIN;
                 while j <= Square::MAX {
-                    let wt: Square = Int::new(j);
+                    let wt: Square = Num::new(j);
                     j += 1;
 
                     let df = wt.file() - wc.file();
@@ -143,12 +143,12 @@ impl Bitboard {
 
             let mut i = Square::MIN;
             while i <= Square::MAX {
-                let wc: Square = Int::new(i);
+                let wc: Square = Num::new(i);
                 i += 1;
 
                 let mut j = Square::MIN;
                 while j <= Square::MAX {
-                    let wt: Square = Int::new(j);
+                    let wt: Square = Num::new(j);
                     j += 1;
 
                     let df = wt.file() - wc.file();

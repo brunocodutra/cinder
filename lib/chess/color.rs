@@ -1,4 +1,5 @@
-use crate::{chess::Flip, util::Int};
+use crate::chess::Flip;
+use crate::util::{Int, Num};
 use derive_more::with_trait::Display;
 use std::ops::Not;
 
@@ -14,11 +15,13 @@ pub enum Color {
     Black,
 }
 
-unsafe impl const Int for Color {
+unsafe impl const Num for Color {
     type Repr = u8;
     const MIN: Self::Repr = Color::White as u8;
     const MAX: Self::Repr = Color::Black as u8;
 }
+
+unsafe impl const Int for Color {}
 
 impl const Flip for Color {
     #[inline(always)]
@@ -42,7 +45,7 @@ impl const Not for Color {
 impl const From<bool> for Color {
     #[inline(always)]
     fn from(b: bool) -> Self {
-        Int::new(b as u8)
+        Num::new(b as u8)
     }
 }
 

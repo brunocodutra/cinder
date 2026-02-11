@@ -1,4 +1,4 @@
-use crate::util::Int;
+use crate::util::{Int, Num};
 use derive_more::with_trait::{Debug, Display, Error};
 use std::ops::{Shl, Shr};
 use std::{cmp::Ordering, collections::HashSet, path::PathBuf, str::FromStr};
@@ -14,7 +14,7 @@ use proptest::strategy::LazyJust;
 #[repr(transparent)]
 pub struct HashSize(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] usize);
 
-unsafe impl const Int for HashSize {
+unsafe impl const Num for HashSize {
     type Repr = usize;
 
     const MIN: Self::Repr = 0;
@@ -25,6 +25,8 @@ unsafe impl const Int for HashSize {
     #[cfg(test)]
     const MAX: usize = 16 << 20;
 }
+
+unsafe impl const Int for HashSize {}
 
 impl const Default for HashSize {
     fn default() -> Self {
@@ -93,7 +95,7 @@ impl FromStr for HashSize {
 #[repr(transparent)]
 pub struct ThreadCount(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] u16);
 
-unsafe impl const Int for ThreadCount {
+unsafe impl const Num for ThreadCount {
     type Repr = u16;
 
     const MIN: Self::Repr = 1;
@@ -104,6 +106,8 @@ unsafe impl const Int for ThreadCount {
     #[cfg(test)]
     const MAX: Self::Repr = 4;
 }
+
+unsafe impl const Int for ThreadCount {}
 
 impl const Default for ThreadCount {
     fn default() -> Self {
@@ -140,7 +144,7 @@ impl FromStr for ThreadCount {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<usize>()
             .ok()
-            .and_then(Int::convert)
+            .and_then(Num::convert)
             .ok_or(ParseThreadCountError)
     }
 }

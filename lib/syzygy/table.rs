@@ -1,5 +1,5 @@
 use crate::syzygy::{Dtz, MAX_PIECES, Material, RandomAccessFile, Wdl};
-use crate::util::{Assume, Bits, Int, StaticSeq};
+use crate::util::{Assume, Bits, Int, Num, StaticSeq};
 use crate::{chess::*, syzygy::NormalizedMaterial};
 use byteorder::{BE, ByteOrder, LE, ReadBytesExt};
 use derive_more::with_trait::Deref;
@@ -42,8 +42,10 @@ impl TableDescriptor for Dtz {
 #[repr(transparent)]
 struct Layout(Bits<u8, 8>);
 
-unsafe impl const Int for Layout {
+unsafe impl const Num for Layout {
     type Repr = u8;
+    const MIN: Self::Repr = u8::MIN;
+    const MAX: Self::Repr = u8::MAX;
 }
 
 impl Layout {
@@ -59,8 +61,10 @@ impl Layout {
 #[repr(transparent)]
 struct Flag(Bits<u8, 8>);
 
-unsafe impl const Int for Flag {
+unsafe impl const Num for Flag {
     type Repr = u8;
+    const MIN: Self::Repr = u8::MIN;
+    const MAX: Self::Repr = u8::MAX;
 }
 
 impl Flag {

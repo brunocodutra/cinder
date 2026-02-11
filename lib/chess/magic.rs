@@ -1,5 +1,5 @@
 use crate::chess::{Bitboard, Square};
-use crate::util::Int;
+use crate::util::Num;
 
 #[derive(Debug, Copy, Hash)]
 #[derive_const(Clone, Eq, PartialEq)]

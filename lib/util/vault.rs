@@ -69,7 +69,7 @@ where
     #[expect(clippy::needless_pass_by_value)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn close(mut key: Key, value: T) -> Self {
-        const { assert!(B <= U::BITS && U::BITS <= <Key as Int>::Repr::BITS) }
+        const { assert!(B <= U::BITS && U::BITS <= <Key as Num>::Repr::BITS) }
 
         key.push(value.encode());
 
@@ -82,7 +82,7 @@ where
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn open(self, key: Key) -> Option<T> {
-        const { assert!(B <= U::BITS && U::BITS <= <Key as Int>::Repr::BITS) }
+        const { assert!(B <= U::BITS && U::BITS <= <Key as Num>::Repr::BITS) }
 
         if self.matches(key) {
             Some(Binary::decode(self.bits.convert::<Key>().assume().pop()))

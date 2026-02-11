@@ -18,7 +18,7 @@ use bullet::value::loader::{DataLoader, SfBinpackLoader};
 use bullet::wdl::LinearWDL;
 use bytemuck::zeroed;
 use cinder::chess::{Color, Flip, Phase, Piece, Role, Square};
-use cinder::{nnue::*, util::Int};
+use cinder::{nnue::*, util::Num};
 use clap::{Args, Parser, Subcommand};
 use rand::{Rng, rng};
 use std::ops::{Deref, Div, RangeInclusive};
@@ -44,11 +44,11 @@ impl SparseInputType for KingBuckets {
     }
 
     fn map_features<F: FnMut(usize, usize)>(&self, pos: &Self::RequiredDataType, mut f: F) {
-        let our_king = <Square as Int>::new(pos.our_ksq() as _);
-        let opp_king = <Square as Int>::new(pos.opp_ksq() as _).flip();
+        let our_king = <Square as Num>::new(pos.our_ksq() as _);
+        let opp_king = <Square as Num>::new(pos.opp_ksq() as _).flip();
 
         for (p, sq) in pos.into_iter() {
-            let sq = <Square as Int>::new(sq as _);
+            let sq = <Square as Num>::new(sq as _);
             let piece = Piece::new(Role::new(p & 7), Color::new((p & 8) >> 3));
 
             f(

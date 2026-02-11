@@ -1,4 +1,5 @@
-use crate::{chess::Color, util::Int};
+use crate::chess::Color;
+use crate::util::{Int, Num};
 
 /// Trait for types that can be seen from a different perspective.
 pub const trait Perspective<T>: Sized {
@@ -32,16 +33,18 @@ pub enum Side {
     Right,
 }
 
-unsafe impl const Int for Side {
+unsafe impl const Num for Side {
     type Repr = u8;
     const MIN: Self::Repr = Side::Left as u8;
     const MAX: Self::Repr = Side::Right as u8;
 }
 
+unsafe impl const Int for Side {}
+
 impl const From<bool> for Side {
     #[inline(always)]
     fn from(b: bool) -> Self {
-        Int::new(b as u8)
+        Num::new(b as u8)
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::chess::{Color, Move, Perspective, Piece, Role, Square};
-use crate::util::{Assume, Bits, Int};
+use crate::util::{Assume, Bits, Int, Num};
 use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter};

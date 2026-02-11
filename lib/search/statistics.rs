@@ -1,5 +1,5 @@
 use crate::chess::Position;
-use crate::util::{Assume, Float, zero};
+use crate::util::{Assume, Float, Num, zero};
 use bytemuck::{NoUninit, Zeroable};
 use derive_more::with_trait::Debug;
 use std::{marker::Destruct, ptr::NonNull};
@@ -130,14 +130,16 @@ impl<T: [const] Stat<Value: [const] Destruct>> const Stat for NonNull<T> {
 #[repr(transparent)]
 pub struct Graviton(f32);
 
-unsafe impl const Float for Graviton {
+unsafe impl const Num for Graviton {
     type Repr = f32;
     const MIN: Self::Repr = -Self::MAX;
     const MAX: Self::Repr = 1.0;
 }
 
+unsafe impl const Float for Graviton {}
+
 impl const Stat for Graviton {
-    type Value = <Self as Float>::Repr;
+    type Value = <Self as Num>::Repr;
 
     #[inline(always)]
     fn get(&self) -> Self::Value {
@@ -147,6 +149,6 @@ impl const Stat for Graviton {
     #[inline(always)]
     fn update(&mut self, delta: Self::Value) {
         self.0 += delta.abs().mul_add(-self.0, delta);
-        self.0 = self.0.clamp(Self::MIN, Self::MAX);
+        self.0 = self.0.clip(Self::MIN, Self::MAX);
     }
 }

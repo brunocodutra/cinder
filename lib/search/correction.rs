@@ -1,6 +1,6 @@
 use crate::chess::{Butterfly, Move, Position};
 use crate::search::{Graviton, Stat, Statistics};
-use crate::util::{Bits, Float, Int, Unsigned};
+use crate::util::{Bits, Num, Unsigned};
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 

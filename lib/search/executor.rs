@@ -1,5 +1,5 @@
 use crate::search::ThreadCount;
-use crate::util::{Int, thread};
+use crate::util::{Num, thread};
 use derive_more::with_trait::Debug;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};

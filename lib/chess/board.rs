@@ -1,4 +1,4 @@
-use crate::util::{Assume, Int};
+use crate::util::{Assume, Int, Num};
 use crate::{chess::*, simd::Aligned};
 use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Display, Error};
@@ -56,7 +56,7 @@ pub struct Board {
         let mut roles = [Bitboard::empty(); 6];
         for (i, o) in #pieces.iter().enumerate() {
             if let Some(p) = o {
-                roles[p.role() as usize] |= <Square as Int>::new(i as i8).bitboard();
+                roles[p.role() as usize] |= <Square as Num>::new(i as i8).bitboard();
             }
         }
 
@@ -67,7 +67,7 @@ pub struct Board {
         let mut colors = [Bitboard::empty(); 2];
         for (i, o) in #pieces.iter().enumerate() {
             if let Some(p) = o {
-                colors[p.color() as usize] |= <Square as Int>::new(i as i8).bitboard();
+                colors[p.color() as usize] |= <Square as Num>::new(i as i8).bitboard();
             }
         }
 

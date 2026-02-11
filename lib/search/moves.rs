@@ -1,5 +1,5 @@
 use crate::chess::Move;
-use crate::util::{Assume, Bounded, Capacity, ConstCapacity, Int, StaticSeq};
+use crate::util::{Assume, Bounded, Capacity, ConstCapacity, Num, StaticSeq};
 
 #[cfg(test)]
 use proptest::{collection::vec, prelude::*};

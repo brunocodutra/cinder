@@ -1,19 +1,21 @@
 use crate::chess::Flip;
 use crate::search::{Ply, Score};
-use crate::util::{Binary, Bits, Bounded, Int};
+use crate::util::{Binary, Bits, Bounded, Int, Num};
 use bytemuck::{NoUninit, Zeroable};
 
 #[derive(Debug, Copy, Hash, Zeroable, NoUninit)]
 #[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct ValueRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <ValueRepr as Int>::Repr);
+pub struct ValueRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <ValueRepr as Num>::Repr);
 
-unsafe impl const Int for ValueRepr {
+unsafe impl const Num for ValueRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
     const MAX: Self::Repr = Score::MAX - 2 * (Ply::MAX + 1);
 }
+
+unsafe impl const Int for ValueRepr {}
 
 /// A position's static evaluation.
 pub type Value = Bounded<ValueRepr>;

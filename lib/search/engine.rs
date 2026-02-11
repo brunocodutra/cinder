@@ -129,7 +129,7 @@ impl<'a> Searcher<'a> {
     fn evaluate(&mut self) -> Value {
         let zobrist = self.stack.pos.zobrists().hash;
         self.shared.vt.load(zobrist).unwrap_or_else(|| {
-            let value = self.stack.pos.evaluate().to_int();
+            let value = self.stack.pos.evaluate().saturate();
             self.shared.vt.store(zobrist, value);
             value
         })
@@ -185,7 +185,7 @@ impl<'a> Searcher<'a> {
         let pos = &self.stack.pos;
         let (ply, zbs) = (pos.ply(), pos.zobrists());
         let diff = score.bound(ply) - self.stack.value(0);
-        let error = depth * diff.to_float::<f32>();
+        let error = depth * diff.cast::<f32>();
 
         let pawns_delta = error
             .mul(*Params::pawns_correction_delta(0))
@@ -306,7 +306,7 @@ impl<'a> Searcher<'a> {
                     let gamma = *Params::nmr_score(0);
                     let delta = *Params::nmr_score(1);
                     let limit = *Params::nmr_score(2);
-                    let flat = gamma.mul_add(s.to_float(), delta).min(limit);
+                    let flat = gamma.mul_add(s.cast(), delta).min(limit);
                     Some(Params::nmr_depth(0).mul_add(d, flat))
                 }
             },
@@ -437,7 +437,7 @@ impl<'a> Searcher<'a> {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn lmr(depth: f32, index: usize) -> f32 {
         convolve([
-            (index.max(1).to_float::<f32>().ln(), Params::lmr_index(..)),
+            (index.max(1).cast::<f32>().ln(), Params::lmr_index(..)),
             (depth.ln(), Params::lmr_depth(..)),
             (1.0, Params::lmr_scalar(..)),
         ])
@@ -518,7 +518,7 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(alpha));
         }
 
-        let correction = self.correction().to_int::<i16>();
+        let correction = self.correction().cast::<i16>();
         self.stack.values[ply.cast::<usize>()] = self.evaluate() + correction;
 
         let transposition = self.transposition();
@@ -561,7 +561,7 @@ impl<'a> Searcher<'a> {
                 rating += pos.gain(m);
             }
 
-            rating.to_int()
+            rating.saturate()
         });
 
         let mut sorted_moves = moves.sorted();
@@ -578,7 +578,7 @@ impl<'a> Searcher<'a> {
 
             if !IS_PV && !is_check && !tail.score().is_losing() {
                 let scale = Params::lmp_improving(0).mul_add(improving, 1.0);
-                if index.to_float::<f32>() > Params::lmp_scalar(0) * scale {
+                if index.cast::<f32>() > Params::lmp_scalar(0) * scale {
                     break;
                 }
             }
@@ -586,9 +586,9 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             if !tail.score().is_losing() {
                 let mut margin = *Params::fut_margin_scalar(0);
-                margin = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), margin);
+                margin = Params::fut_margin_is_check(0).mul_add(is_check.cast(), margin);
                 margin = Params::fut_margin_gain(0).mul_add(pos.gain(m), margin);
-                let futility = self.stack.value(0) + margin.to_int::<i16>();
+                let futility = self.stack.value(0) + margin.cast::<i16>();
                 if futility <= alpha {
                     continue;
                 }
@@ -609,7 +609,7 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let tail = tail.clamp(transposed.score(), Score::upper());
+        let tail = tail.clip(transposed.score(), Score::upper());
         let score = ScoreBound::new(bounds, tail.score(), ply);
         let tpos = Transposition::new(score, zero(), Some(head), was_pv);
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
@@ -628,7 +628,7 @@ impl<'a> Searcher<'a> {
 
         self.stack.nodes.update(1);
         let ply = self.stack.pos.ply();
-        if self.ctrl.check(depth.to_int(), ply, &self.stack.pv) == Abort {
+        if self.ctrl.check(depth.saturate(), ply, &self.stack.pv) == Abort {
             return Err(Interrupted);
         }
 
@@ -642,7 +642,7 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(alpha));
         }
 
-        let correction = self.correction().to_int::<i16>();
+        let correction = self.correction().cast::<i16>();
         self.stack.values[ply.cast::<usize>()] = self.evaluate() + correction;
 
         let is_check = self.stack.pos.is_check();
@@ -652,8 +652,8 @@ impl<'a> Searcher<'a> {
             Some(t) => t.transpose(ply),
         };
 
-        depth += is_check.to_float::<f32>();
-        depth -= transposition.is_none().to_float::<f32>();
+        depth += is_check.cast::<f32>();
+        depth -= transposition.is_none().cast::<f32>();
 
         if depth < 1.0 {
             return Ok(self.quiesce::<IS_PV>(bounds)?.truncate());
@@ -662,14 +662,14 @@ impl<'a> Searcher<'a> {
         #[expect(clippy::collapsible_if)]
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
             if let Some(t) = transposition {
-                let tt_depth = t.depth.to_float::<f32>();
+                let tt_depth = t.depth.cast::<f32>();
                 let (lower, upper) = t.score.range(ply).into_inner();
 
-                if cut && lower - Self::fhp(depth - tt_depth).to_int::<i16>() >= beta {
+                if cut && lower - Self::fhp(depth - tt_depth).cast::<i16>() >= beta {
                     return Ok(transposed.truncate());
                 }
 
-                if upper + Self::flp(depth - tt_depth).to_int::<i16>() <= alpha {
+                if upper + Self::flp(depth - tt_depth).cast::<i16>() <= alpha {
                     return Ok(transposed.truncate());
                 }
             }
@@ -688,7 +688,7 @@ impl<'a> Searcher<'a> {
                 let (lower, upper) = score.range(ply).into_inner();
                 if lower >= upper || upper <= alpha || lower >= beta {
                     let tt_depth = depth + Params::tb_cut_depth_bonus(0);
-                    let tpos = Transposition::new(score, tt_depth.to_int(), None, was_pv);
+                    let tpos = Transposition::new(score, tt_depth.saturate(), None, was_pv);
                     self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
                     return Ok(tpos.transpose(ply).truncate());
                 }
@@ -699,12 +699,12 @@ impl<'a> Searcher<'a> {
 
         let alpha = alpha.max(lower);
         let improving = self.improving();
-        let transposed = transposed.clamp(lower, upper);
+        let transposed = transposed.clip(lower, upper);
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
         } else if !IS_PV && !is_check {
             let margin = Self::razoring(depth);
-            if self.stack.value(0) + margin.to_int::<i16>() <= alpha {
+            if self.stack.value(0) + margin.cast::<i16>() <= alpha {
                 let pv = self.qnw(beta)?;
                 if pv <= alpha {
                     return Ok(pv.truncate());
@@ -713,7 +713,7 @@ impl<'a> Searcher<'a> {
 
             let mut margin = Self::rfp(depth);
             margin = Params::rfp_margin_improving(0).mul_add(improving, margin);
-            if transposed.score() - margin.to_int::<i16>() >= beta {
+            if transposed.score() - margin.cast::<i16>() >= beta {
                 return Ok(transposed.truncate());
             }
 
@@ -722,7 +722,7 @@ impl<'a> Searcher<'a> {
             if (self.stack.pos.by_color(turn) ^ pawns).len() > 1 {
                 #[expect(clippy::collapsible_if)]
                 if let Some(margin) = Self::nmp(depth) {
-                    if transposed.score() - margin.to_int::<i16>() >= beta {
+                    if transposed.score() - margin.cast::<i16>() >= beta {
                         return Ok(transposed.truncate());
                     }
                 }
@@ -744,7 +744,7 @@ impl<'a> Searcher<'a> {
                 return Bounded::upper();
             }
 
-            let mut rating = *Params::killer_rating(0) * killer.contains(m).to_float::<f32>();
+            let mut rating = *Params::killer_rating(0) * killer.contains(m).cast::<f32>();
 
             let pos = &self.stack.pos;
             let history = self.local.history.get(pos, m);
@@ -760,16 +760,16 @@ impl<'a> Searcher<'a> {
                 rating += pos.gain(m);
             }
 
-            rating.to_int()
+            rating.saturate()
         });
 
         if let Some(t) = transposition {
             let gamma = *Params::probcut_depth(0);
             let delta = *Params::probcut_depth(1);
             let pc_depth = gamma.mul_add(depth, delta);
-            let pc_beta = beta + Self::probcut(depth).to_int::<i16>();
+            let pc_beta = beta + Self::probcut(depth).cast::<i16>();
 
-            let max_depth = t.depth.to_float::<f32>() + *Params::probcut_depth_bounds(1);
+            let max_depth = t.depth.cast::<f32>() + *Params::probcut_depth_bounds(1);
             let depth_bounds = *Params::probcut_depth_bounds(0)..max_depth;
 
             if !was_pv
@@ -783,7 +783,7 @@ impl<'a> Searcher<'a> {
                     }
 
                     let margin = pc_beta - self.stack.value(0);
-                    if !self.stack.pos.gaining(m, margin.to_float()) {
+                    if !self.stack.pos.gaining(m, margin.cast()) {
                         continue;
                     }
 
@@ -796,7 +796,7 @@ impl<'a> Searcher<'a> {
                     drop(next);
                     if pv >= pc_beta {
                         let score = ScoreBound::new(bounds, pv.score(), ply);
-                        let tpos = Transposition::new(score, pc_depth.to_int(), Some(m), was_pv);
+                        let tpos = Transposition::new(score, pc_depth.saturate(), Some(m), was_pv);
                         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
                         return Ok(pv.truncate().transpose(m));
                     }
@@ -809,7 +809,7 @@ impl<'a> Searcher<'a> {
         let mut tail = {
             let mut extension = 0f32;
             if let Some(t) = transposition {
-                let max_depth = t.depth.to_float::<f32>() + *Params::singular_depth_bounds(1);
+                let max_depth = t.depth.cast::<f32>() + *Params::singular_depth_bounds(1);
                 let depth_bounds = *Params::singular_depth_bounds(0)..max_depth;
                 if !matches!(t.score, ScoreBound::Upper(_)) && depth_bounds.contains(&depth) {
                     let single = Self::singular(depth);
@@ -821,12 +821,12 @@ impl<'a> Searcher<'a> {
                     let delta = *Params::singular_depth(1);
                     let se_depth = gamma.mul_add(depth, delta);
 
-                    let se_beta = t.score.bound(ply) - single.to_int::<i16>();
-                    let de_beta = t.score.bound(ply) - double.to_int::<i16>();
-                    let te_beta = t.score.bound(ply) - triple.to_int::<i16>();
+                    let se_beta = t.score.bound(ply) - single.cast::<i16>();
+                    let de_beta = t.score.bound(ply) - double.cast::<i16>();
+                    let te_beta = t.score.bound(ply) - triple.cast::<i16>();
 
                     if expected_cut {
-                        extension = 2.0 + head.is_quiet().to_float::<f32>();
+                        extension = 2.0 + head.is_quiet().cast::<f32>();
                     } else {
                         extension = 1.0;
                     }
@@ -836,7 +836,7 @@ impl<'a> Searcher<'a> {
                         if pv.score().min(se_beta) >= beta {
                             return Ok(pv.truncate().transpose(m));
                         } else if pv >= se_beta {
-                            extension = -2.0 * expected_cut.to_float::<f32>();
+                            extension = -2.0 * expected_cut.cast::<f32>();
                             cut = expected_cut;
                             break;
                         } else if pv >= de_beta {
@@ -860,24 +860,24 @@ impl<'a> Searcher<'a> {
 
             if !IS_PV && !is_check && !tail.score().is_losing() {
                 let scale = Params::lmp_improving(0).mul_add(improving, 1.0);
-                if index.to_float::<f32>() > Self::lmp(depth) * scale {
+                if index.cast::<f32>() > Self::lmp(depth) * scale {
                     break;
                 }
             }
 
             let pos = &self.stack.pos;
             let mut lmr = Self::lmr(depth, index);
-            let lmr_depth = depth - lmr.clamp(0.0, depth.max(1.0) - 1.0);
+            let lmr_depth = depth - lmr.clip(0.0, depth.max(1.0) - 1.0);
             let history = self.local.history.get(pos, m);
             let counter = self.stack.reply(1).get(pos, m);
             let is_killer = killer.contains(m);
 
             if !tail.score().is_losing() {
                 let mut margin = Self::futility(lmr_depth);
-                margin = Params::fut_margin_is_check(0).mul_add(is_check.to_float(), margin);
-                margin = Params::fut_margin_is_killer(0).mul_add(is_killer.to_float(), margin);
+                margin = Params::fut_margin_is_check(0).mul_add(is_check.cast(), margin);
+                margin = Params::fut_margin_is_killer(0).mul_add(is_killer.cast(), margin);
                 margin = Params::fut_margin_gain(0).mul_add(pos.gain(m), margin);
-                let futility = self.stack.value(0) + margin.to_int::<i16>();
+                let futility = self.stack.value(0) + margin.cast::<i16>();
                 if futility <= alpha {
                     continue;
                 }
@@ -889,7 +889,7 @@ impl<'a> Searcher<'a> {
                 Self::nsp(depth)
             };
 
-            margin = Params::qsp_margin_is_killer(0).mul_add(is_killer.to_float(), margin);
+            margin = Params::qsp_margin_is_killer(0).mul_add(is_killer.cast(), margin);
             if !tail.score().is_losing() && !pos.gaining(m, margin) {
                 continue;
             }
@@ -899,18 +899,18 @@ impl<'a> Searcher<'a> {
 
             lmr += convolve([
                 (1.0, Params::lmr_not_root(..)),
-                (IS_PV.to_float(), Params::lmr_is_pv(..)),
-                (was_pv.to_float(), Params::lmr_was_pv(..)),
-                (cut.to_float(), Params::lmr_is_cut(..)),
+                (IS_PV.cast(), Params::lmr_is_pv(..)),
+                (was_pv.cast(), Params::lmr_was_pv(..)),
+                (cut.cast(), Params::lmr_is_cut(..)),
                 (improving, Params::lmr_improving(..)),
-                (is_killer.to_float(), Params::lmr_is_killer(..)),
-                (is_noisy_pv.to_float(), Params::lmr_is_noisy_pv(..)),
-                (gives_check.to_float(), Params::lmr_gives_check(..)),
+                (is_killer.cast(), Params::lmr_is_killer(..)),
+                (is_noisy_pv.cast(), Params::lmr_is_noisy_pv(..)),
+                (gives_check.cast(), Params::lmr_gives_check(..)),
                 (history, Params::lmr_history(..)),
                 (counter, Params::lmr_counter(..)),
             ]);
 
-            let lmr = lmr.clamp(0.0, depth.max(1.0) - 1.0);
+            let lmr = lmr.clip(0.0, depth.max(1.0) - 1.0);
             let pv = match -next.nw(depth - lmr - 1.0, -alpha, !cut)? {
                 pv if pv <= alpha || (pv >= beta && lmr < 1.0) => pv.truncate(),
                 _ => -next.ab::<IS_PV, _>(depth - 1.0, -beta..-alpha, false)?,
@@ -921,9 +921,9 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let tail = tail.clamp(lower, upper);
+        let tail = tail.clip(lower, upper);
         let score = ScoreBound::new(bounds, tail.score(), ply);
-        let tpos = Transposition::new(score, depth.to_int(), Some(head), was_pv);
+        let tpos = Transposition::new(score, depth.saturate(), Some(head), was_pv);
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
 
         if matches!(score, ScoreBound::Lower(_)) {
@@ -949,11 +949,11 @@ impl<'a> Searcher<'a> {
         bounds: Range<Score>,
     ) -> Result<Pv, Interrupted> {
         let (alpha, beta) = (bounds.start, bounds.end);
-        if self.ctrl.check(depth.to_int(), zero(), &self.stack.pv) != Continue {
+        if self.ctrl.check(depth.saturate(), zero(), &self.stack.pv) != Continue {
             return Err(Interrupted);
         }
 
-        let correction = self.correction().to_int::<i16>();
+        let correction = self.correction().cast::<i16>();
         self.stack.values[0] = self.evaluate() + correction;
 
         moves.sort(|m| {
@@ -970,7 +970,7 @@ impl<'a> Searcher<'a> {
                 rating += pos.gain(m);
             }
 
-            rating.to_int()
+            rating.saturate()
         });
 
         let mut sorted_moves = moves.sorted();
@@ -998,12 +998,12 @@ impl<'a> Searcher<'a> {
 
             lmr += convolve([
                 (1.0, Params::lmr_is_root(..)),
-                (is_noisy_pv.to_float(), Params::lmr_is_noisy_pv(..)),
-                (gives_check.to_float(), Params::lmr_gives_check(..)),
+                (is_noisy_pv.cast(), Params::lmr_is_noisy_pv(..)),
+                (gives_check.cast(), Params::lmr_gives_check(..)),
                 (history, Params::lmr_history(..)),
             ]);
 
-            let lmr = lmr.clamp(0.0, depth.get().max(1.0) - 1.0);
+            let lmr = lmr.clip(0.0, depth.get().max(1.0) - 1.0);
             let pv = match -next.nw(depth - lmr - 1.0, -alpha, false)? {
                 pv if pv <= alpha || (pv >= beta && lmr < 1.0) => pv.truncate(),
                 _ => -next.ab::<true, _>(depth - 1.0, -beta..-alpha, false)?,
@@ -1015,7 +1015,7 @@ impl<'a> Searcher<'a> {
         }
 
         let score = ScoreBound::new(bounds, tail.score(), zero());
-        let tpos = Transposition::new(score, depth.to_int(), Some(head), true);
+        let tpos = Transposition::new(score, depth.saturate(), Some(head), true);
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
 
         if matches!(score, ScoreBound::Lower(_)) {
@@ -1039,11 +1039,11 @@ impl<'a> Searcher<'a> {
             for depth in Depth::iter() {
                 let mut reduction = 0.0;
                 let mut window = *Params::aw_baseline(depth.cast::<usize>().min(5));
-                let mut lower = self.stack.pv.score() - window.to_int::<i16>();
-                let mut upper = self.stack.pv.score() + window.to_int::<i16>();
+                let mut lower = self.stack.pv.score() - window.cast::<i16>();
+                let mut upper = self.stack.pv.score() + window.cast::<i16>();
 
                 loop {
-                    let aw_depth = depth.to_float::<f32>() - Params::aw_reduction(1).min(reduction);
+                    let aw_depth = depth.cast::<f32>() - Params::aw_reduction(1).min(reduction);
                     window = window.mul_add(*Params::aw_gamma(0), *Params::aw_delta(0));
                     let Ok(partial) = self.root(&mut moves, aw_depth, lower..upper) else {
                         return;
@@ -1052,13 +1052,13 @@ impl<'a> Searcher<'a> {
                     match partial.score() {
                         score if (-lower..Score::upper()).contains(&-score) => {
                             let blend = Params::aw_blend(0);
-                            upper = blend.lerp(lower.to_float(), upper.to_float()).to_int();
-                            lower = score - window.to_int::<i16>();
+                            upper = blend.lerp(lower.cast(), upper.cast()).saturate();
+                            lower = score - window.cast::<i16>();
                             reduction = 0.0;
                         }
 
                         score if (upper..Score::upper()).contains(&score) => {
-                            upper = score + window.to_int::<i16>();
+                            upper = score + window.cast::<i16>();
                             reduction += *Params::aw_reduction(0);
                             self.stack.pv = partial;
                             let (time, nodes) = (self.ctrl.elapsed(), self.ctrl.visited());
@@ -1352,7 +1352,7 @@ mod tests {
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         searcher.stack.nodes = searcher.ctrl.attention(m);
-        assert_eq!(searcher.nw(d.to_float(), b, cut), Ok(Pv::empty(s)));
+        assert_eq!(searcher.nw(d.cast(), b, cut), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -1378,7 +1378,7 @@ mod tests {
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         searcher.stack.nodes = searcher.ctrl.attention(m);
-        assert_eq!(searcher.nw(d.to_float(), b, true), Ok(Pv::empty(s)));
+        assert_eq!(searcher.nw(d.cast(), b, true), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -1404,7 +1404,7 @@ mod tests {
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         searcher.stack.nodes = searcher.ctrl.attention(m);
-        assert_eq!(searcher.nw(d.to_float(), b, true), Ok(Pv::empty(s)));
+        assert_eq!(searcher.nw(d.cast(), b, true), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -1425,10 +1425,7 @@ mod tests {
         searcher.stack.nodes = searcher.ctrl.attention(m);
         thread::sleep(Duration::from_millis(1));
 
-        assert_eq!(
-            searcher.ab::<true, 1>(d.to_float(), b, cut),
-            Err(Interrupted)
-        );
+        assert_eq!(searcher.ab::<true, 1>(d.cast(), b, cut), Err(Interrupted));
     }
 
     #[proptest]
@@ -1449,10 +1446,7 @@ mod tests {
         searcher.stack.nodes = searcher.ctrl.attention(m);
         global.abort();
 
-        assert_eq!(
-            searcher.ab::<true, 1>(d.to_float(), b, cut),
-            Err(Interrupted)
-        );
+        assert_eq!(searcher.ab::<true, 1>(d.cast(), b, cut), Err(Interrupted));
     }
 
     #[proptest]
@@ -1473,7 +1467,7 @@ mod tests {
         searcher.stack.nodes = searcher.ctrl.attention(m);
 
         assert_eq!(
-            searcher.ab::<true, 1>(d.to_float(), b, cut),
+            searcher.ab::<true, 1>(d.cast(), b, cut),
             Ok(Pv::empty(Score::drawn()))
         );
     }
@@ -1497,7 +1491,7 @@ mod tests {
         searcher.stack.nodes = searcher.ctrl.attention(m);
 
         assert_eq!(
-            searcher.ab::<true, 1>(d.to_float(), b, cut),
+            searcher.ab::<true, 1>(d.cast(), b, cut),
             Ok(Pv::empty(Score::mated(ply)))
         );
     }

@@ -1,13 +1,13 @@
-use crate::util::{Assume, Binary, Bits, Bounded, Int};
+use crate::util::{Assume, Binary, Bits, Bounded, Int, Num};
 use bytemuck::{NoUninit, Zeroable};
 
 #[derive(Debug, Copy, Hash, Zeroable, NoUninit)]
 #[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct DepthRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <DepthRepr as Int>::Repr);
+pub struct DepthRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <DepthRepr as Num>::Repr);
 
-unsafe impl const Int for DepthRepr {
+unsafe impl const Num for DepthRepr {
     type Repr = i8;
 
     const MIN: Self::Repr = 0;
@@ -18,6 +18,8 @@ unsafe impl const Int for DepthRepr {
     #[cfg(test)]
     const MAX: Self::Repr = 3;
 }
+
+unsafe impl const Int for DepthRepr {}
 
 /// The search depth.
 pub type Depth = Bounded<DepthRepr>;

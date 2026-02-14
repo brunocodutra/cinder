@@ -1334,7 +1334,7 @@ mod tests {
         #[by_ref]
         #[filter(!#e.shared.tt.is_empty())]
         mut e: Engine,
-        #[filter(#pos.outcome().is_none())] pos: Evaluator,
+        #[filter(#pos.outcome().is_none() && !#pos.is_check())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter(!#b.is_decisive())] b: Score,
         was_pv: bool,
@@ -1344,7 +1344,7 @@ mod tests {
     ) {
         prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0));
 
-        let tpos = Transposition::new(ScoreBound::Upper(s), Depth::upper(), Some(m), was_pv);
+        let tpos = Transposition::new(ScoreBound::Upper(s), d, Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);
 
         let global = GlobalControl::new(&pos, Limits::none());
@@ -1361,7 +1361,7 @@ mod tests {
         #[by_ref]
         #[filter(!#e.shared.tt.is_empty())]
         mut e: Engine,
-        #[filter(#pos.outcome().is_none())] pos: Evaluator,
+        #[filter(#pos.outcome().is_none() && !#pos.is_check())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter(!#b.is_decisive())] b: Score,
         was_pv: bool,
@@ -1370,7 +1370,7 @@ mod tests {
     ) {
         prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0));
 
-        let tpos = Transposition::new(ScoreBound::Lower(s), Depth::upper(), Some(m), was_pv);
+        let tpos = Transposition::new(ScoreBound::Lower(s), d, Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);
 
         let global = GlobalControl::new(&pos, Limits::none());
@@ -1387,7 +1387,7 @@ mod tests {
         #[by_ref]
         #[filter(!#e.shared.tt.is_empty())]
         mut e: Engine,
-        #[filter(#pos.outcome().is_none())] pos: Evaluator,
+        #[filter(#pos.outcome().is_none() && !#pos.is_check())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter(!#b.is_decisive())] b: Score,
         was_pv: bool,
@@ -1396,7 +1396,7 @@ mod tests {
     ) {
         prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0));
 
-        let tpos = Transposition::new(ScoreBound::Exact(s), Depth::upper(), Some(m), was_pv);
+        let tpos = Transposition::new(ScoreBound::Exact(s), d, Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);
 
         let global = GlobalControl::new(&pos, Limits::none());

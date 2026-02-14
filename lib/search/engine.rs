@@ -1038,29 +1038,35 @@ impl<'a> Searcher<'a> {
         gen move {
             for depth in Depth::iter() {
                 let mut reduction = 0.0;
-                let mut window = *Params::aw_baseline(depth.cast::<usize>().min(5));
-                let mut lower = self.stack.pv.score() - window.cast::<i16>();
-                let mut upper = self.stack.pv.score() + window.cast::<i16>();
+                let mut window = if self.stack.pv.head().is_some() {
+                    *Params::aw_width(0)
+                } else {
+                    f32::INFINITY
+                };
+
+                let mut lower = self.stack.pv.score().cast::<f32>() - window;
+                let mut upper = self.stack.pv.score().cast::<f32>() + window;
 
                 loop {
-                    let aw_depth = depth.cast::<f32>() - Params::aw_reduction(1).min(reduction);
-                    window = window.mul_add(*Params::aw_gamma(0), *Params::aw_delta(0));
-                    let Ok(partial) = self.root(&mut moves, aw_depth, lower..upper) else {
+                    let bounds = lower.saturate()..upper.saturate();
+                    let aw_depth = depth.cast::<f32>() - Params::aw_fh_reduction(2).min(reduction);
+                    let Ok(partial) = self.root(&mut moves, aw_depth, bounds) else {
                         return;
                     };
 
                     match partial.score() {
-                        score if (-lower..Score::upper()).contains(&-score) => {
-                            let blend = Params::aw_blend(0);
-                            upper = blend.lerp(lower.cast(), upper.cast()).saturate();
-                            lower = score - window.cast::<i16>();
-                            reduction = 0.0;
+                        score if (-lower.saturate::<Score>()..Score::upper()).contains(&-score) => {
+                            window *= Params::aw_width(1);
+                            upper = Params::aw_fl_lerp(0).lerp(lower, upper);
+                            lower = score.cast::<f32>() - window;
+                            reduction *= Params::aw_fh_reduction(1);
                         }
 
-                        score if (upper..Score::upper()).contains(&score) => {
-                            upper = score + window.cast::<i16>();
-                            reduction += *Params::aw_reduction(0);
+                        score if (upper.saturate::<Score>()..Score::upper()).contains(&score) => {
                             self.stack.pv = partial;
+                            window *= Params::aw_width(2);
+                            upper = score.cast::<f32>() + window;
+                            reduction += Params::aw_fh_reduction(0);
                             let (time, nodes) = (self.ctrl.elapsed(), self.ctrl.visited());
                             yield Info::new(depth - 1, time, nodes, self.stack.pv.clone());
                         }

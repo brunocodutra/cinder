@@ -1248,7 +1248,7 @@ impl Engine {
             shared: SharedData {
                 syzygy: Syzygy::new(&options.syzygy),
                 tt: TranspositionTable::new(options.hash),
-                vt: ValueTable::new(options.threads),
+                vt: ValueTable::new(options.hash),
             },
         }
     }
@@ -1256,13 +1256,13 @@ impl Engine {
     /// Resets the hash size.
     pub fn set_hash(&mut self, hash: HashSize) {
         self.shared.tt.resize(hash);
+        self.shared.vt.resize(hash);
     }
 
     /// Resets the thread count.
     pub fn set_threads(&mut self, threads: ThreadCount) {
         self.executor = Executor::new(threads);
         self.local.zeroed_in_place(threads.cast());
-        self.shared.vt.resize(threads);
     }
 
     /// Resets the Syzygy path.
@@ -1322,7 +1322,7 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn vt_can_be_resized(s: ThreadCount, t: ThreadCount) {
+    fn vt_can_be_resized(s: HashSize, t: HashSize) {
         let mut vt = ValueTable::new(s);
         vt.resize(t);
         assert_eq!(vt.len(), ValueTable::new(t).len());
@@ -1331,9 +1331,7 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn nw_returns_transposition_if_beta_too_high(
-        #[by_ref]
-        #[filter(!#e.shared.tt.is_empty())]
-        mut e: Engine,
+        #[by_ref] mut e: Engine,
         #[filter(#pos.outcome().is_none() && !#pos.is_check())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter(!#b.is_decisive())] b: Score,
@@ -1358,9 +1356,7 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn nw_returns_transposition_if_beta_too_low(
-        #[by_ref]
-        #[filter(!#e.shared.tt.is_empty())]
-        mut e: Engine,
+        #[by_ref] mut e: Engine,
         #[filter(#pos.outcome().is_none() && !#pos.is_check())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter(!#b.is_decisive())] b: Score,
@@ -1384,9 +1380,7 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn nw_returns_transposition_if_exact(
-        #[by_ref]
-        #[filter(!#e.shared.tt.is_empty())]
-        mut e: Engine,
+        #[by_ref] mut e: Engine,
         #[filter(#pos.outcome().is_none() && !#pos.is_check())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
         #[filter(!#b.is_decisive())] b: Score,

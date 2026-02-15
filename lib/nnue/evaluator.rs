@@ -246,7 +246,6 @@ impl Evaluator {
             None => pos.pass(),
         }
 
-        #[expect(clippy::collapsible_if)]
         if let Some(m) = self.moves[idx] {
             if prev.role_on(m.whence()) == Some(Role::King) {
                 if Feature::bucket(turn, m.whence()) != Feature::bucket(turn, m.whither()) {

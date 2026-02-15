@@ -83,9 +83,10 @@ impl Stack {
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn value(&self, i: usize) -> Value {
+    fn value(&self, i: usize) -> Score {
         let idx = self.pos.ply().cast::<usize>().wrapping_sub(i);
-        *self.values.get(idx).assume()
+        // IMPORTANT: widen to Score to avoid mate blindness!
+        self.values.get(idx).assume().saturate()
     }
 
     #[inline(always)]
@@ -527,7 +528,6 @@ impl<'a> Searcher<'a> {
             Some(t) => t.transpose(ply),
         };
 
-        #[expect(clippy::collapsible_if)]
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
             if let Some(t) = transposition {
                 let (lower, upper) = t.score.range(ply).into_inner();
@@ -659,7 +659,6 @@ impl<'a> Searcher<'a> {
             return Ok(self.quiesce::<IS_PV>(bounds)?.truncate());
         }
 
-        #[expect(clippy::collapsible_if)]
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
             if let Some(t) = transposition {
                 let tt_depth = t.depth.cast::<f32>();
@@ -703,34 +702,38 @@ impl<'a> Searcher<'a> {
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
         } else if !IS_PV && !is_check {
-            let margin = Self::razoring(depth);
-            if self.stack.value(0) + margin.cast::<i16>() <= alpha {
-                let pv = self.qnw(beta)?;
-                if pv <= alpha {
-                    return Ok(pv.truncate());
-                }
-            }
-
-            let mut margin = Self::rfp(depth);
-            margin = Params::rfp_margin_improving(0).mul_add(improving, margin);
-            if transposed.score() - margin.cast::<i16>() >= beta {
-                return Ok(transposed.truncate());
-            }
-
-            let turn = self.stack.pos.turn();
-            let pawns = self.stack.pos.pawns(turn);
-            if (self.stack.pos.by_color(turn) ^ pawns).len() > 1 {
-                #[expect(clippy::collapsible_if)]
-                if let Some(margin) = Self::nmp(depth) {
-                    if transposed.score() - margin.cast::<i16>() >= beta {
-                        return Ok(transposed.truncate());
+            if alpha < Params::razoring_alpha_limit(0).cast::<i16>() {
+                let margin = Self::razoring(depth);
+                if self.stack.value(0) + margin.cast::<i16>() <= alpha {
+                    let pv = self.qnw(beta)?;
+                    if pv <= alpha {
+                        return Ok(pv.truncate());
                     }
                 }
+            }
 
-                #[expect(clippy::collapsible_if)]
-                if let Some(r) = Self::nmr(depth, transposed.score() - beta) {
-                    if -self.next(None).nw(depth - r - 1.0, -beta + 1, false)? >= beta {
-                        return Ok(transposed.truncate());
+            if !beta.is_losing() {
+                let mut margin = Self::rfp(depth);
+                margin = Params::rfp_margin_improving(0).mul_add(improving, margin);
+                if transposed.score() - margin.cast::<i16>() >= beta {
+                    return Ok(transposed.truncate());
+                }
+            }
+
+            if !beta.is_losing() {
+                let turn = self.stack.pos.turn();
+                let pawns = self.stack.pos.pawns(turn);
+                if (self.stack.pos.by_color(turn) ^ pawns).len() > 1 {
+                    if let Some(margin) = Self::nmp(depth) {
+                        if transposed.score() - margin.cast::<i16>() >= beta {
+                            return Ok(transposed.truncate());
+                        }
+                    }
+
+                    if let Some(r) = Self::nmr(depth, transposed.score() - beta) {
+                        if -self.next(None).nw(depth - r - 1.0, -beta + 1, false)? >= beta {
+                            return Ok(transposed.truncate());
+                        }
                     }
                 }
             }
@@ -872,7 +875,7 @@ impl<'a> Searcher<'a> {
             let counter = self.stack.reply(1).get(pos, m);
             let is_killer = killer.contains(m);
 
-            if !tail.score().is_losing() {
+            if !tail.score().is_losing() && depth < *Params::fut_depth_limit(0) {
                 let mut margin = Self::futility(lmr_depth);
                 margin = Params::fut_margin_is_check(0).mul_add(is_check.cast(), margin);
                 margin = Params::fut_margin_is_killer(0).mul_add(is_killer.cast(), margin);

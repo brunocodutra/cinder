@@ -1,4 +1,8 @@
-#![allow(long_running_const_eval, clippy::needless_range_loop)]
+#![allow(
+    long_running_const_eval,
+    clippy::collapsible_if,
+    clippy::needless_range_loop
+)]
 #![warn(
     clippy::as_ptr_cast_mut,
     clippy::as_underscore,

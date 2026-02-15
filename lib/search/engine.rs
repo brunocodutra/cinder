@@ -378,8 +378,8 @@ impl<'a> Searcher<'a> {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn futility(depth: f32) -> f32 {
         convolve([
-            (depth, Params::fut_margin_depth(..)),
-            (1.0, Params::fut_margin_scalar(..)),
+            (depth, Params::futility_margin_depth(..)),
+            (1.0, Params::futility_margin_scalar(..)),
         ])
     }
 
@@ -584,12 +584,9 @@ impl<'a> Searcher<'a> {
             }
 
             let pos = &self.stack.pos;
-            if !tail.score().is_losing() {
-                let mut margin = *Params::fut_margin_scalar(0);
-                margin = Params::fut_margin_is_check(0).mul_add(is_check.cast(), margin);
-                margin = Params::fut_margin_gain(0).mul_add(pos.gain(m), margin);
-                let futility = self.stack.value(0) + margin.cast::<i16>();
-                if futility <= alpha {
+            if !is_check && !tail.score().is_losing() {
+                let margin = pos.gain(m) + *Params::futility_margin_quiescence(0);
+                if self.stack.value(0) + margin.cast::<i16>() <= alpha {
                     continue;
                 }
             }
@@ -875,13 +872,9 @@ impl<'a> Searcher<'a> {
             let counter = self.stack.reply(1).get(pos, m);
             let is_killer = killer.contains(m);
 
-            if !tail.score().is_losing() && depth < *Params::fut_depth_limit(0) {
-                let mut margin = Self::futility(lmr_depth);
-                margin = Params::fut_margin_is_check(0).mul_add(is_check.cast(), margin);
-                margin = Params::fut_margin_is_killer(0).mul_add(is_killer.cast(), margin);
-                margin = Params::fut_margin_gain(0).mul_add(pos.gain(m), margin);
-                let futility = self.stack.value(0) + margin.cast::<i16>();
-                if futility <= alpha {
+            if !is_check && !tail.score().is_losing() && depth < *Params::fut_depth_limit(0) {
+                let margin = pos.gain(m) + Self::futility(lmr_depth);
+                if self.stack.value(0) + margin.cast::<i16>() <= alpha {
                     continue;
                 }
             }

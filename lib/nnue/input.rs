@@ -8,25 +8,6 @@ const O: usize = Ln::LEN / 2;
 
 const I2F: f32 = (1 << 9) as f32 / (FTQ as f32 * FTQ as f32 * HLS as f32);
 
-const NNZ_OFFSETS: Aligned<[u16x8; 256]> = {
-    let mut offsets = Aligned([u16x8::splat(0); 256]);
-    let table: &mut [[u16; 8]; 256] = offsets.cast_mut();
-
-    let mut i = 0;
-    while i < 256 {
-        let mut j = i;
-        let mut k = 0;
-        while j != 0 {
-            table[i][k] = j.trailing_zeros() as u16;
-            j &= j - 1;
-            k += 1;
-        }
-        i += 1;
-    }
-
-    offsets
-};
-
 /// The input connection.
 #[derive(Debug, Zeroable)]
 pub struct Input<S> {
@@ -68,23 +49,12 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Input
             [Pack::pack(x00, x10), Pack::pack(x01, x11)]
         }));
 
-        let mut nzs_len = 0;
         let mut nzs = Aligned([0u16; I / 4]);
-        let mut base = u16x8::splat(0);
+        let nzs_len = nzs.nzs(active.cast::<[[V2<u32>; 2]; I / W2 / 8]>());
 
-        for [b0, b1] in active.cast::<[[V2<u32>; 2]; I / W2 / 8]>() {
-            let mut mask = b0.simd_gt(Simd::splat(0)).to_bitmask();
-            mask |= b1.simd_gt(Simd::splat(0)).to_bitmask() << W2;
-            for i in 0..2 * W2 / 8 {
-                let idx = (mask >> (i * 8)) & 0xFF;
-                let indices = base + NNZ_OFFSETS.get(idx as usize).assume();
-                let slice = nzs.get_mut(nzs_len..).assume();
-                (slice.len() >= u16x8::LEN).assume();
-                indices.copy_to_slice(slice);
-                nzs_len += idx.count_ones() as usize;
-                base += u16x8::splat(8);
-            }
-        }
+        let xs: &[u8x4; I / 4] = active.cast();
+        let ws: &[[V8<i8>; O / W2]; I / 4] = self.weight.cast();
+        let bs: &[V2<f32>; O / W2] = self.bias.cast();
 
         #[cfg(any(target_feature = "avx2", target_feature = "neon"))]
         const K: usize = 4;
@@ -92,37 +62,41 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Input
         #[cfg(not(any(target_feature = "avx2", target_feature = "neon")))]
         const K: usize = 2;
 
-        let xs: &[u8x4; I / 4] = active.cast();
-        let ws: &[[V8<i8>; O / W2]; I / 4] = self.weight.cast();
-        let bs: &[V2<f32>; O / W2] = self.bias.cast();
-
         let mut acc = Aligned([[Simd::splat(0); K]; O / W2]);
-        let mut nzs = nzs[..nzs_len].iter().copied().array_chunks::<K>();
 
-        for nzs in &mut nzs {
-            let x0 = *Aligned([*xs.get(nzs[0] as usize).assume(); W2]).cast();
-            let x1 = *Aligned([*xs.get(nzs[1] as usize).assume(); W2]).cast();
+        (nzs_len <= nzs.len()).assume();
+        for i in (0..nzs_len - nzs_len % K).step_by(K) {
+            let nz0 = *nzs.get(i).assume() as usize;
+            let nz1 = *nzs.get(i + 1).assume() as usize;
 
             #[cfg(any(target_feature = "avx2", target_feature = "neon"))]
-            let x2 = *Aligned([*xs.get(nzs[2] as usize).assume(); W2]).cast();
+            let nz2 = *nzs.get(i + 2).assume() as usize;
             #[cfg(any(target_feature = "avx2", target_feature = "neon"))]
-            let x3 = *Aligned([*xs.get(nzs[3] as usize).assume(); W2]).cast();
+            let nz3 = *nzs.get(i + 3).assume() as usize;
+
+            let x0 = *Aligned([*xs.get(nz0).assume(); W2]).cast();
+            let x1 = *Aligned([*xs.get(nz1).assume(); W2]).cast();
+
+            #[cfg(any(target_feature = "avx2", target_feature = "neon"))]
+            let x2 = *Aligned([*xs.get(nz2).assume(); W2]).cast();
+            #[cfg(any(target_feature = "avx2", target_feature = "neon"))]
+            let x3 = *Aligned([*xs.get(nz3).assume(); W2]).cast();
 
             for (j, a) in acc.iter_mut().enumerate() {
                 {
-                    a[0] = ws.get(nzs[0] as usize).assume()[j].mul_add_4x8(x0, a[0]);
-                    a[1] = ws.get(nzs[1] as usize).assume()[j].mul_add_4x8(x1, a[1]);
+                    a[0] = ws.get(nz0).assume()[j].mul_add_4x8(x0, a[0]);
+                    a[1] = ws.get(nz1).assume()[j].mul_add_4x8(x1, a[1]);
                 }
 
                 #[cfg(any(target_feature = "avx2", target_feature = "neon"))]
                 {
-                    a[2] = ws.get(nzs[2] as usize).assume()[j].mul_add_4x8(x2, a[2]);
-                    a[3] = ws.get(nzs[3] as usize).assume()[j].mul_add_4x8(x3, a[3]);
+                    a[2] = ws.get(nz2).assume()[j].mul_add_4x8(x2, a[2]);
+                    a[3] = ws.get(nz3).assume()[j].mul_add_4x8(x3, a[3]);
                 }
             }
         }
 
-        for nz in nzs.into_remainder() {
+        for &nz in nzs.get(nzs_len - nzs_len % K..nzs_len).assume() {
             let x = *Aligned([*xs.get(nz as usize).assume(); W2]).cast();
             for (j, a) in acc.iter_mut().enumerate() {
                 a[0] = ws.get(nz as usize).assume()[j].mul_add_4x8(x, a[0]);

@@ -3,6 +3,7 @@ mod halve;
 mod mul4x8;
 mod muladd4x8;
 mod mulhi;
+mod nzs;
 mod pack;
 mod powi;
 
@@ -11,6 +12,7 @@ pub use halve::*;
 pub use mul4x8::*;
 pub use muladd4x8::*;
 pub use mulhi::*;
+pub use nzs::*;
 pub use pack::*;
 pub use powi::*;
 

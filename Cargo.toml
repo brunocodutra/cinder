@@ -36,6 +36,7 @@ ctor = { version = "0.6.3", default-features = false, features = [
     "proc_macro",
 ] }
 derive_more = { version = "2.1.1", default-features = false, features = [
+    "as_ref",
     "constructor",
     "debug",
     "deref",

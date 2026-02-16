@@ -1,15 +1,14 @@
-use crate::chess::Move;
 use crate::search::{Depth, Line, Score};
-use crate::util::{Assume, Num};
-use derive_more::with_trait::Constructor;
-use std::cmp::Ordering;
+use crate::{chess::Move, util::Num};
+use derive_more::with_trait::{Constructor, Deref};
 use std::hash::{Hash, Hasher};
-use std::ops::{Deref, Neg};
+use std::{cmp::Ordering, ops::Neg};
 
 /// The principal variation.
-#[derive(Debug, Clone, Constructor)]
+#[derive(Debug, Clone, Constructor, Deref)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Pv<const N: usize = { Depth::MAX as usize }> {
+    #[deref]
     score: Score,
     moves: Line<N>,
 }
@@ -27,17 +26,22 @@ impl<const N: usize> Pv<N> {
         self.score
     }
 
-    /// Constrains the score between `lower` and `upper`.
-    #[inline(always)]
-    pub const fn clip(self, lower: Score, upper: Score) -> Pv<N> {
-        (lower <= upper).assume();
-        Pv::new(self.score.clip(lower, upper), self.moves)
-    }
-
     /// The sequence of [`Move`]s in this principal variation.
     #[inline(always)]
     pub const fn moves(&self) -> &Line<N> {
         &self.moves
+    }
+
+    /// The first [`Move`]s in this principal variation.
+    #[inline(always)]
+    pub const fn head(&self) -> Option<Move> {
+        self.moves.head()
+    }
+
+    /// Constrains the score between `lower` and `upper`.
+    #[inline(always)]
+    pub const fn clip(self, lower: Score, upper: Score) -> Pv<N> {
+        Pv::new(self.score.clip(lower, upper), self.moves)
     }
 
     /// Truncates to a principal variation of a different length.
@@ -100,15 +104,6 @@ impl<const N: usize> Hash for Pv<N> {
     #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.score.hash(state);
-    }
-}
-
-impl<const N: usize> const Deref for Pv<N> {
-    type Target = Line<N>;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        &self.moves
     }
 }
 

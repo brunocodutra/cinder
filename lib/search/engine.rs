@@ -1,4 +1,4 @@
-use crate::chess::{Move, MoveSet};
+use crate::chess::{Move, MoveSet, Role};
 use crate::search::{ControlFlow::*, *};
 use crate::{nnue::Evaluator, params::Params, syzygy::Syzygy, util::*};
 use bytemuck::{Zeroable, fill_zeroes, zeroed};
@@ -299,18 +299,19 @@ impl<'a> Searcher<'a> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn nmr(depth: f32, surplus: Score) -> Option<f32> {
-        match depth {
-            ..3.0 => None,
-            d => match surplus.get() {
-                ..1 => None,
-                s @ 1.. => {
-                    let gamma = *Params::nmr_score(0);
-                    let delta = *Params::nmr_score(1);
-                    let limit = *Params::nmr_score(2);
-                    let flat = gamma.mul_add(s.cast(), delta).min(limit);
-                    Some(Params::nmr_depth(0).mul_add(d, flat))
-                }
-            },
+        if depth < *Params::nmr_depth_limit(0) {
+            return None;
+        }
+
+        match surplus.get() {
+            ..1 => None,
+            s @ 1.. => {
+                let gamma = *Params::nmr_score(0);
+                let delta = *Params::nmr_score(1);
+                let limit = *Params::nmr_score(2);
+                let flat = gamma.mul_add(s.cast(), delta).min(limit);
+                Some(Params::nmr_depth(0).mul_add(depth, flat))
+            }
         }
     }
 
@@ -318,13 +319,14 @@ impl<'a> Searcher<'a> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn nmp(depth: f32) -> Option<f32> {
-        match depth {
-            ..0.0 | 4.0.. => None,
-            d => Some(convolve([
-                (d, Params::nmp_margin_depth(..)),
-                (1.0, Params::nmp_margin_scalar(..)),
-            ])),
+        if depth >= *Params::nmp_depth_limit(0) {
+            return None;
         }
+
+        Some(convolve([
+            (depth, Params::nmp_margin_depth(..)),
+            (1.0, Params::nmp_margin_scalar(..)),
+        ]))
     }
 
     /// Computes fail-high pruning reduction.
@@ -573,7 +575,7 @@ impl<'a> Searcher<'a> {
                 s => s.max(alpha),
             };
 
-            if !IS_PV && !is_check && !tail.score().is_losing() {
+            if !IS_PV && !is_check && !tail.is_losing() {
                 let scale = Params::lmp_improving(0).mul_add(improving, 1.0);
                 if index.cast::<f32>() > Params::lmp_scalar(0) * scale {
                     break;
@@ -581,14 +583,14 @@ impl<'a> Searcher<'a> {
             }
 
             let pos = &self.stack.pos;
-            if !is_check && !tail.score().is_losing() {
+            if !is_check && !tail.is_losing() {
                 let margin = pos.gain(m) + *Params::futility_margin_quiescence(0);
                 if self.stack.value(0) + margin.cast::<i16>() <= alpha {
                     continue;
                 }
             }
 
-            if !tail.score().is_losing() && !pos.gaining(m, *Params::see_margin_quiescence(0)) {
+            if !tail.is_losing() && !pos.gaining(m, *Params::see_margin_quiescence(0)) {
                 continue;
             }
 
@@ -714,10 +716,12 @@ impl<'a> Searcher<'a> {
                 }
             }
 
-            if !beta.is_losing() {
+            if !beta.is_losing() && !transposed.is_winning() {
                 let turn = self.stack.pos.turn();
-                let pawns = self.stack.pos.pawns(turn);
-                if (self.stack.pos.by_color(turn) ^ pawns).len() > 1 {
+                let ours = self.stack.pos.by_color(turn);
+                let pawns = self.stack.pos.by_role(Role::Pawn);
+                let kings = self.stack.pos.by_role(Role::King);
+                if ours & !(pawns ^ kings) != zero() {
                     if let Some(margin) = Self::nmp(depth) {
                         if transposed.score() - margin.cast::<i16>() >= beta {
                             return Ok(transposed.truncate());
@@ -849,7 +853,7 @@ impl<'a> Searcher<'a> {
                 s => s.max(alpha),
             };
 
-            if !IS_PV && !is_check && !tail.score().is_losing() {
+            if !IS_PV && !is_check && !tail.is_losing() {
                 let scale = Params::lmp_improving(0).mul_add(improving, 1.0);
                 if index.cast::<f32>() > Self::lmp(depth) * scale {
                     break;
@@ -863,7 +867,7 @@ impl<'a> Searcher<'a> {
             let counter = self.stack.reply(1).get(pos, m);
             let is_killer = killer.contains(m);
 
-            if !is_check && !tail.score().is_losing() && depth < *Params::futility_depth_limit(0) {
+            if !is_check && !tail.is_losing() && depth < *Params::futility_depth_limit(0) {
                 let margin = pos.gain(m) + Self::futility(lmr_depth);
                 if self.stack.value(0) + margin.cast::<i16>() <= alpha {
                     continue;
@@ -872,7 +876,7 @@ impl<'a> Searcher<'a> {
 
             let mut margin = Self::see_pruning(lmr_depth, m);
             margin = Params::see_margin_is_killer(0).mul_add(is_killer.cast(), margin);
-            if !tail.score().is_losing() && !pos.gaining(m, margin) {
+            if !tail.is_losing() && !pos.gaining(m, margin) {
                 continue;
             }
 
@@ -1024,8 +1028,8 @@ impl<'a> Searcher<'a> {
                     f32::INFINITY
                 };
 
-                let mut lower = self.stack.pv.score().cast::<f32>() - window;
-                let mut upper = self.stack.pv.score().cast::<f32>() + window;
+                let mut lower = self.stack.pv.cast::<f32>() - window;
+                let mut upper = self.stack.pv.cast::<f32>() + window;
 
                 loop {
                     let bounds = lower.saturate()..upper.saturate();

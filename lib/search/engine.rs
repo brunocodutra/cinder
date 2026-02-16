@@ -330,12 +330,12 @@ impl<'a> Searcher<'a> {
     /// Computes fail-high pruning reduction.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn fhp(depth: f32) -> f32 {
+    fn tt_fh(depth: f32) -> f32 {
         match depth {
             ..0.0 => 0.0,
             d => convolve([
-                (d, Params::fhp_margin_depth(..)),
-                (1.0, Params::fhp_margin_scalar(..)),
+                (d, Params::tt_fh_margin_depth(..)),
+                (1.0, Params::tt_fh_margin_scalar(..)),
             ]),
         }
     }
@@ -343,12 +343,12 @@ impl<'a> Searcher<'a> {
     /// Computes the fail-low pruning reduction.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn flp(depth: f32) -> f32 {
+    fn tt_fl(depth: f32) -> f32 {
         match depth {
             ..0.0 => 0.0,
             d => convolve([
-                (d, Params::flp_margin_depth(..)),
-                (1.0, Params::flp_margin_scalar(..)),
+                (d, Params::tt_fl_margin_depth(..)),
+                (1.0, Params::tt_fl_margin_scalar(..)),
             ]),
         }
     }
@@ -373,16 +373,6 @@ impl<'a> Searcher<'a> {
         ])
     }
 
-    /// Computes the futility margin.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn futility(depth: f32) -> f32 {
-        convolve([
-            (depth, Params::futility_margin_depth(..)),
-            (1.0, Params::futility_margin_scalar(..)),
-        ])
-    }
-
     /// Computes the probcut margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -403,26 +393,6 @@ impl<'a> Searcher<'a> {
         ])
     }
 
-    /// Computes the noisy SEE pruning margin.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn nsp(depth: f32) -> f32 {
-        convolve([
-            (depth, Params::nsp_margin_depth(..)),
-            (1.0, Params::nsp_margin_scalar(..)),
-        ])
-    }
-
-    /// Computes the quiet SEE pruning margin.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn qsp(depth: f32) -> f32 {
-        convolve([
-            (depth, Params::qsp_margin_depth(..)),
-            (1.0, Params::qsp_margin_scalar(..)),
-        ])
-    }
-
     /// Computes the late move pruning threshold.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -431,6 +401,33 @@ impl<'a> Searcher<'a> {
             (depth, Params::lmp_depth(..)),
             (1.0, Params::lmp_scalar(..)),
         ])
+    }
+
+    /// Computes the futility margin.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn futility(depth: f32) -> f32 {
+        convolve([
+            (depth, Params::futility_margin_depth(..)),
+            (1.0, Params::futility_margin_scalar(..)),
+        ])
+    }
+
+    /// Computes the SEE pruning margin.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn see_pruning(depth: f32, m: Move) -> f32 {
+        if m.is_quiet() {
+            convolve([
+                (depth, Params::see_margin_quiet_depth(..)),
+                (1.0, Params::see_margin_quiet_scalar(..)),
+            ])
+        } else {
+            convolve([
+                (depth, Params::see_margin_noisy_depth(..)),
+                (1.0, Params::see_margin_noisy_scalar(..)),
+            ])
+        }
     }
 
     /// Computes the late move reduction.
@@ -528,7 +525,7 @@ impl<'a> Searcher<'a> {
             Some(t) => t.transpose(ply),
         };
 
-        if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
+        if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_hm_limit(0) {
             if let Some(t) = transposition {
                 let (lower, upper) = t.score.range(ply).into_inner();
                 if upper <= alpha || lower >= beta {
@@ -557,7 +554,7 @@ impl<'a> Searcher<'a> {
             let history = self.local.history.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
             if pos.gaining(m, *Params::good_noisy_margin(0)) {
-                rating += *Params::good_noisy_bonus(0);
+                rating += *Params::good_noisy_rating(0);
                 rating += pos.gain(m);
             }
 
@@ -591,7 +588,7 @@ impl<'a> Searcher<'a> {
                 }
             }
 
-            if !tail.score().is_losing() && !pos.gaining(m, *Params::nsp_margin_scalar(0)) {
+            if !tail.score().is_losing() && !pos.gaining(m, *Params::see_margin_quiescence(0)) {
                 continue;
             }
 
@@ -656,16 +653,16 @@ impl<'a> Searcher<'a> {
             return Ok(self.quiesce::<IS_PV>(bounds)?.truncate());
         }
 
-        if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0) {
+        if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_hm_limit(0) {
             if let Some(t) = transposition {
                 let tt_depth = t.depth.cast::<f32>();
                 let (lower, upper) = t.score.range(ply).into_inner();
 
-                if cut && lower - Self::fhp(depth - tt_depth).cast::<i16>() >= beta {
+                if cut && lower - Self::tt_fh(depth - tt_depth).cast::<i16>() >= beta {
                     return Ok(transposed.truncate());
                 }
 
-                if upper + Self::flp(depth - tt_depth).cast::<i16>() <= alpha {
+                if upper + Self::tt_fl(depth - tt_depth).cast::<i16>() <= alpha {
                     return Ok(transposed.truncate());
                 }
             }
@@ -683,7 +680,7 @@ impl<'a> Searcher<'a> {
                 let score = ScoreBound::new(bounds, wdl.to_score(ply), ply);
                 let (lower, upper) = score.range(ply).into_inner();
                 if lower >= upper || upper <= alpha || lower >= beta {
-                    let tt_depth = depth + Params::tb_cut_depth_bonus(0);
+                    let tt_depth = depth + Params::tb_depth_bonus(0);
                     let tpos = Transposition::new(score, tt_depth.saturate(), None, was_pv);
                     self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
                     return Ok(tpos.transpose(ply).truncate());
@@ -756,7 +753,7 @@ impl<'a> Searcher<'a> {
             }
 
             if m.is_noisy() && pos.gaining(m, *Params::good_noisy_margin(0)) {
-                rating += *Params::good_noisy_bonus(0);
+                rating += *Params::good_noisy_rating(0);
                 rating += pos.gain(m);
             }
 
@@ -872,20 +869,15 @@ impl<'a> Searcher<'a> {
             let counter = self.stack.reply(1).get(pos, m);
             let is_killer = killer.contains(m);
 
-            if !is_check && !tail.score().is_losing() && depth < *Params::fut_depth_limit(0) {
+            if !is_check && !tail.score().is_losing() && depth < *Params::futility_depth_limit(0) {
                 let margin = pos.gain(m) + Self::futility(lmr_depth);
                 if self.stack.value(0) + margin.cast::<i16>() <= alpha {
                     continue;
                 }
             }
 
-            let mut margin = if m.is_quiet() {
-                Self::qsp(lmr_depth)
-            } else {
-                Self::nsp(depth)
-            };
-
-            margin = Params::qsp_margin_is_killer(0).mul_add(is_killer.cast(), margin);
+            let mut margin = Self::see_pruning(lmr_depth, m);
+            margin = Params::see_margin_is_killer(0).mul_add(is_killer.cast(), margin);
             if !tail.score().is_losing() && !pos.gaining(m, margin) {
                 continue;
             }
@@ -962,7 +954,7 @@ impl<'a> Searcher<'a> {
             let history = self.local.history.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
             if m.is_noisy() && pos.gaining(m, *Params::good_noisy_margin(0)) {
-                rating += *Params::good_noisy_bonus(0);
+                rating += *Params::good_noisy_rating(0);
                 rating += pos.gain(m);
             }
 
@@ -1342,7 +1334,7 @@ mod tests {
         #[filter(!#s.is_losing() && #s < #b)] s: Score,
         cut: bool,
     ) {
-        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0));
+        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_hm_limit(0));
 
         let tpos = Transposition::new(ScoreBound::Upper(s), d, Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);
@@ -1366,7 +1358,7 @@ mod tests {
         d: Depth,
         #[filter(!#s.is_winning() && #s >= #b)] s: Score,
     ) {
-        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0));
+        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_hm_limit(0));
 
         let tpos = Transposition::new(ScoreBound::Lower(s), d, Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);
@@ -1390,7 +1382,7 @@ mod tests {
         d: Depth,
         #[filter(!#s.is_decisive())] s: Score,
     ) {
-        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cut_halfmove_limit(0));
+        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_hm_limit(0));
 
         let tpos = Transposition::new(ScoreBound::Exact(s), d, Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);

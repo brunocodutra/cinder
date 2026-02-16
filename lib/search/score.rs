@@ -141,7 +141,7 @@ impl Score {
     /// Returns true if the score represents a won or lost position.
     #[inline(always)]
     pub const fn is_decided(self) -> bool {
-        self.is_winning() || self.is_losing()
+        self.is_win() || self.is_loss()
     }
 }
 

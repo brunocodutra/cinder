@@ -764,23 +764,17 @@ impl<'a> Searcher<'a> {
             let gamma = *Params::probcut_depth(0);
             let delta = *Params::probcut_depth(1);
             let pc_depth = gamma.mul_add(depth, delta);
-            let pc_beta = beta + Self::probcut(depth).cast::<i16>();
+
+            let mut margin = Self::probcut(depth);
+            margin = Params::probcut_margin_improving(0).mul_add(improving, margin);
+            let pc_beta = beta + margin.cast::<i16>();
 
             let max_depth = t.depth.cast::<f32>() + *Params::probcut_depth_bounds(1);
             let depth_bounds = *Params::probcut_depth_bounds(0)..max_depth;
-
-            if !was_pv
-                && depth_bounds.contains(&depth)
-                && t.score.lower(ply) >= pc_beta
-                && is_noisy_pv
-            {
+            if is_noisy_pv && t.score.lower(ply) >= pc_beta && depth_bounds.contains(&depth) {
                 for m in moves.sorted() {
-                    if m.is_quiet() {
-                        continue;
-                    }
-
                     let margin = pc_beta - self.stack.value(0);
-                    if !self.stack.pos.gaining(m, margin.cast()) {
+                    if m.is_quiet() || !self.stack.pos.gaining(m, margin.cast()) {
                         continue;
                     }
 

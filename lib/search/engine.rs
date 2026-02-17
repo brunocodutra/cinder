@@ -669,7 +669,7 @@ impl<'a> Searcher<'a> {
         }
 
         let was_pv = IS_PV || transposition.is_some_and(|t| t.was_pv);
-        let is_noisy_pv = transposition.is_some_and(|t| {
+        let is_noisy_node = transposition.is_some_and(|t| {
             t.best.is_some_and(Move::is_noisy) && !matches!(t.score, ScoreBound::Upper(_))
         });
 
@@ -771,7 +771,7 @@ impl<'a> Searcher<'a> {
 
             let max_depth = t.depth.cast::<f32>() + *Params::probcut_depth_bounds(1);
             let depth_bounds = *Params::probcut_depth_bounds(0)..max_depth;
-            if is_noisy_pv && t.score.lower(ply) >= pc_beta && depth_bounds.contains(&depth) {
+            if is_noisy_node && t.score.lower(ply) >= pc_beta && depth_bounds.contains(&depth) {
                 for m in moves.sorted() {
                     let margin = pc_beta - self.stack.value(0);
                     if m.is_quiet() || !self.stack.pos.gaining(m, margin.cast()) {
@@ -886,7 +886,7 @@ impl<'a> Searcher<'a> {
                 (cut.cast(), Params::lmr_is_cut(..)),
                 (improving, Params::lmr_improving(..)),
                 (is_killer.cast(), Params::lmr_is_killer(..)),
-                (is_noisy_pv.cast(), Params::lmr_is_noisy_pv(..)),
+                (is_noisy_node.cast(), Params::lmr_is_noisy_node(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
                 (history, Params::lmr_history(..)),
                 (counter, Params::lmr_counter(..)),
@@ -963,7 +963,6 @@ impl<'a> Searcher<'a> {
         let mut tail = -next.ab::<true, _>(depth - 1.0, -beta..-alpha, false)?;
         drop(next);
 
-        let is_noisy_pv = self.stack.pv.head().is_some_and(Move::is_noisy);
         for (index, m) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -980,7 +979,6 @@ impl<'a> Searcher<'a> {
 
             lmr += convolve([
                 (1.0, Params::lmr_is_root(..)),
-                (is_noisy_pv.cast(), Params::lmr_is_noisy_pv(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
                 (history, Params::lmr_history(..)),
             ]);

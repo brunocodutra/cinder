@@ -709,8 +709,8 @@ impl<'a> Searcher<'a> {
             if !beta.is_losing() {
                 let mut margin = Self::rfp(depth);
                 margin = Params::rfp_margin_improving(0).mul_add(improving, margin);
-                if transposed.score() - margin.cast::<i16>() >= beta {
-                    return Ok(transposed.truncate());
+                if self.stack.value(0) - margin.cast::<i16>() >= beta {
+                    return Ok(Pv::empty(self.stack.value(0)));
                 }
             }
 

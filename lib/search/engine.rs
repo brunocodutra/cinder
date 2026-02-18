@@ -896,11 +896,17 @@ impl<'a> Searcher<'a> {
                 (counter, Params::lmr_counter(..)),
             ]);
 
-            let lmr = lmr.clip(0.0, depth.max(1.0) - 1.0);
-            let pv = match -next.nw(depth - lmr - 1.0, -alpha, !cut)? {
-                pv if pv <= alpha || (pv >= beta && lmr < 1.0) => pv.truncate(),
-                _ => -next.ab::<IS_PV, _>(depth - 1.0, -beta..-alpha, false)?,
-            };
+            let next_depth = depth.max(1.0) - 1.0;
+            let lmr = lmr.clip(*Params::lmr_limit(0), next_depth);
+            let mut pv = -next.nw(next_depth - lmr, -alpha, !cut)?.truncate();
+
+            if pv > alpha && lmr > *Params::lmr_threshold(0) {
+                pv = -next.nw(next_depth, -alpha, !cut)?.truncate();
+            }
+
+            if pv > alpha && pv < beta {
+                pv = -next.ab::<IS_PV, _>(next_depth, -beta..-alpha, false)?;
+            }
 
             if pv > tail {
                 (head, tail) = (m, pv);
@@ -987,11 +993,17 @@ impl<'a> Searcher<'a> {
                 (history, Params::lmr_history(..)),
             ]);
 
-            let lmr = lmr.clip(0.0, depth.get().max(1.0) - 1.0);
-            let pv = match -next.nw(depth - lmr - 1.0, -alpha, false)? {
-                pv if pv <= alpha || (pv >= beta && lmr < 1.0) => pv.truncate(),
-                _ => -next.ab::<true, _>(depth - 1.0, -beta..-alpha, false)?,
-            };
+            let next_depth = depth.max(1.0) - 1.0;
+            let lmr = lmr.clip(*Params::lmr_limit(0), next_depth);
+            let mut pv = -next.nw(next_depth - lmr, -alpha, true)?.truncate();
+
+            if pv > alpha && lmr > *Params::lmr_threshold(0) {
+                pv = -next.nw(next_depth, -alpha, true)?.truncate();
+            }
+
+            if pv > alpha && pv < beta {
+                pv = -next.ab::<true, _>(next_depth, -beta..-alpha, false)?;
+            }
 
             if pv > tail {
                 (head, tail) = (m, pv);

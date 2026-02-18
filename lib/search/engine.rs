@@ -590,8 +590,11 @@ impl<'a> Searcher<'a> {
                 }
             }
 
-            if !tail.is_losing() && !pos.gaining(m, *Params::see_margin_quiescence(0)) {
-                continue;
+            if !tail.is_losing() {
+                let margin = *Params::see_margin_quiescence(0);
+                if !pos.gaining(m, margin) {
+                    continue;
+                }
             }
 
             let mut next = self.next(Some(m));
@@ -862,7 +865,7 @@ impl<'a> Searcher<'a> {
 
             let pos = &self.stack.pos;
             let mut lmr = Self::lmr(depth, index);
-            let lmr_depth = depth - lmr.clip(0.0, depth.max(1.0) - 1.0);
+            let lmr_depth = (depth - lmr).max(0.0);
             let history = self.local.history.get(pos, m);
             let counter = self.stack.reply(1).get(pos, m);
             let is_killer = killer.contains(m);
@@ -874,10 +877,12 @@ impl<'a> Searcher<'a> {
                 }
             }
 
-            let mut margin = Self::see_pruning(lmr_depth, m);
-            margin = Params::see_margin_is_killer(0).mul_add(is_killer.cast(), margin);
-            if !tail.is_losing() && !pos.gaining(m, margin) {
-                continue;
+            if !tail.is_losing() {
+                let mut margin = Self::see_pruning(lmr_depth, m);
+                margin = Params::see_margin_is_killer(0).mul_add(is_killer.cast(), margin);
+                if !pos.gaining(m, margin) {
+                    continue;
+                }
             }
 
             let mut next = self.next(Some(m));

@@ -905,7 +905,7 @@ impl<'a> Searcher<'a> {
 
             let next_depth = (depth - 1.0).max(0.0);
             let lmr = Params::lmr_extension(0).max(lmr).min(next_depth);
-            let mut pv = -next.nw(next_depth - lmr, -alpha, !cut)?.truncate();
+            let mut pv = -next.nw(next_depth - lmr, -alpha, true)?.truncate();
 
             if pv > alpha && lmr > *Params::lmr_threshold(0) {
                 pv = -next.nw(next_depth, -alpha, !cut)?.truncate();

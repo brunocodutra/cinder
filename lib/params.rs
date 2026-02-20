@@ -286,7 +286,7 @@ params! {
     lmr_gives_check: [-0.46384782, 0.015132483, 0.011271138],
     lmr_history: [0.0012702212, -0.003735534],
     lmr_counter: [0.008251999],
-    lmr_limit: [0.0],
+    lmr_extension: [-0.5],
     lmr_threshold: [0.5],
     killer_rating: [53.16652],
     history_rating: [108.39066, 124.212105, 124.212105],

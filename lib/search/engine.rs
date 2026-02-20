@@ -896,8 +896,8 @@ impl<'a> Searcher<'a> {
                 (counter, Params::lmr_counter(..)),
             ]);
 
-            let next_depth = depth.max(1.0) - 1.0;
-            let lmr = lmr.clip(*Params::lmr_limit(0), next_depth);
+            let next_depth = (depth - 1.0).max(0.0);
+            let lmr = Params::lmr_extension(0).max(lmr).min(next_depth);
             let mut pv = -next.nw(next_depth - lmr, -alpha, !cut)?.truncate();
 
             if pv > alpha && lmr > *Params::lmr_threshold(0) {
@@ -993,8 +993,8 @@ impl<'a> Searcher<'a> {
                 (history, Params::lmr_history(..)),
             ]);
 
-            let next_depth = depth.max(1.0) - 1.0;
-            let lmr = lmr.clip(*Params::lmr_limit(0), next_depth);
+            let next_depth = (depth - 1.0).max(0.0);
+            let lmr = lmr.max(0.0).min(next_depth);
             let mut pv = -next.nw(next_depth - lmr, -alpha, true)?.truncate();
 
             if pv > alpha && lmr > *Params::lmr_threshold(0) {

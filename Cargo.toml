@@ -46,7 +46,7 @@ derive_more = { version = "2.1.1", default-features = false, features = [
     "from",
     "into_iterator",
 ] }
-futures = { version = "0.3.31", default-features = false, features = [
+futures = { version = "0.3.32", default-features = false, features = [
     "async-await",
     "executor",
     "std",

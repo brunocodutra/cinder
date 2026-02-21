@@ -51,7 +51,7 @@ futures = { version = "0.3.32", default-features = false, features = [
     "executor",
     "std",
 ] }
-memmap2 = { version = "0.9.9", default-features = false }
+memmap2 = { version = "0.9.10", default-features = false }
 nom = { version = "8.0.0", default-features = false, features = ["std"] }
 rustc-hash = { version = "2.1.1", default-features = false, features = ["std"] }
 

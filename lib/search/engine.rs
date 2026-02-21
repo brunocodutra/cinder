@@ -810,18 +810,12 @@ impl<'a> Searcher<'a> {
                 let max_depth = t.depth.cast::<f32>() + *Params::singular_depth_bounds(1);
                 let depth_bounds = *Params::singular_depth_bounds(0)..max_depth;
                 if !matches!(t.score, ScoreBound::Upper(_)) && depth_bounds.contains(&depth) {
-                    let single = Self::singular(depth);
-                    let double = single + Params::singular_margin_scalar(1);
-                    let triple = double + Params::singular_margin_scalar(2);
-                    let expected_cut = cut || t.score.lower(ply) >= beta;
-
                     let gamma = *Params::singular_depth(0);
                     let delta = *Params::singular_depth(1);
                     let se_depth = gamma.mul_add(depth, delta);
 
-                    let se_beta = t.score.bound(ply) - single.cast::<i16>();
-                    let de_beta = t.score.bound(ply) - double.cast::<i16>();
-                    let te_beta = t.score.bound(ply) - triple.cast::<i16>();
+                    let se_beta = t.score.bound(ply) - Self::singular(depth).cast::<i16>();
+                    let expected_cut = cut || t.score.lower(ply) >= beta;
 
                     if expected_cut {
                         extension = 2.0 + head.is_quiet().cast::<f32>();
@@ -837,10 +831,11 @@ impl<'a> Searcher<'a> {
                             extension = -2.0 * expected_cut.cast::<f32>();
                             cut = expected_cut;
                             break;
-                        } else if pv >= de_beta {
-                            extension = extension.min(1.0);
-                        } else if pv >= te_beta {
-                            extension = extension.min(2.0);
+                        } else {
+                            let gamma = *Params::singular_extension(0);
+                            let delta = *Params::singular_extension(1);
+                            let diff = se_beta.cast::<f32>() - pv.score().cast::<f32>();
+                            extension = extension.min(diff / diff.mul_add(gamma, delta));
                         }
                     }
                 }

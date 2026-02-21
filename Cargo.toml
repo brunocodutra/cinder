@@ -19,7 +19,7 @@ trainer = ["dep:bullet"]
 no_panic = ["dep:no-panic"]
 
 [dependencies]
-anyhow = { version = "1.0.101", default-features = false, features = ["std"] }
+anyhow = { version = "1.0.102", default-features = false, features = ["std"] }
 atomic = { version = "0.6.1", default-features = false, features = ["std"] }
 bytemuck = { version = "1.25.0", default-features = false, features = [
     "extern_crate_std",

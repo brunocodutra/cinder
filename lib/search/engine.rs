@@ -673,6 +673,7 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        let should_cut = transposition.is_some_and(|t| t.score.lower(ply) >= beta);
         let was_pv = IS_PV || transposition.is_some_and(|t| t.was_pv);
         let is_noisy_node = transposition.is_some_and(|t| {
             t.best.is_some_and(Move::is_noisy) && !matches!(t.score, ScoreBound::Upper(_))
@@ -778,7 +779,7 @@ impl<'a> Searcher<'a> {
 
             let max_depth = t.depth.cast::<f32>() + *Params::probcut_depth_bounds(1);
             let depth_bounds = *Params::probcut_depth_bounds(0)..max_depth;
-            if is_noisy_node && t.score.lower(ply) >= pc_beta && depth_bounds.contains(&depth) {
+            if should_cut && is_noisy_node && depth_bounds.contains(&depth) {
                 for m in moves.sorted() {
                     let margin = pc_beta - self.stack.value(0);
                     if m.is_quiet() || !self.stack.pos.gaining(m, margin.cast()) {
@@ -813,28 +814,35 @@ impl<'a> Searcher<'a> {
                     let gamma = *Params::singular_depth(0);
                     let delta = *Params::singular_depth(1);
                     let se_depth = gamma.mul_add(depth, delta);
-
                     let se_beta = t.score.bound(ply) - Self::singular(depth).cast::<i16>();
-                    let expected_cut = cut || t.score.lower(ply) >= beta;
+                    let is_quiet = head.is_quiet();
 
-                    if expected_cut {
-                        extension = 2.0 + head.is_quiet().cast::<f32>();
-                    } else {
-                        extension = 1.0;
-                    }
+                    extension = convolve([
+                        (is_quiet.cast(), Params::singular_extension_is_quiet(..)),
+                        (should_cut.cast(), Params::singular_extension_should_cut(..)),
+                        (cut.cast(), Params::singular_extension_is_cut(..)),
+                        (1.0, Params::singular_extension_scalar(..)),
+                    ]);
 
+                    let mut se_score = Score::lower();
                     for m in moves.sorted().skip(1) {
                         let pv = -self.next(Some(m)).nw(se_depth - 1.0, -se_beta + 1, !cut)?;
                         if pv.score().min(se_beta) >= beta {
                             return Ok(pv.truncate().transpose(m));
                         } else if pv >= se_beta {
-                            extension = -2.0 * expected_cut.cast::<f32>();
-                            cut = expected_cut;
+                            extension = convolve([
+                                (should_cut.cast(), Params::singular_reduction_should_cut(..)),
+                                (cut.cast(), Params::singular_reduction_is_cut(..)),
+                                (1.0, Params::singular_reduction_scalar(..)),
+                            ]);
+
+                            cut |= should_cut;
                             break;
-                        } else {
-                            let gamma = *Params::singular_extension(0);
-                            let delta = *Params::singular_extension(1);
-                            let diff = se_beta.cast::<f32>() - pv.score().cast::<f32>();
+                        } else if pv > se_score {
+                            se_score = pv.score();
+                            let gamma = *Params::singular_extension_limit(0);
+                            let delta = *Params::singular_extension_limit(1);
+                            let diff = se_beta.cast::<f32>() - se_score.cast::<f32>();
                             extension = extension.min(diff / diff.mul_add(gamma, delta));
                         }
                     }

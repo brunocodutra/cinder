@@ -621,7 +621,7 @@ impl<'a> Searcher<'a> {
         &mut self,
         mut depth: f32,
         bounds: Range<Score>,
-        mut cut: bool,
+        cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
         const { assert!(IS_PV || N == 0) }
 
@@ -836,7 +836,6 @@ impl<'a> Searcher<'a> {
                                 (1.0, Params::singular_reduction_scalar(..)),
                             ]);
 
-                            cut |= should_cut;
                             break;
                         } else if pv > se_score {
                             se_score = pv.score();

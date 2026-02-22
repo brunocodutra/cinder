@@ -30,7 +30,7 @@ impl MovePack {
 #[derive_const(Default, Clone, Eq, PartialEq)]
 struct CapacityError;
 
-trait MovePacker {
+const trait MovePacker {
     fn pack(
         &mut self,
         piece: Piece,
@@ -42,7 +42,7 @@ trait MovePacker {
 
 struct NoCapacityMovePacker;
 
-impl MovePacker for NoCapacityMovePacker {
+impl const MovePacker for NoCapacityMovePacker {
     #[inline(always)]
     fn pack(
         &mut self,
@@ -59,7 +59,7 @@ impl MovePacker for NoCapacityMovePacker {
     }
 }
 
-impl MovePacker for MovePack {
+impl const MovePacker for MovePack {
     #[inline(always)]
     fn pack(
         &mut self,
@@ -371,7 +371,7 @@ impl Position {
     /// Game [`Phase`].
     #[inline(always)]
     pub const fn phase(&self) -> Phase {
-        Phase::new((self.occupied().len() - 1) as u8 / 4)
+        self.board.phase()
     }
 
     /// The [`Piece`]s table.
@@ -428,6 +428,12 @@ impl Position {
         self.board.piece_on(sq)
     }
 
+    /// [`Square`] occupied by a the king of a [`Color`].
+    #[inline(always)]
+    pub const fn king(&self, side: Color) -> Square {
+        self.board.king(side).assume()
+    }
+
     /// This position's [zobrist hashes](`Zobrists`).
     #[inline(always)]
     pub const fn zobrists(&self) -> &Zobrists {
@@ -452,16 +458,10 @@ impl Position {
         self.threats
     }
 
-    /// [`Square`] occupied by a the king of a [`Color`].
-    #[inline(always)]
-    pub fn king(&self, side: Color) -> Square {
-        self.board.king(side).assume()
-    }
-
     /// An iterator over all [`Piece`]s on the board.
     #[inline(always)]
     pub fn iter(&self) -> impl Iterator<Item = (Piece, Square)> {
-        self.board.iter()
+        Piece::iter().flat_map(|p| self.by_piece(p).into_iter().map(move |sq| (p, sq)))
     }
 
     /// How many other times this position has repeated.
@@ -936,7 +936,9 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn iter_returns_pieces_and_squares(pos: Position) {
-        assert_eq!(Vec::from_iter(pos.iter()), Vec::from_iter(pos.board.iter()));
+        for (p, sq) in pos.iter() {
+            assert_eq!(pos.piece_on(sq), Some(p));
+        }
     }
 
     #[proptest]

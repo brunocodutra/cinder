@@ -46,9 +46,9 @@ impl const Default for Attention {
     }
 }
 
-impl Attention {
+const impl Attention {
     #[inline(always)]
-    pub const fn nodes(&mut self, m: Move) -> &mut Nodes {
+    pub fn nodes(&mut self, m: Move) -> &mut Nodes {
         &mut self.0[m.whence() as usize][m.whither() as usize]
     }
 }

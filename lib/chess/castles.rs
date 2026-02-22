@@ -3,7 +3,7 @@ use crate::util::{Assume, Bits, Int, Num};
 use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter};
-use std::{ops::*, str::FromStr};
+use std::{ascii::Char, ops::*, slice::Iter, str::FromStr};
 
 /// The castling rights in a chess [`Position`][`crate::chess::Position`].
 #[derive(Debug, Copy, Hash, Zeroable)]
@@ -12,22 +12,22 @@ use std::{ops::*, str::FromStr};
 #[debug("Castles({self})")]
 pub struct Castles(Bits<u8, 4>);
 
-impl Castles {
+const impl Castles {
     /// No castling rights.
     #[inline(always)]
-    pub const fn none() -> Self {
+    pub fn none() -> Self {
         Castles(Bits::new(0b0000))
     }
 
     /// All castling rights.
     #[inline(always)]
-    pub const fn all() -> Self {
+    pub fn all() -> Self {
         Castles(Bits::new(0b1111))
     }
 
     /// The rook's [`Move`] given the king's castling [`Square`].
     #[inline(always)]
-    pub const fn rook(castling: Square) -> Option<Move> {
+    pub fn rook(castling: Square) -> Option<Move> {
         match castling {
             Square::C1 => Some(Move::regular(Square::A1, Square::D1, None)),
             Square::G1 => Some(Move::regular(Square::H1, Square::F1, None)),
@@ -39,13 +39,13 @@ impl Castles {
 
     /// A unique number the represents this castling rights configuration.
     #[inline(always)]
-    pub const fn index(self) -> u8 {
+    pub fn index(self) -> u8 {
         self.0.get()
     }
 
     /// Whether the rights for the given castling square.
     #[inline(always)]
-    pub const fn has(self, sq: Square) -> bool {
+    pub fn has(self, sq: Square) -> bool {
         self & Castles::from(Castles::rook(sq).assume().whence()) != Castles::none()
     }
 }
@@ -154,7 +154,11 @@ impl Display for Castles {
 #[display("failed to parse castling rights")]
 pub struct ParseCastlesError;
 
-impl FromStr for Castles {
+impl const FromStr for Castles
+where
+    for<'a> &'a [Char]: [const] IntoIterator<IntoIter = Iter<'a, Char>>,
+    for<'a> Iter<'a, Char>: [const] Iterator<Item = &'a Char>,
+{
     type Err = ParseCastlesError;
 
     #[inline(always)]
@@ -162,10 +166,8 @@ impl FromStr for Castles {
         let mut castles = Castles::none();
 
         use {Piece::*, Square::*};
-        for c in s.chars() {
-            let mut buffer = [0; 4];
-
-            match Piece::from_str(c.encode_utf8(&mut buffer)) {
+        for c in s.as_ascii().ok_or(ParseCastlesError)? {
+            match Piece::from_str(c.as_str()) {
                 Ok(p @ (WhiteKing | BlackKing)) if !castles.has(G1.perspective(p.color())) => {
                     castles |= Castles::from(Square::H1.perspective(p.color()));
                 }

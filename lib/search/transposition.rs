@@ -15,11 +15,11 @@ pub enum ScoreBound {
     Exact(Score),
 }
 
-impl ScoreBound {
+const impl ScoreBound {
     // Constructs a [`ScoreBound`] normalized to [`Ply`].
     #[track_caller]
     #[inline(always)]
-    pub const fn new(bounds: Range<Score>, score: Score, ply: Ply) -> Self {
+    pub fn new(bounds: Range<Score>, score: Score, ply: Ply) -> Self {
         (bounds.start < bounds.end).assume();
 
         if score >= bounds.end {
@@ -33,7 +33,7 @@ impl ScoreBound {
 
     // The score bound.
     #[inline(always)]
-    pub const fn bound(self, ply: Ply) -> Score {
+    pub fn bound(self, ply: Ply) -> Score {
         match self {
             ScoreBound::Lower(s) | ScoreBound::Upper(s) | ScoreBound::Exact(s) => {
                 s.relative_to_ply(ply)
@@ -43,7 +43,7 @@ impl ScoreBound {
 
     /// A lower bound for the score normalized to [`Ply`].
     #[inline(always)]
-    pub const fn lower(self, ply: Ply) -> Score {
+    pub fn lower(self, ply: Ply) -> Score {
         match self {
             ScoreBound::Upper(_) => Score::mated(ply),
             _ => self.bound(ply),
@@ -52,7 +52,7 @@ impl ScoreBound {
 
     /// An upper bound for the score normalized to [`Ply`].
     #[inline(always)]
-    pub const fn upper(self, ply: Ply) -> Score {
+    pub fn upper(self, ply: Ply) -> Score {
         match self {
             ScoreBound::Lower(_) => Score::mating(ply),
             _ => self.bound(ply),
@@ -61,7 +61,7 @@ impl ScoreBound {
 
     /// The score range normalized to [`Ply`].
     #[inline(always)]
-    pub const fn range(self, ply: Ply) -> RangeInclusive<Score> {
+    pub fn range(self, ply: Ply) -> RangeInclusive<Score> {
         self.lower(ply)..=self.upper(ply)
     }
 }
@@ -108,7 +108,7 @@ pub struct Transposition {
     pub was_pv: bool,
 }
 
-impl Transposition {
+const impl Transposition {
     const BITS: u32 = 1
         + <ScoreBound as Binary>::Bits::BITS
         + <Depth as Binary>::Bits::BITS
@@ -116,7 +116,7 @@ impl Transposition {
 
     /// Constructs a [`Transposition`] given a [`ScoreBound`], the [`Depth`] searched, and the best [`Move`].
     #[inline(always)]
-    pub const fn new(score: ScoreBound, depth: Depth, best: Option<Move>, was_pv: bool) -> Self {
+    pub fn new(score: ScoreBound, depth: Depth, best: Option<Move>, was_pv: bool) -> Self {
         Transposition {
             score,
             depth,
@@ -127,7 +127,7 @@ impl Transposition {
 
     /// The principal variation normalized to [`Ply`].
     #[inline(always)]
-    pub const fn transpose(self, ply: Ply) -> Pv<1> {
+    pub fn transpose(self, ply: Ply) -> Pv<1> {
         Pv::new(
             self.score.bound(ply),
             self.best.map_or_else(Line::empty, Line::singular),

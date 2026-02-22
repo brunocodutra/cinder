@@ -65,9 +65,9 @@ impl const Default for HistoryCorrection {
     }
 }
 
-impl HistoryCorrection {
+const impl HistoryCorrection {
     #[inline(always)]
-    pub const fn get(&mut self, pos: &Position, m: Move) -> &mut Correction<1> {
+    pub fn get(&mut self, pos: &Position, m: Move) -> &mut Correction<1> {
         let (wc, wt) = (m.whence(), m.whither());
         let threats = [pos.threats().contains(wc), pos.threats().contains(wt)];
         &mut self.0[pos.turn() as usize][wc as usize][wt as usize][threats[0] as usize]

@@ -36,24 +36,24 @@ static ZOBRIST: ZobristNumbers = const {
     zobrist
 };
 
-impl ZobristNumbers {
+const impl ZobristNumbers {
     #[inline(always)]
-    pub const fn psq(piece: Piece, sq: Square) -> Zobrist {
+    pub fn psq(piece: Piece, sq: Square) -> Zobrist {
         Zobrist::new(ZOBRIST.pieces[piece as usize][sq as usize])
     }
 
     #[inline(always)]
-    pub const fn castling(castles: Castles) -> Zobrist {
+    pub fn castling(castles: Castles) -> Zobrist {
         Zobrist::new(ZOBRIST.castles[castles.index() as usize])
     }
 
     #[inline(always)]
-    pub const fn en_passant(file: File) -> Zobrist {
+    pub fn en_passant(file: File) -> Zobrist {
         Zobrist::new(ZOBRIST.en_passant[file as usize])
     }
 
     #[inline(always)]
-    pub const fn turn() -> Zobrist {
+    pub fn turn() -> Zobrist {
         Zobrist::new(ZOBRIST.turn)
     }
 }

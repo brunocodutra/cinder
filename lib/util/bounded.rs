@@ -3,7 +3,7 @@ use bytemuck::{NoUninit, Zeroable};
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
-use std::{cmp::Ordering, num::Saturating as S, str::FromStr};
+use std::{cmp::Ordering, marker::Destruct, num::Saturating as S, str::FromStr};
 
 /// A saturating bounded integer.
 #[derive(Debug, Copy, Hash, Zeroable)]
@@ -217,15 +217,15 @@ where
 #[display("failed to parse bounded integer")]
 pub struct ParseBoundedIntegerError;
 
-impl<T: Int<Repr: Signed>> FromStr for Bounded<T>
+impl<T: [const] Int<Repr: [const] Signed>> const FromStr for Bounded<T>
 where
-    T::Repr: FromStr,
+    T::Repr: [const] FromStr<Err: [const] Destruct>,
 {
     type Err = ParseBoundedIntegerError;
 
     #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<T::Repr>()
+        T::Repr::from_str(s)
             .ok()
             .and_then(Num::convert)
             .ok_or(ParseBoundedIntegerError)

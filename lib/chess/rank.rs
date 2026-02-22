@@ -20,10 +20,10 @@ pub enum Rank {
     Eighth,
 }
 
-impl Rank {
+const impl Rank {
     /// Returns a [`Bitboard`] that only contains this rank.
     #[inline(always)]
-    pub const fn bitboard(self) -> Bitboard {
+    pub fn bitboard(self) -> Bitboard {
         Bitboard::new(0x000000000000FF << (self.get() * 8))
     }
 }
@@ -75,7 +75,7 @@ impl Display for Rank {
 #[display("failed to parse rank")]
 pub struct ParseRankError;
 
-impl FromStr for Rank {
+impl const FromStr for Rank {
     type Err = ParseRankError;
 
     #[inline(always)]

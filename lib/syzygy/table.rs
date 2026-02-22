@@ -577,16 +577,16 @@ struct Symbol {
     len: u8,
 }
 
-impl Symbol {
-    const fn new() -> Symbol {
+const impl Symbol {
+    fn new() -> Symbol {
         Symbol { lr: [0; 3], len: 0 }
     }
 
-    const fn left(&self) -> u16 {
+    fn left(&self) -> u16 {
         (u16::from(self.lr[1] & 0xf) << 8) | u16::from(self.lr[0])
     }
 
-    const fn right(&self) -> u16 {
+    fn right(&self) -> u16 {
         (u16::from(self.lr[2]) << 4) | (u16::from(self.lr[1]) >> 4)
     }
 }
@@ -717,7 +717,6 @@ impl PairsData {
         }
         ptr += symbols.len() * 3 + (symbols.len() & 1);
 
-        // Result.
         let pairs = PairsData {
             flags,
             groups,
@@ -731,15 +730,15 @@ impl PairsData {
             base,
             symbols,
 
-            sparse_index: 0, // to be initialized later
+            sparse_index: 0,
             sparse_index_size,
 
-            block_lengths: 0, // to be initialized later
+            block_lengths: 0,
             block_length_size,
 
-            data: 0, // to be initialized later
+            data: 0,
 
-            dtz_map: None, // to be initialized later
+            dtz_map: None,
         };
 
         (pairs, ptr)
@@ -767,9 +766,7 @@ fn read_symbols(
     if symbol.right() == 0xfff {
         symbol.len = 0;
     } else {
-        // Guard against stack overflow.
         let depth = depth - 1;
-
         read_symbols(raf, btree, symbols, visited, symbol.left(), depth);
         read_symbols(raf, btree, symbols, visited, symbol.right(), depth);
 
@@ -970,7 +967,6 @@ impl<T: TableDescriptor> Table<T> {
             }
         }
 
-        // Result.
         Ok(Table {
             descriptor: PhantomData,
             raf,
@@ -1257,10 +1253,9 @@ impl<T: TableDescriptor> Table<T> {
         idx *= side.groups.factors[0];
 
         // Encode remaining pawns.
-        let mut next = 1;
         let mut pawns_left = material.left(Role::Pawn) > 0 && material.right(Role::Pawn) > 0;
         let mut group_square = side.groups.lens[0];
-        for lens in side.groups.lens.iter().copied().skip(1) {
+        for (lens, next) in side.groups.lens.iter().copied().skip(1).zip(1..) {
             let (prev_squares, group_squares) = sqs.split_at_mut(group_square);
             let group_squares = &mut group_squares[..lens];
             group_squares.sort_unstable();
@@ -1277,7 +1272,6 @@ impl<T: TableDescriptor> Table<T> {
             pawns_left = false;
             idx += n * side.groups.factors[next];
             group_square += side.groups.lens[next];
-            next += 1;
         }
 
         Some((side, idx))

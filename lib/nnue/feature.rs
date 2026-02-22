@@ -35,13 +35,13 @@ unsafe impl const Num for Feature {
 
 unsafe impl const Int for Feature {}
 
-impl Feature {
+const impl Feature {
     /// The total number of different features.
     pub const LEN: usize = 768 * Bucket::LEN / 2;
 
     /// Constructs a [`Feature`].
     #[inline(always)]
-    pub const fn new(side: Color, ksq: Square, piece: Piece, sq: Square) -> Self {
+    pub fn new(side: Color, ksq: Square, piece: Piece, sq: Square) -> Self {
         let chirality = Side::from(ksq.file() < File::E);
         let bucket = Self::bucket(side, ksq.perspective(chirality)).cast::<u16>();
         let psq = 64 * piece.perspective(side).cast::<u16>()
@@ -52,7 +52,7 @@ impl Feature {
 
     /// Constructs a [`Feature`].
     #[inline(always)]
-    pub const fn bucket(side: Color, ksq: Square) -> Bucket {
+    pub fn bucket(side: Color, ksq: Square) -> Bucket {
         #[rustfmt::skip]
         const BUCKETS: [u8; 64] = [
             16, 17, 18, 19,  3,  2,  1,  0,

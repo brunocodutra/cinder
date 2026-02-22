@@ -44,7 +44,7 @@ impl Display for Role {
 #[display("failed to parse piece")]
 pub struct ParseRoleError;
 
-impl FromStr for Role {
+impl const FromStr for Role {
     type Err = ParseRoleError;
 
     #[inline(always)]

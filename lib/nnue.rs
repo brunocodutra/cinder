@@ -1,4 +1,5 @@
-use crate::{chess::Phase, util::Num};
+use crate::chess::Phase;
+use crate::util::{Int, Num};
 use bytemuck::{Zeroable, zeroed};
 use std::{ptr, slice};
 
@@ -97,8 +98,8 @@ pub struct Nnue {
     nn: [Input<Residual<Hidden<Hidden<Output>>>>; Phase::LEN],
 }
 
-impl Nnue {
-    const fn new() -> Self {
+const impl Nnue {
+    fn new() -> Self {
         let bytes = include_bytes!("nnue/nnue.bin");
         let mut nnue: Self = zeroed();
         let mut cursor = 0;
@@ -106,89 +107,71 @@ impl Nnue {
         cursor += unsafe { copy_bytes(&mut nnue.transformer.weight.0, &bytes[cursor..]) };
         cursor += unsafe { copy_bytes(&mut nnue.transformer.bias.0, &bytes[cursor..]) };
 
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase];
+        for phase in Phase::iter() {
+            let nn = &mut nnue.nn[phase.cast::<usize>()];
             let mut weight = [[0i8; L1::LEN]; Ln::LEN / 2];
             cursor += unsafe { copy_bytes(&mut weight, &bytes[cursor..]) };
             let mut blocks = [[0i8; 4]; L1::LEN * Ln::LEN / 8];
             arrange_in_blocks(&weight, &mut blocks);
             interleave(&blocks, &mut nn.weight.0, Ln::LEN);
-            phase += 1;
         }
 
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase];
+        for phase in Phase::iter() {
+            let nn = &mut nnue.nn[phase.cast::<usize>()];
             cursor += unsafe { copy_bytes(&mut nn.bias.0, &bytes[cursor..]) };
-            phase += 1;
         }
 
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase].next;
+        for phase in Phase::iter() {
+            let nn = &mut nnue.nn[phase.cast::<usize>()].next;
             cursor += unsafe { copy_bytes(&mut nn.weight.0, &bytes[cursor..]) };
-            phase += 1;
         }
 
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase].next.next;
+        for phase in Phase::iter() {
+            let nn = &mut nnue.nn[phase.cast::<usize>()].next.next;
             let mut weight = [[0f32; Ln::LEN]; Ln::LEN / 2];
             cursor += unsafe { copy_bytes(&mut weight, &bytes[cursor..]) };
             arrange_in_blocks(&weight, &mut nn.weight.0);
-            phase += 1;
         }
 
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase].next.next;
+        for phase in Phase::iter() {
+            let nn = &mut nnue.nn[phase.cast::<usize>()].next.next;
             cursor += unsafe { copy_bytes(&mut nn.bias.0, &bytes[cursor..]) };
-            phase += 1;
         }
 
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase].next.next.next;
+        for phase in Phase::iter() {
+            let nn = &mut nnue.nn[phase.cast::<usize>()].next.next.next;
             let mut weight = [[0f32; Ln::LEN]; Ln::LEN / 2];
             cursor += unsafe { copy_bytes(&mut weight, &bytes[cursor..]) };
             arrange_in_blocks(&weight, &mut nn.weight.0);
-            phase += 1;
         }
 
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase].next.next.next;
+        for phase in Phase::iter() {
+            let nn = &mut nnue.nn[phase.cast::<usize>()].next.next.next;
             cursor += unsafe { copy_bytes(&mut nn.bias.0, &bytes[cursor..]) };
-            phase += 1;
         }
 
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase].next.next.next.next;
+        for phase in Phase::iter() {
+            let nn = &mut nnue.nn[phase.cast::<usize>()].next.next.next.next;
             cursor += unsafe { copy_bytes(&mut nn.weight.0, &bytes[cursor..]) };
-            phase += 1;
         }
 
-        let mut phase = 0;
-        while phase < Phase::LEN {
-            let nn = &mut nnue.nn[phase].next.next.next.next;
+        for phase in Phase::iter() {
+            let nn = &mut nnue.nn[phase.cast::<usize>()].next.next.next.next;
             let mut bias = 0f32;
             cursor += unsafe { copy_bytes(&mut bias, &bytes[cursor..]) };
             nn.bias.0 = [bias / nn.bias.0.len() as f32; _];
-            phase += 1;
         }
 
         nnue
     }
 
     #[inline(always)]
-    pub const fn transformer() -> &'static Transformer {
+    pub fn transformer() -> &'static Transformer {
         &NNUE.transformer
     }
 
     #[inline(always)]
-    pub const fn nn(phase: Phase) -> &'static Input<Residual<Hidden<Hidden<Output>>>> {
+    pub fn nn(phase: Phase) -> &'static Input<Residual<Hidden<Hidden<Output>>>> {
         let idx = phase.cast::<usize>();
         unsafe { NNUE.nn.get_unchecked(idx) }
     }

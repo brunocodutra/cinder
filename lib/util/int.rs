@@ -16,47 +16,97 @@ where
     #[track_caller]
     #[inline(always)]
     fn iter() -> Ints<Self> {
-        Ints(Self::MIN..=Self::MAX)
+        Ints::new()
     }
 }
 
 #[derive(Debug)]
-pub struct Ints<I: Int<Repr: IntRepr>>(RangeInclusive<I::Repr>);
+pub struct Ints<I: Int<Repr: IntRepr>> {
+    start: I::Repr,
+    end: I::Repr,
+    is_empty: bool,
+}
 
-impl<I: Int<Repr: IntRepr>> ExactSizeIterator for Ints<I>
-where
-    RangeInclusive<I::Repr>: ExactSizeIterator<Item = I::Repr>,
-{
+impl<I: [const] Int<Repr: [const] IntRepr>> const Default for Ints<I> {
     #[inline(always)]
-    fn len(&self) -> usize {
-        self.0.len()
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-impl<I: Int<Repr: IntRepr>> Iterator for Ints<I>
-where
-    RangeInclusive<I::Repr>: ExactSizeIterator<Item = I::Repr>,
-{
+const impl<I: [const] Int<Repr: [const] IntRepr>> Ints<I> {
+    #[inline(always)]
+    pub fn new() -> Self {
+        Self {
+            start: I::MIN,
+            end: I::MAX,
+            is_empty: false,
+        }
+    }
+
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        if self.is_empty() {
+            0
+        } else {
+            (self.end.cast::<isize>() - self.start.cast::<isize>() + 1).cast()
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.is_empty
+    }
+}
+
+impl<I: Int<Repr: IntRepr>> ExactSizeIterator for Ints<I> {
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len()
+    }
+}
+
+impl<I: [const] Int<Repr: [const] IntRepr>> const Iterator for Ints<I> {
     type Item = I;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
-        Some(I::new(self.0.next()?))
+        if self.is_empty {
+            None
+        } else {
+            let next = I::new(self.start);
+            if self.start == self.end {
+                self.is_empty = true;
+            } else {
+                self.start += ones::<u8>(1).cast();
+            }
+
+            Some(next)
+        }
     }
 
     #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len(), Some(self.len()))
+        let len = self.len();
+        (len, Some(len))
     }
 }
 
-impl<I: Int<Repr: IntRepr>> DoubleEndedIterator for Ints<I>
-where
-    RangeInclusive<I::Repr>: ExactSizeIterator<Item = I::Repr> + DoubleEndedIterator,
-{
+impl<I: Int<Repr: IntRepr>> DoubleEndedIterator for Ints<I> {
     #[inline(always)]
     fn next_back(&mut self) -> Option<Self::Item> {
-        Some(I::new(self.0.next_back()?))
+        if self.is_empty {
+            None
+        } else {
+            let next = I::new(self.end);
+            if self.start == self.end {
+                self.is_empty = true;
+            } else {
+                self.end -= ones::<u8>(1).cast();
+            }
+
+            Some(next)
+        }
     }
 }
 
@@ -351,6 +401,34 @@ mod tests {
                 Digit::Nine,
             ],
         );
+    }
+
+    #[test]
+    fn int_can_be_iterated_in_reverse_order() {
+        assert_eq!(
+            Vec::from_iter(Digit::iter().rev()),
+            vec![
+                Digit::Nine,
+                Digit::Eight,
+                Digit::Seven,
+                Digit::Six,
+                Digit::Five,
+                Digit::Four,
+                Digit::Three,
+                Digit::Two,
+                Digit::One,
+            ],
+        );
+    }
+
+    #[test]
+    fn int_can_be_iterated_with_exact_len() {
+        let mut ints = Digit::iter();
+        assert_eq!(ints.len(), 9);
+        assert_eq!(ints.next(), Some(Digit::lower()));
+        assert_eq!(ints.len(), 8);
+        assert_eq!(ints.next_back(), Some(Digit::upper()));
+        assert_eq!(ints.len(), 7);
     }
 
     #[proptest]

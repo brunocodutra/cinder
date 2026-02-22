@@ -20,10 +20,10 @@ pub enum File {
     H,
 }
 
-impl File {
+const impl File {
     /// Returns a [`Bitboard`] that only contains this file.
     #[inline(always)]
-    pub const fn bitboard(self) -> Bitboard {
+    pub fn bitboard(self) -> Bitboard {
         Bitboard::new(0x0101010101010101 << self.get())
     }
 }
@@ -75,7 +75,7 @@ impl Display for File {
 #[display("failed to parse file")]
 pub struct ParseFileError;
 
-impl FromStr for File {
+impl const FromStr for File {
     type Err = ParseFileError;
 
     #[inline(always)]

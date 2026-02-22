@@ -16,9 +16,9 @@ impl const Default for History {
     }
 }
 
-impl History {
+const impl History {
     #[inline(always)]
-    const fn graviton_ref(&self, pos: &Position, m: Move) -> &Graviton {
+    fn graviton_ref(&self, pos: &Position, m: Move) -> &Graviton {
         let (wc, wt) = (m.whence(), m.whither());
         let threats = [pos.threats().contains(wc), pos.threats().contains(wt)];
         &self.0[pos.turn() as usize][m.is_quiet() as usize][wc as usize][wt as usize]
@@ -26,7 +26,7 @@ impl History {
     }
 
     #[inline(always)]
-    const fn graviton_mut(&mut self, pos: &Position, m: Move) -> &mut Graviton {
+    fn graviton_mut(&mut self, pos: &Position, m: Move) -> &mut Graviton {
         let (wc, wt) = (m.whence(), m.whither());
         let threats = [pos.threats().contains(wc), pos.threats().contains(wt)];
         &mut self.0[pos.turn() as usize][m.is_quiet() as usize][wc as usize][wt as usize]
@@ -90,9 +90,9 @@ impl const Default for ContinuationHistory {
     }
 }
 
-impl ContinuationHistory {
+const impl ContinuationHistory {
     #[inline(always)]
-    pub const fn reply(&mut self, pos: &Position, m: Move) -> &mut ContinuationHistoryReply {
+    pub fn reply(&mut self, pos: &Position, m: Move) -> &mut ContinuationHistoryReply {
         let (wc, wt) = (m.whence(), m.whither());
         let piece = pos.piece_on(wc).assume();
         let threats = pos.threats().contains(wt);

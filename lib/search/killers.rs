@@ -6,10 +6,10 @@ use crate::chess::Move;
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Killers(Option<Move>, Option<Move>);
 
-impl Killers {
+const impl Killers {
     /// Adds a killer move to the set.
     #[inline(always)]
-    pub const fn insert(&mut self, m: Move) {
+    pub fn insert(&mut self, m: Move) {
         if self.0 != Some(m) {
             self.1 = self.0;
             self.0 = Some(m);
@@ -18,7 +18,7 @@ impl Killers {
 
     /// Whether a move is in the set.
     #[inline(always)]
-    pub const fn contains(self, m: Move) -> bool {
+    pub fn contains(self, m: Move) -> bool {
         self.0 == Some(m) || self.1 == Some(m)
     }
 }

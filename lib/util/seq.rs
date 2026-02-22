@@ -274,7 +274,7 @@ impl<T, M: Memory<T, Capacity = ConstCapacity>> FromIterator<T> for Seq<T, M> {
     }
 }
 
-impl<'a, T, M: Memory<T, Capacity = ConstCapacity>> IntoIterator for &'a Seq<T, M> {
+impl<'a, T, M: [const] Memory<T, Capacity = ConstCapacity>> const IntoIterator for &'a Seq<T, M> {
     type Item = &'a T;
     type IntoIter = slice::Iter<'a, T>;
 
@@ -284,7 +284,9 @@ impl<'a, T, M: Memory<T, Capacity = ConstCapacity>> IntoIterator for &'a Seq<T, 
     }
 }
 
-impl<'a, T, M: Memory<T, Capacity = ConstCapacity>> IntoIterator for &'a mut Seq<T, M> {
+impl<'a, T, M: [const] Memory<T, Capacity = ConstCapacity>> const IntoIterator
+    for &'a mut Seq<T, M>
+{
     type Item = &'a mut T;
     type IntoIter = slice::IterMut<'a, T>;
 
@@ -294,7 +296,7 @@ impl<'a, T, M: Memory<T, Capacity = ConstCapacity>> IntoIterator for &'a mut Seq
     }
 }
 
-impl<T, M: Memory<T, Capacity = ConstCapacity>> IntoIterator for Seq<T, M> {
+impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> const IntoIterator for Seq<T, M> {
     type Item = T;
     type IntoIter = Iter<T, M>;
 
@@ -357,7 +359,8 @@ impl<T, M: Memory<T, Capacity = ConstCapacity>> Iterator for Iter<T, M> {
 
     #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len(), Some(self.len()))
+        let len = self.len();
+        (len, Some(len))
     }
 }
 

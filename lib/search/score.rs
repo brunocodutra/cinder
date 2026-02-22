@@ -14,9 +14,9 @@ pub enum Mate {
     Mated(Ply),
 }
 
-impl Mate {
+const impl Mate {
     #[inline(always)]
-    pub const fn plies(self) -> Option<Ply> {
+    pub fn plies(self) -> Option<Ply> {
         match self {
             Mate::Mating(ply) | Mate::Mated(ply) => Some(ply),
             Mate::None => None,
@@ -41,40 +41,40 @@ unsafe impl const Int for ScoreRepr {}
 /// The minimax score.
 pub type Score = Bounded<ScoreRepr>;
 
-impl Score {
+const impl Score {
     /// The drawn score.
     #[inline(always)]
-    pub const fn drawn() -> Self {
+    pub fn drawn() -> Self {
         Self::new(0)
     }
 
     /// The tablebase loss score at `ply`.
     #[inline(always)]
-    pub const fn losing(ply: Ply) -> Self {
+    pub fn losing(ply: Ply) -> Self {
         Self::mated(Ply::upper()).relative_to_ply(ply) + 1
     }
 
     /// The maximum value.
     #[inline(always)]
-    pub const fn winning(ply: Ply) -> Self {
+    pub fn winning(ply: Ply) -> Self {
         Self::mating(Ply::upper()).relative_to_ply(ply) - 1
     }
 
     /// Mated score at `ply`.
     #[inline(always)]
-    pub const fn mated(ply: Ply) -> Self {
+    pub fn mated(ply: Ply) -> Self {
         Self::lower().relative_to_ply(ply)
     }
 
     /// Mating score at `ply`.
     #[inline(always)]
-    pub const fn mating(ply: Ply) -> Self {
+    pub fn mating(ply: Ply) -> Self {
         Self::upper().relative_to_ply(ply)
     }
 
     /// Returns number of plies to mate, if one is in the horizon.
     #[inline(always)]
-    pub const fn mate(self) -> Mate {
+    pub fn mate(self) -> Mate {
         if self.is_loss() {
             Mate::Mated((self - Score::lower()).saturate())
         } else if self.is_win() {
@@ -86,7 +86,7 @@ impl Score {
 
     /// Normalizes mate scores from `ply` relative to the root node.
     #[inline(always)]
-    pub const fn relative_to_root(self, ply: Ply) -> Self {
+    pub fn relative_to_root(self, ply: Ply) -> Self {
         if self.is_winning() {
             self + ply
         } else if self.is_losing() {
@@ -98,7 +98,7 @@ impl Score {
 
     /// Normalizes mate scores from the root node relative to `ply`.
     #[inline(always)]
-    pub const fn relative_to_ply(self, ply: Ply) -> Self {
+    pub fn relative_to_ply(self, ply: Ply) -> Self {
         if self.is_winning() {
             self - ply
         } else if self.is_losing() {
@@ -110,37 +110,37 @@ impl Score {
 
     /// Returns true if the score represents a winning position.
     #[inline(always)]
-    pub const fn is_winning(self) -> bool {
+    pub fn is_winning(self) -> bool {
         self > Value::MAX
     }
 
     /// Returns true if the score represents a losing position.
     #[inline(always)]
-    pub const fn is_losing(self) -> bool {
+    pub fn is_losing(self) -> bool {
         self < Value::MIN
     }
 
     /// Returns true if the score represents a winning or losing position.
     #[inline(always)]
-    pub const fn is_decisive(self) -> bool {
+    pub fn is_decisive(self) -> bool {
         self.is_winning() || self.is_losing()
     }
 
     /// Returns true if the score represents a won position.
     #[inline(always)]
-    pub const fn is_win(self) -> bool {
+    pub fn is_win(self) -> bool {
         self > Self::winning(zero())
     }
 
     /// Returns true if the score represents a lost position.
     #[inline(always)]
-    pub const fn is_loss(self) -> bool {
+    pub fn is_loss(self) -> bool {
         self < Self::losing(zero())
     }
 
     /// Returns true if the score represents a won or lost position.
     #[inline(always)]
-    pub const fn is_decided(self) -> bool {
+    pub fn is_decided(self) -> bool {
         self.is_win() || self.is_loss()
     }
 }

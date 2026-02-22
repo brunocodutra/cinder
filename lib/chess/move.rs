@@ -10,10 +10,10 @@ use std::num::NonZeroU16;
 #[cfg_attr(test, filter(#self.is_promotion() || #self.encode().slice(..2) == zero()))]
 pub struct Move(NonZeroU16);
 
-impl Move {
+const impl Move {
     /// Constructs a regular move.
     #[inline(always)]
-    pub const fn regular(whence: Square, whither: Square, promotion: Option<Role>) -> Self {
+    pub fn regular(whence: Square, whither: Square, promotion: Option<Role>) -> Self {
         let mut bits = Bits::<u16, 16>::default();
         bits.push(whence.encode());
         bits.push(whither.encode());
@@ -31,7 +31,7 @@ impl Move {
 
     /// Constructs a capture move.
     #[inline(always)]
-    pub const fn capture(whence: Square, whither: Square, promotion: Option<Role>) -> Self {
+    pub fn capture(whence: Square, whither: Square, promotion: Option<Role>) -> Self {
         let mut m = Self::regular(whence, whither, promotion);
         m.0 |= 0b1000;
         m
@@ -39,19 +39,19 @@ impl Move {
 
     /// The source [`Square`].
     #[inline(always)]
-    pub const fn whence(self) -> Square {
+    pub fn whence(self) -> Square {
         Square::decode(self.encode().slice(10..).pop())
     }
 
     /// The destination [`Square`].
     #[inline(always)]
-    pub const fn whither(self) -> Square {
+    pub fn whither(self) -> Square {
         Square::decode(self.encode().slice(4..).pop())
     }
 
     /// The promotion specifier.
     #[inline(always)]
-    pub const fn promotion(self) -> Option<Role> {
+    pub fn promotion(self) -> Option<Role> {
         if self.is_promotion() {
             Some(Role::new(self.encode().slice(..2).cast::<u8>() + 1))
         } else {
@@ -61,25 +61,25 @@ impl Move {
 
     /// Whether this is a capture move.
     #[inline(always)]
-    pub const fn is_capture(self) -> bool {
+    pub fn is_capture(self) -> bool {
         self.encode().slice(3..=3) != zero()
     }
 
     /// Whether this is a promotion move.
     #[inline(always)]
-    pub const fn is_promotion(self) -> bool {
+    pub fn is_promotion(self) -> bool {
         self.encode().slice(2..=2) != zero()
     }
 
     /// Whether this move is neither a capture nor a promotion.
     #[inline(always)]
-    pub const fn is_quiet(self) -> bool {
+    pub fn is_quiet(self) -> bool {
         self.encode().slice(2..=3) == zero()
     }
 
     /// Whether this move is not quiet.
     #[inline(always)]
-    pub const fn is_noisy(self) -> bool {
+    pub fn is_noisy(self) -> bool {
         !self.is_quiet()
     }
 }
@@ -134,10 +134,10 @@ pub struct MoveSet {
     whither: Bitboard,
 }
 
-impl MoveSet {
+const impl MoveSet {
     /// A pack of regular moves.
     #[inline(always)]
-    pub const fn regular(piece: Piece, whence: Square, whither: Bitboard) -> Self {
+    pub fn regular(piece: Piece, whence: Square, whither: Bitboard) -> Self {
         use {Rank::*, Role::*};
         let base = if piece.role() == Pawn && whence.rank().perspective(piece.color()) == Seventh {
             Move::regular(whence, whence.flip(), Some(Knight))
@@ -150,7 +150,7 @@ impl MoveSet {
 
     /// A pack of capture moves.
     #[inline(always)]
-    pub const fn capture(piece: Piece, whence: Square, whither: Bitboard) -> Self {
+    pub fn capture(piece: Piece, whence: Square, whither: Bitboard) -> Self {
         let mut moves = Self::regular(piece, whence, whither);
         moves.base.0 |= 0b1000;
         moves
@@ -158,48 +158,48 @@ impl MoveSet {
 
     /// The source [`Square`].
     #[inline(always)]
-    pub const fn whence(self) -> Square {
+    pub fn whence(self) -> Square {
         self.base.whence()
     }
 
     /// The destination [`Square`]s.
     #[inline(always)]
-    pub const fn whither(self) -> Bitboard {
+    pub fn whither(self) -> Bitboard {
         self.whither
     }
 
     /// Whether the moves in this set are captures.
     #[inline(always)]
-    pub const fn is_capture(self) -> bool {
+    pub fn is_capture(self) -> bool {
         self.base.is_capture()
     }
 
     /// Whether the moves in this set are promotions.
     #[inline(always)]
-    pub const fn is_promotion(self) -> bool {
+    pub fn is_promotion(self) -> bool {
         self.base.is_promotion()
     }
 
     /// Whether the moves in this set are neither captures nor promotions.
     #[inline(always)]
-    pub const fn is_quiet(self) -> bool {
+    pub fn is_quiet(self) -> bool {
         self.base.is_quiet()
     }
 
     /// Whether the moves in this set are not quiet.
     #[inline(always)]
-    pub const fn is_noisy(self) -> bool {
+    pub fn is_noisy(self) -> bool {
         self.base.is_noisy()
     }
 
     /// An iterator over the [`Move`]s in this bitboard.
     #[inline(always)]
-    pub const fn iter(self) -> MoveSetIter {
+    pub fn iter(self) -> MoveSetIter {
         MoveSetIter::new(self)
     }
 }
 
-impl IntoIterator for MoveSet {
+impl const IntoIterator for MoveSet {
     type Item = Move;
     type IntoIter = MoveSetIter;
 
@@ -216,21 +216,33 @@ pub struct MoveSetIter {
     whither: Squares,
 }
 
-impl MoveSetIter {
+const impl MoveSetIter {
     #[inline(always)]
-    const fn new(set: MoveSet) -> Self {
+    pub fn new(set: MoveSet) -> Self {
         MoveSetIter {
             base: set.base,
             whither: set.whither.iter(),
         }
     }
+
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        match self.base.promotion() {
+            None => self.whither.len(),
+            Some(r) => 4 * self.whither.len() + (r.get() - Role::Knight.get()) as usize,
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
-impl Iterator for MoveSetIter {
+impl const Iterator for MoveSetIter {
     type Item = Move;
 
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn next(&mut self) -> Option<Self::Item> {
         if self.base.is_promotion() {
             let mask = 0b1111111111111100;
@@ -248,19 +260,16 @@ impl Iterator for MoveSetIter {
     }
 
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len(), Some(self.len()))
+        let len = self.len();
+        (len, Some(len))
     }
 }
 
 impl ExactSizeIterator for MoveSetIter {
     #[inline(always)]
     fn len(&self) -> usize {
-        match self.base.promotion() {
-            None => self.whither.len(),
-            Some(r) => 4 * self.whither.len() + (r.get() - Role::Knight.get()) as usize,
-        }
+        self.len()
     }
 }
 

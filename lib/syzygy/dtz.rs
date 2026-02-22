@@ -33,10 +33,10 @@ unsafe impl const Int for DtzRepr {}
 /// | `1 <= n <= 100`   | Win          | Unconditional win (assuming the 50-move counter is zero). Zeroing move can be forced in `n` plies. |
 pub type Dtz = Bounded<DtzRepr>;
 
-impl Dtz {
+const impl Dtz {
     /// Increases the absolute non-zero value by `plies`.
     #[inline(always)]
-    pub const fn stretch(self, plies: u16) -> Dtz {
+    pub fn stretch(self, plies: u16) -> Dtz {
         self + self.get().signum() as i32 * plies as i32
     }
 }
@@ -63,7 +63,7 @@ impl const From<Wdl> for Dtz {
     }
 }
 
-impl Neg for DtzRepr {
+impl const Neg for DtzRepr {
     type Output = Self;
 
     #[inline(always)]

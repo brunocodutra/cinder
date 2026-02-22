@@ -13,34 +13,34 @@ pub struct Info {
     pv: Pv,
 }
 
-impl Info {
+const impl Info {
     /// The depth searched.
     #[inline(always)]
-    pub const fn depth(&self) -> Depth {
+    pub fn depth(&self) -> Depth {
         self.depth
     }
 
     /// The duration searched.
     #[inline(always)]
-    pub const fn time(&self) -> Duration {
+    pub fn time(&self) -> Duration {
         self.time
     }
 
     /// The number of nodes searched.
     #[inline(always)]
-    pub const fn nodes(&self) -> u64 {
+    pub fn nodes(&self) -> u64 {
         self.nodes
     }
 
     /// The search score.
     #[inline(always)]
-    pub const fn score(&self) -> Score {
+    pub fn score(&self) -> Score {
         self.pv.score()
     }
 
     /// The principal variation.
     #[inline(always)]
-    pub const fn pv(&self) -> &Pv {
+    pub fn pv(&self) -> &Pv {
         &self.pv
     }
 }

@@ -4,8 +4,8 @@ use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::hash::{Hash, Hasher};
-use std::io::Write as _;
 use std::str::{self, FromStr};
+use std::{io::Write as _, slice::Iter};
 
 #[cfg(test)]
 use proptest::strategy::LazyJust;
@@ -21,9 +21,9 @@ pub struct Zobrists {
     pub black: Zobrist,
 }
 
-impl Zobrists {
+const impl Zobrists {
     #[inline(always)]
-    pub const fn toggle(&mut self, p: Piece, sq: Square) {
+    pub fn toggle(&mut self, p: Piece, sq: Square) {
         self.hash ^= ZobristNumbers::psq(p, sq);
 
         if p.role() == Role::Pawn {
@@ -122,64 +122,70 @@ impl const Default for Board {
     }
 }
 
-impl Board {
+const impl Board {
+    /// Game [`Phase`].
+    #[inline(always)]
+    pub fn phase(&self) -> Phase {
+        Phase::new((self.occupied().len() - 1) as u8 / 4)
+    }
+
     /// The [`Color`] bitboards.
     #[inline(always)]
-    pub const fn colors(&self) -> [Bitboard; 2] {
+    pub fn colors(&self) -> [Bitboard; 2] {
         self.colors
     }
 
     /// The [`Role`] bitboards.
     #[inline(always)]
-    pub const fn roles(&self) -> [Bitboard; 6] {
+    pub fn roles(&self) -> [Bitboard; 6] {
         self.roles
     }
 
     /// The [`Piece`]s table.
     #[inline(always)]
-    pub const fn pieces(&self) -> &Aligned<[Option<Piece>; Square::MAX as usize + 1]> {
+    pub fn pieces(&self) -> &Aligned<[Option<Piece>; Square::MAX as usize + 1]> {
         &self.pieces
     }
 
     /// [`Square`]s occupied.
     #[inline(always)]
-    pub const fn occupied(&self) -> Bitboard {
+    pub fn occupied(&self) -> Bitboard {
         self.colors[Color::White as usize] ^ self.colors[Color::Black as usize]
     }
 
     /// [`Square`]s occupied by [`Piece`]s of a [`Color`].
     #[inline(always)]
-    pub const fn by_color(&self, c: Color) -> Bitboard {
+    pub fn by_color(&self, c: Color) -> Bitboard {
         self.colors[c as usize]
     }
 
     /// [`Square`]s occupied by [`Piece`]s of a [`Role`].
     #[inline(always)]
-    pub const fn by_role(&self, r: Role) -> Bitboard {
+    pub fn by_role(&self, r: Role) -> Bitboard {
         self.roles[r as usize]
     }
 
     /// [`Square`]s occupied by a [`Piece`].
     #[inline(always)]
-    pub const fn by_piece(&self, p: Piece) -> Bitboard {
+    pub fn by_piece(&self, p: Piece) -> Bitboard {
         self.by_color(p.color()) & self.by_role(p.role())
     }
 
     /// The [`Color`] of the piece on the given [`Square`], if any.
     #[inline(always)]
-    pub const fn color_on(&self, sq: Square) -> Option<Color> {
+    pub fn color_on(&self, sq: Square) -> Option<Color> {
         self.piece_on(sq).map(Piece::color)
     }
 
     /// The [`Role`] of the piece on the given [`Square`], if any.
     #[inline(always)]
-    pub const fn role_on(&self, sq: Square) -> Option<Role> {
+    pub fn role_on(&self, sq: Square) -> Option<Role> {
         self.piece_on(sq).map(Piece::role)
     }
 
     /// The [`Piece`] on the given [`Square`], if any.
     #[inline(always)]
-    pub const fn piece_on(&self, sq: Square) -> Option<Piece> {
+    pub fn piece_on(&self, sq: Square) -> Option<Piece> {
         self.pieces[sq as usize]
     }
 
@@ -190,16 +196,13 @@ impl Board {
         self.by_piece(piece).into_iter().next()
     }
 
-    /// An iterator over all pieces on the board.
-    #[inline(always)]
-    pub fn iter(&self) -> impl Iterator<Item = (Piece, Square)> + '_ {
-        Piece::iter().flat_map(|p| self.by_piece(p).into_iter().map(move |sq| (p, sq)))
-    }
-
     /// Squares occupied by pinned [`Piece`]s of a [`Color`].
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn pinned(&self, c: Color, mask: Bitboard) -> Bitboard {
+    pub fn pinned(&self, c: Color, mask: Bitboard) -> Bitboard
+    where
+        for<'a> &'a [Role; 2]: [const] IntoIterator<IntoIter = Iter<'a, Role>>,
+        for<'a> Iter<'a, Role>: [const] Iterator<Item = &'a Role>,
+    {
         let ours = mask & self.by_color(c);
         let theirs = mask & self.by_color(!c);
         let occ = ours ^ theirs;
@@ -208,7 +211,7 @@ impl Board {
         let queens = self.by_role(Role::Queen);
 
         let mut pinned = Bitboard::empty();
-        for role in [Role::Bishop, Role::Rook] {
+        for &role in &[Role::Bishop, Role::Rook] {
             let slider = Piece::new(role, c);
             for wc in theirs & slider.attacks(king, theirs) & (queens | self.by_role(role)) {
                 let blockers = occ & Bitboard::segment(king, wc);
@@ -223,8 +226,11 @@ impl Board {
 
     /// Squares occupied by [`Piece`]s checking the king of a [`Color`].
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn checkers(&self, c: Color) -> Bitboard {
+    pub fn checkers(&self, c: Color) -> Bitboard
+    where
+        for<'a> &'a [Role; 2]: [const] IntoIterator<IntoIter = Iter<'a, Role>>,
+        for<'a> Iter<'a, Role>: [const] Iterator<Item = &'a Role>,
+    {
         let ours = self.by_color(c);
         let theirs = self.by_color(!c);
         let occ = ours ^ theirs;
@@ -233,12 +239,12 @@ impl Board {
         let queens = self.by_role(Role::Queen);
 
         let mut checkers = Bitboard::empty();
-        for role in [Role::Pawn, Role::Knight] {
+        for &role in &[Role::Pawn, Role::Knight] {
             let stepper = Piece::new(role, c);
             checkers |= theirs & self.by_role(role) & stepper.attacks(king, occ);
         }
 
-        for role in [Role::Bishop, Role::Rook] {
+        for &role in &[Role::Bishop, Role::Rook] {
             let slider = Piece::new(role, c);
             for wc in theirs & slider.attacks(king, theirs) & (queens | self.by_role(role)) {
                 let blockers = occ & Bitboard::segment(king, wc);
@@ -253,8 +259,11 @@ impl Board {
 
     /// Squares occupied by [`Square`]s threatened by [`Piece`]s of a [`Color`].
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn threats(&self, c: Color) -> Bitboard {
+    pub fn threats(&self, c: Color) -> Bitboard
+    where
+        for<'a> &'a [Role; 2]: [const] IntoIterator<IntoIter = Iter<'a, Role>>,
+        for<'a> Iter<'a, Role>: [const] Iterator<Item = &'a Role>,
+    {
         let ours = self.by_color(!c);
         let theirs = self.by_color(c);
         let occ = ours ^ theirs;
@@ -270,13 +279,13 @@ impl Board {
         };
 
         let blockers = occ.without(king);
-        for role in [Role::Knight, Role::King] {
+        for &role in &[Role::Knight, Role::King] {
             for wc in theirs & self.by_role(role) {
                 threats |= Piece::new(role, c).attacks(wc, blockers);
             }
         }
 
-        for role in [Role::Bishop, Role::Rook] {
+        for &role in &[Role::Bishop, Role::Rook] {
             for wc in theirs & (self.by_role(role) | self.by_role(Role::Queen)) {
                 threats |= Piece::new(role, c).attacks(wc, blockers);
             }
@@ -301,8 +310,10 @@ impl Board {
             zobrists.hash ^= ZobristNumbers::en_passant(ep.file());
         }
 
-        for (p, sq) in self.iter() {
-            zobrists.toggle(p, sq);
+        for p in Piece::iter() {
+            for sq in self.by_piece(p) {
+                zobrists.toggle(p, sq);
+            }
         }
 
         zobrists
@@ -311,7 +322,6 @@ impl Board {
     /// Toggles a piece on a square.
     #[inline(always)]
     pub fn toggle(&mut self, p: Piece, sq: Square) {
-        debug_assert!(self.piece_on(sq).is_none_or(|q| p == q));
         self.pieces[sq as usize] = self.pieces[sq as usize].xor(Some(p));
 
         let bit = sq.bitboard();
@@ -510,14 +520,6 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn iter_returns_pieces_and_squares(b: Board) {
-        for (p, sq) in b.iter() {
-            assert_eq!(b.piece_on(sq), Some(p));
-        }
-    }
-
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
     fn by_color_returns_squares_occupied_by_pieces_of_a_color(b: Board, c: Color) {
         for sq in b.by_color(c) {
             assert_eq!(b.piece_on(sq).map(Piece::color), Some(c));
@@ -577,17 +579,6 @@ mod tests {
     ) {
         b.toggle(p, sq);
         assert_eq!(b.piece_on(sq), Some(p));
-    }
-
-    #[proptest]
-    #[should_panic]
-    #[cfg_attr(miri, ignore)]
-    fn toggle_panics_if_square_occupied_by_other_piece(
-        mut b: Board,
-        #[filter(#b.piece_on(#sq).is_some())] sq: Square,
-        #[filter(Some(#p) != #b.piece_on(#sq))] p: Piece,
-    ) {
-        b.toggle(p, sq);
     }
 
     #[proptest]

@@ -25,9 +25,9 @@ pub enum Piece {
     BlackKing,
 }
 
-impl Piece {
+const impl Piece {
     #[inline(always)]
-    const fn forks(wc: Square, color: Color) -> Bitboard {
+    fn forks(wc: Square, color: Color) -> Bitboard {
         pub static FORKS: SyncUnsafeCell<[[Bitboard; 64]; 2]> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
@@ -50,7 +50,7 @@ impl Piece {
     }
 
     #[inline(always)]
-    const fn jumps(wc: Square) -> Bitboard {
+    fn jumps(wc: Square) -> Bitboard {
         pub static JUMPS: SyncUnsafeCell<[Bitboard; 64]> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
@@ -72,7 +72,7 @@ impl Piece {
     }
 
     #[inline(always)]
-    const fn steps(wc: Square) -> Bitboard {
+    fn steps(wc: Square) -> Bitboard {
         pub static SLIDES: SyncUnsafeCell<[Bitboard; 64]> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
@@ -94,7 +94,7 @@ impl Piece {
     }
 
     #[inline(always)]
-    const fn slides(idx: usize) -> Bitboard {
+    fn slides(idx: usize) -> Bitboard {
         pub static BITBOARDS: SyncUnsafeCell<[Bitboard; 88772]> = SyncUnsafeCell::new(zeroed());
 
         #[cold]
@@ -132,25 +132,25 @@ impl Piece {
 
     /// Constructs [`Piece`] from a pair of [`Color`] and [`Role`].
     #[inline(always)]
-    pub const fn new(r: Role, c: Color) -> Self {
+    pub fn new(r: Role, c: Color) -> Self {
         Num::new(c.get() | (r.get() << 1))
     }
 
     /// This piece's [`Role`].
     #[inline(always)]
-    pub const fn role(self) -> Role {
+    pub fn role(self) -> Role {
         Num::new(self.get() >> 1)
     }
 
     /// This piece's [`Color`].
     #[inline(always)]
-    pub const fn color(self) -> Color {
+    pub fn color(self) -> Color {
         Num::new(self.get() & 0b1)
     }
 
     /// This piece's possible attacks from a given square.
     #[inline(always)]
-    pub const fn attacks(self, wc: Square, occupied: Bitboard) -> Bitboard {
+    pub fn attacks(self, wc: Square, occupied: Bitboard) -> Bitboard {
         match self.role() {
             Role::Pawn => Self::forks(wc, self.color()),
             Role::Knight => Self::jumps(wc),
@@ -184,7 +184,7 @@ impl Piece {
 
     /// This piece's possible moves from a given square.
     #[inline(always)]
-    pub const fn moves(self, wc: Square, ours: Bitboard, theirs: Bitboard) -> Bitboard {
+    pub fn moves(self, wc: Square, ours: Bitboard, theirs: Bitboard) -> Bitboard {
         let occ = ours ^ theirs;
         if self.role() != Role::Pawn {
             self.attacks(wc, occ) & !ours
@@ -239,7 +239,7 @@ impl Display for Piece {
 #[display("failed to parse piece")]
 pub struct ParsePieceError;
 
-impl FromStr for Piece {
+impl const FromStr for Piece {
     type Err = ParsePieceError;
 
     #[inline(always)]

@@ -11,34 +11,34 @@ use std::ops::*;
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Bitboard(pub u64);
 
-impl Bitboard {
+const impl Bitboard {
     /// An empty board.
     #[inline(always)]
-    pub const fn empty() -> Self {
+    pub fn empty() -> Self {
         Bitboard::new(0)
     }
 
     /// A full board.
     #[inline(always)]
-    pub const fn full() -> Self {
+    pub fn full() -> Self {
         Bitboard::new(0xFFFFFFFFFFFFFFFF)
     }
 
     /// Border squares.
     #[inline(always)]
-    pub const fn border() -> Self {
+    pub fn border() -> Self {
         Bitboard::new(0xFF818181818181FF)
     }
 
     /// Light squares.
     #[inline(always)]
-    pub const fn light() -> Self {
+    pub fn light() -> Self {
         Bitboard::new(0x55AA55AA55AA55AA)
     }
 
     /// Dark squares.
     #[inline(always)]
-    pub const fn dark() -> Self {
+    pub fn dark() -> Self {
         Bitboard::new(0xAA55AA55AA55AA55)
     }
 
@@ -56,7 +56,7 @@ impl Bitboard {
     /// );
     /// ```
     #[inline(always)]
-    pub const fn fill(sq: Square, steps: &[(i8, i8)], occupied: Bitboard) -> Self {
+    pub fn fill(sq: Square, steps: &[(i8, i8)], occupied: Bitboard) -> Self {
         let mut bitboard = sq.bitboard();
 
         let mut i = steps.len();
@@ -90,20 +90,12 @@ impl Bitboard {
     /// );
     /// ```
     #[inline(always)]
-    pub const fn line(whence: Square, whither: Square) -> Self {
+    pub fn line(whence: Square, whither: Square) -> Self {
         static LINES: Butterfly<Bitboard> = const {
             let mut lines: Butterfly<Bitboard> = zeroed();
 
-            let mut i = Square::MIN;
-            while i <= Square::MAX {
-                let wc: Square = Num::new(i);
-                i += 1;
-
-                let mut j = Square::MIN;
-                while j <= Square::MAX {
-                    let wt: Square = Num::new(j);
-                    j += 1;
-
+            for wc in Square::iter() {
+                for wt in Square::iter() {
                     let df = wt.file() - wc.file();
                     let dr = wt.rank() - wc.rank();
                     if df == 0 && dr == 0 {
@@ -137,20 +129,12 @@ impl Bitboard {
     /// );
     /// ```
     #[inline(always)]
-    pub const fn segment(whence: Square, whither: Square) -> Self {
+    pub fn segment(whence: Square, whither: Square) -> Self {
         static SEGMENTS: Butterfly<Bitboard> = const {
             let mut segments: Butterfly<Bitboard> = zeroed();
 
-            let mut i = Square::MIN;
-            while i <= Square::MAX {
-                let wc: Square = Num::new(i);
-                i += 1;
-
-                let mut j = Square::MIN;
-                while j <= Square::MAX {
-                    let wt: Square = Num::new(j);
-                    j += 1;
-
+            for wc in Square::iter() {
+                for wt in Square::iter() {
                     let df = wt.file() - wc.file();
                     let dr = wt.rank() - wc.rank();
                     if df == 0 || dr == 0 || df.abs() == dr.abs() {
@@ -169,61 +153,61 @@ impl Bitboard {
 
     /// The number of [`Square`]s in the set.
     #[inline(always)]
-    pub const fn len(self) -> usize {
+    pub fn len(self) -> usize {
         self.0.count_ones() as usize
     }
 
     /// Whether the board is empty.
     #[inline(always)]
-    pub const fn is_empty(self) -> bool {
+    pub fn is_empty(self) -> bool {
         self.len() == 0
     }
 
     /// Whether this [`Square`] is in the set.
     #[inline(always)]
-    pub const fn contains(self, sq: Square) -> bool {
+    pub fn contains(self, sq: Square) -> bool {
         !sq.bitboard().intersection(self).is_empty()
     }
 
     /// Adds a [`Square`] to this bitboard.
     #[inline(always)]
-    pub const fn with(self, sq: Square) -> Self {
+    pub fn with(self, sq: Square) -> Self {
         sq.bitboard().union(self)
     }
 
     /// Removes a [`Square`]s from this bitboard.
     #[inline(always)]
-    pub const fn without(self, sq: Square) -> Self {
+    pub fn without(self, sq: Square) -> Self {
         sq.bitboard().inverse().intersection(self)
     }
 
     /// The set of [`Square`]s not in this bitboard.
     #[inline(always)]
-    pub const fn inverse(self) -> Self {
+    pub fn inverse(self) -> Self {
         Bitboard(!self.0)
     }
 
     /// The set of [`Square`]s in both bitboards.
     #[inline(always)]
-    pub const fn intersection(self, bb: Bitboard) -> Self {
+    pub fn intersection(self, bb: Bitboard) -> Self {
         Bitboard(self.0 & bb.0)
     }
 
     /// The set of [`Square`]s in either bitboard.
     #[inline(always)]
-    pub const fn union(self, bb: Bitboard) -> Self {
+    pub fn union(self, bb: Bitboard) -> Self {
         Bitboard(self.0 | bb.0)
     }
 
     /// An iterator over the [`Square`]s in this bitboard.
     #[inline(always)]
-    pub const fn iter(self) -> Squares {
+    pub fn iter(self) -> Squares {
         Squares::new(self)
     }
 
     /// An iterator over the subsets of this bitboard.
     #[inline(always)]
-    pub const fn subsets(self) -> Subsets {
+    pub fn subsets(self) -> Subsets {
         Subsets::new(self)
     }
 }
@@ -371,7 +355,7 @@ impl const From<Square> for Bitboard {
     }
 }
 
-impl IntoIterator for Bitboard {
+impl const IntoIterator for Bitboard {
     type Item = Square;
     type IntoIter = Squares;
 
@@ -385,11 +369,22 @@ impl IntoIterator for Bitboard {
 #[derive(Debug, Constructor)]
 pub struct Squares(Bitboard);
 
-impl Iterator for Squares {
+const impl Squares {
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl const Iterator for Squares {
     type Item = Square;
 
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn next(&mut self) -> Option<Self::Item> {
         if self.0.is_empty() {
             None
@@ -401,16 +396,16 @@ impl Iterator for Squares {
     }
 
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len(), Some(self.len()))
+        let len = self.len();
+        (len, Some(len))
     }
 }
 
 impl ExactSizeIterator for Squares {
     #[inline(always)]
     fn len(&self) -> usize {
-        self.0.len()
+        self.len()
     }
 }
 
@@ -418,18 +413,17 @@ impl ExactSizeIterator for Squares {
 #[derive(Debug)]
 pub struct Subsets(u64, Option<u64>);
 
-impl Subsets {
+const impl Subsets {
     #[inline(always)]
-    pub const fn new(bb: Bitboard) -> Self {
+    pub fn new(bb: Bitboard) -> Self {
         Self(bb.0, Some(0))
     }
 }
 
-impl Iterator for Subsets {
+impl const Iterator for Subsets {
     type Item = Bitboard;
 
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn next(&mut self) -> Option<Self::Item> {
         let bits = self.1?;
         self.1 = match bits.wrapping_sub(self.0) & self.0 {

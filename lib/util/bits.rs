@@ -28,7 +28,7 @@ unsafe impl<T: [const] Unsigned + 'static, const W: u32> const Num for Bits<T, W
 
 unsafe impl<T: [const] Unsigned + 'static, const W: u32> const Int for Bits<T, W> {}
 
-impl<T: Unsigned, const W: u32> Bits<T, W> {
+const impl<T: [const] Unsigned, const W: u32> Bits<T, W> {
     #[expect(dead_code)]
     const ASSERT: () = const { assert!(size_of::<T>() * 8 >= W as usize) };
 
@@ -37,19 +37,13 @@ impl<T: Unsigned, const W: u32> Bits<T, W> {
 
     /// Whether this is a superset of `bits`.
     #[inline(always)]
-    pub const fn contains(self, bits: &Self) -> bool
-    where
-        T: [const] Unsigned,
-    {
+    pub fn contains(self, bits: &Self) -> bool {
         self.get() & bits.get() == bits.get()
     }
 
     /// Returns a slice of bits.
     #[inline(always)]
-    pub const fn slice<R: [const] Destruct + [const] RangeBounds<u32>>(self, r: R) -> Self
-    where
-        T: [const] Unsigned,
-    {
+    pub fn slice<R: [const] Destruct + [const] RangeBounds<u32>>(self, r: R) -> Self {
         let a = match r.start_bound() {
             Bound::Included(&i) => i,
             Bound::Excluded(&i) => i + 1,
@@ -67,19 +61,13 @@ impl<T: Unsigned, const W: u32> Bits<T, W> {
 
     /// Shifts bits into the collection.
     #[inline(always)]
-    pub const fn push<U: [const] Unsigned, const N: u32>(&mut self, bits: Bits<U, N>)
-    where
-        T: [const] Unsigned,
-    {
+    pub fn push<U: [const] Unsigned, const N: u32>(&mut self, bits: Bits<U, N>) {
         *self = Bits::new((self.get() << N.cast()) & ones(W) ^ bits.cast());
     }
 
     /// Shifts bits out of the collection.
     #[inline(always)]
-    pub const fn pop<U: [const] Unsigned, const N: u32>(&mut self) -> Bits<U, N>
-    where
-        T: [const] Unsigned,
-    {
+    pub fn pop<U: [const] Unsigned, const N: u32>(&mut self) -> Bits<U, N> {
         let bits = Bits::new(self.cast::<U>() & ones(N));
         *self = Bits::new(self.get() >> N.cast());
         bits

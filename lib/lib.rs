@@ -225,6 +225,7 @@
 )]
 #![feature(
     adt_const_params,
+    ascii_char,
     box_vec_non_null,
     const_clone,
     const_cmp,
@@ -233,11 +234,15 @@
     const_destruct,
     const_drop_in_place,
     const_index,
+    const_iter,
     const_ops,
     const_option_ops,
     const_range,
+    const_result_trait_fn,
     const_result_unwrap_unchecked,
+    const_slice_make_iter,
     const_trait_impl,
+    const_try,
     coverage_attribute,
     derive_const,
     gen_blocks,

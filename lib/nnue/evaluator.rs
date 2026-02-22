@@ -330,7 +330,7 @@ impl Evaluator {
         let mut to_sub = Squares::new(cache.occupied & diff);
         let mut to_add = Squares::new(pos.occupied() & diff);
 
-        while to_sub.len() > 0 || to_add.len() > 0 {
+        while !to_sub.is_empty() || !to_add.is_empty() {
             let sub = array::from_fn(|_| {
                 to_sub.next().map(|sq| {
                     let cache = &self.cache[side.cast::<usize>()][bucket];

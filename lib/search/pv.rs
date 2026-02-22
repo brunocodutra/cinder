@@ -13,46 +13,46 @@ pub struct Pv<const N: usize = { Depth::MAX as usize }> {
     moves: Line<N>,
 }
 
-impl<const N: usize> Pv<N> {
+const impl<const N: usize> Pv<N> {
     /// An empty principal variation.
     #[inline(always)]
-    pub const fn empty(score: Score) -> Self {
+    pub fn empty(score: Score) -> Self {
         Self::new(score, Line::empty())
     }
 
     /// The score from the point of view of the side to move.
     #[inline(always)]
-    pub const fn score(&self) -> Score {
+    pub fn score(&self) -> Score {
         self.score
     }
 
     /// The sequence of [`Move`]s in this principal variation.
     #[inline(always)]
-    pub const fn moves(&self) -> &Line<N> {
+    pub fn moves(&self) -> &Line<N> {
         &self.moves
     }
 
     /// The first [`Move`]s in this principal variation.
     #[inline(always)]
-    pub const fn head(&self) -> Option<Move> {
+    pub fn head(&self) -> Option<Move> {
         self.moves.head()
     }
 
     /// Constrains the score between `lower` and `upper`.
     #[inline(always)]
-    pub const fn clip(self, lower: Score, upper: Score) -> Pv<N> {
+    pub fn clip(self, lower: Score, upper: Score) -> Pv<N> {
         Pv::new(self.score.clip(lower, upper), self.moves)
     }
 
     /// Truncates to a principal variation of a different length.
     #[inline(always)]
-    pub const fn truncate<const M: usize>(self) -> Pv<M> {
+    pub fn truncate<const M: usize>(self) -> Pv<M> {
         Pv::new(self.score, self.moves.truncate())
     }
 
     /// Transposes to a principal variation to a move.
     #[inline(always)]
-    pub const fn transpose(self, head: Move) -> Pv<N> {
+    pub fn transpose(self, head: Move) -> Pv<N> {
         Pv::new(self.score, Line::cons(head, self.moves))
     }
 }

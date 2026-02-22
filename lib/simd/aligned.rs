@@ -11,11 +11,11 @@ use std::ops::{Deref, DerefMut};
 #[repr(align(64))]
 pub struct Aligned<T>(#[into_iterator(owned, ref, ref_mut)] pub T);
 
-impl<T> Aligned<T> {
+const impl<T> Aligned<T> {
     /// Transmutes `&self` to a `&U`.
     #[track_caller]
     #[inline(always)]
-    pub const fn cast<U>(&self) -> &U {
+    pub fn cast<U>(&self) -> &U {
         const { assert!(align_of::<Self>() >= align_of::<U>()) }
         const { assert!(size_of::<T>() == size_of::<U>()) }
         unsafe { transmute::<&T, &U>(&self.0) }
@@ -24,7 +24,7 @@ impl<T> Aligned<T> {
     /// Transmutes `&mut self` to `&mut U`.
     #[track_caller]
     #[inline(always)]
-    pub const fn cast_mut<U>(&mut self) -> &mut U {
+    pub fn cast_mut<U>(&mut self) -> &mut U {
         const { assert!(align_of::<Self>() >= align_of::<U>()) }
         const { assert!(size_of::<T>() == size_of::<U>()) }
         unsafe { transmute::<&mut T, &mut U>(&mut self.0) }

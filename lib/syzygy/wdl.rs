@@ -31,10 +31,10 @@ unsafe impl const Num for Wdl {
 
 unsafe impl const Int for Wdl {}
 
-impl Wdl {
+const impl Wdl {
     /// Convert to [`Score`].
     #[inline(always)]
-    pub const fn to_score(self, ply: Ply) -> Score {
+    pub fn to_score(self, ply: Ply) -> Score {
         match self {
             Wdl::Win => Score::winning(ply),
             Wdl::Loss => Score::losing(ply),

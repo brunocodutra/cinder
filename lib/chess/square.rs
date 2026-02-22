@@ -22,28 +22,28 @@ pub enum Square {
     A8, B8, C8, D8, E8, F8, G8, H8,
 }
 
-impl Square {
+const impl Square {
     /// Constructs [`Square`] from a pair of [`File`] and [`Rank`].
     #[inline(always)]
-    pub const fn new(f: File, r: Rank) -> Self {
+    pub fn new(f: File, r: Rank) -> Self {
         Num::new(f.get() | (r.get() << 3))
     }
 
     /// This square's [`File`].
     #[inline(always)]
-    pub const fn file(self) -> File {
+    pub fn file(self) -> File {
         File::new(self.get() & 0b111)
     }
 
     /// This square's [`Rank`].
     #[inline(always)]
-    pub const fn rank(self) -> Rank {
+    pub fn rank(self) -> Rank {
         Rank::new(self.get() >> 3)
     }
 
     /// Returns a [`Bitboard`] that only contains this square.
     #[inline(always)]
-    pub const fn bitboard(self) -> Bitboard {
+    pub fn bitboard(self) -> Bitboard {
         Bitboard::new(1 << self.get())
     }
 }
@@ -146,7 +146,7 @@ impl Display for Square {
 }
 
 /// The reason why parsing [`Square`] failed.
-#[derive(Debug, Display, Error, From)]
+#[derive(Debug, Display, Error)]
 #[derive_const(Clone, Eq, PartialEq)]
 pub enum ParseSquareError {
     #[display("failed to parse square")]
@@ -155,15 +155,32 @@ pub enum ParseSquareError {
     InvalidRank(ParseRankError),
 }
 
-impl FromStr for Square {
+impl const From<ParseFileError> for ParseSquareError {
+    #[inline(always)]
+    fn from(value: ParseFileError) -> Self {
+        ParseSquareError::InvalidFile(value)
+    }
+}
+
+impl const From<ParseRankError> for ParseSquareError {
+    #[inline(always)]
+    fn from(value: ParseRankError) -> Self {
+        ParseSquareError::InvalidRank(value)
+    }
+}
+
+impl const FromStr for Square {
     type Err = ParseSquareError;
 
     #[inline(always)]
+    #[expect(clippy::string_slice)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let i = s.ceil_char_boundary(1);
 
-        #[expect(clippy::string_slice)]
-        Ok(Square::new(s[..i].parse()?, s[i..].parse()?))
+        Ok(Square::new(
+            File::from_str(&s[..i])?,
+            Rank::from_str(&s[i..])?,
+        ))
     }
 }
 

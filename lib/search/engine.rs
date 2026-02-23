@@ -5,7 +5,7 @@ use bytemuck::{Zeroable, fill_zeroes, zeroed};
 use derive_more::with_trait::{Constructor, Debug, Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
-use std::ops::{Mul, Range};
+use std::ops::{Add, Mul, Range};
 use std::task::{Context, Poll};
 use std::{cell::SyncUnsafeCell, path::Path, pin::Pin, ptr::NonNull, slice};
 
@@ -375,26 +375,6 @@ impl<'a> Searcher<'a> {
         ])
     }
 
-    /// Computes the probcut margin.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn probcut(depth: f32) -> f32 {
-        convolve([
-            (depth, Params::probcut_margin_depth(..)),
-            (1.0, Params::probcut_margin_scalar(..)),
-        ])
-    }
-
-    /// Computes the singular extension margin.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn singular(depth: f32) -> f32 {
-        convolve([
-            (depth, Params::singular_margin_depth(..)),
-            (1.0, Params::singular_margin_scalar(..)),
-        ])
-    }
-
     /// Computes the late move pruning threshold.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -470,24 +450,24 @@ impl<'a> Searcher<'a> {
         &mut self,
         depth: f32,
         bounds: Range<Score>,
-        cut: bool,
+        is_cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
         const { assert!(IS_PV || N == 0) }
 
         if depth < 1.0 {
             Ok(self.quiesce::<IS_PV>(bounds)?.truncate())
         } else if self.stack.pos.ply() >= N as i32 {
-            Ok(self.pvs::<IS_PV, 0>(depth, bounds, cut)?.truncate())
+            Ok(self.pvs::<IS_PV, 0>(depth, bounds, is_cut)?.truncate())
         } else {
-            self.pvs::<IS_PV, N>(depth, bounds, cut)
+            self.pvs::<IS_PV, N>(depth, bounds, is_cut)
         }
     }
 
     /// The zero-window alpha-beta search.
     #[inline(always)]
-    fn nw(&mut self, depth: f32, beta: Score, cut: bool) -> Result<Pv<0>, Interrupted> {
+    fn nw(&mut self, depth: f32, beta: Score, is_cut: bool) -> Result<Pv<0>, Interrupted> {
         if depth >= 1.0 {
-            self.pvs::<false, 0>(depth, beta - 1..beta, cut)
+            self.pvs::<false, 0>(depth, beta - 1..beta, is_cut)
         } else {
             self.qnw(beta)
         }
@@ -543,7 +523,7 @@ impl<'a> Searcher<'a> {
 
         let improving = self.improving();
         let is_check = self.stack.pos.is_check();
-        let was_pv = IS_PV || transposition.is_some_and(|t| t.was_pv);
+        let was_pv = transposition.is_some_and(|t| t.was_pv);
         let mut moves = Moves::from_iter(self.stack.pos.moves().unpack_if(MoveSet::is_noisy));
 
         moves.sort(|m| {
@@ -610,7 +590,7 @@ impl<'a> Searcher<'a> {
 
         let tail = tail.clip(transposed.score(), Score::upper());
         let score = ScoreBound::new(bounds, tail.score(), ply);
-        let tpos = Transposition::new(score, zero(), Some(head), was_pv);
+        let tpos = Transposition::new(score, zero(), Some(head), IS_PV || was_pv);
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
         Ok(tail.transpose(head))
     }
@@ -621,7 +601,7 @@ impl<'a> Searcher<'a> {
         &mut self,
         mut depth: f32,
         bounds: Range<Score>,
-        cut: bool,
+        is_cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
         const { assert!(IS_PV || N == 0) }
 
@@ -663,7 +643,7 @@ impl<'a> Searcher<'a> {
                 let tt_depth = t.depth.cast::<f32>();
                 let (lower, upper) = t.score.range(ply).into_inner();
 
-                if cut && lower - Self::tt_fh(depth - tt_depth).cast::<i16>() >= beta {
+                if is_cut && lower - Self::tt_fh(depth - tt_depth).cast::<i16>() >= beta {
                     return Ok(transposed.truncate());
                 }
 
@@ -673,8 +653,8 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        let was_pv = transposition.is_some_and(|t| t.was_pv);
         let should_cut = transposition.is_some_and(|t| t.score.lower(ply) >= beta);
-        let was_pv = IS_PV || transposition.is_some_and(|t| t.was_pv);
         let is_noisy_node = transposition.is_some_and(|t| {
             t.best.is_some_and(Move::is_noisy) && !matches!(t.score, ScoreBound::Upper(_))
         });
@@ -686,8 +666,8 @@ impl<'a> Searcher<'a> {
                 let score = ScoreBound::new(bounds, wdl.to_score(ply), ply);
                 let (lower, upper) = score.range(ply).into_inner();
                 if lower >= upper || upper <= alpha || lower >= beta {
-                    let tt_depth = depth + Params::tb_depth_bonus(0);
-                    let tpos = Transposition::new(score, tt_depth.saturate(), None, was_pv);
+                    let depth = Params::tb_depth_bonus(0).add(depth).saturate();
+                    let tpos = Transposition::new(score, depth, None, IS_PV || was_pv);
                     self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
                     return Ok(tpos.transpose(ply).truncate());
                 }
@@ -773,7 +753,9 @@ impl<'a> Searcher<'a> {
             let delta = *Params::probcut_depth(1);
             let pc_depth = gamma.mul_add(depth, delta);
 
-            let mut margin = Self::probcut(depth);
+            let gamma = *Params::probcut_margin_depth(0);
+            let delta = *Params::probcut_margin_depth(1);
+            let mut margin = gamma.mul_add(depth, delta);
             margin = Params::probcut_margin_improving(0).mul_add(improving, margin);
             let pc_beta = beta + margin.cast::<i16>();
 
@@ -795,7 +777,8 @@ impl<'a> Searcher<'a> {
                     drop(next);
                     if pv >= pc_beta {
                         let score = ScoreBound::new(bounds, pv.score(), ply);
-                        let tpos = Transposition::new(score, pc_depth.saturate(), Some(m), was_pv);
+                        let depth = Params::probcut_depth_bonus(0).add(depth).saturate();
+                        let tpos = Transposition::new(score, depth, None, IS_PV || was_pv);
                         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
                         return Ok(pv.truncate().transpose(m));
                     }
@@ -808,32 +791,37 @@ impl<'a> Searcher<'a> {
         let mut tail = {
             let mut extension = 0f32;
             if let Some(t) = transposition {
+                let is_quiet = head.is_quiet();
                 let max_depth = t.depth.cast::<f32>() + *Params::singular_depth_bounds(1);
                 let depth_bounds = *Params::singular_depth_bounds(0)..max_depth;
                 if !matches!(t.score, ScoreBound::Upper(_)) && depth_bounds.contains(&depth) {
                     let gamma = *Params::singular_depth(0);
                     let delta = *Params::singular_depth(1);
                     let se_depth = gamma.mul_add(depth, delta);
-                    let se_beta = t.score.bound(ply) - Self::singular(depth).cast::<i16>();
-                    let is_quiet = head.is_quiet();
+
+                    let gamma = *Params::singular_margin_depth(0);
+                    let delta = *Params::singular_margin_depth(1);
+                    let margin = gamma.mul_add(depth, delta);
+                    let se_beta = t.score.bound(ply) - margin.cast::<i16>();
 
                     extension = convolve([
-                        (is_quiet.cast(), Params::singular_extension_is_quiet(..)),
-                        (should_cut.cast(), Params::singular_extension_should_cut(..)),
-                        (cut.cast(), Params::singular_extension_is_cut(..)),
                         (1.0, Params::singular_extension_scalar(..)),
+                        (should_cut.cast(), Params::singular_extension_should_cut(..)),
+                        (is_cut.cast(), Params::singular_extension_is_cut(..)),
+                        (is_quiet.cast(), Params::singular_extension_is_quiet(..)),
                     ]);
 
                     let mut se_score = Score::lower();
                     for m in moves.sorted().skip(1) {
-                        let pv = -self.next(Some(m)).nw(se_depth - 1.0, -se_beta + 1, !cut)?;
+                        let mut next = self.next(Some(m));
+                        let pv = -next.nw(se_depth - 1.0, -se_beta + 1, !is_cut)?;
                         if pv.score().min(se_beta) >= beta {
                             return Ok(pv.truncate().transpose(m));
                         } else if pv >= se_beta {
                             extension = convolve([
-                                (should_cut.cast(), Params::singular_reduction_should_cut(..)),
-                                (cut.cast(), Params::singular_reduction_is_cut(..)),
                                 (1.0, Params::singular_reduction_scalar(..)),
+                                (should_cut.cast(), Params::singular_reduction_should_cut(..)),
+                                (is_cut.cast(), Params::singular_reduction_is_cut(..)),
                             ]);
 
                             break;
@@ -871,6 +859,7 @@ impl<'a> Searcher<'a> {
             let history = self.local.history.get(pos, m);
             let counter = self.stack.reply(1).get(pos, m);
             let is_killer = killer.contains(m);
+            let is_quiet = m.is_quiet();
 
             if !is_check && !tail.is_losing() && depth < *Params::futility_depth_limit(0) {
                 let margin = pos.gain(m) + Self::futility(lmr_depth);
@@ -888,17 +877,19 @@ impl<'a> Searcher<'a> {
             }
 
             let mut next = self.next(Some(m));
-            let gives_check = next.stack.pos.is_check();
+            let gives_check = next.stack.pos.is_check().cast();
 
             lmr += convolve([
                 (1.0, Params::lmr_not_root(..)),
                 (IS_PV.cast(), Params::lmr_is_pv(..)),
                 (was_pv.cast(), Params::lmr_was_pv(..)),
-                (cut.cast(), Params::lmr_is_cut(..)),
-                (improving, Params::lmr_improving(..)),
+                (should_cut.cast(), Params::lmr_should_cut(..)),
+                (is_cut.cast(), Params::lmr_is_cut(..)),
+                (is_quiet.cast(), Params::lmr_is_quiet(..)),
                 (is_killer.cast(), Params::lmr_is_killer(..)),
                 (is_noisy_node.cast(), Params::lmr_is_noisy_node(..)),
-                (gives_check.cast(), Params::lmr_gives_check(..)),
+                (improving, Params::lmr_improving(..)),
+                (gives_check, Params::lmr_gives_check(..)),
                 (history, Params::lmr_history(..)),
                 (counter, Params::lmr_counter(..)),
             ]);
@@ -908,7 +899,7 @@ impl<'a> Searcher<'a> {
             let mut pv = -next.nw(next_depth - lmr, -alpha, true)?.truncate();
 
             if pv > alpha && lmr > *Params::lmr_threshold(0) {
-                pv = -next.nw(next_depth, -alpha, !cut)?.truncate();
+                pv = -next.nw(next_depth, -alpha, !is_cut)?.truncate();
             }
 
             if pv > alpha && pv < beta {
@@ -922,7 +913,7 @@ impl<'a> Searcher<'a> {
 
         let tail = tail.clip(lower, upper);
         let score = ScoreBound::new(bounds, tail.score(), ply);
-        let tpos = Transposition::new(score, depth.saturate(), Some(head), was_pv);
+        let tpos = Transposition::new(score, depth.saturate(), Some(head), IS_PV || was_pv);
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
 
         if matches!(score, ScoreBound::Lower(_)) {
@@ -1347,7 +1338,7 @@ mod tests {
         was_pv: bool,
         d: Depth,
         #[filter(!#s.is_losing() && #s < #b)] s: Score,
-        cut: bool,
+        is_cut: bool,
     ) {
         prop_assume!(pos.halfmoves() as f32 <= *Params::tt_hm_limit(0));
 
@@ -1359,7 +1350,7 @@ mod tests {
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
         searcher.stack.nodes = searcher.ctrl.attention(m);
-        assert_eq!(searcher.nw(d.cast(), b, cut), Ok(Pv::empty(s)));
+        assert_eq!(searcher.nw(d.cast(), b, is_cut), Ok(Pv::empty(s)));
     }
 
     #[proptest]
@@ -1419,7 +1410,7 @@ mod tests {
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         s: Score,
-        cut: bool,
+        is_cut: bool,
     ) {
         let global = GlobalControl::new(&pos, Limits::time(Duration::ZERO));
         let ctrl = LocalControl::active(&global);
@@ -1428,7 +1419,10 @@ mod tests {
         searcher.stack.nodes = searcher.ctrl.attention(m);
         thread::sleep(Duration::from_millis(1));
 
-        assert_eq!(searcher.ab::<true, 1>(d.cast(), b, cut), Err(Interrupted));
+        assert_eq!(
+            searcher.ab::<true, 1>(d.cast(), b, is_cut),
+            Err(Interrupted)
+        );
     }
 
     #[proptest]
@@ -1440,7 +1434,7 @@ mod tests {
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         s: Score,
-        cut: bool,
+        is_cut: bool,
     ) {
         let global = GlobalControl::new(&pos, Limits::none());
         let ctrl = LocalControl::active(&global);
@@ -1449,7 +1443,10 @@ mod tests {
         searcher.stack.nodes = searcher.ctrl.attention(m);
         global.abort();
 
-        assert_eq!(searcher.ab::<true, 1>(d.cast(), b, cut), Err(Interrupted));
+        assert_eq!(
+            searcher.ab::<true, 1>(d.cast(), b, is_cut),
+            Err(Interrupted)
+        );
     }
 
     #[proptest]
@@ -1461,7 +1458,7 @@ mod tests {
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         s: Score,
-        cut: bool,
+        is_cut: bool,
     ) {
         let global = GlobalControl::new(&pos, Limits::none());
         let ctrl = LocalControl::active(&global);
@@ -1470,7 +1467,7 @@ mod tests {
         searcher.stack.nodes = searcher.ctrl.attention(m);
 
         assert_eq!(
-            searcher.ab::<true, 1>(d.cast(), b, cut),
+            searcher.ab::<true, 1>(d.cast(), b, is_cut),
             Ok(Pv::empty(Score::drawn()))
         );
     }
@@ -1484,7 +1481,7 @@ mod tests {
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         s: Score,
-        cut: bool,
+        is_cut: bool,
     ) {
         let ply = pos.ply();
         let global = GlobalControl::new(&pos, Limits::none());
@@ -1494,7 +1491,7 @@ mod tests {
         searcher.stack.nodes = searcher.ctrl.attention(m);
 
         assert_eq!(
-            searcher.ab::<true, 1>(d.cast(), b, cut),
+            searcher.ab::<true, 1>(d.cast(), b, is_cut),
             Ok(Pv::empty(Score::mated(ply)))
         );
     }

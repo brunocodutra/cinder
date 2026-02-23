@@ -224,7 +224,7 @@ const impl Board {
         pinned
     }
 
-    /// Squares occupied by [`Piece`]s checking the king of a [`Color`].
+    /// Squares occupied by [`Piece`]s giving check to the king of a [`Color`].
     #[inline(always)]
     pub fn checkers(&self, c: Color) -> Bitboard
     where

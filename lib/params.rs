@@ -203,14 +203,11 @@ macro_rules! params {
 }
 
 params! {
-    moves_left_start: [160.94777],
-    moves_left_end: [0.483503],
-    moves_left_damping: [1.004061],
+    moves_left: [140.0, 1.0],
     soft_time_fraction: [0.7399792],
     hard_time_fraction: [0.86297363],
+    pv_focus: [-1.6761804, 1.8973947],
     score_trend_inertia: [0.120955214],
-    pv_focus_gamma: [-1.6761804],
-    pv_focus_delta: [1.8973947],
     score_trend_magnitude: [0.86272377],
     score_trend_pivot: [27.789158],
     improving: [0.0, 0.88212675, 0.91403663, 1.8949512],

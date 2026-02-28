@@ -2,7 +2,7 @@ use crate::chess::{Move, Position};
 use crate::params::Params;
 use crate::search::{Attention, Depth, Limits, Nodes, Ply, Pv};
 use crate::util::{Float, Num};
-use std::ops::{Deref, Range};
+use std::ops::{Add, Deref, Range};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -37,13 +37,11 @@ impl GlobalControl {
             None => return f32::INFINITY..limits.max_time().as_secs_f32(),
         };
 
-        let damping = *Params::moves_left_damping(0);
-        let start = *Params::moves_left_start(0);
-        let end = *Params::moves_left_end(0);
-
-        let moves = pos.fullmoves().get() as f32;
-        let moves_left = (moves + damping).powi(-1).lerp(end, start);
-        let time_per_move = moves_left.powi(-1).lerp(inc, clock);
+        let gamma = *Params::moves_left(0);
+        let delta = *Params::moves_left(1);
+        let moves = pos.fullmoves().cast::<f32>();
+        let moves_left = moves.recip().mul_add(gamma, delta);
+        let time_per_move = moves_left.recip().mul_add(clock, inc);
 
         let soft_time_fraction = *Params::soft_time_fraction(0);
         let hard_time_fraction = *Params::hard_time_fraction(0);
@@ -113,7 +111,7 @@ impl<'a> Active<'a> {
 
     #[inline(always)]
     pub fn check(&mut self, depth: Depth, ply: Ply, pv: &Pv) -> ControlFlow {
-        let score = pv.score().get() as f32;
+        let score = pv.cast::<f32>();
         let Some(head) = pv.head() else {
             return ControlFlow::Continue;
         };
@@ -134,15 +132,14 @@ impl<'a> Active<'a> {
             if time >= self.time.end {
                 return ControlFlow::Abort;
             } else if ply == 0 {
-                let gamma = *Params::pv_focus_gamma(0);
-                let delta = *Params::pv_focus_delta(0);
+                let gamma = *Params::pv_focus(0);
+                let delta = *Params::pv_focus(1);
                 let pivot = *Params::score_trend_pivot(0);
                 let magnitude = *Params::score_trend_magnitude(0);
 
-                let nodes = self.nodes.max(1000) as f32;
-                let diff = self.score_trend - pv.score().get() as f32;
-                let focus = self.attention.nodes(head).get() as f32 / nodes;
-                let scale = 1. + magnitude * diff / (diff.abs() + pivot);
+                let diff = self.score_trend - score;
+                let focus = self.attention.nodes(head).cast::<f32>() / self.nodes.max(1000) as f32;
+                let scale = diff.abs().add(pivot).recip().mul_add(magnitude * diff, 1.0);
                 if time >= self.time.start * scale * focus.mul_add(gamma, delta) {
                     return ControlFlow::Stop;
                 }

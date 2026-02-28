@@ -829,8 +829,10 @@ impl<'a> Searcher<'a> {
                             se_score = pv.score();
                             let gamma = *Params::singular_extension_limit(0);
                             let delta = *Params::singular_extension_limit(1);
+                            let epsilon = *Params::singular_extension_limit(2);
                             let diff = se_beta.cast::<f32>() - se_score.cast::<f32>();
-                            extension = extension.min(diff / diff.mul_add(gamma, delta));
+                            let limit = diff.mul_add(gamma, delta).recip().mul_add(diff, epsilon);
+                            extension = extension.min(limit);
                         }
                     }
                 }

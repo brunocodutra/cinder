@@ -189,8 +189,8 @@ macro_rules! impl_int_for_non_zero {
     ($nz: ty, $repr: ty) => {
         unsafe impl const Num for $nz {
             type Repr = $repr;
-            const MIN: Self::Repr = Self::MIN.get();
-            const MAX: Self::Repr = Self::MAX.get();
+            const MIN: Self::Repr = <$nz>::MIN.get();
+            const MAX: Self::Repr = <$nz>::MAX.get();
         }
 
         unsafe impl const Int for $nz {}
@@ -220,7 +220,7 @@ macro_rules! impl_num_for {
 
             #[inline(always)]
             fn cast<N: NumRepr>(self) -> N {
-                if size_of::<N>() == size_of::<Self>() {
+                if !N::IS_FLOAT && size_of::<N>() == size_of::<Self>() {
                     unsafe { transmute_copy(&self) }
                 } else if N::IS_FLOAT {
                     match size_of::<N>() {

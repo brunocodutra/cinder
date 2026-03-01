@@ -20,7 +20,7 @@ use bytemuck::zeroed;
 use cinder::chess::{Color, Flip, Phase, Piece, Role, Square};
 use cinder::{nnue::*, util::Num};
 use clap::{Args, Parser, Subcommand};
-use rand::{Rng, rng};
+use rand::{RngExt, rng};
 use std::ops::{Deref, Div, RangeInclusive};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{fs::create_dir_all, num::NonZero, thread::available_parallelism};

@@ -325,6 +325,6 @@ mod tests {
         let mem = HugePages::<u64>::uninit(n);
 
         assert!(mem.as_ref().len() >= n);
-        assert!(mem.as_ref().as_ptr().is_aligned_to(THP));
+        assert!(mem.as_ref().as_ptr().addr().is_multiple_of(THP));
     }
 }

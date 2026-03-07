@@ -2,7 +2,7 @@ use crate::chess::{Move, Position};
 use crate::params::Params;
 use crate::search::{Attention, Depth, Limits, Nodes, Ply, Pv};
 use crate::util::{Float, Num};
-use std::ops::{Add, Deref, Range};
+use std::ops::{Deref, Range};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -33,15 +33,15 @@ impl GlobalControl {
     #[inline(always)]
     fn time_to_search(pos: &Position, limits: &Limits) -> Range<f32> {
         let (clock, inc) = match limits.clock {
-            Some((clock, inc)) => (clock.as_secs_f32(), inc.as_secs_f32()),
+            Some((clock, inc)) => (clock.max(inc).as_secs_f32(), inc.as_secs_f32()),
             None => return f32::INFINITY..limits.max_time().as_secs_f32(),
         };
 
-        let gamma = *Params::moves_left(0);
-        let delta = *Params::moves_left(1);
+        let min = *Params::moves_left_limits(0);
+        let max = *Params::moves_left_limits(1);
         let moves = pos.fullmoves().cast::<f32>();
-        let moves_left = moves.recip().mul_add(gamma, delta);
-        let time_per_move = moves_left.recip().mul_add(clock, inc);
+        let moves_left = moves.powf(*Params::moves_left(0)) * Params::moves_left(1);
+        let time_per_move = moves_left.clamp(min, max).recip().lerp(inc, clock);
 
         let soft_time_fraction = *Params::soft_time_fraction(0);
         let hard_time_fraction = *Params::hard_time_fraction(0);
@@ -132,15 +132,17 @@ impl<'a> Active<'a> {
             if time >= self.time.end {
                 return ControlFlow::Abort;
             } else if ply == 0 {
-                let gamma = *Params::pv_focus(0);
-                let delta = *Params::pv_focus(1);
-                let pivot = *Params::score_trend_pivot(0);
-                let magnitude = *Params::score_trend_magnitude(0);
-
+                let gamma = *Params::score_trend_scale(0);
+                let delta = *Params::score_trend_scale(1);
                 let diff = self.score_trend - score;
-                let focus = self.attention.nodes(head).cast::<f32>() / self.nodes.max(1000) as f32;
-                let scale = diff.abs().add(pivot).recip().mul_add(magnitude * diff, 1.0);
-                if time >= self.time.start * scale * focus.mul_add(gamma, delta) {
+                let trend_scale = diff.abs().mul_add(gamma, delta).recip().mul_add(diff, 1.0);
+
+                let nodes = self.nodes.max(1000) as f32;
+                let attention = self.attention.nodes(head).cast::<f32>();
+                let focus_scale = Params::pv_focus_scale(0)
+                    .mul_add(attention / nodes, *Params::pv_focus_scale(1));
+
+                if time >= self.time.start * trend_scale * focus_scale {
                     return ControlFlow::Stop;
                 }
             }

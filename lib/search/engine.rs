@@ -329,32 +329,6 @@ impl<'a> Searcher<'a> {
         ]))
     }
 
-    /// Computes fail-high pruning reduction.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn tt_fh(depth: f32) -> f32 {
-        match depth {
-            ..0.0 => 0.0,
-            d => convolve([
-                (d, Params::tt_fh_margin_depth(..)),
-                (1.0, Params::tt_fh_margin_scalar(..)),
-            ]),
-        }
-    }
-
-    /// Computes the fail-low pruning reduction.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn tt_fl(depth: f32) -> f32 {
-        match depth {
-            ..0.0 => 0.0,
-            d => convolve([
-                (d, Params::tt_fl_margin_depth(..)),
-                (1.0, Params::tt_fl_margin_scalar(..)),
-            ]),
-        }
-    }
-
     /// Computes the razoring margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -507,7 +481,7 @@ impl<'a> Searcher<'a> {
             Some(t) => t.transpose(ply),
         };
 
-        if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_hm_limit(0) {
+        if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0) {
             if let Some(t) = transposition {
                 let (lower, upper) = t.score.range(ply).into_inner();
                 if upper <= alpha || lower >= beta {
@@ -638,16 +612,10 @@ impl<'a> Searcher<'a> {
             return Ok(self.quiesce::<IS_PV>(bounds)?.truncate());
         }
 
-        if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_hm_limit(0) {
-            if let Some(t) = transposition {
-                let tt_depth = t.depth.cast::<f32>();
+        if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0) {
+            if let Some(t) = transposition.filter(|t| t.depth.cast::<f32>() >= depth) {
                 let (lower, upper) = t.score.range(ply).into_inner();
-
-                if is_cut && lower - Self::tt_fh(depth - tt_depth).cast::<i16>() >= beta {
-                    return Ok(transposed.truncate());
-                }
-
-                if upper + Self::tt_fl(depth - tt_depth).cast::<i16>() <= alpha {
+                if upper <= alpha || (is_cut && lower >= beta) {
                     return Ok(transposed.truncate());
                 }
             }
@@ -1342,7 +1310,7 @@ mod tests {
         #[filter(!#s.is_losing() && #s < #b)] s: Score,
         is_cut: bool,
     ) {
-        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_hm_limit(0));
+        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0));
 
         let tpos = Transposition::new(ScoreBound::Upper(s), d, Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);
@@ -1366,7 +1334,7 @@ mod tests {
         d: Depth,
         #[filter(!#s.is_winning() && #s >= #b)] s: Score,
     ) {
-        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_hm_limit(0));
+        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0));
 
         let tpos = Transposition::new(ScoreBound::Lower(s), d, Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);
@@ -1390,7 +1358,7 @@ mod tests {
         d: Depth,
         #[filter(!#s.is_decisive())] s: Score,
     ) {
-        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_hm_limit(0));
+        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0));
 
         let tpos = Transposition::new(ScoreBound::Exact(s), d, Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);

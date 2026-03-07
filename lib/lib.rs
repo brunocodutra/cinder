@@ -226,7 +226,6 @@
 #![feature(
     adt_const_params,
     ascii_char,
-    box_vec_non_null,
     const_clone,
     const_cmp,
     const_convert,
@@ -246,10 +245,8 @@
     coverage_attribute,
     derive_const,
     gen_blocks,
-    iter_array_chunks,
     maybe_uninit_uninit_array_transpose,
     negative_impls,
-    pointer_is_aligned_to,
     portable_simd,
     slice_swap_unchecked,
     sync_unsafe_cell

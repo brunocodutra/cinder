@@ -203,13 +203,13 @@ macro_rules! params {
 }
 
 params! {
-    moves_left: [140.0, 1.0],
+    moves_left: [-1.0, 140.0],
+    moves_left_limits: [1.0, 60.0],
     soft_time_fraction: [0.7399792],
     hard_time_fraction: [0.86297363],
-    pv_focus: [-1.6761804, 1.8973947],
     score_trend_inertia: [0.120955214],
-    score_trend_magnitude: [0.86272377],
-    score_trend_pivot: [27.789158],
+    score_trend_scale: [1.1591196, 32.210957],
+    pv_focus_scale: [-1.6761804, 1.8973947],
     improving: [0.0, 0.88212675, 0.91403663, 1.8949512],
     piece_values: [52.847713, 188.47716, 215.22618, 306.7143, 629.2747, 0.0],
     pawns_correction: [13.677705],

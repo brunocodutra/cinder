@@ -635,7 +635,7 @@ impl<'a> Searcher<'a> {
                 let (lower, upper) = score.range(ply).into_inner();
                 if lower >= upper || upper <= alpha || lower >= beta {
                     let depth = Params::tb_depth_bonus(0).add(depth).saturate();
-                    let tpos = Transposition::new(score, depth, None, IS_PV || was_pv);
+                    let tpos = Transposition::new(score, depth, transposed.head(), IS_PV || was_pv);
                     self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
                     return Ok(tpos.transpose(ply).truncate());
                 }
@@ -746,9 +746,9 @@ impl<'a> Searcher<'a> {
                     if pv >= pc_beta {
                         let score = ScoreBound::new(bounds, pv.score(), ply);
                         let depth = Params::probcut_depth_bonus(0).add(depth).saturate();
-                        let tpos = Transposition::new(score, depth, None, IS_PV || was_pv);
+                        let tpos = Transposition::new(score, depth, Some(m), IS_PV || was_pv);
                         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
-                        return Ok(pv.truncate().transpose(m));
+                        return Ok(tpos.transpose(ply).truncate());
                     }
                 }
             }

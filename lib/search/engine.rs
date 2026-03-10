@@ -772,37 +772,40 @@ impl<'a> Searcher<'a> {
                     let margin = gamma.mul_add(depth, delta);
                     let se_beta = t.score.bound(ply) - margin.cast::<i16>();
 
-                    extension = convolve([
-                        (1.0, Params::singular_extension_scalar(..)),
-                        (should_cut.cast(), Params::singular_extension_should_cut(..)),
-                        (is_cut.cast(), Params::singular_extension_is_cut(..)),
-                        (is_quiet.cast(), Params::singular_extension_is_quiet(..)),
-                    ]);
-
                     let mut se_score = Score::lower();
                     for m in moves.sorted().skip(1) {
                         let mut next = self.next(Some(m));
                         let pv = -next.nw(se_depth - 1.0, -se_beta + 1, !is_cut)?;
-                        if pv.score().min(se_beta) >= beta {
+                        se_score = pv.score().max(se_score);
+                        if se_score.min(se_beta) >= beta {
                             return Ok(pv.truncate().transpose(m));
-                        } else if pv >= se_beta {
-                            extension = convolve([
-                                (1.0, Params::singular_reduction_scalar(..)),
-                                (should_cut.cast(), Params::singular_reduction_should_cut(..)),
-                                (is_cut.cast(), Params::singular_reduction_is_cut(..)),
-                            ]);
-
+                        } else if se_score >= se_beta {
                             break;
-                        } else if pv > se_score {
-                            se_score = pv.score();
-                            let gamma = *Params::singular_extension_limit(0);
-                            let delta = *Params::singular_extension_limit(1);
-                            let epsilon = *Params::singular_extension_limit(2);
-                            let diff = se_beta.cast::<f32>() - se_score.cast::<f32>();
-                            let limit = diff.mul_add(gamma, delta).recip().mul_add(diff, epsilon);
-                            extension = extension.min(limit);
                         }
                     }
+
+                    if se_score >= se_beta {
+                        extension = convolve([
+                            (1.0, Params::singular_reduction_scalar(..)),
+                            (should_cut.cast(), Params::singular_reduction_should_cut(..)),
+                            (is_cut.cast(), Params::singular_reduction_is_cut(..)),
+                        ]);
+                    } else {
+                        let gamma = *Params::singular_extension_score(0);
+                        let delta = *Params::singular_extension_score(1);
+                        let diff = se_beta.cast::<f32>() - se_score.cast::<f32>();
+                        extension = diff.powf(delta).mul(gamma).min(convolve([
+                            (1.0, Params::singular_extension_scalar(..)),
+                            (should_cut.cast(), Params::singular_extension_should_cut(..)),
+                            (is_cut.cast(), Params::singular_extension_is_cut(..)),
+                            (is_quiet.cast(), Params::singular_extension_is_quiet(..)),
+                        ]));
+                    }
+
+                    extension = extension.clip(
+                        *Params::singular_extension_limit(0),
+                        *Params::singular_extension_limit(1),
+                    );
                 }
             }
 

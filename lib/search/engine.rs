@@ -1,4 +1,4 @@
-use crate::chess::{Move, MoveSet, Role};
+use crate::chess::{Move, MoveSet, Position, Role};
 use crate::search::{ControlFlow::*, *};
 use crate::{nnue::Evaluator, params::Params, syzygy::Syzygy, util::*};
 use bytemuck::{Zeroable, fill_zeroes, zeroed};
@@ -172,7 +172,7 @@ impl<'a> Searcher<'a> {
             self.stack.reply(i).update(pos, best, bonus[i]);
         }
 
-        for m in moves.iter().take_while(|&m| m != best) {
+        for &(m, _) in moves.iter().take_while(|(m, _)| *m != best) {
             self.local.history.update(pos, m, penalty[0]);
             for i in 1..=penalty[1..].len().min(pos.ply().cast()) {
                 self.stack.reply(i).update(pos, m, penalty[i]);
@@ -500,7 +500,7 @@ impl<'a> Searcher<'a> {
         let was_pv = transposition.is_some_and(|t| t.was_pv);
         let mut moves = Moves::from_iter(self.stack.pos.moves().unpack_if(MoveSet::is_noisy));
 
-        moves.sort(|m| {
+        moves.rate(|m| {
             if Some(m) == transposed.head() {
                 return Bounded::upper();
             }
@@ -519,11 +519,11 @@ impl<'a> Searcher<'a> {
 
         let mut sorted_moves = moves.sorted();
         let (mut head, mut tail) = match sorted_moves.next() {
-            Some(m) => (m, -self.next(Some(m)).quiesce::<IS_PV>(-beta..-alpha)?),
+            Some((m, _)) => (m, -self.next(Some(m)).quiesce::<IS_PV>(-beta..-alpha)?),
             None => return Ok(transposed.truncate()),
         };
 
-        for (index, m) in sorted_moves.enumerate() {
+        for (index, (m, _)) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
@@ -692,7 +692,7 @@ impl<'a> Searcher<'a> {
         let mut moves = Moves::from_iter(self.stack.pos.moves().unpack());
         let killer = self.stack.killers[ply.cast::<usize>()];
 
-        moves.sort(|m| {
+        moves.rate(|m| {
             if Some(m) == transposed.head() {
                 return Bounded::upper();
             }
@@ -730,7 +730,7 @@ impl<'a> Searcher<'a> {
             let max_depth = t.depth.cast::<f32>() + *Params::probcut_depth_bounds(1);
             let depth_bounds = *Params::probcut_depth_bounds(0)..max_depth;
             if should_cut && is_noisy_node && depth_bounds.contains(&depth) {
-                for m in moves.sorted() {
+                for (m, _) in moves.sorted() {
                     let margin = pc_beta - self.stack.value(0);
                     if m.is_quiet() || !self.stack.pos.gaining(m, margin.cast()) {
                         continue;
@@ -754,7 +754,7 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let mut head = moves.sorted().next().assume();
+        let (mut head, _) = moves.sorted().next().assume();
 
         let mut tail = {
             let mut extension = 0f32;
@@ -773,7 +773,7 @@ impl<'a> Searcher<'a> {
                     let se_beta = t.score.bound(ply) - margin.cast::<i16>();
 
                     let mut se_score = Score::lower();
-                    for m in moves.sorted().skip(1) {
+                    for (m, _) in moves.sorted().skip(1) {
                         let mut next = self.next(Some(m));
                         let pv = -next.nw(se_depth - 1.0, -se_beta + 1, !is_cut)?;
                         se_score = pv.score().max(se_score);
@@ -813,7 +813,7 @@ impl<'a> Searcher<'a> {
             -next.ab::<IS_PV, _>(depth + extension - 1.0, -beta..-alpha, false)?
         };
 
-        for (index, m) in moves.sorted().skip(1).enumerate() {
+        for (index, (m, _)) in moves.sorted().skip(1).enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
@@ -919,7 +919,7 @@ impl<'a> Searcher<'a> {
         let correction = self.correction().cast::<i16>();
         self.stack.values[0] = self.evaluate() + correction;
 
-        moves.sort(|m| {
+        moves.rate(|m| {
             if Some(m) == self.stack.pv.head() {
                 return Bounded::upper();
             }
@@ -937,14 +937,14 @@ impl<'a> Searcher<'a> {
         });
 
         let mut sorted_moves = moves.sorted();
-        let mut head = sorted_moves.next().assume();
+        let (mut head, _) = sorted_moves.next().assume();
         self.stack.nodes = self.ctrl.attention(head);
 
         let mut next = self.next(Some(head));
         let mut tail = -next.ab::<true, _>(depth - 1.0, -beta..-alpha, false)?;
         drop(next);
 
-        for (index, m) in sorted_moves.enumerate() {
+        for (index, (m, _)) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
@@ -1062,31 +1062,62 @@ pub struct Search<'e, 'p> {
 }
 
 impl<'e, 'p> Search<'e, 'p> {
+    #[inline(always)]
     fn new(engine: &'e mut Engine, pos: &'p Evaluator, limits: Limits) -> Self {
+        let ctrl = GlobalControl::new(pos, limits);
+
         Search {
-            ctrl: GlobalControl::new(pos, limits),
+            engine,
+            pos,
+            ctrl,
             result: Pv::empty(Score::lower()).into(),
             channel: None,
             execution: None,
-            engine,
-            pos,
         }
+    }
+
+    /// Moves to search.
+    #[inline(always)]
+    fn moves_to_search(&self) -> Moves {
+        let Some(wdl) = self.engine.shared.syzygy.wdl(self.pos) else {
+            return self.pos.moves().unpack().collect();
+        };
+
+        Moves::from_iter(self.pos.moves().unpack().filter_map(|m| {
+            let mut next = Position::clone(self.pos);
+            next.play(m);
+
+            match self.engine.shared.syzygy.wdl(&next) {
+                None => Some((m, Rating::upper())),
+                Some(next_wdl) => {
+                    if -next_wdl >= wdl {
+                        let wdl = -next_wdl;
+                        Some((m, wdl.saturate()))
+                    } else {
+                        None
+                    }
+                }
+            }
+        }))
     }
 
     /// Aborts the search.
     ///
     /// Returns true if the search had not already been aborted.
+    #[inline(always)]
     pub fn abort(&self) {
         self.ctrl.abort();
     }
 
     /// Concludes the search and returns [`Info`] about the best [`Pv`].
+    #[inline(always)]
     pub fn conclude(self) -> Info {
         self.result.clone()
     }
 }
 
 impl Drop for Search<'_, '_> {
+    #[inline(always)]
     fn drop(&mut self) {
         if let Some(t) = self.execution.take() {
             self.abort();
@@ -1128,21 +1159,16 @@ impl Stream for Search<'_, '_> {
             let (tx, rx) = unbounded();
             search.channel = Some(rx);
 
-            let ctrl: &GlobalControl = unsafe { &*(&raw const search.ctrl) };
             let pos: &Evaluator = unsafe { &*(&raw const *search.pos) };
+            let ctrl: &GlobalControl = unsafe { &*(&raw const search.ctrl) };
             let executor: &mut Executor = unsafe { &mut *(&raw mut search.engine.executor) };
             let shared: &SharedData = unsafe { &*(&raw const search.engine.shared) };
             let local: &[SyncUnsafeCell<LocalData>] =
                 unsafe { &*(&raw mut *search.engine.local as *const _) };
 
-            let moves = Moves::from_iter(pos.moves().unpack());
-            if let Some(pv) = shared.syzygy.best(pos, &moves) {
-                search.result = pv.truncate().into();
-                return Poll::Ready(Some(search.result.clone()));
-            }
-
+            let moves = search.moves_to_search();
             if matches!((moves.len(), &ctrl.limits().clock), (0, _) | (1, Some(_))) {
-                let pv = if let Some(m) = moves.iter().next() {
+                let pv = if let Some(&(m, _)) = moves.iter().next() {
                     Pv::new(Score::drawn(), Line::singular(m))
                 } else if pos.is_check() {
                     Pv::empty(Score::mated(zero()))
@@ -1271,6 +1297,7 @@ impl Engine {
     }
 
     /// Initiates a [`Search`].
+    #[inline(always)]
     pub fn search<'p>(&mut self, pos: &'p Evaluator, limits: Limits) -> Search<'_, 'p> {
         Search::new(self, pos, limits)
     }
@@ -1279,7 +1306,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess::{Outcome, Position};
+    use crate::chess::Outcome;
     use proptest::sample::Selector;
     use std::fmt::Debug;
     use std::{thread, time::Duration};

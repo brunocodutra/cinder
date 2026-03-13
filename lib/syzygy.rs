@@ -1,5 +1,3 @@
-use crate::search::{Line, Moves, Pv};
-use crate::util::{Num, zero};
 use crate::{chess::Position, warn};
 use std::{fs::read_dir, path::Path};
 
@@ -43,11 +41,13 @@ impl Syzygy {
     }
 
     /// The maximum number of pieces available in the tablebase.
+    #[inline(always)]
     pub fn max_pieces(&self) -> usize {
         self.tablebase.max_pieces()
     }
 
     /// This [`Position`]'s [`Wdl`] if immediately following a zeroing move.
+    #[inline(always)]
     pub fn wdl_after_zeroing(&self, pos: &Position) -> Option<Wdl> {
         if pos.halfmoves() == 0 {
             self.wdl(pos)
@@ -57,8 +57,9 @@ impl Syzygy {
     }
 
     /// This [`Position`]'s [`Wdl`].
+    #[inline(always)]
     pub fn wdl(&self, pos: &Position) -> Option<Wdl> {
-        if pos.occupied().len() <= self.max_pieces() {
+        if self.max_pieces() >= pos.occupied().len() {
             self.tablebase.probe(pos)?.wdl()
         } else {
             None
@@ -66,52 +67,13 @@ impl Syzygy {
     }
 
     /// This [`Position`]'s [`Dtz`].
+    #[inline(always)]
     pub fn dtz(&self, pos: &Position) -> Option<Dtz> {
-        if pos.occupied().len() <= self.max_pieces() {
+        if self.max_pieces() >= pos.occupied().len() {
             self.tablebase.probe(pos)?.dtz()
         } else {
             None
         }
-    }
-
-    /// This [`Position`]'s best [`Pv`].
-    pub fn best(&self, pos: &Position, moves: &Moves) -> Option<Pv<1>> {
-        if pos.occupied().len() > self.max_pieces() {
-            return None;
-        }
-
-        let mut best_wdl = Wdl::upper();
-        let mut best_dtz = Dtz::lower();
-        let mut best_gaining = false;
-        let mut best_move = None;
-
-        for m in moves.iter() {
-            let mut next = pos.clone();
-            next.play(m);
-
-            let gaining = m.is_noisy();
-            let probe = self.tablebase.probe(&next)?;
-            let (wdl, dtz) = if next.halfmoves() == 0 {
-                let wdl = probe.wdl_after_zeroing();
-                (wdl, wdl.into())
-            } else {
-                let dtz = probe.dtz()?.stretch(1);
-                (dtz.into(), dtz)
-            };
-
-            if wdl > best_wdl {
-                continue;
-            } else if wdl == Wdl::Loss && next.is_checkmate() {
-                return Some(Pv::new(Wdl::Win.to_score(zero()), Line::singular(m)));
-            } else if best_move.is_none() || wdl < best_wdl {
-                (best_wdl, best_gaining, best_dtz, best_move) = (wdl, gaining, dtz, Some(m));
-            } else if (gaining, dtz) > (best_gaining, best_dtz) {
-                (best_gaining, best_dtz, best_move) = (gaining, dtz, Some(m));
-            }
-        }
-
-        let score = -best_wdl.to_score(zero());
-        Some(Pv::new(score, Line::singular(best_move?)))
     }
 }
 

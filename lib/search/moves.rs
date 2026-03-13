@@ -1,5 +1,7 @@
 use crate::chess::Move;
-use crate::util::{Assume, Bounded, Capacity, ConstCapacity, Num, StaticSeq};
+use crate::util::{Assume, Bounded, Capacity, ConstCapacity, Num, StaticSeq, StaticSeqIter};
+use std::cmp::Reverse;
+use std::slice::{Iter, IterMut};
 
 #[cfg(test)]
 use proptest::{collection::vec, prelude::*};
@@ -16,7 +18,7 @@ pub type RatedMove = (Move, Rating);
 pub struct Moves {
     #[cfg_attr(test, strategy(vec(any::<RatedMove>(), 0..=10usize)
         .prop_map(StaticSeq::from_iter)))]
-    entries: StaticSeq<RatedMove, 254>,
+    entries: StaticSeq<RatedMove, 255>,
 
     // Index of the first unsorted move
     #[cfg_attr(test, strategy(Just(0)))]
@@ -36,23 +38,35 @@ impl Moves {
         self.entries.is_empty()
     }
 
-    /// A iterator over the [`Move`]s in this collection in arbitrary order.
+    /// A iterator over the [`RatedMove`]s in this collection in arbitrary order.
     #[inline(always)]
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = Move> + DoubleEndedIterator {
-        self.entries.iter().map(|(m, _)| *m)
+    pub fn iter(&self) -> Iter<'_, RatedMove> {
+        self.into_iter()
+    }
+
+    /// A mutable iterator over the [`RatedMove`]s in this collection in arbitrary order.
+    #[inline(always)]
+    pub fn iter_mut(&mut self) -> IterMut<'_, RatedMove> {
+        self.into_iter()
     }
 
     /// An iterator over the [`Move`]s in this collection sorted by their [`Rating`]s.
     #[inline(always)]
-    pub fn sorted(&mut self) -> impl ExactSizeIterator<Item = Move> {
+    pub fn sorted(&mut self) -> SortedMovesIter<'_> {
         SortedMovesIter::new(self)
     }
 
-    /// Reorders all [`Move`]s in this collection.
+    /// Sorts all [`Move`]s in this collection by highest [`Rating`].
     #[inline(always)]
-    pub fn sort<F: FnMut(Move) -> Rating>(&mut self, mut f: F) {
-        self.unsorted = 0;
-        for (m, rating) in &mut self.entries {
+    pub fn sort(&mut self) {
+        self.unsorted = self.entries.len().cast();
+        self.entries.sort_by_key(|(_, r)| Reverse(*r));
+    }
+
+    /// Re-rates all [`Move`]s in this collection.
+    #[inline(always)]
+    pub fn rate<F: FnMut(Move) -> Rating>(&mut self, mut f: F) {
+        for (m, rating) in self {
             *rating = f(*m);
         }
     }
@@ -60,18 +74,58 @@ impl Moves {
 
 impl FromIterator<Move> for Moves {
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn from_iter<I: IntoIterator<Item = Move>>(iter: I) -> Self {
+        iter.into_iter().map(|m| (m, Rating::lower())).collect()
+    }
+}
+
+impl FromIterator<RatedMove> for Moves {
+    #[inline(always)]
+    fn from_iter<I: IntoIterator<Item = RatedMove>>(iter: I) -> Self {
         Moves {
-            entries: iter.into_iter().map(|m| (m, Rating::new(0))).collect(),
+            entries: iter.into_iter().collect(),
             unsorted: 0,
         }
     }
 }
 
+impl IntoIterator for Moves {
+    type Item = RatedMove;
+    type IntoIter = StaticSeqIter<RatedMove, 255>;
+
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Moves {
+    type Item = &'a RatedMove;
+    type IntoIter = Iter<'a, RatedMove>;
+
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Moves {
+    type Item = &'a mut RatedMove;
+    type IntoIter = IterMut<'a, RatedMove>;
+
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn into_iter(self) -> Self::IntoIter {
+        self.unsorted = 0;
+        self.entries.iter_mut()
+    }
+}
+
 /// A lazily sorted iterator of [`Move`]s.
 #[derive(Debug)]
-struct SortedMovesIter<'a> {
+pub struct SortedMovesIter<'a> {
     moves: &'a mut Moves,
     cursor: <ConstCapacity as Capacity>::Usize,
 }
@@ -91,7 +145,7 @@ impl ExactSizeIterator for SortedMovesIter<'_> {
 }
 
 impl Iterator for SortedMovesIter<'_> {
-    type Item = Move;
+    type Item = RatedMove;
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -116,7 +170,7 @@ impl Iterator for SortedMovesIter<'_> {
 
         self.cursor += 1;
         self.moves.unsorted = self.moves.unsorted.max(self.cursor);
-        Some(next.0)
+        Some(next)
     }
 
     #[inline(always)]
@@ -130,11 +184,11 @@ impl Iterator for SortedMovesIter<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{cmp::Reverse, collections::HashSet};
+    use std::collections::HashSet;
     use test_strategy::proptest;
 
     #[proptest]
-    fn sorting_same_moves_returns_same_sequence(mut ms: Moves) {
+    fn sorted_is_deterministic(mut ms: Moves) {
         assert_eq!(Vec::from_iter(ms.sorted()), Vec::from_iter(ms.sorted()));
     }
 
@@ -144,20 +198,22 @@ mod tests {
         mut ms: Moves,
     ) {
         let ns: Vec<_> = ms.clone().sorted().collect();
-        ms.entries.sort_unstable_by_key(|(_, r)| Reverse(*r));
-        assert_eq!(ns, Vec::from_iter(ms.iter()));
+        ms.sort();
+        assert_eq!(Vec::from_iter(ms), ns);
     }
 
     #[proptest]
-    fn sort_changes_move_order(ms: Moves) {
+    fn rate_defines_move_order(mut ms: Moves) {
         let mut rating = Rating::new(0);
 
-        let mut ns = ms.clone();
-        ns.sort(|_| {
+        ms.rate(|_| {
             rating += 1;
             rating
         });
 
-        assert_eq!(Vec::from_iter(ns.sorted()), Vec::from_iter(ms.iter().rev()));
+        let mut ns = Vec::from_iter(ms.clone());
+        ns.reverse();
+
+        assert_eq!(Vec::from_iter(ms.sorted()), ns);
     }
 }

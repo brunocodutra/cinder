@@ -133,22 +133,16 @@ const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
     #[inline(always)]
     pub fn push(&mut self, item: T) {
         let idx = self.len();
-        let items = self.bytes.mem.as_mut();
-        items.get_mut(idx).assume().write(item);
-        self.bytes.len += ones::<<ConstCapacity as Capacity>::Usize>(1);
+        self.bytes.len = self.bytes.len.checked_add(ones(1)).assume();
+        self.bytes.mem.as_mut().get_mut(idx).assume().write(item);
     }
 
     /// Pops an item from the back of this sequence.
     #[inline(always)]
     pub fn pop(&mut self) -> Option<T> {
-        if self.bytes.len == zero::<<ConstCapacity as Capacity>::Usize>() {
-            return None;
-        }
-
-        self.bytes.len -= ones::<<ConstCapacity as Capacity>::Usize>(1);
+        self.bytes.len = self.bytes.len.checked_sub(ones(1))?;
         let idx = self.len();
-        let items = self.bytes.mem.as_mut();
-        unsafe { Some(items.get(idx).assume().assume_init_read()) }
+        unsafe { Some(self.bytes.mem.as_mut().get(idx).assume().assume_init_read()) }
     }
 
     /// Truncates this sequence to the prefix of length `len`.
@@ -298,31 +292,38 @@ impl<'a, T, M: [const] Memory<T, Capacity = ConstCapacity>> const IntoIterator
 
 impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> const IntoIterator for Seq<T, M> {
     type Item = T;
-    type IntoIter = Iter<T, M>;
+    type IntoIter = SeqIter<T, M>;
 
     #[inline(always)]
     fn into_iter(self) -> Self::IntoIter {
-        Iter::new(self)
+        SeqIter::new(self)
     }
 }
 
+/// An iterator over a [`ConstSeq`].
+pub type ConstSeqIter<T, const S: usize> = SeqIter<T, ConstMemory<S>>;
+
+/// An iterator over a [`StaticSeq`].
+pub type StaticSeqIter<T, const N: usize> = SeqIter<T, StaticMemory<T, N>>;
+
+/// An iterator over a [`Seq`].
 #[derive(Debug)]
-pub struct Iter<T, M: Memory<T, Capacity = ConstCapacity>> {
+pub struct SeqIter<T, M: Memory<T, Capacity = ConstCapacity>> {
     cursor: <ConstCapacity as Capacity>::Usize,
     seq: ManuallyDrop<Seq<T, M>>,
 }
 
-const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> Iter<T, M> {
+const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> SeqIter<T, M> {
     #[inline(always)]
     fn new(seq: Seq<T, M>) -> Self {
-        Iter {
+        SeqIter {
             seq: ManuallyDrop::new(seq),
             cursor: zero(),
         }
     }
 }
 
-impl<T, M> const Drop for Iter<T, M>
+impl<T, M> const Drop for SeqIter<T, M>
 where
     T: [const] Destruct,
     M: [const] Memory<T, Capacity = ConstCapacity>,
@@ -334,14 +335,14 @@ where
     }
 }
 
-impl<T, M: Memory<T, Capacity = ConstCapacity>> ExactSizeIterator for Iter<T, M> {
+impl<T, M: Memory<T, Capacity = ConstCapacity>> ExactSizeIterator for SeqIter<T, M> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.seq.len().cast::<usize>() - self.cursor.cast::<usize>()
     }
 }
 
-impl<T, M: Memory<T, Capacity = ConstCapacity>> Iterator for Iter<T, M> {
+impl<T, M: Memory<T, Capacity = ConstCapacity>> Iterator for SeqIter<T, M> {
     type Item = T;
 
     #[inline(always)]
@@ -361,6 +362,13 @@ impl<T, M: Memory<T, Capacity = ConstCapacity>> Iterator for Iter<T, M> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         let len = self.len();
         (len, Some(len))
+    }
+}
+
+impl<T, M: Memory<T, Capacity = ConstCapacity>> DoubleEndedIterator for SeqIter<T, M> {
+    #[inline(always)]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.seq.pop()
     }
 }
 

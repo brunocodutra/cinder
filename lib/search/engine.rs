@@ -509,6 +509,7 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             let history = self.local.history.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
+
             if pos.gaining(m, *Params::good_noisy_margin(0)) {
                 rating += *Params::good_noisy_rating(0);
                 rating += pos.gain(m);
@@ -697,11 +698,11 @@ impl<'a> Searcher<'a> {
                 return Bounded::upper();
             }
 
-            let mut rating = *Params::killer_rating(0) * killer.contains(m).cast::<f32>();
-
+            let mut rating = 0.0;
             let pos = &self.stack.pos;
             let history = self.local.history.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
+            rating = Params::killer_rating(0).mul_add(killer.contains(m).cast(), rating);
 
             for i in 1..=Params::history_rating(1..).len().min(ply.cast()) {
                 let history = self.stack.reply(i).get(pos, m);
@@ -850,19 +851,18 @@ impl<'a> Searcher<'a> {
             }
 
             let mut next = self.next(Some(m));
-            let gives_check = next.stack.pos.is_check().cast();
+            let gives_check = next.stack.pos.is_check();
 
             lmr += convolve([
                 (1.0, Params::lmr_not_root(..)),
                 (IS_PV.cast(), Params::lmr_is_pv(..)),
                 (was_pv.cast(), Params::lmr_was_pv(..)),
+                (improving, Params::lmr_improving(..)),
                 (should_cut.cast(), Params::lmr_should_cut(..)),
                 (is_cut.cast(), Params::lmr_is_cut(..)),
-                (is_quiet.cast(), Params::lmr_is_quiet(..)),
-                (is_killer.cast(), Params::lmr_is_killer(..)),
                 (is_noisy_node.cast(), Params::lmr_is_noisy_node(..)),
-                (improving, Params::lmr_improving(..)),
-                (gives_check, Params::lmr_gives_check(..)),
+                (is_quiet.cast(), Params::lmr_is_quiet(..)),
+                (gives_check.cast(), Params::lmr_gives_check(..)),
                 (history, Params::lmr_history(..)),
                 (counter, Params::lmr_counter(..)),
             ]);
@@ -916,6 +916,7 @@ impl<'a> Searcher<'a> {
             return Err(Interrupted);
         }
 
+        let killer = self.stack.killers[0];
         let correction = self.correction().cast::<i16>();
         self.stack.values[0] = self.evaluate() + correction;
 
@@ -928,6 +929,8 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             let history = self.local.history.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
+            rating = Params::killer_rating(0).mul_add(killer.contains(m).cast(), rating);
+
             if m.is_noisy() && pos.gaining(m, *Params::good_noisy_margin(0)) {
                 rating += *Params::good_noisy_rating(0);
                 rating += pos.gain(m);
@@ -951,15 +954,17 @@ impl<'a> Searcher<'a> {
             };
 
             let pos = &self.stack.pos;
-            let mut lmr = Self::lmr(depth, index);
             let history = self.local.history.get(pos, m);
             self.stack.nodes = self.ctrl.attention(m);
 
             let mut next = self.next(Some(m));
+            let mut lmr = Self::lmr(depth, index);
             let gives_check = next.stack.pos.is_check();
+            let is_quiet = m.is_quiet();
 
             lmr += convolve([
                 (1.0, Params::lmr_is_root(..)),
+                (is_quiet.cast(), Params::lmr_is_quiet(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
                 (history, Params::lmr_history(..)),
             ]);

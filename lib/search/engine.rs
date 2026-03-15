@@ -539,7 +539,7 @@ impl<'a> Searcher<'a> {
 
             let pos = &self.stack.pos;
             if !is_check && !tail.is_losing() {
-                let margin = pos.gain(m) + *Params::futility_margin_quiescence(0);
+                let margin = pos.gain(m) + Params::futility_margin_quiescence(0);
                 if self.stack.value(0) + margin.cast::<i16>() <= alpha {
                     continue;
                 }
@@ -651,7 +651,7 @@ impl<'a> Searcher<'a> {
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(transposed.truncate());
         } else if !IS_PV && !is_check {
-            if alpha < Params::razoring_alpha_limit(0).cast::<i16>() {
+            if !alpha.is_winning() {
                 let margin = Self::razoring(depth);
                 if self.stack.value(0) + margin.cast::<i16>() <= alpha {
                     let pv = self.qnw(beta)?;
@@ -674,7 +674,7 @@ impl<'a> Searcher<'a> {
                 let ours = self.stack.pos.by_color(turn);
                 let pawns = self.stack.pos.by_role(Role::Pawn);
                 let kings = self.stack.pos.by_role(Role::King);
-                if ours & !(pawns ^ kings) != zero() {
+                if is_cut && ours & !(pawns ^ kings) != zero() {
                     if let Some(margin) = Self::nmp(depth) {
                         if transposed.score() - margin.cast::<i16>() >= beta {
                             return Ok(transposed.truncate());
@@ -728,7 +728,7 @@ impl<'a> Searcher<'a> {
             margin = Params::probcut_margin_improving(0).mul_add(improving, margin);
             let pc_beta = beta + margin.cast::<i16>();
 
-            let max_depth = t.depth.cast::<f32>() + *Params::probcut_depth_bounds(1);
+            let max_depth = t.depth.cast::<f32>() + Params::probcut_depth_bounds(1);
             let depth_bounds = *Params::probcut_depth_bounds(0)..max_depth;
             if should_cut && is_noisy_node && depth_bounds.contains(&depth) {
                 for (m, _) in moves.sorted() {
@@ -761,7 +761,7 @@ impl<'a> Searcher<'a> {
             let mut extension = 0f32;
             if let Some(t) = transposition {
                 let is_quiet = head.is_quiet();
-                let max_depth = t.depth.cast::<f32>() + *Params::singular_depth_bounds(1);
+                let max_depth = t.depth.cast::<f32>() + Params::singular_depth_bounds(1);
                 let depth_bounds = *Params::singular_depth_bounds(0)..max_depth;
                 if !matches!(t.score, ScoreBound::Upper(_)) && depth_bounds.contains(&depth) {
                     let gamma = *Params::singular_depth(0);
@@ -811,7 +811,7 @@ impl<'a> Searcher<'a> {
             }
 
             let mut next = self.next(Some(head));
-            -next.ab::<IS_PV, _>(depth + extension - 1.0, -beta..-alpha, false)?
+            -next.ab::<IS_PV, _>(depth + extension - 1.0, -beta..-alpha, !IS_PV && !is_cut)?
         };
 
         for (index, (m, _)) in moves.sorted().skip(1).enumerate() {

@@ -4,19 +4,19 @@ use crate::util::Assume;
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 
-/// Historical statistics about a [`Move`].
+/// Historical statistics about a [`Move`] in butterfly form.
 #[derive(Debug, Zeroable)]
-#[debug("History")]
-pub struct History([[Butterfly<[[Graviton; 2]; 2]>; 2]; 2]);
+#[debug("ButterflyHistory")]
+pub struct ButterflyHistory([[Butterfly<[[Graviton; 2]; 2]>; 2]; 2]);
 
-impl const Default for History {
+impl const Default for ButterflyHistory {
     #[inline(always)]
     fn default() -> Self {
         zeroed()
     }
 }
 
-const impl History {
+const impl ButterflyHistory {
     #[inline(always)]
     fn graviton_ref(&self, pos: &Position, m: Move) -> &Graviton {
         let (wc, wt) = (m.whence(), m.whither());
@@ -34,7 +34,7 @@ const impl History {
     }
 }
 
-impl const Statistics<Move> for History {
+impl const Statistics<Move> for ButterflyHistory {
     type Stat = Graviton;
 
     #[inline(always)]
@@ -48,19 +48,19 @@ impl const Statistics<Move> for History {
     }
 }
 
-/// Historical statistics about a [`Move`] in relation to another.
+/// Historical statistics about a [`Move`] in piece-to form.
 #[derive(Debug, Zeroable)]
-#[debug("ContinuationHistoryReply")]
-pub struct ContinuationHistoryReply(PieceTo<Graviton>);
+#[debug("PieceToHistory")]
+pub struct PieceToHistory(PieceTo<Graviton>);
 
-impl const Default for ContinuationHistoryReply {
+impl const Default for PieceToHistory {
     #[inline(always)]
     fn default() -> Self {
         zeroed()
     }
 }
 
-impl const Statistics<Move> for ContinuationHistoryReply {
+impl const Statistics<Move> for PieceToHistory {
     type Stat = Graviton;
 
     #[inline(always)]
@@ -81,7 +81,7 @@ impl const Statistics<Move> for ContinuationHistoryReply {
 /// Historical statistics about [`Move`] continuations.
 #[derive(Debug, Zeroable)]
 #[debug("ContinuationHistory")]
-pub struct ContinuationHistory(PieceTo<[ContinuationHistoryReply; 2]>);
+pub struct ContinuationHistory(PieceTo<[PieceToHistory; 2]>);
 
 impl const Default for ContinuationHistory {
     #[inline(always)]
@@ -92,7 +92,7 @@ impl const Default for ContinuationHistory {
 
 const impl ContinuationHistory {
     #[inline(always)]
-    pub fn reply(&mut self, pos: &Position, m: Move) -> &mut ContinuationHistoryReply {
+    pub fn get(&mut self, pos: &Position, m: Move) -> &mut PieceToHistory {
         let (wc, wt) = (m.whence(), m.whither());
         let piece = pos.piece_on(wc).assume();
         let threats = pos.threats().contains(wt);

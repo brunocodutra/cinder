@@ -40,6 +40,12 @@ struct SharedData {
 }
 
 #[derive(Debug, Zeroable)]
+struct Histories {
+    butterfly: ButterflyHistory,
+    continuation: ContinuationHistory,
+}
+
+#[derive(Debug, Zeroable)]
 struct Corrections {
     pawns: Correction<16384>,
     minor: Correction<16384>,
@@ -51,8 +57,7 @@ struct Corrections {
 
 #[derive(Debug, Zeroable)]
 struct LocalData {
-    history: History,
-    continuation: ContinuationHistory,
+    histories: Histories,
     corrections: Corrections,
 }
 
@@ -61,7 +66,7 @@ struct Stack {
     pv: Pv,
     pos: Evaluator,
     nodes: Option<NonNull<Nodes>>,
-    replies: [Option<NonNull<ContinuationHistoryReply>>; Ply::MAX as usize + 1],
+    continuation: [Option<NonNull<PieceToHistory>>; Ply::MAX as usize + 1],
     correction: [Option<NonNull<Correction<1>>>; Ply::MAX as usize + 1],
     killers: [Killers; Ply::MAX as usize + 1],
     values: [Value; Ply::MAX as usize + 1],
@@ -74,7 +79,7 @@ impl Stack {
             pv,
             pos,
             nodes: None,
-            replies: [None; Ply::MAX as usize + 1],
+            continuation: [None; Ply::MAX as usize + 1],
             correction: [None; Ply::MAX as usize + 1],
             killers: [Default::default(); Ply::MAX as usize + 1],
             values: [Default::default(); Ply::MAX as usize + 1],
@@ -91,9 +96,9 @@ impl Stack {
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn reply(&self, i: usize) -> Option<NonNull<ContinuationHistoryReply>> {
+    fn continuation(&self, i: usize) -> Option<NonNull<PieceToHistory>> {
         let idx = self.pos.ply().cast::<usize>().wrapping_sub(i);
-        *self.replies.get(idx)?
+        *self.continuation.get(idx)?
     }
 
     #[inline(always)]
@@ -167,15 +172,15 @@ impl<'a> Searcher<'a> {
         let bonus = [history_bonus, counter_bonus, followup_bonus];
         let penalty = [history_penalty, counter_penalty, followup_penalty];
 
-        self.local.history.update(pos, best, bonus[0]);
+        self.local.histories.butterfly.update(pos, best, bonus[0]);
         for i in 1..=bonus[1..].len().min(pos.ply().cast()) {
-            self.stack.reply(i).update(pos, best, bonus[i]);
+            self.stack.continuation(i).update(pos, best, bonus[i]);
         }
 
         for &(m, _) in moves.iter().take_while(|(m, _)| *m != best) {
-            self.local.history.update(pos, m, penalty[0]);
+            self.local.histories.butterfly.update(pos, m, penalty[0]);
             for i in 1..=penalty[1..].len().min(pos.ply().cast()) {
-                self.stack.reply(i).update(pos, m, penalty[i]);
+                self.stack.continuation(i).update(pos, m, penalty[i]);
             }
         }
     }
@@ -225,10 +230,9 @@ impl<'a> Searcher<'a> {
         corrections.white.update(pos, zbs.white, pieces_delta);
         corrections.black.update(pos, zbs.black, pieces_delta);
 
-        let history_deltas = [counter_delta, followup_delta];
-        for i in 1..=history_deltas.len().min(ply.cast()) {
-            let delta = history_deltas[i - 1];
-            self.stack.correction(i).update(pos, (), delta);
+        let deltas = [counter_delta, followup_delta];
+        for i in 1..=deltas.len().min(ply.cast()) {
+            self.stack.correction(i).update(pos, (), deltas[i - 1]);
         }
     }
 
@@ -401,8 +405,8 @@ impl<'a> Searcher<'a> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn next(&mut self, m: Option<Move>) -> RecursionGuard<'_, 'a> {
-        self.stack.replies[self.stack.pos.ply().cast::<usize>()] = m.map(|m| {
-            let reply = self.local.continuation.reply(&self.stack.pos, m);
+        self.stack.continuation[self.stack.pos.ply().cast::<usize>()] = m.map(|m| {
+            let reply = self.local.histories.continuation.get(&self.stack.pos, m);
             NonNull::from_mut(reply)
         });
 
@@ -507,7 +511,7 @@ impl<'a> Searcher<'a> {
 
             let mut rating = 0.0;
             let pos = &self.stack.pos;
-            let history = self.local.history.get(pos, m);
+            let history = self.local.histories.butterfly.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
 
             if pos.gaining(m, *Params::good_noisy_margin(0)) {
@@ -700,12 +704,12 @@ impl<'a> Searcher<'a> {
 
             let mut rating = 0.0;
             let pos = &self.stack.pos;
-            let history = self.local.history.get(pos, m);
+            let history = self.local.histories.butterfly.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
             rating = Params::killer_rating(0).mul_add(killer.contains(m).cast(), rating);
 
             for i in 1..=Params::history_rating(1..).len().min(ply.cast()) {
-                let history = self.stack.reply(i).get(pos, m);
+                let history = self.stack.continuation(i).get(pos, m);
                 rating = Params::history_rating(i).mul_add(history, rating);
             }
 
@@ -830,8 +834,8 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             let mut lmr = Self::lmr(depth, index);
             let lmr_depth = (depth - lmr).max(0.0);
-            let history = self.local.history.get(pos, m);
-            let counter = self.stack.reply(1).get(pos, m);
+            let history = self.local.histories.butterfly.get(pos, m);
+            let counter = self.stack.continuation(1).get(pos, m);
             let is_killer = killer.contains(m);
             let is_quiet = m.is_quiet();
 
@@ -927,7 +931,7 @@ impl<'a> Searcher<'a> {
 
             let mut rating = 0.0;
             let pos = &self.stack.pos;
-            let history = self.local.history.get(pos, m);
+            let history = self.local.histories.butterfly.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
             rating = Params::killer_rating(0).mul_add(killer.contains(m).cast(), rating);
 
@@ -954,7 +958,7 @@ impl<'a> Searcher<'a> {
             };
 
             let pos = &self.stack.pos;
-            let history = self.local.history.get(pos, m);
+            let history = self.local.histories.butterfly.get(pos, m);
             self.stack.nodes = self.ctrl.attention(m);
 
             let mut next = self.next(Some(m));

@@ -56,7 +56,7 @@ impl const Statistics<()> for Correction<1> {
 /// Learned corrections to evaluation relative to historical [`Move`]s.
 #[derive(Debug, Zeroable)]
 #[debug("HistoryCorrection")]
-pub struct HistoryCorrection([Butterfly<[[Correction<1>; 2]; 2]>; 2]);
+pub struct HistoryCorrection([[Butterfly<[[Correction<1>; 2]; 2]>; 2]; 2]);
 
 impl const Default for HistoryCorrection {
     #[inline(always)]
@@ -70,7 +70,7 @@ const impl HistoryCorrection {
     pub fn get(&mut self, pos: &Position, m: Move) -> &mut Correction<1> {
         let (wc, wt) = (m.whence(), m.whither());
         let threats = [pos.threats().contains(wc), pos.threats().contains(wt)];
-        &mut self.0[pos.turn() as usize][wc as usize][wt as usize][threats[0] as usize]
-            [threats[1] as usize]
+        &mut self.0[pos.turn() as usize][pos.is_check() as usize][wc as usize][wt as usize]
+            [threats[0] as usize][threats[1] as usize]
     }
 }

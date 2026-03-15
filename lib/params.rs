@@ -237,7 +237,6 @@ params! {
     nmp_margin_scalar: [-4.991574],
     tb_depth_bonus: [3.8686926],
     tt_cutoff_hm_limit: [87.07959],
-    razoring_alpha_limit: [2000.0],
     razoring_depth: [8.4302845, 20.976559],
     razoring_scalar: [30.856945],
     rfp_margin_depth: [1.238703, 11.705757],

@@ -900,7 +900,7 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        if head.is_quiet() && !score.range(ply).contains(&self.stack.value(0)) {
+        if !is_check && head.is_quiet() && !score.range(ply).contains(&self.stack.value(0)) {
             self.update_correction(depth, score);
         }
 
@@ -921,6 +921,7 @@ impl<'a> Searcher<'a> {
         }
 
         let killer = self.stack.killers[0];
+        let is_check = self.stack.pos.is_check();
         let correction = self.correction().cast::<i16>();
         self.stack.values[0] = self.evaluate() + correction;
 
@@ -1001,7 +1002,7 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        if head.is_quiet() && !score.range(zero()).contains(&self.stack.value(0)) {
+        if !is_check && head.is_quiet() && !score.range(zero()).contains(&self.stack.value(0)) {
             self.update_correction(depth, score);
         }
 

@@ -480,23 +480,23 @@ impl<'a> Searcher<'a> {
         self.stack.values[ply.cast::<usize>()] = self.evaluate() + correction;
 
         let transposition = self.transposition();
-        let transposed = match transposition {
-            None => Pv::empty(self.stack.value(0).saturate()),
-            Some(t) => t.transpose(ply),
+        let stand_pat = match transposition {
+            Some(t) if !t.score.range(ply).contains(&self.stack.value(0)) => t.score.bound(ply),
+            _ => self.stack.value(0),
         };
 
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0) {
             if let Some(t) = transposition {
                 let (lower, upper) = t.score.range(ply).into_inner();
                 if upper <= alpha || lower >= beta {
-                    return Ok(transposed.truncate());
+                    return Ok(t.transpose(ply).truncate());
                 }
             }
         }
 
-        let alpha = alpha.max(transposed.score());
+        let alpha = alpha.max(stand_pat);
         if alpha >= beta || ply >= Ply::MAX {
-            return Ok(transposed.truncate());
+            return Ok(Pv::empty(stand_pat));
         }
 
         let improving = self.improving();
@@ -505,7 +505,7 @@ impl<'a> Searcher<'a> {
         let mut moves = Moves::from_iter(self.stack.pos.moves().unpack_if(MoveSet::is_noisy));
 
         moves.rate(|m| {
-            if Some(m) == transposed.head() {
+            if Some(m) == transposition.and_then(|t| t.best) {
                 return Bounded::upper();
             }
 
@@ -523,11 +523,12 @@ impl<'a> Searcher<'a> {
         });
 
         let mut sorted_moves = moves.sorted();
-        let (mut head, mut tail) = match sorted_moves.next() {
+        let (mut head, tail) = match sorted_moves.next() {
             Some((m, _)) => (m, -self.next(Some(m)).quiesce::<IS_PV>(-beta..-alpha)?),
-            None => return Ok(transposed.truncate()),
+            None => return Ok(Pv::empty(stand_pat)),
         };
 
+        let mut tail = tail.clip(stand_pat, Score::upper());
         for (index, (m, _)) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -567,7 +568,6 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let tail = tail.clip(transposed.score(), Score::upper());
         let score = ScoreBound::new(bounds, tail.score(), ply);
         let tpos = Transposition::new(score, zero(), Some(head), IS_PV || was_pv);
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
@@ -606,7 +606,7 @@ impl<'a> Searcher<'a> {
         let is_check = self.stack.pos.is_check();
         let transposition = self.transposition();
         let transposed = match transposition {
-            None => Pv::empty(self.stack.value(0).saturate()),
+            None => Pv::empty(self.stack.value(0)),
             Some(t) => t.transpose(ply),
         };
 
@@ -698,7 +698,7 @@ impl<'a> Searcher<'a> {
         let killer = self.stack.killers[ply.cast::<usize>()];
 
         moves.rate(|m| {
-            if Some(m) == transposed.head() {
+            if Some(m) == transposition.and_then(|t| t.best) {
                 return Bounded::upper();
             }
 

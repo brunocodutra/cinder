@@ -913,6 +913,13 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        if tail >= beta && !tail.is_decisive() && !alpha.is_decisive() {
+            let s = tail.cast();
+            let b = beta.cast();
+            let t = depth / (depth + Params::fail_firm_pivot(0));
+            tail = tail.clip(beta, t.lerp(b, s).saturate());
+        }
+
         let tail = tail.lower(upper);
         let score = ScoreBound::new(bounds, tail.score(), ply);
         let tpos = Transposition::new(score, depth.saturate(), Some(head), IS_PV || was_pv);

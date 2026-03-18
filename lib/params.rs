@@ -214,6 +214,7 @@ params! {
     piece_values: [50.39684, 184.75441, 201.29071, 349.0056, 632.258, 0.0],
     material_scaling: [0.67067015, 1.0132211],
     halfmove_scaling: [1.2637877, 0.7495756],
+    fail_firm_pivot: [1.0],
     pawns_correction: [15.2837515],
     minor_correction: [9.531928],
     major_correction: [11.519005],

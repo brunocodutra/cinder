@@ -544,8 +544,9 @@ impl<'a> Searcher<'a> {
 
             let pos = &self.stack.pos;
             if !is_check && !tail.is_losing() {
-                let margin = pos.gain(m) + Params::futility_margin_quiescence(0);
-                if self.stack.value(0) + margin.cast::<i16>() <= alpha {
+                let delta = alpha - self.stack.value(0);
+                let margin = delta.cast::<f32>() - Params::futility_margin_quiescence(0);
+                if margin >= 0.0 && !pos.gaining(m, margin) {
                     continue;
                 }
             }
@@ -840,8 +841,9 @@ impl<'a> Searcher<'a> {
             let is_quiet = m.is_quiet();
 
             if !is_check && !tail.is_losing() && depth < *Params::futility_depth_limit(0) {
-                let margin = pos.gain(m) + Self::futility(lmr_depth);
-                if self.stack.value(0) + margin.cast::<i16>() <= alpha {
+                let delta = alpha - self.stack.value(0);
+                let margin = delta.cast::<f32>() - Self::futility(lmr_depth);
+                if margin >= 0.0 && !pos.gaining(m, margin) {
                     continue;
                 }
             }

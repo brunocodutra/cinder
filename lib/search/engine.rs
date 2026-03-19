@@ -499,7 +499,6 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(stand_pat));
         }
 
-        let improving = self.improving();
         let is_check = self.stack.pos.is_check();
         let was_pv = transposition.is_some_and(|t| t.was_pv);
         let mut moves = Moves::from_iter(self.stack.pos.moves().unpack_if(MoveSet::is_noisy));
@@ -529,25 +528,18 @@ impl<'a> Searcher<'a> {
         };
 
         let mut tail = tail.clip(stand_pat, Score::upper());
-        for (index, (m, _)) in sorted_moves.enumerate() {
+        for (m, _) in sorted_moves {
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
             };
-
-            if !IS_PV && !is_check && !tail.is_losing() {
-                let scale = Params::lmp_improving(0).mul_add(improving, 1.0);
-                if index.cast::<f32>() > Params::lmp_scalar(0) * scale {
-                    break;
-                }
-            }
 
             let pos = &self.stack.pos;
             if !is_check && !tail.is_losing() {
                 let delta = alpha - self.stack.value(0);
                 let margin = delta.cast::<f32>() - Params::futility_margin_quiescence(0);
                 if margin >= 0.0 && !pos.gaining(m, margin) {
-                    continue;
+                    break;
                 }
             }
 

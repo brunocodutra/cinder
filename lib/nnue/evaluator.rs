@@ -5,7 +5,7 @@ use bytemuck::zeroed;
 use derive_more::with_trait::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, Index, Range};
-use std::{array, hint::unreachable_unchecked, str::FromStr};
+use std::{array, str::FromStr};
 
 #[cfg(test)]
 use proptest::{prelude::*, sample::*};
@@ -286,22 +286,17 @@ impl Evaluator {
     pub fn evaluate(&mut self) -> f32 {
         for side in Color::iter() {
             let mut idx = self.ply.cast::<usize>();
-            if self.pending[side.cast::<usize>()][idx].is_none() {
-                continue;
-            }
 
-            while self.pending[side.cast::<usize>()][idx] == Some(Pending::Update) {
-                idx = idx.checked_sub(1).assume();
-            }
-
-            match self.pending[side.cast::<usize>()][idx] {
-                Some(Pending::Update) => unsafe { unreachable_unchecked() },
-                Some(Pending::Refresh) => self.refresh(side),
-                None => {
-                    for i in idx + 1..=self.ply.cast::<usize>() {
-                        self.update(side, i.convert().assume());
+            loop {
+                idx = match self.pending[side.cast::<usize>()][idx] {
+                    Some(Pending::Update) => idx.checked_sub(1).assume(),
+                    Some(Pending::Refresh) => break self.refresh(side),
+                    None => {
+                        break for i in idx + 1..=self.ply.cast::<usize>() {
+                            self.update(side, i.convert().assume());
+                        };
                     }
-                }
+                };
             }
         }
 
@@ -321,10 +316,9 @@ impl Evaluator {
         let ksq = pos.king(side);
         let bucket = Feature::bucket(side, ksq).cast::<usize>();
 
-        const N: usize = Square::MAX as usize + 1;
         let cache = &self.cache[side.cast::<usize>()][bucket];
-        let current: &Simd<u8, N> = cache.pieces.cast();
-        let target: &Simd<u8, N> = pos.pieces().cast();
+        let current: &u8x64 = cache.pieces.cast();
+        let target: &u8x64 = pos.pieces().cast();
         let diff = Bitboard(current.simd_ne(*target).to_bitmask());
 
         let mut to_sub = Squares::new(cache.occupied & diff);

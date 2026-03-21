@@ -571,7 +571,7 @@ impl<'a> Searcher<'a> {
     #[inline(always)]
     fn pvs<const IS_PV: bool, const N: usize>(
         &mut self,
-        mut depth: f32,
+        depth: f32,
         bounds: Range<Score>,
         is_cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
@@ -583,6 +583,7 @@ impl<'a> Searcher<'a> {
             return Err(Interrupted);
         }
 
+        let is_check = self.stack.pos.is_check();
         let (alpha, beta) = match self.stack.pos.outcome() {
             None => self.mdp(&bounds),
             Some(o) if o.is_draw() => return Ok(Pv::empty(Score::drawn())),
@@ -596,19 +597,11 @@ impl<'a> Searcher<'a> {
         let correction = self.correction().cast::<i16>();
         self.stack.values[ply.cast::<usize>()] = self.evaluate() + correction;
 
-        let is_check = self.stack.pos.is_check();
         let transposition = self.transposition();
         let transposed = match transposition {
             None => Pv::empty(self.stack.value(0)),
             Some(t) => t.transpose(ply),
         };
-
-        depth += is_check.cast::<f32>();
-        depth -= transposition.is_none().cast::<f32>();
-
-        if depth < 1.0 {
-            return Ok(self.quiesce::<IS_PV>(bounds)?.truncate());
-        }
 
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0) {
             if let Some(t) = transposition.filter(|t| t.depth.cast::<f32>() >= depth) {
@@ -641,6 +634,10 @@ impl<'a> Searcher<'a> {
                 (lower, upper)
             }
         };
+
+        let depth = depth - transposition.is_none().cast::<f32>();
+        let depth = depth + is_check.cast::<f32>();
+        let depth = depth.max(1.0);
 
         let alpha = alpha.max(lower);
         let improving = self.improving();

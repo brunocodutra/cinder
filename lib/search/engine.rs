@@ -637,9 +637,9 @@ impl<'a> Searcher<'a> {
 
         if !is_check {
             depth -= transposition.is_none().cast::<f32>();
+            depth = depth.max(1.0);
         }
 
-        let depth = depth.max(1.0);
         let alpha = alpha.max(lower);
         let improving = self.improving();
         let transposed = transposed.clip(lower, upper);
@@ -809,6 +809,7 @@ impl<'a> Searcher<'a> {
             -next.ab::<IS_PV, _>(depth + extension - 1.0, -beta..-alpha, !IS_PV && !is_cut)?
         };
 
+        let mut alpha_raises: Bounded<i16> = tail.gt(&alpha).saturate();
         for (index, (m, _)) in moves.sorted().skip(1).enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -859,6 +860,7 @@ impl<'a> Searcher<'a> {
                 (is_noisy_node.cast(), Params::lmr_is_noisy_node(..)),
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
+                (alpha_raises.cast(), Params::lmr_alpha_raises(..)),
                 (history, Params::lmr_history(..)),
                 (counter, Params::lmr_counter(..)),
             ]);
@@ -877,6 +879,7 @@ impl<'a> Searcher<'a> {
 
             if pv > tail {
                 (head, tail) = (m, pv);
+                alpha_raises += tail.gt(&alpha).cast::<i8>();
             }
         }
 
@@ -944,6 +947,7 @@ impl<'a> Searcher<'a> {
         let mut tail = -next.ab::<true, _>(depth - 1.0, -beta..-alpha, false)?;
         drop(next);
 
+        let mut alpha_raises: Bounded<i16> = tail.gt(&alpha).saturate();
         for (index, (m, _)) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -963,6 +967,7 @@ impl<'a> Searcher<'a> {
                 (1.0, Params::lmr_is_root(..)),
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
+                (alpha_raises.cast(), Params::lmr_alpha_raises(..)),
                 (history, Params::lmr_history(..)),
             ]);
 
@@ -980,6 +985,7 @@ impl<'a> Searcher<'a> {
 
             if pv > tail {
                 (head, tail) = (m, pv);
+                alpha_raises += tail.gt(&alpha).cast::<i8>();
             }
         }
 

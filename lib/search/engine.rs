@@ -571,7 +571,7 @@ impl<'a> Searcher<'a> {
     #[inline(always)]
     fn pvs<const IS_PV: bool, const N: usize>(
         &mut self,
-        depth: f32,
+        mut depth: f32,
         bounds: Range<Score>,
         is_cut: bool,
     ) -> Result<Pv<N>, Interrupted> {
@@ -635,10 +635,11 @@ impl<'a> Searcher<'a> {
             }
         };
 
-        let depth = depth - transposition.is_none().cast::<f32>();
-        let depth = depth + is_check.cast::<f32>();
-        let depth = depth.max(1.0);
+        if !is_check {
+            depth -= transposition.is_none().cast::<f32>();
+        }
 
+        let depth = depth.max(1.0);
         let alpha = alpha.max(lower);
         let improving = self.improving();
         let transposed = transposed.clip(lower, upper);

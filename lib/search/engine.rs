@@ -1095,24 +1095,20 @@ impl<'e, 'p> Search<'e, 'p> {
     /// Moves to search.
     #[inline(always)]
     fn moves_to_search(&self) -> Moves {
-        let Some(wdl) = self.engine.shared.syzygy.wdl(self.pos) else {
+        let Some(dtz) = self.engine.shared.syzygy.dtz(self.pos) else {
             return self.pos.moves().unpack().collect();
         };
 
-        Moves::from_iter(self.pos.moves().unpack().filter_map(|m| {
+        Moves::from_iter(self.pos.moves().unpack().filter(|m| {
             let mut next = Position::clone(self.pos);
-            next.play(m);
+            next.play(*m);
 
-            match self.engine.shared.syzygy.wdl(&next) {
-                None => Some((m, Rating::upper())),
-                Some(next_wdl) => {
-                    if -next_wdl >= wdl {
-                        let wdl = -next_wdl;
-                        Some((m, wdl.saturate()))
-                    } else {
-                        None
-                    }
-                }
+            if dtz > 0 && next.is_checkmate() {
+                true // handles special case of mate near the 50th move horizon
+            } else if let Some(wdl) = self.engine.shared.syzygy.wdl(&next) {
+                -wdl >= dtz.into()
+            } else {
+                true // safety net for runtime errors
             }
         }))
     }

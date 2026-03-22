@@ -1,5 +1,5 @@
 use crate::syzygy::Wdl;
-use crate::util::{Binary, Bits, Bounded, Int, Num};
+use crate::util::{Bounded, Int, Num};
 use bytemuck::Zeroable;
 use derive_more::with_trait::Constructor;
 use std::ops::Neg;
@@ -13,7 +13,7 @@ pub struct DtzRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <DtzRepr a
 unsafe impl const Num for DtzRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
-    const MAX: Self::Repr = 1023;
+    const MAX: Self::Repr = 32767;
 }
 
 unsafe impl const Int for DtzRepr {}
@@ -72,20 +72,6 @@ impl const Neg for DtzRepr {
     }
 }
 
-impl const Binary for Dtz {
-    type Bits = Bits<u16, 11>;
-
-    #[inline(always)]
-    fn encode(&self) -> Self::Bits {
-        Bits::new((self.get() - Self::MIN + 1).cast())
-    }
-
-    #[inline(always)]
-    fn decode(bits: Self::Bits) -> Self {
-        Dtz::new(bits.cast::<i16>() + Self::MIN - 1)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,17 +81,5 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn stretching_dtz_increases_magnitude(dtz: Dtz, p: u16) {
         assert!(dtz.stretch(p).get().abs() >= dtz.get().abs());
-    }
-
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
-    fn decoding_encoded_dtz_is_an_identity(dtz: Dtz) {
-        assert_eq!(Dtz::decode(dtz.encode()), dtz);
-    }
-
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
-    fn decoding_encoded_optional_dtz_is_an_identity(dtz: Option<Dtz>) {
-        assert_eq!(Option::decode(dtz.encode()), dtz);
     }
 }

@@ -38,9 +38,21 @@ const impl<const N: usize> Pv<N> {
         self.moves.head()
     }
 
+    /// Raises the score to at least `lower`.
+    #[inline(always)]
+    pub fn raise(self, lower: Score) -> Self {
+        self.clip(lower, Score::upper())
+    }
+
+    /// Lowers the score to at most `upper`.
+    #[inline(always)]
+    pub fn lower(self, upper: Score) -> Self {
+        self.clip(Score::lower(), upper)
+    }
+
     /// Constrains the score between `lower` and `upper`.
     #[inline(always)]
-    pub fn clip(self, lower: Score, upper: Score) -> Pv<N> {
+    pub fn clip(self, lower: Score, upper: Score) -> Self {
         Pv::new(self.score.clip(lower, upper), self.moves)
     }
 
@@ -52,7 +64,7 @@ const impl<const N: usize> Pv<N> {
 
     /// Transposes to a principal variation to a move.
     #[inline(always)]
-    pub fn transpose(self, head: Move) -> Pv<N> {
+    pub fn transpose(self, head: Move) -> Self {
         Pv::new(self.score, Line::cons(head, self.moves))
     }
 }

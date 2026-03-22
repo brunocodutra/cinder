@@ -1,5 +1,6 @@
 use crate::chess::{Bitboard, Flip, Perspective, Piece, Rank, Role, Square, Squares};
 use crate::util::{Assume, Binary, Bits, Num, zero};
+use bytemuck::ZeroableInOption;
 use std::fmt::{self, Debug, Display, Formatter, Write};
 use std::num::NonZeroU16;
 
@@ -8,7 +9,10 @@ use std::num::NonZeroU16;
 #[derive_const(Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, filter(#self.is_promotion() || #self.encode().slice(..2) == zero()))]
+#[repr(transparent)]
 pub struct Move(NonZeroU16);
+
+unsafe impl ZeroableInOption for Move {}
 
 const impl Move {
     /// Constructs a regular move.

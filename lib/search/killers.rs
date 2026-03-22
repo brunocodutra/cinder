@@ -1,7 +1,8 @@
 use crate::chess::Move;
+use bytemuck::Zeroable;
 
 /// A set of killer moves.
-#[derive(Debug, Copy, Hash)]
+#[derive(Debug, Copy, Hash, Zeroable)]
 #[derive_const(Default, Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Killers(Option<Move>, Option<Move>);

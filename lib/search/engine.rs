@@ -552,17 +552,22 @@ impl<'a> Searcher<'a> {
             let mut rating = 0.0;
             let pos = &self.stack.pos;
             let history = self.local.histories.attacker.get(pos, m);
-            rating = Params::history_rating(0).mul_add(history, rating);
+            rating = Params::move_rating_history(0).mul_add(history, rating);
             let history = self.local.histories.defender.get(pos, m);
-            rating = Params::history_rating(1).mul_add(history, rating);
+            rating = Params::move_rating_history(1).mul_add(history, rating);
             let history = self.local.histories.butterfly.get(pos, m);
-            rating = Params::history_rating(2).mul_add(history, rating);
+            rating = Params::move_rating_history(2).mul_add(history, rating);
 
             let gives_check = pos.gives_direct_check(m);
-            rating = Params::gives_check_rating(0).mul_add(gives_check.cast(), rating);
+            rating = Params::move_rating_gives_check(0).mul_add(gives_check.cast(), rating);
 
-            if pos.gaining(m, *Params::good_noisy_margin(0)) {
-                rating += *Params::good_noisy_rating(0);
+            let gamma = *Params::move_rating_see(0);
+            let delta = *Params::move_rating_see(1);
+            let margin = *Params::move_rating_see(2);
+            let see = pos.see(m, -delta / gamma..margin);
+
+            rating += see.mul_add(gamma, delta);
+            if see > -delta / gamma {
                 rating += pos.gain(m);
             }
 
@@ -756,24 +761,31 @@ impl<'a> Searcher<'a> {
             let mut rating = 0.0;
             let pos = &self.stack.pos;
             let history = self.local.histories.attacker.get(pos, m);
-            rating = Params::history_rating(0).mul_add(history, rating);
+            rating = Params::move_rating_history(0).mul_add(history, rating);
             let history = self.local.histories.defender.get(pos, m);
-            rating = Params::history_rating(1).mul_add(history, rating);
+            rating = Params::move_rating_history(1).mul_add(history, rating);
             let history = self.local.histories.butterfly.get(pos, m);
-            rating = Params::history_rating(2).mul_add(history, rating);
+            rating = Params::move_rating_history(2).mul_add(history, rating);
 
-            for i in 1..=Params::continuation_rating(1..).len().min(ply.cast()) {
+            for i in 1..=Params::move_rating_continuation(1..).len().min(ply.cast()) {
                 let history = self.stack.continuation(i).get(pos, m);
-                rating = Params::continuation_rating(i).mul_add(history, rating);
+                rating = Params::move_rating_continuation(i).mul_add(history, rating);
             }
 
             let gives_check = pos.gives_direct_check(m);
-            rating = Params::gives_check_rating(0).mul_add(gives_check.cast(), rating);
-            rating = Params::killer_rating(0).mul_add(killer.contains(m).cast(), rating);
+            rating = Params::move_rating_gives_check(0).mul_add(gives_check.cast(), rating);
+            rating = Params::move_rating_killer(0).mul_add(killer.contains(m).cast(), rating);
 
-            if m.is_noisy() && pos.gaining(m, *Params::good_noisy_margin(0)) {
-                rating += *Params::good_noisy_rating(0);
-                rating += pos.gain(m);
+            if m.is_noisy() {
+                let gamma = *Params::move_rating_see(0);
+                let delta = *Params::move_rating_see(1);
+                let margin = *Params::move_rating_see(2);
+                let see = pos.see(m, -delta / gamma..margin);
+
+                rating += see.mul_add(gamma, delta);
+                if see > -delta / gamma {
+                    rating += pos.gain(m);
+                }
             }
 
             rating.saturate()
@@ -1000,19 +1012,26 @@ impl<'a> Searcher<'a> {
             let mut rating = 0.0;
             let pos = &self.stack.pos;
             let history = self.local.histories.attacker.get(pos, m);
-            rating = Params::history_rating(0).mul_add(history, rating);
+            rating = Params::move_rating_history(0).mul_add(history, rating);
             let history = self.local.histories.defender.get(pos, m);
-            rating = Params::history_rating(1).mul_add(history, rating);
+            rating = Params::move_rating_history(1).mul_add(history, rating);
             let history = self.local.histories.butterfly.get(pos, m);
-            rating = Params::history_rating(2).mul_add(history, rating);
+            rating = Params::move_rating_history(2).mul_add(history, rating);
 
             let gives_check = pos.gives_direct_check(m);
-            rating = Params::gives_check_rating(0).mul_add(gives_check.cast(), rating);
-            rating = Params::killer_rating(0).mul_add(killer.contains(m).cast(), rating);
+            rating = Params::move_rating_gives_check(0).mul_add(gives_check.cast(), rating);
+            rating = Params::move_rating_killer(0).mul_add(killer.contains(m).cast(), rating);
 
-            if m.is_noisy() && pos.gaining(m, *Params::good_noisy_margin(0)) {
-                rating += *Params::good_noisy_rating(0);
-                rating += pos.gain(m);
+            if m.is_noisy() {
+                let gamma = *Params::move_rating_see(0);
+                let delta = *Params::move_rating_see(1);
+                let margin = *Params::move_rating_see(2);
+                let see = pos.see(m, -delta / gamma..margin);
+
+                rating += see.mul_add(gamma, delta);
+                if see > -delta / gamma {
+                    rating += pos.gain(m);
+                }
             }
 
             rating.saturate()

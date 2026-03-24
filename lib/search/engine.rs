@@ -333,6 +333,16 @@ impl<'a> Searcher<'a> {
         ]))
     }
 
+    /// Computes fail-high pruning reduction.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn fhp(depth: f32) -> f32 {
+        convolve([
+            (depth, Params::fhp_margin_depth(..)),
+            (1.0, Params::fhp_margin_scalar(..)),
+        ])
+    }
+
     /// Computes the razoring margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -667,6 +677,17 @@ impl<'a> Searcher<'a> {
                 margin = Params::rfp_margin_improving(0).mul_add(improving, margin);
                 if self.stack.value(0) - margin.cast::<i16>() >= beta {
                     return Ok(Pv::empty(self.stack.value(0)).clip(lower, upper));
+                }
+            }
+
+            if let Some(t) = transposition {
+                if !beta.is_losing() && !stand_pat.is_winning() {
+                    if depth < t.depth.cast::<f32>() + Params::fhp_depth_limit(0) {
+                        let margin = Self::fhp(depth - t.depth.cast::<f32>());
+                        if is_cut && t.score.lower(ply) - margin.cast::<i16>() >= beta {
+                            return Ok(t.transpose(ply).truncate());
+                        }
+                    }
                 }
             }
 

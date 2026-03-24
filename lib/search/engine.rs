@@ -41,6 +41,7 @@ struct SharedData {
 
 #[derive(Debug, Zeroable)]
 struct Histories {
+    attacker: AttackerHistory,
     butterfly: ButterflyHistory,
     continuation: ContinuationHistory,
 }
@@ -163,41 +164,54 @@ impl<'a> Searcher<'a> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn update_history(&mut self, depth: f32, best: Move, moves: &Moves) {
-        let history_bonus = Params::history_bonus(0)
-            .mul_add(depth, *Params::history_bonus(1))
-            .min(*Params::history_bonus(2));
+        let attacker_bonus = Params::attacker_history_bonus(0)
+            .mul_add(depth, *Params::attacker_history_bonus(1))
+            .min(*Params::attacker_history_bonus(2));
 
-        let history_penalty = Params::history_penalty(0)
-            .mul_add(depth, *Params::history_penalty(1))
-            .max(*Params::history_penalty(2));
+        let attacker_penalty = Params::attacker_history_penalty(0)
+            .mul_add(depth, *Params::attacker_history_penalty(1))
+            .max(*Params::attacker_history_penalty(2));
 
-        let counter_bonus = Params::counter_bonus(0)
-            .mul_add(depth, *Params::counter_bonus(1))
-            .min(*Params::counter_bonus(2));
+        let butterfly_bonus = Params::butterfly_history_bonus(0)
+            .mul_add(depth, *Params::butterfly_history_bonus(1))
+            .min(*Params::butterfly_history_bonus(2));
 
-        let counter_penalty = Params::counter_penalty(0)
-            .mul_add(depth, *Params::counter_penalty(1))
-            .max(*Params::counter_penalty(2));
+        let butterfly_penalty = Params::butterfly_history_penalty(0)
+            .mul_add(depth, *Params::butterfly_history_penalty(1))
+            .max(*Params::butterfly_history_penalty(2));
 
-        let followup_bonus = Params::followup_bonus(0)
-            .mul_add(depth, *Params::followup_bonus(1))
-            .min(*Params::followup_bonus(2));
+        let counter_bonus = Params::counter_history_bonus(0)
+            .mul_add(depth, *Params::counter_history_bonus(1))
+            .min(*Params::counter_history_bonus(2));
 
-        let followup_penalty = Params::followup_penalty(0)
-            .mul_add(depth, *Params::followup_penalty(1))
-            .max(*Params::followup_penalty(2));
+        let counter_penalty = Params::counter_history_penalty(0)
+            .mul_add(depth, *Params::counter_history_penalty(1))
+            .max(*Params::counter_history_penalty(2));
+
+        let followup_bonus = Params::followup_history_bonus(0)
+            .mul_add(depth, *Params::followup_history_bonus(1))
+            .min(*Params::followup_history_bonus(2));
+
+        let followup_penalty = Params::followup_history_penalty(0)
+            .mul_add(depth, *Params::followup_history_penalty(1))
+            .max(*Params::followup_history_penalty(2));
 
         let pos = &self.stack.pos;
-        let bonus = [history_bonus, counter_bonus, followup_bonus];
-        let penalty = [history_penalty, counter_penalty, followup_penalty];
+        let bonus = [attacker_bonus, butterfly_bonus];
+        self.local.histories.attacker.update(pos, best, bonus[0]);
+        self.local.histories.butterfly.update(pos, best, bonus[1]);
 
-        self.local.histories.butterfly.update(pos, best, bonus[0]);
+        let bonus = [0.0, counter_bonus, followup_bonus];
         for i in 1..=bonus[1..].len().min(pos.ply().cast()) {
             self.stack.continuation(i).update(pos, best, bonus[i]);
         }
 
         for &(m, _) in moves.iter().take_while(|(m, _)| *m != best) {
-            self.local.histories.butterfly.update(pos, m, penalty[0]);
+            let penalty = [attacker_penalty, butterfly_penalty];
+            self.local.histories.attacker.update(pos, m, penalty[0]);
+            self.local.histories.butterfly.update(pos, m, penalty[1]);
+
+            let penalty = [0.0, counter_penalty, followup_penalty];
             for i in 1..=penalty[1..].len().min(pos.ply().cast()) {
                 self.stack.continuation(i).update(pos, m, penalty[i]);
             }
@@ -526,8 +540,10 @@ impl<'a> Searcher<'a> {
 
             let mut rating = 0.0;
             let pos = &self.stack.pos;
-            let history = self.local.histories.butterfly.get(pos, m);
+            let history = self.local.histories.attacker.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
+            let history = self.local.histories.butterfly.get(pos, m);
+            rating = Params::history_rating(1).mul_add(history, rating);
 
             if pos.gaining(m, *Params::good_noisy_margin(0)) {
                 rating += *Params::good_noisy_rating(0);
@@ -722,13 +738,15 @@ impl<'a> Searcher<'a> {
 
             let mut rating = 0.0;
             let pos = &self.stack.pos;
-            let history = self.local.histories.butterfly.get(pos, m);
+            let history = self.local.histories.attacker.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
+            let history = self.local.histories.butterfly.get(pos, m);
+            rating = Params::history_rating(1).mul_add(history, rating);
             rating = Params::killer_rating(0).mul_add(killer.contains(m).cast(), rating);
 
-            for i in 1..=Params::history_rating(1..).len().min(ply.cast()) {
+            for i in 1..=Params::continuation_rating(1..).len().min(ply.cast()) {
                 let history = self.stack.continuation(i).get(pos, m);
-                rating = Params::history_rating(i).mul_add(history, rating);
+                rating = Params::continuation_rating(i).mul_add(history, rating);
             }
 
             if m.is_noisy() && pos.gaining(m, *Params::good_noisy_margin(0)) {
@@ -855,7 +873,7 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             let mut lmr = Self::lmr(depth, index);
             let lmr_depth = (depth - lmr).max(0.0);
-            let history = self.local.histories.butterfly.get(pos, m);
+            let butterfly = self.local.histories.butterfly.get(pos, m);
             let counter = self.stack.continuation(1).get(pos, m);
             let is_killer = killer.contains(m);
             let is_quiet = m.is_quiet();
@@ -890,7 +908,7 @@ impl<'a> Searcher<'a> {
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
                 (alpha_raises.cast(), Params::lmr_alpha_raises(..)),
-                (history, Params::lmr_history(..)),
+                (butterfly, Params::lmr_butterfly(..)),
                 (counter, Params::lmr_counter(..)),
             ]);
 
@@ -956,8 +974,10 @@ impl<'a> Searcher<'a> {
 
             let mut rating = 0.0;
             let pos = &self.stack.pos;
-            let history = self.local.histories.butterfly.get(pos, m);
+            let history = self.local.histories.attacker.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
+            let history = self.local.histories.butterfly.get(pos, m);
+            rating = Params::history_rating(1).mul_add(history, rating);
             rating = Params::killer_rating(0).mul_add(killer.contains(m).cast(), rating);
 
             if m.is_noisy() && pos.gaining(m, *Params::good_noisy_margin(0)) {
@@ -984,7 +1004,7 @@ impl<'a> Searcher<'a> {
             };
 
             let pos = &self.stack.pos;
-            let history = self.local.histories.butterfly.get(pos, m);
+            let butterfly = self.local.histories.butterfly.get(pos, m);
             self.stack.attention = self.ctrl.attention(m);
 
             let mut next = self.next(Some(m));
@@ -997,7 +1017,7 @@ impl<'a> Searcher<'a> {
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
                 (alpha_raises.cast(), Params::lmr_alpha_raises(..)),
-                (history, Params::lmr_history(..)),
+                (butterfly, Params::lmr_butterfly(..)),
             ]);
 
             let next_depth = (depth - 1.0).max(0.0);

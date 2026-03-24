@@ -78,6 +78,32 @@ impl const Statistics<Move> for PieceToHistory {
     }
 }
 
+/// Historical statistics about [`Move`]s in relation to opposing king.
+#[derive(Debug, Zeroable)]
+#[debug("AttackerHistory")]
+pub struct AttackerHistory([[PieceToHistory; 64]; 2]);
+
+impl const Default for AttackerHistory {
+    #[inline(always)]
+    fn default() -> Self {
+        zeroed()
+    }
+}
+
+impl const Statistics<Move> for AttackerHistory {
+    type Stat = Graviton;
+
+    #[inline(always)]
+    fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
+        self.0[m.is_quiet() as usize][pos.king(!pos.turn()) as usize].get(pos, m)
+    }
+
+    #[inline(always)]
+    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
+        self.0[m.is_quiet() as usize][pos.king(!pos.turn()) as usize].update(pos, m, delta);
+    }
+}
+
 /// Historical statistics about [`Move`] continuations.
 #[derive(Debug, Zeroable)]
 #[debug("ContinuationHistory")]

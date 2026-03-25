@@ -644,15 +644,17 @@ impl Position {
         moves
     }
 
-    /// The sequence of captures om a square starting from a move ordered by least valued captor.
-    ///
-    /// Pins and checks are ignored.
+    /// The sequence of captures on a square starting from a move ordered by least valued captor.
     #[inline(always)]
     pub fn exchanges(&self, m: Move) -> impl Iterator<Item = (Move, Role, Role)> {
         use {Color::*, Piece::*, Role::*};
 
         gen move {
             let sq = m.whither();
+            if !self.threats().contains(sq) && !self.threats().contains(m.whence()) {
+                return;
+            }
+
             let queens = self.by_role(Queen);
             let rooks = self.by_role(Rook);
             let bishops = self.by_role(Bishop);

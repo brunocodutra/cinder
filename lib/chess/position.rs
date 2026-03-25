@@ -274,6 +274,7 @@ pub struct Position {
     board: Board,
     pinned: Bitboard,
     checkers: Bitboard,
+    checking: [Bitboard; 4],
     threats: Bitboard,
     zobrists: Zobrists,
     history: [[Option<NonZeroU32>; 32]; 2],
@@ -311,6 +312,7 @@ impl Default for Position {
         Self {
             pinned: Default::default(),
             checkers: Default::default(),
+            checking: Default::default(),
             threats: board.threats(!board.turn),
             zobrists: board.zobrists(),
             history: zeroed(),
@@ -568,8 +570,8 @@ impl Position {
         let theirs = self.by_color(!turn);
         let occ = ours ^ theirs;
         let king = self.king(turn);
-        let (wc, wt) = (m.whence(), m.whither());
 
+        let (wc, wt) = (m.whence(), m.whither());
         let unpinned = match self.checkers().len() {
             0 => ours & (!self.pinned() | Bitboard::line(king, wt)),
             1 => ours & !self.pinned(),
@@ -627,6 +629,27 @@ impl Position {
         });
 
         checks.is_empty() || checks.contains(wt)
+    }
+
+    /// Whether a [`Move`] checks the opposing king directly.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn gives_direct_check(&self, m: Move) -> bool {
+        let (wc, wt) = (m.whence(), m.whither());
+        let role = m.promotion().or_else(|| self.role_on(wc)).assume();
+
+        use Role::*;
+        if role == Queen {
+            let checking = self.checking[Bishop as usize] | self.checking[Rook as usize];
+            checking.contains(wt)
+        } else if role != Role::King {
+            self.checking[role as usize].contains(wt)
+        } else if (wt - wc).abs() == 2 {
+            let wt = Castles::rook(wt).assume().whither();
+            self.checking[Rook as usize].contains(wt)
+        } else {
+            false
+        }
     }
 
     /// The legal moves that can be played in this position.
@@ -800,6 +823,7 @@ impl Position {
 
         self.pinned = self.board.pinned(!turn, Bitboard::full());
         self.checkers = self.board.checkers(!turn);
+        self.checking = self.board.checking(turn);
         self.threats = self.board.threats(turn);
     }
 
@@ -881,6 +905,7 @@ impl FromStr for Position {
         Ok(Position {
             pinned: board.pinned(board.turn, Bitboard::full()),
             checkers: board.checkers(board.turn),
+            checking: board.checking(!board.turn),
             threats: board.threats(!board.turn),
             zobrists: board.zobrists(),
             history: Default::default(),
@@ -1048,6 +1073,17 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn move_is_legal_if_can_be_played(#[filter(#pos.outcome().is_none())] pos: Position, m: Move) {
         assert_eq!(pos.is_legal(m), pos.moves().unpack().any(|n| m == n));
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn move_gives_direct_check_if_threatens_opposing_king_directly(
+        #[filter(#pos.outcome().is_none())] pos: Position,
+        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
+    ) {
+        let mut next = pos.clone();
+        next.play(m);
+        assert!(!pos.gives_direct_check(m) || next.is_check());
     }
 
     #[proptest]

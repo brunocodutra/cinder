@@ -257,6 +257,20 @@ const impl Board {
         checkers
     }
 
+    /// Squares giving direct check to the king of a [`Color`].
+    #[inline(always)]
+    pub fn checking(&self, c: Color) -> [Bitboard; 4] {
+        let occ = self.occupied();
+        let king = self.king(c).assume();
+
+        [
+            Piece::new(Role::Pawn, c).attacks(king, occ),
+            Piece::new(Role::Knight, c).attacks(king, occ),
+            Piece::new(Role::Bishop, c).attacks(king, occ),
+            Piece::new(Role::Rook, c).attacks(king, occ),
+        ]
+    }
+
     /// Squares occupied by [`Square`]s threatened by [`Piece`]s of a [`Color`].
     #[inline(always)]
     pub fn threats(&self, c: Color) -> Bitboard

@@ -95,12 +95,42 @@ impl const Statistics<Move> for AttackerHistory {
 
     #[inline(always)]
     fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
-        self.0[m.is_quiet() as usize][pos.king(!pos.turn()) as usize].get(pos, m)
+        let ksq = pos.king(!pos.turn());
+        self.0[m.is_quiet() as usize][ksq as usize].get(pos, m)
     }
 
     #[inline(always)]
     fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
-        self.0[m.is_quiet() as usize][pos.king(!pos.turn()) as usize].update(pos, m, delta);
+        let ksq = pos.king(!pos.turn());
+        self.0[m.is_quiet() as usize][ksq as usize].update(pos, m, delta);
+    }
+}
+
+/// Historical statistics about [`Move`]s in relation to defending king.
+#[derive(Debug, Zeroable)]
+#[debug("DefenderHistory")]
+pub struct DefenderHistory([[PieceToHistory; 64]; 2]);
+
+impl const Default for DefenderHistory {
+    #[inline(always)]
+    fn default() -> Self {
+        zeroed()
+    }
+}
+
+impl const Statistics<Move> for DefenderHistory {
+    type Stat = Graviton;
+
+    #[inline(always)]
+    fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
+        let ksq = pos.king(pos.turn());
+        self.0[m.is_quiet() as usize][ksq as usize].get(pos, m)
+    }
+
+    #[inline(always)]
+    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
+        let ksq = pos.king(pos.turn());
+        self.0[m.is_quiet() as usize][ksq as usize].update(pos, m, delta);
     }
 }
 
@@ -121,7 +151,7 @@ const impl ContinuationHistory {
     pub fn get(&mut self, pos: &Position, m: Move) -> &mut PieceToHistory {
         let (wc, wt) = (m.whence(), m.whither());
         let piece = pos.piece_on(wc).assume();
-        let threats = pos.threats().contains(wt);
-        &mut self.0[piece as usize][wt as usize][threats as usize]
+        let threat = pos.threats().contains(wt);
+        &mut self.0[piece as usize][wt as usize][threat as usize]
     }
 }

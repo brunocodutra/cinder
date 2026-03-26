@@ -42,6 +42,7 @@ struct SharedData {
 #[derive(Debug, Zeroable)]
 struct Histories {
     attacker: AttackerHistory,
+    defender: DefenderHistory,
     butterfly: ButterflyHistory,
     continuation: ContinuationHistory,
 }
@@ -168,38 +169,47 @@ impl<'a> Searcher<'a> {
             .mul_add(depth, *Params::attacker_history_bonus(1))
             .min(*Params::attacker_history_bonus(2));
 
-        let attacker_penalty = Params::attacker_history_penalty(0)
-            .mul_add(depth, *Params::attacker_history_penalty(1))
-            .max(*Params::attacker_history_penalty(2));
+        let attacker_malus = Params::attacker_history_malus(0)
+            .mul_add(depth, *Params::attacker_history_malus(1))
+            .max(*Params::attacker_history_malus(2));
+
+        let defender_bonus = Params::defender_history_bonus(0)
+            .mul_add(depth, *Params::defender_history_bonus(1))
+            .min(*Params::defender_history_bonus(2));
+
+        let defender_malus = Params::defender_history_malus(0)
+            .mul_add(depth, *Params::defender_history_malus(1))
+            .max(*Params::defender_history_malus(2));
 
         let butterfly_bonus = Params::butterfly_history_bonus(0)
             .mul_add(depth, *Params::butterfly_history_bonus(1))
             .min(*Params::butterfly_history_bonus(2));
 
-        let butterfly_penalty = Params::butterfly_history_penalty(0)
-            .mul_add(depth, *Params::butterfly_history_penalty(1))
-            .max(*Params::butterfly_history_penalty(2));
+        let butterfly_malus = Params::butterfly_history_malus(0)
+            .mul_add(depth, *Params::butterfly_history_malus(1))
+            .max(*Params::butterfly_history_malus(2));
 
         let counter_bonus = Params::counter_history_bonus(0)
             .mul_add(depth, *Params::counter_history_bonus(1))
             .min(*Params::counter_history_bonus(2));
 
-        let counter_penalty = Params::counter_history_penalty(0)
-            .mul_add(depth, *Params::counter_history_penalty(1))
-            .max(*Params::counter_history_penalty(2));
+        let counter_malus = Params::counter_history_malus(0)
+            .mul_add(depth, *Params::counter_history_malus(1))
+            .max(*Params::counter_history_malus(2));
 
         let followup_bonus = Params::followup_history_bonus(0)
             .mul_add(depth, *Params::followup_history_bonus(1))
             .min(*Params::followup_history_bonus(2));
 
-        let followup_penalty = Params::followup_history_penalty(0)
-            .mul_add(depth, *Params::followup_history_penalty(1))
-            .max(*Params::followup_history_penalty(2));
+        let followup_malus = Params::followup_history_malus(0)
+            .mul_add(depth, *Params::followup_history_malus(1))
+            .max(*Params::followup_history_malus(2));
 
         let pos = &self.stack.pos;
-        let bonus = [attacker_bonus, butterfly_bonus];
+        let bonus = [attacker_bonus, defender_bonus, butterfly_bonus];
         self.local.histories.attacker.update(pos, best, bonus[0]);
-        self.local.histories.butterfly.update(pos, best, bonus[1]);
+        self.local.histories.defender.update(pos, best, bonus[1]);
+        self.local.histories.butterfly.update(pos, best, bonus[2]);
 
         let bonus = [0.0, counter_bonus, followup_bonus];
         for i in 1..=bonus[1..].len().min(pos.ply().cast()) {
@@ -207,13 +217,14 @@ impl<'a> Searcher<'a> {
         }
 
         for &(m, _) in moves.iter().take_while(|(m, _)| *m != best) {
-            let penalty = [attacker_penalty, butterfly_penalty];
-            self.local.histories.attacker.update(pos, m, penalty[0]);
-            self.local.histories.butterfly.update(pos, m, penalty[1]);
+            let malus = [attacker_malus, defender_malus, butterfly_malus];
+            self.local.histories.attacker.update(pos, m, malus[0]);
+            self.local.histories.defender.update(pos, m, malus[1]);
+            self.local.histories.butterfly.update(pos, m, malus[2]);
 
-            let penalty = [0.0, counter_penalty, followup_penalty];
-            for i in 1..=penalty[1..].len().min(pos.ply().cast()) {
-                self.stack.continuation(i).update(pos, m, penalty[i]);
+            let malus = [0.0, counter_malus, followup_malus];
+            for i in 1..=malus[1..].len().min(pos.ply().cast()) {
+                self.stack.continuation(i).update(pos, m, malus[i]);
             }
         }
     }
@@ -542,8 +553,10 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             let history = self.local.histories.attacker.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
-            let history = self.local.histories.butterfly.get(pos, m);
+            let history = self.local.histories.defender.get(pos, m);
             rating = Params::history_rating(1).mul_add(history, rating);
+            let history = self.local.histories.butterfly.get(pos, m);
+            rating = Params::history_rating(2).mul_add(history, rating);
 
             if pos.gaining(m, *Params::good_noisy_margin(0)) {
                 rating += *Params::good_noisy_rating(0);
@@ -740,10 +753,12 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             let history = self.local.histories.attacker.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
-            let history = self.local.histories.butterfly.get(pos, m);
+            let history = self.local.histories.defender.get(pos, m);
             rating = Params::history_rating(1).mul_add(history, rating);
-            rating = Params::killer_rating(0).mul_add(killer.contains(m).cast(), rating);
+            let history = self.local.histories.butterfly.get(pos, m);
+            rating = Params::history_rating(2).mul_add(history, rating);
 
+            rating = Params::killer_rating(0).mul_add(killer.contains(m).cast(), rating);
             for i in 1..=Params::continuation_rating(1..).len().min(ply.cast()) {
                 let history = self.stack.continuation(i).get(pos, m);
                 rating = Params::continuation_rating(i).mul_add(history, rating);
@@ -976,8 +991,10 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             let history = self.local.histories.attacker.get(pos, m);
             rating = Params::history_rating(0).mul_add(history, rating);
-            let history = self.local.histories.butterfly.get(pos, m);
+            let history = self.local.histories.defender.get(pos, m);
             rating = Params::history_rating(1).mul_add(history, rating);
+            let history = self.local.histories.butterfly.get(pos, m);
+            rating = Params::history_rating(2).mul_add(history, rating);
             rating = Params::killer_rating(0).mul_add(killer.contains(m).cast(), rating);
 
             if m.is_noisy() && pos.gaining(m, *Params::good_noisy_margin(0)) {

@@ -298,6 +298,7 @@ params! {
     lmr_extension: [-0.46644744],
     lmr_threshold: [0.48005262],
     killer_rating: [53.16652],
+    gives_check_rating: [50.0],
     history_rating: [108.39066, 108.39066, 108.39066],
     continuation_rating: [0.0, 124.212105, 124.212105],
     good_noisy_margin: [-20.445045],

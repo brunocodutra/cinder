@@ -558,6 +558,9 @@ impl<'a> Searcher<'a> {
             let history = self.local.histories.butterfly.get(pos, m);
             rating = Params::history_rating(2).mul_add(history, rating);
 
+            let gives_check = pos.gives_direct_check(m);
+            rating = Params::gives_check_rating(0).mul_add(gives_check.cast(), rating);
+
             if pos.gaining(m, *Params::good_noisy_margin(0)) {
                 rating += *Params::good_noisy_rating(0);
                 rating += pos.gain(m);
@@ -759,11 +762,14 @@ impl<'a> Searcher<'a> {
             let history = self.local.histories.butterfly.get(pos, m);
             rating = Params::history_rating(2).mul_add(history, rating);
 
-            rating = Params::killer_rating(0).mul_add(killer.contains(m).cast(), rating);
             for i in 1..=Params::continuation_rating(1..).len().min(ply.cast()) {
                 let history = self.stack.continuation(i).get(pos, m);
                 rating = Params::continuation_rating(i).mul_add(history, rating);
             }
+
+            let gives_check = pos.gives_direct_check(m);
+            rating = Params::gives_check_rating(0).mul_add(gives_check.cast(), rating);
+            rating = Params::killer_rating(0).mul_add(killer.contains(m).cast(), rating);
 
             if m.is_noisy() && pos.gaining(m, *Params::good_noisy_margin(0)) {
                 rating += *Params::good_noisy_rating(0);
@@ -999,6 +1005,9 @@ impl<'a> Searcher<'a> {
             rating = Params::history_rating(1).mul_add(history, rating);
             let history = self.local.histories.butterfly.get(pos, m);
             rating = Params::history_rating(2).mul_add(history, rating);
+
+            let gives_check = pos.gives_direct_check(m);
+            rating = Params::gives_check_rating(0).mul_add(gives_check.cast(), rating);
             rating = Params::killer_rating(0).mul_add(killer.contains(m).cast(), rating);
 
             if m.is_noisy() && pos.gaining(m, *Params::good_noisy_margin(0)) {

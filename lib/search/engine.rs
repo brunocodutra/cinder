@@ -584,7 +584,8 @@ impl<'a> Searcher<'a> {
             };
 
             let pos = &self.stack.pos;
-            if !is_check && !tail.is_losing() {
+            let gives_direct_check = pos.gives_direct_check(m);
+            if !is_check && !gives_direct_check && !tail.is_losing() {
                 let delta = alpha - self.stack.value(0);
                 let margin = delta.cast::<f32>() - Params::futility_margin_quiescence(0);
                 if margin >= 0.0 && !pos.gaining(m, margin) {
@@ -878,14 +879,15 @@ impl<'a> Searcher<'a> {
                 s => s.max(alpha),
             };
 
-            if !IS_PV && !is_check && !tail.is_losing() {
+            let pos = &self.stack.pos;
+            let gives_direct_check = pos.gives_direct_check(m);
+            if !IS_PV && !is_check && !gives_direct_check && !tail.is_losing() {
                 let scale = Params::lmp_improving(0).mul_add(improving, 1.0);
                 if index.cast::<f32>() > Self::lmp(depth) * scale {
                     break;
                 }
             }
 
-            let pos = &self.stack.pos;
             let mut lmr = Self::lmr(depth, index);
             let lmr_depth = (depth - lmr).max(0.0);
             let butterfly = self.local.histories.butterfly.get(pos, m);
@@ -893,11 +895,13 @@ impl<'a> Searcher<'a> {
             let is_killer = killer.contains(m);
             let is_quiet = m.is_quiet();
 
-            if !is_check && !tail.is_losing() && depth < *Params::futility_depth_limit(0) {
-                let delta = alpha - self.stack.value(0);
-                let margin = delta.cast::<f32>() - Self::futility(lmr_depth);
-                if margin >= 0.0 && !pos.gaining(m, margin) {
-                    continue;
+            if !is_check && !gives_direct_check && !tail.is_losing() {
+                if depth < *Params::futility_depth_limit(0) {
+                    let delta = alpha - self.stack.value(0);
+                    let margin = delta.cast::<f32>() - Self::futility(lmr_depth);
+                    if margin >= 0.0 && !pos.gaining(m, margin) {
+                        continue;
+                    }
                 }
             }
 

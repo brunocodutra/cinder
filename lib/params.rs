@@ -277,7 +277,6 @@ params! {
     see_margin_noisy_scalar: [-20.0],
     see_margin_quiet_depth: [-8.862688, -0.8800826],
     see_margin_quiet_scalar: [-2.0],
-    see_margin_is_killer: [-7.17011],
     see_margin_quiescence: [-10.0],
     lmr_index: [0.01092667, 0.28172347, 0.04370668],
     lmr_depth: [0.04182772, 0.05906677],

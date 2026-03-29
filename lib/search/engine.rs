@@ -910,7 +910,6 @@ impl<'a> Searcher<'a> {
             let lmr_depth = (depth - lmr).max(0.0);
             let butterfly = self.local.histories.butterfly.get(pos, m);
             let counter = self.stack.continuation(1).get(pos, m);
-            let is_killer = killer.contains(m);
             let is_quiet = m.is_quiet();
 
             if !is_check && !gives_direct_check && !tail.is_losing() {
@@ -924,8 +923,7 @@ impl<'a> Searcher<'a> {
             }
 
             if !tail.is_losing() {
-                let mut margin = Self::see_pruning(lmr_depth, m);
-                margin = Params::see_margin_is_killer(0).mul_add(is_killer.cast(), margin);
+                let margin = Self::see_pruning(lmr_depth, m);
                 if !pos.gaining(m, margin) {
                     continue;
                 }

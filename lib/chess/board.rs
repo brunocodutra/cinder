@@ -226,13 +226,13 @@ const impl Board {
 
     /// Squares occupied by [`Piece`]s giving check to the king of a [`Color`].
     #[inline(always)]
-    pub fn checkers(&self, c: Color) -> Bitboard
+    pub fn checkers(&self, c: Color, mask: Bitboard) -> Bitboard
     where
         for<'a> &'a [Role; 2]: [const] IntoIterator<IntoIter = Iter<'a, Role>>,
         for<'a> Iter<'a, Role>: [const] Iterator<Item = &'a Role>,
     {
-        let ours = self.by_color(c);
-        let theirs = self.by_color(!c);
+        let ours = mask & self.by_color(c);
+        let theirs = mask & self.by_color(!c);
         let occ = ours ^ theirs;
 
         let king = self.king(c).assume();

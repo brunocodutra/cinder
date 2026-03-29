@@ -673,44 +673,48 @@ impl Position {
         use {Color::*, Piece::*, Role::*};
 
         gen move {
-            let sq = m.whither();
-            if !self.threats().contains(sq) && !self.threats().contains(m.whence()) {
+            let (wc, wt) = (m.whence(), m.whither());
+            if !self.threats().contains(wt) && !self.threats().contains(wc) {
                 return;
             }
 
-            let queens = self.by_role(Queen);
-            let rooks = self.by_role(Rook);
             let bishops = self.by_role(Bishop);
+            let rooks = self.by_role(Rook);
+            let queens = self.by_role(Queen);
+            let kings = [self.king(Color::White), self.king(Color::Black)];
 
             let mut turn = self.turn();
             let mut attackers = Bitboard::empty();
-            let mut occ = self.occupied().without(m.whence()).without(sq);
-            let mut victim = match m.promotion() {
-                None => self.role_on(m.whence()).assume(),
-                Some(r) => r,
-            };
+            let mut victim = m.promotion().unwrap_or_else(|| self.role_on(wc).assume());
+            let mut occ = self.occupied().without(wc);
+            if m.is_capture() && self.role_on(wt).is_none() {
+                occ = occ.without(Square::new(wt.file(), wc.rank()));
+            }
 
             for piece in [WhitePawn, BlackPawn] {
-                attackers |= self.by_piece(piece) & piece.flip().attacks(sq, occ);
+                attackers |= self.by_piece(piece) & piece.flip().attacks(wt, occ);
             }
 
             for role in [Knight, King] {
                 let candidates = self.by_role(role);
-                attackers |= candidates & Piece::new(role, White).attacks(sq, occ);
+                attackers |= candidates & Piece::new(role, White).attacks(wt, occ);
             }
 
             for (role, candidates) in [(Bishop, bishops | queens), (Rook, rooks | queens)] {
-                attackers |= candidates & Piece::new(role, White).attacks(sq, occ);
+                attackers |= candidates & Piece::new(role, White).attacks(wt, occ);
             }
 
             loop {
                 turn = !turn;
-
                 let pinned = self.board.pinned(turn, occ);
                 let mut candidates = attackers & self.by_color(turn);
-                candidates &= !pinned | (pinned & Bitboard::line(self.king(turn), sq));
-
+                candidates &= !pinned | Bitboard::line(kings[turn as usize], wt);
                 if candidates.is_empty() {
+                    break;
+                }
+
+                let checkers = self.board.checkers(turn, occ);
+                if !checkers.is_empty() && checkers != wt.bitboard() {
                     break;
                 }
 
@@ -719,7 +723,7 @@ impl Position {
                     let bb = candidates & self.by_role(role);
                     if let Some(wc) = bb.into_iter().next() {
                         let piece = Piece::new(role, turn);
-                        let moves = MoveSet::capture(piece, wc, sq.bitboard());
+                        let moves = MoveSet::capture(piece, wc, wt.bitboard());
                         lva = moves.into_iter().next().map(|m| (m, role));
                         occ ^= wc.bitboard();
                         break;
@@ -728,11 +732,11 @@ impl Position {
 
                 let (m, captor) = lva.assume();
                 if matches!(captor, Pawn | Bishop | Queen) {
-                    attackers |= (bishops | queens) & WhiteBishop.attacks(sq, occ);
+                    attackers |= (bishops | queens) & WhiteBishop.attacks(wt, occ);
                 }
 
                 if matches!(captor, Rook | Queen) {
-                    attackers |= (rooks | queens) & WhiteRook.attacks(sq, occ);
+                    attackers |= (rooks | queens) & WhiteRook.attacks(wt, occ);
                 }
 
                 attackers &= occ;
@@ -822,7 +826,7 @@ impl Position {
         }
 
         self.pinned = self.board.pinned(!turn, Bitboard::full());
-        self.checkers = self.board.checkers(!turn);
+        self.checkers = self.board.checkers(!turn, Bitboard::full());
         self.checking = self.board.checking(turn);
         self.threats = self.board.threats(turn);
     }
@@ -904,7 +908,7 @@ impl FromStr for Position {
 
         Ok(Position {
             pinned: board.pinned(board.turn, Bitboard::full()),
-            checkers: board.checkers(board.turn),
+            checkers: board.checkers(board.turn, Bitboard::full()),
             checking: board.checking(!board.turn),
             threats: board.threats(!board.turn),
             zobrists: board.zobrists(),
@@ -1026,7 +1030,6 @@ mod tests {
         pos.play(m);
 
         for (m, captor, victim) in exchanges {
-            prop_assume!(pos.checkers().is_empty());
             assert_eq!(pos.role_on(m.whither()).unwrap_or(Role::Pawn), victim);
 
             assert_eq!(

@@ -7,7 +7,7 @@ use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
 use std::ops::{Add, Mul, Range};
 use std::task::{Context, Poll};
-use std::{cell::SyncUnsafeCell, path::Path, pin::Pin, ptr::NonNull, slice};
+use std::{cell::SyncUnsafeCell, mem::MaybeUninit, path::Path, pin::Pin, ptr::NonNull, slice};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -1277,6 +1277,7 @@ impl Stream for Search<'_, '_> {
                 return Poll::Ready(Some(search.result.clone()));
             }
 
+            search.engine.shared.tt.age();
             search.execution = Some(executor.execute(move |idx| {
                 let local_ctrl = if idx == 0 {
                     LocalControl::active(ctrl)
@@ -1370,10 +1371,10 @@ impl Engine {
     pub fn reset(&mut self) {
         let local: &[SyncUnsafeCell<LocalData>] = unsafe { &*(&raw mut *self.local as *const _) };
 
-        let vt: &[SyncUnsafeCell<Atomic<Vault<Value, u64>>>] =
-            unsafe { &*(&raw mut **self.shared.vt as *const _) };
-        let tt: &[SyncUnsafeCell<Atomic<Vault<Transposition, u64>>>] =
-            unsafe { &*(&raw mut **self.shared.tt as *const _) };
+        let vt: &[SyncUnsafeCell<MaybeUninit<u64>>] =
+            unsafe { &*(&raw mut *self.shared.vt as *const _) };
+        let tt: &[SyncUnsafeCell<MaybeUninit<u64>>] =
+            unsafe { &*(&raw mut *self.shared.tt as *const _) };
 
         let vt_chunk_size = vt.len().div_ceil(local.len());
         let tt_chunk_size = tt.len().div_ceil(local.len());
@@ -1381,12 +1382,12 @@ impl Engine {
         self.executor.execute(move |idx| unsafe {
             let offset = idx * vt_chunk_size;
             let len = vt.len().saturating_sub(offset).min(vt_chunk_size);
-            let ptr = vt.as_ptr().add(offset) as *mut Atomic<Vault<Value, u64>>;
+            let ptr = vt.as_ptr().add(offset) as *mut MaybeUninit<u64>;
             fill_zeroes(slice::from_raw_parts_mut(ptr, len));
 
             let offset = idx * tt_chunk_size;
             let len = tt.len().saturating_sub(offset).min(tt_chunk_size);
-            let ptr = tt.as_ptr().add(offset) as *mut Atomic<Vault<Transposition, u64>>;
+            let ptr = tt.as_ptr().add(offset) as *mut MaybeUninit<u64>;
             fill_zeroes(slice::from_raw_parts_mut(ptr, len));
 
             *local.get(idx).assume().get() = zeroed();

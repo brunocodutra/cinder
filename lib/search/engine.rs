@@ -371,16 +371,6 @@ impl<'a> Searcher<'a> {
         ])
     }
 
-    /// Computes the late move pruning threshold.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn lmp(depth: f32) -> f32 {
-        convolve([
-            (depth, Params::lmp_depth(..)),
-            (1.0, Params::lmp_scalar(..)),
-        ])
-    }
-
     /// Computes the futility margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -877,8 +867,13 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             let gives_direct_check = pos.gives_direct_check(m);
             if !IS_PV && !is_check && !gives_direct_check && !tail.is_losing() {
-                let scale = Params::lmp_improving(0).mul_add(improving.cast(), 1.0);
-                if index.cast::<f32>() > Self::lmp(depth) * scale {
+                let lmp = convolve([
+                    (depth.powi(2), Params::lmp_depth(..)),
+                    (improving.cast(), Params::lmp_improving(..)),
+                    (1.0, Params::lmp_scalar(..)),
+                ]);
+
+                if index.cast::<f32>() > lmp {
                     break;
                 }
             }

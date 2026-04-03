@@ -1,9 +1,39 @@
 use crate::chess::Move;
 use crate::search::{Depth, Line, Ply, Pv, Score};
-use crate::util::{Assume, Binary, Bits, Num, zero};
+use crate::util::{Assume, Binary, Bits, Int, Num, zero};
+use bytemuck::{NoUninit, Zeroable};
 use derive_more::with_trait::Debug;
 use std::hint::unreachable_unchecked;
 use std::ops::{Range, RangeInclusive};
+
+/// The transposition age.
+#[derive(Debug, Copy, Hash, Zeroable, NoUninit)]
+#[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[cfg_attr(test, derive(test_strategy::Arbitrary))]
+#[repr(transparent)]
+pub struct Age(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Age as Num>::Repr);
+
+unsafe impl const Num for Age {
+    type Repr = u8;
+    const MIN: Self::Repr = 0;
+    const MAX: Self::Repr = 15;
+}
+
+unsafe impl const Int for Age {}
+
+impl const Binary for Age {
+    type Bits = Bits<u8, 4>;
+
+    #[inline(always)]
+    fn encode(&self) -> Self::Bits {
+        self.convert().assume()
+    }
+
+    #[inline(always)]
+    fn decode(bits: Self::Bits) -> Self {
+        bits.convert().assume()
+    }
+}
 
 /// Whether the transposed score is exact or a bound.
 #[derive(Debug, Copy, Hash)]
@@ -105,6 +135,7 @@ pub struct Transposition {
     pub score: ScoreBound,
     pub depth: Depth,
     pub best: Option<Move>,
+    pub age: Age,
     pub was_pv: bool,
 }
 
@@ -112,7 +143,8 @@ const impl Transposition {
     const BITS: u32 = 1
         + <ScoreBound as Binary>::Bits::BITS
         + <Depth as Binary>::Bits::BITS
-        + <Move as Binary>::Bits::BITS;
+        + <Move as Binary>::Bits::BITS
+        + <Age as Binary>::Bits::BITS;
 
     /// Constructs a [`Transposition`] given a [`ScoreBound`], the [`Depth`] searched, and the best [`Move`].
     #[inline(always)]
@@ -121,6 +153,7 @@ const impl Transposition {
             score,
             depth,
             best,
+            age: zero(),
             was_pv,
         }
     }
@@ -144,6 +177,7 @@ impl const Binary for Transposition {
         bits.push(self.score.encode());
         bits.push(self.depth.encode());
         bits.push(self.best.encode());
+        bits.push(self.age.encode());
         bits.push::<u8, 1>(Bits::new(self.was_pv as u8));
         bits
     }
@@ -152,6 +186,7 @@ impl const Binary for Transposition {
     fn decode(mut bits: Self::Bits) -> Self {
         Transposition {
             was_pv: bits.pop::<u8, 1>() == Bits::new(1),
+            age: Binary::decode(bits.pop()),
             best: Binary::decode(bits.pop()),
             depth: Binary::decode(bits.pop()),
             score: Binary::decode(bits.pop()),

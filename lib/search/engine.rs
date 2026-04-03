@@ -91,20 +91,17 @@ impl Stack {
     /// A measure for how much the position is improving.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn improving(&self) -> f32 {
-        let pos = &self.pos;
-        let ply = pos.ply();
-        if pos.is_check() {
-            return 0.0;
+    fn improvement(&self) -> Score {
+        let ply = self.pos.ply();
+        if self.pos.is_check() {
+            zero()
+        } else if ply >= 2 && !self.pos[ply - 2].is_check() {
+            self.value(0) - self.value(2)
+        } else if ply >= 4 && !self.pos[ply - 4].is_check() {
+            self.value(0) - self.value(4)
+        } else {
+            zero()
         }
-
-        let a = ply >= 2 && !pos[ply - 2].is_check() && self.value(0) > self.value(2);
-        let b = ply >= 4 && !pos[ply - 4].is_check() && self.value(0) > self.value(4);
-
-        let mut idx = Bits::<u8, 2>::new(0);
-        idx.push(Bits::<u8, 1>::new(b.cast()));
-        idx.push(Bits::<u8, 1>::new(a.cast()));
-        *Params::improving(idx.cast::<usize>())
     }
 
     #[inline(always)]
@@ -695,7 +692,7 @@ impl<'a> Searcher<'a> {
         }
 
         let alpha = alpha.max(lower);
-        let improving = self.stack.improving();
+        let improving = self.stack.improvement() > 0;
         let stand_pat = transposition.map_or_else(|| self.stack.value(0), |t| t.score.bound(ply));
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(Pv::empty(stand_pat).clip(lower, upper));
@@ -712,7 +709,7 @@ impl<'a> Searcher<'a> {
 
             if !beta.is_losing() {
                 let mut margin = Self::rfp(depth);
-                margin = Params::rfp_margin_improving(0).mul_add(improving, margin);
+                margin = Params::rfp_margin_improving(0).mul_add(improving.cast(), margin);
                 if self.stack.value(0) - margin.cast::<i16>() >= beta {
                     return Ok(Pv::empty(self.stack.value(0)).clip(lower, upper));
                 }
@@ -799,7 +796,7 @@ impl<'a> Searcher<'a> {
             let gamma = *Params::probcut_margin_depth(0);
             let delta = *Params::probcut_margin_depth(1);
             let mut margin = gamma.mul_add(depth, delta);
-            margin = Params::probcut_margin_improving(0).mul_add(improving, margin);
+            margin = Params::probcut_margin_improving(0).mul_add(improving.cast(), margin);
             let pc_beta = beta + margin.cast::<i16>();
 
             let max_depth = t.depth.cast::<f32>() + Params::probcut_depth_bounds(1);
@@ -900,7 +897,7 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             let gives_direct_check = pos.gives_direct_check(m);
             if !IS_PV && !is_check && !gives_direct_check && !tail.is_losing() {
-                let scale = Params::lmp_improving(0).mul_add(improving, 1.0);
+                let scale = Params::lmp_improving(0).mul_add(improving.cast(), 1.0);
                 if index.cast::<f32>() > Self::lmp(depth) * scale {
                     break;
                 }
@@ -936,7 +933,7 @@ impl<'a> Searcher<'a> {
                 (1.0, Params::lmr_not_root(..)),
                 (IS_PV.cast(), Params::lmr_is_pv(..)),
                 (was_pv.cast(), Params::lmr_was_pv(..)),
-                (improving, Params::lmr_improving(..)),
+                (improving.cast(), Params::lmr_improving(..)),
                 (should_cut.cast(), Params::lmr_should_cut(..)),
                 (is_cut.cast(), Params::lmr_is_cut(..)),
                 (is_noisy_node.cast(), Params::lmr_is_noisy_node(..)),

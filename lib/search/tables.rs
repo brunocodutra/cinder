@@ -46,7 +46,7 @@ impl TranspositionTable {
             return slot.store(Vault::close(zobrist, new), Ordering::Relaxed);
         };
 
-        if new.age != old.age || new.depth + 4 > old.depth {
+        if new.age != old.age || new.depth >= old.depth - 4 {
             slot.store(Vault::close(zobrist, new), Ordering::Relaxed);
         }
     }
@@ -228,6 +228,21 @@ mod tests {
         let mut tt = TranspositionTable::new(s);
         tt.store(k, u);
         tt.age();
+        tt.store(k, v);
+        v.age = *tt.age.get_mut();
+        assert_eq!(tt.load(k), Some(v));
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn tt_store_replaces_value_if_deeper(
+        s: HashSize,
+        k: Zobrist,
+        u: Transposition,
+        #[filter(#v.depth >= #u.depth)] mut v: Transposition,
+    ) {
+        let mut tt = TranspositionTable::new(s);
+        tt.store(k, u);
         tt.store(k, v);
         v.age = *tt.age.get_mut();
         assert_eq!(tt.load(k), Some(v));

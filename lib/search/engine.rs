@@ -341,20 +341,6 @@ impl<'a> Searcher<'a> {
         }
     }
 
-    /// Computes the null move pruning margin.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn nmp(depth: f32) -> Option<f32> {
-        if depth >= *Params::nmp_depth_limit(0) {
-            return None;
-        }
-
-        Some(convolve([
-            (depth, Params::nmp_margin_depth(..)),
-            (1.0, Params::nmp_margin_scalar(..)),
-        ]))
-    }
-
     /// Computes fail-high pruning reduction.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -732,12 +718,6 @@ impl<'a> Searcher<'a> {
                 let pawns = self.stack.pos.by_role(Role::Pawn);
                 let kings = self.stack.pos.by_role(Role::King);
                 if is_cut && ours & !(pawns ^ kings) != zero() {
-                    if let Some(margin) = Self::nmp(depth) {
-                        if stand_pat - margin.cast::<i16>() >= beta {
-                            return Ok(Pv::empty(stand_pat).clip(lower, upper));
-                        }
-                    }
-
                     if let Some(r) = Self::nmr(depth, stand_pat - beta) {
                         if -self.next(None).nw(depth - r - 1.0, -beta + 1, false)? >= beta {
                             return Ok(Pv::empty(stand_pat).clip(lower, upper));

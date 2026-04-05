@@ -170,7 +170,9 @@ impl<'a> Searcher<'a> {
             .map(|(r, v)| v * pos.by_role(r).len() as f32 / starting_material)
             .sum();
 
-        let scale = material.lerp(*Params::material_scaling(0), *Params::material_scaling(1));
+        let halfmoves = pos.halfmoves() as f32 / 100.0;
+        let mut scale = halfmoves.lerp(*Params::halfmove_scaling(0), *Params::halfmove_scaling(1));
+        scale *= material.lerp(*Params::material_scaling(0), *Params::material_scaling(1));
         scale.mul_add(value.cast(), self.correction()).saturate()
     }
 

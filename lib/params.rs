@@ -211,6 +211,7 @@ params! {
     score_trend_scale: [1.1591196, 32.210957],
     pv_focus_scale: [-1.6761804, 1.8973947],
     piece_values: [52.847713, 188.47716, 215.22618, 306.7143, 629.2747, 0.0],
+    material_scaling: [0.70, 1.05],
     pawns_correction: [13.677705],
     minor_correction: [9.955085],
     major_correction: [10.968398],

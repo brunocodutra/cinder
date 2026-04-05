@@ -152,11 +152,26 @@ impl<'a> Searcher<'a> {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn evaluate(&mut self) -> Value {
         let zobrist = self.stack.pos.zobrists().hash;
-        self.shared.vt.load(zobrist).unwrap_or_else(|| {
+        let value = self.shared.vt.load(zobrist).unwrap_or_else(|| {
             let value = self.stack.pos.evaluate().saturate();
             self.shared.vt.store(zobrist, value);
             value
-        })
+        });
+
+        let starting_material: f32 = [16.0, 4.0, 4.0, 4.0, 2.0]
+            .into_iter()
+            .zip(Params::piece_values(..5))
+            .map(|(n, v)| n * v)
+            .sum();
+
+        let pos = &self.stack.pos;
+        let material: f32 = Role::iter()
+            .zip(Params::piece_values(..5))
+            .map(|(r, v)| v * pos.by_role(r).len() as f32 / starting_material)
+            .sum();
+
+        let scale = material.lerp(*Params::material_scaling(0), *Params::material_scaling(1));
+        scale.mul_add(value.cast(), self.correction()).saturate()
     }
 
     #[inline(always)]
@@ -490,8 +505,7 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(alpha));
         }
 
-        let correction = self.correction().cast::<i16>();
-        self.stack.values[ply.cast::<usize>()] = self.evaluate() + correction;
+        self.stack.values[ply.cast::<usize>()] = self.evaluate();
 
         let transposition = self.transposition();
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0) {
@@ -625,8 +639,7 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(alpha));
         }
 
-        let correction = self.correction().cast::<i16>();
-        self.stack.values[ply.cast::<usize>()] = self.evaluate() + correction;
+        self.stack.values[ply.cast::<usize>()] = self.evaluate();
 
         let transposition = self.transposition();
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0) {
@@ -971,8 +984,7 @@ impl<'a> Searcher<'a> {
 
         let killer = self.stack.killers[0];
         let is_check = self.stack.pos.is_check();
-        let correction = self.correction().cast::<i16>();
-        self.stack.values[0] = self.evaluate() + correction;
+        self.stack.values[0] = self.evaluate();
 
         moves.rate(|m| {
             if Some(m) == self.stack.pv.head() {

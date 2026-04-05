@@ -90,7 +90,7 @@ impl const DerefMut for TranspositionTable {
 #[derive(Debug)]
 #[debug("ValueTable({})", entries.len())]
 pub struct ValueTable {
-    entries: HugePages<Atomic<Vault<Value, u64>>>,
+    entries: HugePages<Atomic<Vault<Value, u32>>>,
 }
 
 impl ValueTable {
@@ -126,7 +126,7 @@ impl ValueTable {
 }
 
 impl const Deref for ValueTable {
-    type Target = [UnsafeCell<MaybeUninit<u64>>];
+    type Target = [UnsafeCell<MaybeUninit<u32>>];
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
@@ -251,7 +251,7 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn vt_allocates_up_to_vt_size(s: HashSize) {
-        assert!(vt_size(s) >= ValueTable::new(s).len() * size_of::<u64>());
+        assert!(vt_size(s) >= ValueTable::new(s).len() * size_of::<u32>());
     }
 
     #[proptest]
@@ -259,7 +259,7 @@ mod tests {
     fn vt_resizes_up_to_vt_size(s: HashSize, t: HashSize) {
         let mut vt = ValueTable::new(s);
         vt.resize(t);
-        assert!(vt_size(t) >= vt.len() * size_of::<u64>());
+        assert!(vt_size(t) >= vt.len() * size_of::<u32>());
     }
 
     #[proptest]

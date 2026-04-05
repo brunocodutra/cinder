@@ -1360,7 +1360,7 @@ impl Engine {
     pub fn reset(&mut self) {
         let local: &[SyncUnsafeCell<LocalData>] = unsafe { &*(&raw mut *self.local as *const _) };
 
-        let vt: &[SyncUnsafeCell<MaybeUninit<u64>>] =
+        let vt: &[SyncUnsafeCell<MaybeUninit<u32>>] =
             unsafe { &*(&raw mut *self.shared.vt as *const _) };
         let tt: &[SyncUnsafeCell<MaybeUninit<u64>>] =
             unsafe { &*(&raw mut *self.shared.tt as *const _) };
@@ -1371,7 +1371,7 @@ impl Engine {
         self.executor.execute(move |idx| unsafe {
             let offset = idx * vt_chunk_size;
             let len = vt.len().saturating_sub(offset).min(vt_chunk_size);
-            let ptr = vt.as_ptr().add(offset) as *mut MaybeUninit<u64>;
+            let ptr = vt.as_ptr().add(offset) as *mut MaybeUninit<u32>;
             fill_zeroes(slice::from_raw_parts_mut(ptr, len));
 
             let offset = idx * tt_chunk_size;

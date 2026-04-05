@@ -1,5 +1,5 @@
 use crate::util::{Assume, Int, Num, StaticSeq};
-use crate::{chess::*, simd::Aligned};
+use crate::{chess::*, simd::*};
 use bytemuck::zeroed;
 use derive_more::with_trait::{Debug, Deref, DerefMut, Display, Error, From, IntoIterator};
 use std::fmt::{self, Formatter};
@@ -277,7 +277,7 @@ pub struct Position {
     checking: [Bitboard; 4],
     threats: Bitboard,
     zobrists: Zobrists,
-    history: [[Option<NonZeroU32>; 32]; 2],
+    history: [Aligned<[u32; 32]>; 2],
 }
 
 #[cfg(test)]
@@ -466,18 +466,6 @@ impl Position {
         Piece::iter().flat_map(|p| self.by_piece(p).into_iter().map(move |sq| (p, sq)))
     }
 
-    /// How many other times this position has repeated.
-    #[inline(always)]
-    pub fn repetitions(&self) -> usize {
-        match NonZeroU32::new(self.zobrists().hash.cast()) {
-            None => 0,
-            hash => {
-                let history = &self.history[self.turn() as usize];
-                history.iter().filter(|h| **h == hash).count()
-            }
-        }
-    }
-
     /// Whether a [`Square`] is threatened by a slider of a [`Color`].
     #[inline(always)]
     pub fn is_discovered(&self, sq: Square, side: Color, occ: Bitboard) -> bool {
@@ -540,7 +528,12 @@ impl Position {
     /// Whether the game is a draw by repetition.
     #[inline(always)]
     pub fn is_draw_by_repetition(&self) -> bool {
-        self.repetitions() > 0
+        let hash @ 1.. = self.zobrists().hash.cast() else {
+            return false;
+        };
+
+        let history: &[V2<u32>; 32 / W2] = self.history[self.turn() as usize].cast();
+        history.map(|x| x.simd_eq(Simd::splat(hash)).any()) != [false; _]
     }
 
     /// The [`Outcome`] of the game in case this position is final.
@@ -772,12 +765,12 @@ impl Position {
 
         if role == Pawn || capture.is_some() {
             self.board.halfmoves = 0;
-            self.history = Default::default();
+            self.history = zeroed();
         } else {
             self.board.halfmoves += 1;
             let entries = self.history[turn as usize].len();
             self.history[turn as usize].copy_within(..entries - 1, 1);
-            self.history[turn as usize][0] = NonZeroU32::new(self.zobrists().hash.cast());
+            self.history[turn as usize][0] = self.zobrists().hash.cast();
         }
 
         self.board.turn = !self.board.turn;
@@ -844,7 +837,7 @@ impl Position {
         self.board.halfmoves += 1;
         let entries = self.history[turn as usize].len();
         self.history[turn as usize].copy_within(..entries - 1, 1);
-        self.history[turn as usize][0] = NonZeroU32::new(self.zobrists().hash.cast());
+        self.history[turn as usize][0] = self.zobrists().hash.cast();
 
         self.board.turn = !self.board.turn;
         self.zobrists.hash ^= ZobristNumbers::turn();
@@ -912,7 +905,7 @@ impl FromStr for Position {
             checking: board.checking(!board.turn),
             threats: board.threats(!board.turn),
             zobrists: board.zobrists(),
-            history: Default::default(),
+            history: zeroed(),
             board,
         })
     }
@@ -921,6 +914,7 @@ impl FromStr for Position {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::zero;
     use std::{cmp::Reverse, fmt::Debug, hash::DefaultHasher};
     use test_strategy::proptest;
 
@@ -1178,8 +1172,8 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn threefold_repetition_implies_draw(#[filter(#pos.outcome().is_none() )] mut pos: Position) {
-        let zobrist = NonZeroU32::new(pos.zobrists().hash.cast());
-        prop_assume!(zobrist.is_some());
+        let zobrist = pos.zobrists().hash.cast();
+        prop_assume!(zobrist != zero());
 
         pos.history[pos.turn() as usize][..2].clone_from_slice(&[zobrist, zobrist]);
         assert!(pos.is_draw_by_repetition());

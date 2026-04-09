@@ -654,11 +654,6 @@ impl<'a> Searcher<'a> {
         }
 
         let was_pv = transposition.is_some_and(|t| t.was_pv);
-        let should_cut = transposition.is_some_and(|t| t.score.lower(ply) >= beta);
-        let is_noisy_node = transposition.is_some_and(|t| {
-            t.best.is_some_and(Move::is_noisy) && !matches!(t.score, ScoreBound::Upper(_))
-        });
-
         let (lower, upper) = match self.shared.syzygy.wdl_after_zeroing(&self.stack.pos) {
             None => (Score::lower(), Score::upper()),
             Some(wdl) => {
@@ -732,6 +727,12 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        let is_fl = transposition.is_some_and(|t| t.score.upper(ply) <= alpha);
+        let is_fh = transposition.is_some_and(|t| t.score.lower(ply) >= beta);
+        let is_noisy_node = transposition.is_some_and(|t| {
+            t.best.is_some_and(Move::is_noisy) && !matches!(t.score, ScoreBound::Upper(_))
+        });
+
         let mut moves = Moves::from_iter(self.stack.pos.moves().unpack());
         let killer = self.stack.killers[ply.cast::<usize>()];
 
@@ -786,7 +787,7 @@ impl<'a> Searcher<'a> {
 
             let max_depth = t.depth.cast::<f32>() + Params::probcut_depth_bounds(1);
             let depth_bounds = *Params::probcut_depth_bounds(0)..max_depth;
-            if should_cut && is_noisy_node && depth_bounds.contains(&depth) {
+            if is_fh && is_noisy_node && depth_bounds.contains(&depth) {
                 for (m, _) in moves.sorted() {
                     let margin = pc_beta - self.stack.value(0);
                     if m.is_quiet() || !self.stack.pos.gaining(m, margin.cast()) {
@@ -845,8 +846,8 @@ impl<'a> Searcher<'a> {
                     if se_score >= se_beta {
                         extension = convolve([
                             (1.0, Params::singular_reduction_scalar(..)),
-                            (should_cut.cast(), Params::singular_reduction_should_cut(..)),
                             (is_cut.cast(), Params::singular_reduction_is_cut(..)),
+                            (is_fh.cast(), Params::singular_reduction_is_fh(..)),
                         ]);
                     } else {
                         let gamma = *Params::singular_extension_score(0);
@@ -854,8 +855,8 @@ impl<'a> Searcher<'a> {
                         let diff = se_beta.cast::<f32>() - se_score.cast::<f32>();
                         extension = diff.powf(delta).mul(gamma).min(convolve([
                             (1.0, Params::singular_extension_scalar(..)),
-                            (should_cut.cast(), Params::singular_extension_should_cut(..)),
                             (is_cut.cast(), Params::singular_extension_is_cut(..)),
+                            (is_fh.cast(), Params::singular_extension_is_fh(..)),
                             (is_quiet.cast(), Params::singular_extension_is_quiet(..)),
                         ]));
                     }
@@ -924,7 +925,8 @@ impl<'a> Searcher<'a> {
                 (IS_PV.cast(), Params::lmr_is_pv(..)),
                 (was_pv.cast(), Params::lmr_was_pv(..)),
                 (improving.cast(), Params::lmr_improving(..)),
-                (should_cut.cast(), Params::lmr_should_cut(..)),
+                (is_fl.cast(), Params::lmr_is_fl(..)),
+                (is_fh.cast(), Params::lmr_is_fh(..)),
                 (is_cut.cast(), Params::lmr_is_cut(..)),
                 (is_noisy_node.cast(), Params::lmr_is_noisy_node(..)),
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),

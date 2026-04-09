@@ -12,7 +12,7 @@ const fn tt_size(size: HashSize) -> usize {
 
 #[inline(always)]
 const fn vt_size(size: HashSize) -> usize {
-    size.get().max(1 << 18).shr(3) // ~12.5%
+    size.get().max(1 << 18).shr(4) // ~6.25%
 }
 
 #[derive(Debug)]

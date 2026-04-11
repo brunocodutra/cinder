@@ -874,7 +874,6 @@ impl<'a> Searcher<'a> {
         };
 
         let mut tail = tail.raise(lower);
-        let mut alpha_raises: Bounded<i16> = tail.gt(&alpha).saturate();
         for (index, (m, _)) in moves.sorted().skip(1).enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -920,6 +919,7 @@ impl<'a> Searcher<'a> {
 
             let mut next = self.next(Some(m));
             let gives_check = next.stack.pos.is_check();
+            let raised_alpha = tail >= alpha;
 
             lmr += convolve([
                 (1.0, Params::lmr_not_root(..)),
@@ -932,7 +932,7 @@ impl<'a> Searcher<'a> {
                 (is_noisy_node.cast(), Params::lmr_is_noisy_node(..)),
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
-                (alpha_raises.cast(), Params::lmr_alpha_raises(..)),
+                (raised_alpha.cast(), Params::lmr_raised_alpha(..)),
                 (butterfly, Params::lmr_butterfly(..)),
                 (counter, Params::lmr_counter(..)),
             ]);
@@ -951,7 +951,6 @@ impl<'a> Searcher<'a> {
 
             if pv > tail {
                 (head, tail) = (m, pv);
-                alpha_raises += tail.gt(&alpha).cast::<i8>();
             }
         }
 
@@ -1032,7 +1031,6 @@ impl<'a> Searcher<'a> {
         let mut tail = -next.ab::<true, _>(depth - 1.0, -beta..-alpha, false)?;
         drop(next);
 
-        let mut alpha_raises: Bounded<i16> = tail.gt(&alpha).saturate();
         for (index, (m, _)) in sorted_moves.enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -1046,13 +1044,14 @@ impl<'a> Searcher<'a> {
             let mut next = self.next(Some(m));
             let mut lmr = Self::lmr(depth, index);
             let gives_check = next.stack.pos.is_check();
+            let raised_alpha = tail >= alpha;
             let is_quiet = m.is_quiet();
 
             lmr += convolve([
                 (1.0, Params::lmr_is_root(..)),
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
-                (alpha_raises.cast(), Params::lmr_alpha_raises(..)),
+                (raised_alpha.cast(), Params::lmr_raised_alpha(..)),
                 (butterfly, Params::lmr_butterfly(..)),
             ]);
 
@@ -1070,7 +1069,6 @@ impl<'a> Searcher<'a> {
 
             if pv > tail {
                 (head, tail) = (m, pv);
-                alpha_raises += tail.gt(&alpha).cast::<i8>();
             }
         }
 

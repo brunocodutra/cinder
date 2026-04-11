@@ -736,6 +736,7 @@ impl<'a> Searcher<'a> {
 
         let is_fl = transposition.is_some_and(|t| t.score.upper(ply) <= alpha);
         let is_fh = transposition.is_some_and(|t| t.score.lower(ply) >= beta);
+        let was_all = transposition.is_some_and(|t| matches!(t.score, ScoreBound::Upper(_)));
         let was_cut = transposition.is_some_and(|t| matches!(t.score, ScoreBound::Lower(_)));
         let was_quiet = transposition.is_none_or(|t| t.best.is_none_or(Move::is_quiet));
 
@@ -929,6 +930,7 @@ impl<'a> Searcher<'a> {
             lmr += convolve([
                 (1.0, Params::lmr_not_root(..)),
                 (was_pv.cast(), Params::lmr_was_pv(..)),
+                (was_all.cast(), Params::lmr_was_all(..)),
                 (is_all.cast(), Params::lmr_is_all(..)),
                 (was_cut.cast(), Params::lmr_was_cut(..)),
                 (is_cut.cast(), Params::lmr_is_cut(..)),

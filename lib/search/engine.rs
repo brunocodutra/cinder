@@ -939,6 +939,7 @@ impl<'a> Searcher<'a> {
                 (is_improving.cast(), Params::lmr_is_improving(..)),
                 (was_quiet.cast(), Params::lmr_was_quiet(..)),
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),
+                (is_check.cast(), Params::lmr_is_check(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
                 (raised_alpha.cast(), Params::lmr_raised_alpha(..)),
                 (butterfly, Params::lmr_butterfly(..)),
@@ -1058,6 +1059,7 @@ impl<'a> Searcher<'a> {
             lmr += convolve([
                 (1.0, Params::lmr_is_root(..)),
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),
+                (is_check.cast(), Params::lmr_is_check(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
                 (raised_alpha.cast(), Params::lmr_raised_alpha(..)),
                 (butterfly, Params::lmr_butterfly(..)),

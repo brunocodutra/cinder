@@ -15,12 +15,18 @@ use proptest::prelude::*;
 #[inline(always)]
 #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
 fn convolve<const N: usize>(data: [(f32, &[f32]); N]) -> f32 {
-    let mut acc = [0.0; N];
+    #[cfg(target_feature = "avx2")]
+    const K: usize = 8;
+
+    #[cfg(not(target_feature = "avx2"))]
+    const K: usize = 4;
+
+    let mut acc = [0.0; K];
 
     for i in 0..N {
         for j in i..N {
             let param = *data[i].1.get(j - i).assume();
-            acc[(i + j) % N] = param.mul_add(data[i].0 * data[j].0, acc[(i + j) % N]);
+            acc[j % K] = param.mul_add(data[i].0 * data[j].0, acc[j % K]);
         }
     }
 
@@ -730,9 +736,8 @@ impl<'a> Searcher<'a> {
 
         let is_fl = transposition.is_some_and(|t| t.score.upper(ply) <= alpha);
         let is_fh = transposition.is_some_and(|t| t.score.lower(ply) >= beta);
-        let is_noisy_node = transposition.is_some_and(|t| {
-            t.best.is_some_and(Move::is_noisy) && !matches!(t.score, ScoreBound::Upper(_))
-        });
+        let was_cut = transposition.is_some_and(|t| matches!(t.score, ScoreBound::Lower(_)));
+        let was_quiet = transposition.is_none_or(|t| t.best.is_none_or(Move::is_quiet));
 
         let mut moves = Moves::from_iter(self.stack.pos.moves().unpack());
         let killer = self.stack.killers[ply.cast::<usize>()];
@@ -788,7 +793,7 @@ impl<'a> Searcher<'a> {
 
             let max_depth = t.depth.cast::<f32>() + Params::probcut_depth_bounds(1);
             let depth_bounds = *Params::probcut_depth_bounds(0)..max_depth;
-            if is_fh && is_noisy_node && depth_bounds.contains(&depth) {
+            if is_fh && was_cut && !was_quiet && depth_bounds.contains(&depth) {
                 for (m, _) in moves.sorted() {
                     let margin = pc_beta - self.stack.value(0);
                     if m.is_quiet() || !self.stack.pos.gaining(m, margin.cast()) {
@@ -925,11 +930,12 @@ impl<'a> Searcher<'a> {
                 (1.0, Params::lmr_not_root(..)),
                 (was_pv.cast(), Params::lmr_was_pv(..)),
                 (is_all.cast(), Params::lmr_is_all(..)),
+                (was_cut.cast(), Params::lmr_was_cut(..)),
                 (is_cut.cast(), Params::lmr_is_cut(..)),
                 (is_fl.cast(), Params::lmr_is_fl(..)),
                 (is_fh.cast(), Params::lmr_is_fh(..)),
                 (is_improving.cast(), Params::lmr_is_improving(..)),
-                (is_noisy_node.cast(), Params::lmr_is_noisy_node(..)),
+                (was_quiet.cast(), Params::lmr_was_quiet(..)),
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
                 (raised_alpha.cast(), Params::lmr_raised_alpha(..)),

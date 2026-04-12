@@ -630,6 +630,7 @@ impl<'a> Searcher<'a> {
             return Err(Interrupted);
         }
 
+        let is_all = !IS_PV && !is_cut;
         let is_check = self.stack.pos.is_check();
         let (alpha, beta) = match self.stack.pos.outcome() {
             None => self.mdp(&bounds),
@@ -678,7 +679,7 @@ impl<'a> Searcher<'a> {
         }
 
         let alpha = alpha.max(lower);
-        let improving = self.stack.improvement() > 0;
+        let is_improving = self.stack.improvement() > 0;
         let stand_pat = transposition.map_or_else(|| self.stack.value(0), |t| t.score.bound(ply));
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(Pv::empty(stand_pat).clip(lower, upper));
@@ -695,7 +696,7 @@ impl<'a> Searcher<'a> {
 
             if !beta.is_losing() {
                 let mut margin = Self::rfp(depth);
-                margin = Params::rfp_margin_improving(0).mul_add(improving.cast(), margin);
+                margin = Params::rfp_margin_is_improving(0).mul_add(is_improving.cast(), margin);
                 if self.stack.value(0) - margin.cast::<i16>() >= beta {
                     return Ok(Pv::empty(self.stack.value(0)).clip(lower, upper));
                 }
@@ -782,7 +783,7 @@ impl<'a> Searcher<'a> {
             let gamma = *Params::probcut_margin_depth(0);
             let delta = *Params::probcut_margin_depth(1);
             let mut margin = gamma.mul_add(depth, delta);
-            margin = Params::probcut_margin_improving(0).mul_add(improving.cast(), margin);
+            margin = Params::probcut_margin_is_improving(0).mul_add(is_improving.cast(), margin);
             let pc_beta = beta + margin.cast::<i16>();
 
             let max_depth = t.depth.cast::<f32>() + Params::probcut_depth_bounds(1);
@@ -885,7 +886,7 @@ impl<'a> Searcher<'a> {
             if !IS_PV && !is_check && !gives_direct_check && !tail.is_losing() {
                 let lmp = convolve([
                     (depth.powi(2), Params::lmp_depth(..)),
-                    (improving.cast(), Params::lmp_improving(..)),
+                    (is_improving.cast(), Params::lmp_is_improving(..)),
                     (1.0, Params::lmp_scalar(..)),
                 ]);
 
@@ -922,12 +923,12 @@ impl<'a> Searcher<'a> {
 
             lmr += convolve([
                 (1.0, Params::lmr_not_root(..)),
-                (IS_PV.cast(), Params::lmr_is_pv(..)),
                 (was_pv.cast(), Params::lmr_was_pv(..)),
-                (improving.cast(), Params::lmr_improving(..)),
+                (is_all.cast(), Params::lmr_is_all(..)),
+                (is_cut.cast(), Params::lmr_is_cut(..)),
                 (is_fl.cast(), Params::lmr_is_fl(..)),
                 (is_fh.cast(), Params::lmr_is_fh(..)),
-                (is_cut.cast(), Params::lmr_is_cut(..)),
+                (is_improving.cast(), Params::lmr_is_improving(..)),
                 (is_noisy_node.cast(), Params::lmr_is_noisy_node(..)),
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),

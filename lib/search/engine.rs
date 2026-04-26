@@ -364,36 +364,6 @@ impl<'a> Searcher<'a> {
         }
     }
 
-    /// Computes fail-high pruning reduction.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn fhp(depth: f32) -> f32 {
-        convolve([
-            (depth, Params::fhp_margin_depth(..)),
-            (1.0, Params::fhp_margin_scalar(..)),
-        ])
-    }
-
-    /// Computes the razoring margin.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn razoring(depth: f32) -> f32 {
-        convolve([
-            (depth, Params::razoring_depth(..)),
-            (1.0, Params::razoring_scalar(..)),
-        ])
-    }
-
-    /// Computes the reverse futility margin.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn rfp(depth: f32) -> f32 {
-        convolve([
-            (depth, Params::rfp_margin_depth(..)),
-            (1.0, Params::rfp_margin_scalar(..)),
-        ])
-    }
-
     /// Computes the futility margin.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -679,11 +649,15 @@ impl<'a> Searcher<'a> {
             }
         };
 
-        if !is_check {
-            depth -= transposition.is_none().cast::<f32>();
-            depth = depth.max(1.0);
+        if !is_check && transposition.is_none() {
+            depth += convolve([
+                (1.0, Params::iir_scalar(..)),
+                (is_all.cast(), Params::iir_is_all(..)),
+                (is_cut.cast(), Params::iir_is_cut(..)),
+            ]);
         }
 
+        let depth = depth.max(1.0);
         let alpha = alpha.max(lower);
         let is_improving = self.stack.improvement() > 0;
         let stand_pat = transposition.map_or_else(|| self.stack.value(0), |t| t.score.bound(ply));
@@ -691,7 +665,11 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(stand_pat).clip(lower, upper));
         } else if !IS_PV && !is_check {
             if !alpha.is_winning() {
-                let margin = Self::razoring(depth);
+                let margin = convolve([
+                    (1.0, Params::razoring_scalar(..)),
+                    (depth, Params::razoring_depth(..)),
+                ]);
+
                 if self.stack.value(0) + margin.cast::<i16>() <= alpha {
                     let pv = self.qnw(beta, false)?;
                     if pv <= alpha {
@@ -701,8 +679,12 @@ impl<'a> Searcher<'a> {
             }
 
             if !beta.is_losing() {
-                let mut margin = Self::rfp(depth);
-                margin = Params::rfp_margin_is_improving(0).mul_add(is_improving.cast(), margin);
+                let margin = convolve([
+                    (1.0, Params::rfp_margin_scalar(..)),
+                    (depth, Params::rfp_margin_depth(..)),
+                    (is_improving.cast(), Params::rfp_margin_is_improving(..)),
+                ]);
+
                 if self.stack.value(0) - margin.cast::<i16>() >= beta {
                     return Ok(Pv::empty(self.stack.value(0)).clip(lower, upper));
                 }
@@ -711,7 +693,11 @@ impl<'a> Searcher<'a> {
             if let Some(t) = transposition {
                 if !beta.is_losing() && !stand_pat.is_winning() {
                     if depth < t.depth.cast::<f32>() + Params::fhp_depth_limit(0) {
-                        let margin = Self::fhp(depth - t.depth.cast::<f32>());
+                        let margin = convolve([
+                            (1.0, Params::fhp_margin_scalar(..)),
+                            (depth - t.depth.cast::<f32>(), Params::fhp_margin_depth(..)),
+                        ]);
+
                         if is_cut && t.score.lower(ply) - margin.cast::<i16>() >= beta {
                             return Ok(t.transpose(ply).truncate());
                         }
@@ -757,14 +743,14 @@ impl<'a> Searcher<'a> {
             let history = self.local.histories.butterfly.get(pos, m);
             rating = Params::move_rating_history(2).mul_add(history, rating);
 
-            for i in 1..=Params::move_rating_continuation(1..).len().min(ply.cast()) {
-                let history = self.stack.continuation(i).get(pos, m);
+            for i in 0..Params::move_rating_continuation(..).len().min(ply.cast()) {
+                let history = self.stack.continuation(i + 1).get(pos, m);
                 rating = Params::move_rating_continuation(i).mul_add(history, rating);
             }
 
             let gives_check = pos.gives_direct_check(m);
             rating = Params::move_rating_gives_check(0).mul_add(gives_check.cast(), rating);
-            rating = Params::move_rating_killer(0).mul_add(killer.contains(m).cast(), rating);
+            rating = Params::move_rating_is_killer(0).mul_add(killer.contains(m).cast(), rating);
 
             if m.is_noisy() {
                 let gamma = *Params::move_rating_see(0);
@@ -828,7 +814,7 @@ impl<'a> Searcher<'a> {
                 let is_quiet = head.is_quiet();
                 let max_depth = t.depth.cast::<f32>() + Params::singular_depth_bounds(1);
                 let depth_bounds = *Params::singular_depth_bounds(0)..max_depth;
-                if !matches!(t.score, ScoreBound::Upper(_)) && depth_bounds.contains(&depth) {
+                if !was_all && depth_bounds.contains(&depth) {
                     let gamma = *Params::singular_depth(0);
                     let delta = *Params::singular_depth(1);
                     let se_depth = gamma.mul_add(depth, delta);
@@ -1015,7 +1001,7 @@ impl<'a> Searcher<'a> {
 
             let gives_check = pos.gives_direct_check(m);
             rating = Params::move_rating_gives_check(0).mul_add(gives_check.cast(), rating);
-            rating = Params::move_rating_killer(0).mul_add(killer.contains(m).cast(), rating);
+            rating = Params::move_rating_is_killer(0).mul_add(killer.contains(m).cast(), rating);
 
             if m.is_noisy() {
                 let gamma = *Params::move_rating_see(0);

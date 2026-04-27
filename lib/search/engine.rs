@@ -928,9 +928,10 @@ impl<'a> Searcher<'a> {
                 (is_check.cast(), Params::lmr_is_check(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
                 (raised_alpha.cast(), Params::lmr_raised_alpha(..)),
-                (butterfly, Params::lmr_butterfly(..)),
-                (counter, Params::lmr_counter(..)),
             ]);
+
+            lmr = Params::lmr_history(0).mul_add(butterfly, lmr);
+            lmr = Params::lmr_continuation(0).mul_add(counter, lmr);
 
             let next_depth = (depth - 1.0).max(0.0);
             let lmr = Params::lmr_extension(0).max(lmr).min(next_depth);
@@ -1048,8 +1049,9 @@ impl<'a> Searcher<'a> {
                 (is_check.cast(), Params::lmr_is_check(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
                 (raised_alpha.cast(), Params::lmr_raised_alpha(..)),
-                (butterfly, Params::lmr_butterfly(..)),
             ]);
+
+            lmr = Params::lmr_history(0).mul_add(butterfly, lmr);
 
             let next_depth = (depth - 1.0).max(0.0);
             let lmr = lmr.max(0.0).min(next_depth);

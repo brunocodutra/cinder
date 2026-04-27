@@ -160,7 +160,7 @@ const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
 impl<T, M> const Drop for Seq<T, M>
 where
     T: [const] Destruct,
-    M: [const] Memory<T, Capacity = ConstCapacity>,
+    M: [const] Destruct + [const] Memory<T, Capacity = ConstCapacity>,
 {
     #[inline(always)]
     fn drop(&mut self) {

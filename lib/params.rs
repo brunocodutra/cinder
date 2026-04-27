@@ -304,7 +304,7 @@ params! {
     move_rating_is_killer: [53.16652],
     move_rating_gives_check: [50.0],
     move_rating_history: [108.39066, 108.39066, 108.39066],
-    move_rating_continuation: [124.212105, 124.212105],
+    move_rating_continuation: [124.212105, 124.212105, 0.0, 40.0],
     move_rating_see: [10.0, 550.0, -10.0],
     aw_width: [4.9304986, 1.4202363, 1.4202363],
     aw_fl_lerp: [0.52635705],

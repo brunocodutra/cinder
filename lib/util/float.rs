@@ -6,7 +6,7 @@ use std::{hint::unreachable_unchecked, mem::transmute_copy, ops::*};
 /// # Safety
 ///
 /// * Must never be `NaN`.
-/// * Must only be implemented for types that can be safely transmuted to and from [`Float::Repr`].
+/// * Must only be implemented for types that can be safely transmuted to and from [`Num::Repr`].
 pub const unsafe trait Float: [const] Num
 where
     Self::Repr: [const] FloatRepr,

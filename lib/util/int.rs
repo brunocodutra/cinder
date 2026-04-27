@@ -7,12 +7,12 @@ use std::{num::*, ops::*};
 ///
 /// # Safety
 ///
-/// Must only be implemented for types that can be safely transmuted to and from [`Int::Repr`].
+/// Must only be implemented for types that can be safely transmuted to and from [`Num::Repr`].
 pub const unsafe trait Int: [const] Num
 where
     Self::Repr: [const] IntRepr,
 {
-    /// An iterator over all values in the range [`Int::MIN`]..=[`Int::MAX`].
+    /// An iterator over all values in the range [`Num::MIN`]..=[`Num::MAX`].
     #[track_caller]
     #[inline(always)]
     fn iter() -> Ints<Self> {

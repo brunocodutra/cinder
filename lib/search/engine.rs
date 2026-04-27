@@ -231,9 +231,9 @@ impl<'a> Searcher<'a> {
         self.local.histories.defender.update(pos, best, bonus[1]);
         self.local.histories.butterfly.update(pos, best, bonus[2]);
 
-        let bonus = [0.0, counter_bonus, followup_bonus];
-        for i in 1..=bonus[1..].len().min(pos.ply().cast()) {
-            self.stack.continuation(i).update(pos, best, bonus[i]);
+        let bonus = [counter_bonus, followup_bonus];
+        for i in 0..bonus.len().min(pos.ply().cast()) {
+            self.stack.continuation(i + 1).update(pos, best, bonus[i]);
         }
 
         for &(m, _) in moves.iter().take_while(|(m, _)| *m != best) {
@@ -242,9 +242,9 @@ impl<'a> Searcher<'a> {
             self.local.histories.defender.update(pos, m, malus[1]);
             self.local.histories.butterfly.update(pos, m, malus[2]);
 
-            let malus = [0.0, counter_malus, followup_malus];
-            for i in 1..=malus[1..].len().min(pos.ply().cast()) {
-                self.stack.continuation(i).update(pos, m, malus[i]);
+            let malus = [counter_malus, followup_malus];
+            for i in 0..malus.len().min(pos.ply().cast()) {
+                self.stack.continuation(i + 1).update(pos, m, malus[i]);
             }
         }
     }
@@ -295,8 +295,8 @@ impl<'a> Searcher<'a> {
         corrections.black.update(pos, zbs.black, pieces_delta);
 
         let deltas = [counter_delta, followup_delta];
-        for i in 1..=deltas.len().min(ply.cast()) {
-            self.stack.correction(i).update(pos, (), deltas[i - 1]);
+        for i in 0..deltas.len().min(ply.cast()) {
+            self.stack.correction(i + 1).update(pos, (), deltas[i]);
         }
     }
 
@@ -318,9 +318,9 @@ impl<'a> Searcher<'a> {
         let black = self.local.corrections.black.get(pos, zbs.black);
         correction = Params::pieces_correction(0).mul_add(black, correction);
 
-        for i in 1..=Params::continuation_correction(..).len().min(ply.cast()) {
-            let history = self.stack.correction(i).get(pos, ());
-            correction = Params::continuation_correction(i - 1).mul_add(history, correction);
+        for i in 0..Params::continuation_correction(..).len().min(ply.cast()) {
+            let history = self.stack.correction(i + 1).get(pos, ());
+            correction = Params::continuation_correction(i).mul_add(history, correction);
         }
 
         correction

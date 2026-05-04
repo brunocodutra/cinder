@@ -743,16 +743,16 @@ impl<'a> Searcher<'a> {
             let history = self.local.histories.butterfly.get(pos, m);
             rating = Params::move_rating_history(2).mul_add(history, rating);
 
-            for i in 0..Params::move_rating_continuation(..).len().min(ply.cast()) {
-                let history = self.stack.continuation(i + 1).get(pos, m);
-                rating = Params::move_rating_continuation(i).mul_add(history, rating);
-            }
-
             let gives_check = pos.gives_direct_check(m);
             rating = Params::move_rating_gives_check(0).mul_add(gives_check.cast(), rating);
             rating = Params::move_rating_is_killer(0).mul_add(killer.contains(m).cast(), rating);
 
-            if m.is_noisy() {
+            if m.is_quiet() {
+                for i in 0..Params::move_rating_continuation(..).len().min(ply.cast()) {
+                    let history = self.stack.continuation(i + 1).get(pos, m);
+                    rating = Params::move_rating_continuation(i).mul_add(history, rating);
+                }
+            } else {
                 let gamma = *Params::move_rating_see(0);
                 let delta = *Params::move_rating_see(1);
                 let margin = *Params::move_rating_see(2);

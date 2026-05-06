@@ -231,9 +231,11 @@ impl<'a> Searcher<'a> {
         self.local.histories.defender.update(pos, best, bonus[1]);
         self.local.histories.butterfly.update(pos, best, bonus[2]);
 
-        let bonus = [counter_bonus, followup_bonus];
-        for i in 0..bonus.len().min(pos.ply().cast()) {
-            self.stack.continuation(i + 1).update(pos, best, bonus[i]);
+        if best.is_quiet() {
+            let bonus = [counter_bonus, followup_bonus];
+            for i in 0..bonus.len().min(pos.ply().cast()) {
+                self.stack.continuation(i + 1).update(pos, best, bonus[i]);
+            }
         }
 
         for &(m, _) in moves.iter().take_while(|(m, _)| *m != best) {
@@ -242,9 +244,11 @@ impl<'a> Searcher<'a> {
             self.local.histories.defender.update(pos, m, malus[1]);
             self.local.histories.butterfly.update(pos, m, malus[2]);
 
-            let malus = [counter_malus, followup_malus];
-            for i in 0..malus.len().min(pos.ply().cast()) {
-                self.stack.continuation(i + 1).update(pos, m, malus[i]);
+            if best.is_quiet() && m.is_quiet() {
+                let malus = [counter_malus, followup_malus];
+                for i in 0..malus.len().min(pos.ply().cast()) {
+                    self.stack.continuation(i + 1).update(pos, m, malus[i]);
+                }
             }
         }
     }
@@ -890,8 +894,6 @@ impl<'a> Searcher<'a> {
 
             let mut lmr = Self::lmr(depth, index);
             let lmr_depth = (depth - lmr).max(0.0);
-            let butterfly = self.local.histories.butterfly.get(pos, m);
-            let counter = self.stack.continuation(1).get(pos, m);
             let is_quiet = m.is_quiet();
 
             if !is_check && !gives_direct_check && !tail.is_losing() {
@@ -910,6 +912,9 @@ impl<'a> Searcher<'a> {
                     continue;
                 }
             }
+
+            let butterfly = self.local.histories.butterfly.get(pos, m);
+            let counter = self.stack.continuation(1).filter(|_| is_quiet).get(pos, m);
 
             let mut next = self.next(Some(m));
             let gives_check = next.stack.pos.is_check();

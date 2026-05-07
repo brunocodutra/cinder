@@ -153,7 +153,7 @@ impl const Statistics<Move> for PieceToHistory {
 /// Historical statistics about [`Move`] continuations.
 #[derive(Debug, Zeroable)]
 #[debug("ContinuationHistory")]
-pub struct ContinuationHistory(PieceTo<[PieceToHistory; 2]>);
+pub struct ContinuationHistory([PieceTo<[PieceToHistory; 2]>; 2]);
 
 impl const Default for ContinuationHistory {
     #[inline(always)]
@@ -168,6 +168,6 @@ const impl ContinuationHistory {
         let (wc, wt) = (m.whence(), m.whither());
         let piece = pos.piece_on(wc).assume();
         let threat = pos.threats().contains(wt);
-        &mut self.0[piece as usize][wt as usize][threat as usize]
+        &mut self.0[m.is_quiet() as usize][piece as usize][wt as usize][threat as usize]
     }
 }

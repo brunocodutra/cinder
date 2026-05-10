@@ -1,8 +1,9 @@
 use crate::chess::{Butterfly, Move, Position};
 use crate::search::{Graviton, Stat, Statistics};
-use crate::util::{Bits, Num, Unsigned};
+use crate::util::{Binary, Bits, Num, Unsigned};
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
+use std::marker::Destruct;
 
 /// Learned corrections to evaluation relative to position structure.
 #[derive(Debug, Zeroable)]
@@ -16,56 +17,45 @@ impl<const N: usize> const Default for Correction<N> {
     }
 }
 
-impl<U, const B: u32, const N: usize> const Statistics<Bits<U, B>> for Correction<N>
+impl<T, U, const B: u32, const N: usize> const Statistics<T> for Correction<N>
 where
+    T: [const] Destruct + [const] Binary<Bits = Bits<U, B>>,
     U: [const] Unsigned,
 {
     type Stat = Graviton;
 
     #[inline(always)]
-    fn get(&self, pos: &Position, key: Bits<U, B>) -> <Self::Stat as Stat>::Value {
+    fn get(&self, pos: &Position, key: T) -> <Self::Stat as Stat>::Value {
         const { assert!(N > 0) }
         const { assert!(N.is_power_of_two()) }
         const { assert!(N.trailing_zeros() <= B) }
-        self.0[pos.turn() as usize][key.slice(..N.trailing_zeros()).cast::<usize>()].get()
+        let idx = key.encode().slice(..N.trailing_zeros()).cast::<usize>();
+        self.0[pos.turn() as usize][idx].get()
     }
 
     #[inline(always)]
-    fn update(&mut self, pos: &Position, key: Bits<U, B>, delta: <Self::Stat as Stat>::Value) {
+    fn update(&mut self, pos: &Position, key: T, delta: <Self::Stat as Stat>::Value) {
         const { assert!(N > 0) }
         const { assert!(N.is_power_of_two()) }
         const { assert!(N.trailing_zeros() <= B) }
-        self.0[pos.turn() as usize][key.slice(..N.trailing_zeros()).cast::<usize>()].update(delta);
-    }
-}
-
-impl const Statistics<()> for Correction<1> {
-    type Stat = Graviton;
-
-    #[inline(always)]
-    fn get(&self, pos: &Position, (): ()) -> <Self::Stat as Stat>::Value {
-        self.get(pos, Bits::<u8, 0>::default())
-    }
-
-    #[inline(always)]
-    fn update(&mut self, pos: &Position, (): (), delta: <Self::Stat as Stat>::Value) {
-        self.update(pos, Bits::<u8, 0>::default(), delta);
+        let idx = key.encode().slice(..N.trailing_zeros()).cast::<usize>();
+        self.0[pos.turn() as usize][idx].update(delta);
     }
 }
 
 /// Learned corrections to evaluation relative to historical [`Move`]s.
 #[derive(Debug, Zeroable)]
-#[debug("HistoryCorrection")]
-pub struct HistoryCorrection([[Butterfly<[[Correction<1>; 2]; 2]>; 2]; 2]);
+#[debug("ContinuationCorrection")]
+pub struct ContinuationCorrection([[Butterfly<[[Correction<1>; 2]; 2]>; 2]; 2]);
 
-impl const Default for HistoryCorrection {
+impl const Default for ContinuationCorrection {
     #[inline(always)]
     fn default() -> Self {
         zeroed()
     }
 }
 
-const impl HistoryCorrection {
+const impl ContinuationCorrection {
     #[inline(always)]
     pub fn get(&mut self, pos: &Position, m: Move) -> &mut Correction<1> {
         let (wc, wt) = (m.whence(), m.whither());

@@ -51,6 +51,18 @@ impl<T: [const] Binary<Bits: [const] Default + [const] Eq + Int>> const Binary f
     }
 }
 
+impl const Binary for () {
+    type Bits = Bits<u8, 0>;
+
+    #[inline(always)]
+    fn encode(&self) -> Self::Bits {
+        Bits::new(0)
+    }
+
+    #[inline(always)]
+    fn decode(_: Self::Bits) -> Self {}
+}
+
 macro_rules! impl_binary_for {
     ($i: ty) => {
         impl const Binary for $i {

@@ -88,7 +88,16 @@ impl const Index<Ply> for Evaluator {
 
     #[inline(always)]
     fn index(&self, ply: Ply) -> &Self::Output {
-        self.positions.get(ply.cast::<usize>()).assume()
+        self.index(ply.cast::<usize>())
+    }
+}
+
+impl const Index<usize> for Evaluator {
+    type Output = Position;
+
+    #[inline(always)]
+    fn index(&self, idx: usize) -> &Self::Output {
+        self.positions.get(idx).assume()
     }
 }
 
@@ -138,12 +147,6 @@ impl Evaluator {
     #[inline(always)]
     pub fn ply(&self) -> Ply {
         self.ply
-    }
-
-    /// The sequence of moves up to current [`Ply`].
-    #[inline(always)]
-    pub fn line(&self) -> &[Option<Move>] {
-        self.moves.get(..self.ply.cast::<usize>()).assume()
     }
 
     /// Estimates the material gain of a move.

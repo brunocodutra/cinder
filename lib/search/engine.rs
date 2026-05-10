@@ -1,4 +1,4 @@
-use crate::chess::{Move, MoveSet, Position, Role};
+use crate::chess::{Move, MoveSet, Position, Role, Zobrists};
 use crate::search::{ControlFlow::*, *};
 use crate::{nnue::Evaluator, params::Params, syzygy::Syzygy, util::*};
 use bytemuck::{Zeroable, fill_zeroes, zeroed};
@@ -60,7 +60,8 @@ struct Corrections {
     major: Correction<16384>,
     white: Correction<16384>,
     black: Correction<16384>,
-    history: HistoryCorrection,
+    history: Correction<16384>,
+    continuation: ContinuationCorrection,
 }
 
 #[derive(Debug, Zeroable)]
@@ -102,9 +103,9 @@ impl Stack {
         if self.pos.is_check() {
             zero()
         } else if ply >= 2 && !self.pos[ply - 2].is_check() {
-            self.value(0) - self.value(2)
+            self.value(0).assume() - self.value(2).assume()
         } else if ply >= 4 && !self.pos[ply - 4].is_check() {
-            self.value(0) - self.value(4)
+            self.value(0).assume() - self.value(4).assume()
         } else {
             zero()
         }
@@ -112,24 +113,31 @@ impl Stack {
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn value(&self, i: usize) -> Score {
-        let idx = self.pos.ply().cast::<usize>().wrapping_sub(i);
+    fn value(&self, i: usize) -> Option<Score> {
+        let idx = self.pos.ply().cast::<usize>().checked_sub(i)?;
         // IMPORTANT: widen to Score to avoid mate blindness!
-        self.values.get(idx).assume().saturate()
+        Some(self.values.get(idx).assume().saturate())
+    }
+
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn zobrists(&self, i: usize) -> Option<&Zobrists> {
+        let idx = self.pos.ply().cast::<usize>().checked_sub(i)?;
+        Some(self.pos[idx].zobrists())
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn continuation(&self, i: usize) -> Option<NonNull<PieceToHistory>> {
-        let idx = self.pos.ply().cast::<usize>().wrapping_sub(i);
-        *self.continuation.get(idx)?
+        let idx = self.pos.ply().cast::<usize>().checked_sub(i)?;
+        *self.continuation.get(idx).assume()
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn correction(&self, i: usize) -> Option<NonNull<Correction<1>>> {
-        let idx = self.pos.ply().cast::<usize>().wrapping_sub(i);
-        *self.correction.get(idx)?
+        let idx = self.pos.ply().cast::<usize>().checked_sub(i)?;
+        *self.correction.get(idx).assume()
     }
 }
 
@@ -258,49 +266,28 @@ impl<'a> Searcher<'a> {
     fn update_correction(&mut self, depth: f32, score: ScoreBound) {
         let pos = &self.stack.pos;
         let (ply, zbs) = (pos.ply(), pos.zobrists());
-        let diff = score.bound(ply) - self.stack.value(0);
+        let diff = score.bound(ply) - self.stack.value(0).assume();
         let error = depth * diff.cast::<f32>();
 
-        let pawns_delta = error
-            .mul(*Params::pawns_correction_delta(0))
-            .max(*Params::pawns_correction_delta(1))
-            .min(*Params::pawns_correction_delta(2));
-
-        let minor_delta = error
-            .mul(*Params::minor_correction_delta(0))
-            .max(*Params::minor_correction_delta(1))
-            .min(*Params::minor_correction_delta(2));
-
-        let major_delta = error
-            .mul(*Params::major_correction_delta(0))
-            .max(*Params::major_correction_delta(1))
-            .min(*Params::major_correction_delta(2));
-
-        let pieces_delta = error
-            .mul(*Params::pieces_correction_delta(0))
-            .max(*Params::pieces_correction_delta(1))
-            .min(*Params::pieces_correction_delta(2));
-
-        let counter_delta = error
-            .mul(*Params::counter_correction_delta(0))
-            .max(*Params::counter_correction_delta(1))
-            .min(*Params::counter_correction_delta(2));
-
-        let followup_delta = error
-            .mul(*Params::followup_correction_delta(0))
-            .max(*Params::followup_correction_delta(1))
-            .min(*Params::followup_correction_delta(2));
+        let gradient = error
+            .mul(*Params::correction_gradient(0))
+            .max(*Params::correction_gradient(1))
+            .min(*Params::correction_gradient(2));
 
         let corrections = &mut self.local.corrections;
-        corrections.pawns.update(pos, zbs.pawns, pawns_delta);
-        corrections.minor.update(pos, zbs.minor, minor_delta);
-        corrections.major.update(pos, zbs.major, major_delta);
-        corrections.white.update(pos, zbs.white, pieces_delta);
-        corrections.black.update(pos, zbs.black, pieces_delta);
+        corrections.pawns.update(pos, zbs.pawns, gradient);
+        corrections.minor.update(pos, zbs.minor, gradient);
+        corrections.major.update(pos, zbs.major, gradient);
+        corrections.white.update(pos, zbs.white, gradient);
+        corrections.black.update(pos, zbs.black, gradient);
 
-        let deltas = [counter_delta, followup_delta];
-        for i in 0..deltas.len().min(ply.cast()) {
-            self.stack.correction(i + 1).update(pos, (), deltas[i]);
+        for i in 0..ply.cast::<usize>().min(2) {
+            let key = self.stack.zobrists(i + 1).assume().hash ^ zbs.hash;
+            corrections.history.update(pos, key, gradient);
+        }
+
+        for i in 0..ply.cast::<usize>().min(2) {
+            self.stack.correction(i + 1).update(pos, (), gradient);
         }
     }
 
@@ -321,6 +308,12 @@ impl<'a> Searcher<'a> {
         correction = Params::pieces_correction(0).mul_add(white, correction);
         let black = self.local.corrections.black.get(pos, zbs.black);
         correction = Params::pieces_correction(0).mul_add(black, correction);
+
+        for i in 0..Params::history_correction(..).len().min(ply.cast()) {
+            let key = self.stack.zobrists(i + 1).assume().hash ^ zbs.hash;
+            let history = self.local.corrections.history.get(pos, key);
+            correction = Params::history_correction(i).mul_add(history, correction);
+        }
 
         for i in 0..Params::continuation_correction(..).len().min(ply.cast()) {
             let history = self.stack.correction(i + 1).get(pos, ());
@@ -413,13 +406,13 @@ impl<'a> Searcher<'a> {
         let idx = self.stack.pos.ply().cast::<usize>();
 
         self.stack.continuation[idx] = m.map(|m| {
-            let reply = self.local.histories.continuation.get(&self.stack.pos, m);
-            NonNull::from_mut(reply)
+            let entry = self.local.histories.continuation.get(&self.stack.pos, m);
+            NonNull::from_mut(entry)
         });
 
         self.stack.correction[idx] = m.map(|m| {
-            let reply = self.local.corrections.history.get(&self.stack.pos, m);
-            NonNull::from_mut(reply)
+            let entry = self.local.corrections.continuation.get(&self.stack.pos, m);
+            NonNull::from_mut(entry)
         });
 
         self.stack.pos.push(m);
@@ -499,9 +492,10 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        let value = self.stack.value(0).assume();
         let stand_pat = match transposition {
-            Some(t) if !t.score.range(ply).contains(&self.stack.value(0)) => t.score.bound(ply),
-            _ => self.stack.value(0),
+            Some(t) if !t.score.range(ply).contains(&value) => t.score.bound(ply),
+            _ => value,
         };
 
         let alpha = alpha.max(stand_pat);
@@ -563,7 +557,7 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             let gives_direct_check = pos.gives_direct_check(m);
             if !is_check && !gives_direct_check && !tail.is_losing() {
-                let delta = alpha - self.stack.value(0);
+                let delta = alpha - value;
                 let margin = delta.cast::<f32>() - Params::futility_margin_quiescence(0);
                 if margin >= 0.0 && !pos.gaining(m, margin) {
                     break;
@@ -663,8 +657,9 @@ impl<'a> Searcher<'a> {
 
         let depth = depth.max(1.0);
         let alpha = alpha.max(lower);
+        let value = self.stack.value(0).assume();
         let is_improving = self.stack.improvement() > 0;
-        let stand_pat = transposition.map_or_else(|| self.stack.value(0), |t| t.score.bound(ply));
+        let stand_pat = transposition.map_or(value, |t| t.score.bound(ply));
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(Pv::empty(stand_pat).clip(lower, upper));
         } else if !IS_PV && !is_check {
@@ -674,7 +669,7 @@ impl<'a> Searcher<'a> {
                     (depth, Params::razoring_depth(..)),
                 ]);
 
-                if self.stack.value(0) + margin.cast::<i16>() <= alpha {
+                if value + margin.cast::<i16>() <= alpha {
                     let pv = self.qnw(beta, false)?;
                     if pv <= alpha {
                         return Ok(pv.clip(lower, upper).truncate());
@@ -689,8 +684,8 @@ impl<'a> Searcher<'a> {
                     (is_improving.cast(), Params::rfp_margin_is_improving(..)),
                 ]);
 
-                if self.stack.value(0) - margin.cast::<i16>() >= beta {
-                    return Ok(Pv::empty(self.stack.value(0)).clip(lower, upper));
+                if value - margin.cast::<i16>() >= beta {
+                    return Ok(Pv::empty(value).clip(lower, upper));
                 }
             }
 
@@ -786,7 +781,7 @@ impl<'a> Searcher<'a> {
             let depth_bounds = *Params::probcut_depth_bounds(0)..max_depth;
             if is_fh && was_cut && !was_quiet && depth_bounds.contains(&depth) {
                 for (m, _) in moves.sorted() {
-                    let margin = pc_beta - self.stack.value(0);
+                    let margin = pc_beta - value;
                     if m.is_quiet() || !self.stack.pos.gaining(m, margin.cast()) {
                         continue;
                     }
@@ -898,7 +893,7 @@ impl<'a> Searcher<'a> {
 
             if !is_check && !gives_direct_check && !tail.is_losing() {
                 if depth < *Params::futility_depth_limit(0) {
-                    let delta = alpha - self.stack.value(0);
+                    let delta = alpha - value;
                     let margin = delta.cast::<f32>() - Self::futility(lmr_depth);
                     if margin >= 0.0 && !pos.gaining(m, margin) {
                         continue;
@@ -969,7 +964,7 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        if !is_check && head.is_quiet() && !score.range(ply).contains(&self.stack.value(0)) {
+        if !is_check && head.is_quiet() && !score.range(ply).contains(&value) {
             self.update_correction(depth, score);
         }
 
@@ -1088,7 +1083,8 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        if !is_check && head.is_quiet() && !score.range(zero()).contains(&self.stack.value(0)) {
+        let value = self.stack.value(0).assume();
+        if !is_check && head.is_quiet() && !score.range(zero()).contains(&value) {
             self.update_correction(depth, score);
         }
 

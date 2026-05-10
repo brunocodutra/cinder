@@ -7,7 +7,8 @@ use derive_more::with_trait::Debug;
 /// Historical statistics about a [`Move`] in butterfly form.
 #[derive(Debug, Zeroable)]
 #[debug("ButterflyHistory")]
-pub struct ButterflyHistory([[Butterfly<[[Graviton; 2]; 2]>; 2]; 2]);
+#[allow(clippy::type_complexity)]
+pub struct ButterflyHistory([[[Butterfly<[[Graviton; 2]; 2]>; 2]; 2]; 2]);
 
 impl const Default for ButterflyHistory {
     #[inline(always)]
@@ -21,16 +22,16 @@ const impl ButterflyHistory {
     fn graviton_ref(&self, pos: &Position, m: Move) -> &Graviton {
         let (wc, wt) = (m.whence(), m.whither());
         let threats = [pos.threats().contains(wc), pos.threats().contains(wt)];
-        &self.0[pos.turn() as usize][m.is_quiet() as usize][wc as usize][wt as usize]
-            [threats[0] as usize][threats[1] as usize]
+        &self.0[pos.turn() as usize][pos.is_check() as usize][m.is_quiet() as usize][wc as usize]
+            [wt as usize][threats[0] as usize][threats[1] as usize]
     }
 
     #[inline(always)]
     fn graviton_mut(&mut self, pos: &Position, m: Move) -> &mut Graviton {
         let (wc, wt) = (m.whence(), m.whither());
         let threats = [pos.threats().contains(wc), pos.threats().contains(wt)];
-        &mut self.0[pos.turn() as usize][m.is_quiet() as usize][wc as usize][wt as usize]
-            [threats[0] as usize][threats[1] as usize]
+        &mut self.0[pos.turn() as usize][pos.is_check() as usize][m.is_quiet() as usize]
+            [wc as usize][wt as usize][threats[0] as usize][threats[1] as usize]
     }
 }
 
@@ -60,27 +61,38 @@ impl const Default for AttackerHistory {
     }
 }
 
+const impl AttackerHistory {
+    #[inline(always)]
+    fn graviton_ref(&self, pos: &Position, m: Move) -> &Graviton {
+        let (wc, wt) = (m.whence(), m.whither());
+        let piece = pos.piece_on(wc).assume();
+        let threat = pos.threats().contains(wt);
+        let ksq = pos.king(!pos.turn());
+        &self.0[m.is_quiet() as usize][ksq as usize][piece as usize][wt as usize][threat as usize]
+    }
+
+    #[inline(always)]
+    fn graviton_mut(&mut self, pos: &Position, m: Move) -> &mut Graviton {
+        let (wc, wt) = (m.whence(), m.whither());
+        let piece = pos.piece_on(wc).assume();
+        let threat = pos.threats().contains(wt);
+        let ksq = pos.king(!pos.turn());
+        &mut self.0[m.is_quiet() as usize][ksq as usize][piece as usize][wt as usize]
+            [threat as usize]
+    }
+}
+
 impl const Statistics<Move> for AttackerHistory {
     type Stat = Graviton;
 
     #[inline(always)]
     fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
-        let (wc, wt) = (m.whence(), m.whither());
-        let piece = pos.piece_on(wc).assume();
-        let threat = pos.threats().contains(wt);
-        let ksq = pos.king(!pos.turn());
-        self.0[m.is_quiet() as usize][ksq as usize][piece as usize][wt as usize][threat as usize]
-            .get()
+        self.graviton_ref(pos, m).get()
     }
 
     #[inline(always)]
     fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
-        let (wc, wt) = (m.whence(), m.whither());
-        let piece = pos.piece_on(wc).assume();
-        let threat = pos.threats().contains(wt);
-        let ksq = pos.king(!pos.turn());
-        self.0[m.is_quiet() as usize][ksq as usize][piece as usize][wt as usize][threat as usize]
-            .update(delta);
+        self.graviton_mut(pos, m).update(delta);
     }
 }
 
@@ -96,27 +108,38 @@ impl const Default for DefenderHistory {
     }
 }
 
+const impl DefenderHistory {
+    #[inline(always)]
+    fn graviton_ref(&self, pos: &Position, m: Move) -> &Graviton {
+        let (wc, wt) = (m.whence(), m.whither());
+        let piece = pos.piece_on(wc).assume();
+        let threat = pos.threats().contains(wt);
+        let ksq = pos.king(pos.turn());
+        &self.0[m.is_quiet() as usize][ksq as usize][piece as usize][wt as usize][threat as usize]
+    }
+
+    #[inline(always)]
+    fn graviton_mut(&mut self, pos: &Position, m: Move) -> &mut Graviton {
+        let (wc, wt) = (m.whence(), m.whither());
+        let piece = pos.piece_on(wc).assume();
+        let threat = pos.threats().contains(wt);
+        let ksq = pos.king(pos.turn());
+        &mut self.0[m.is_quiet() as usize][ksq as usize][piece as usize][wt as usize]
+            [threat as usize]
+    }
+}
+
 impl const Statistics<Move> for DefenderHistory {
     type Stat = Graviton;
 
     #[inline(always)]
     fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
-        let (wc, wt) = (m.whence(), m.whither());
-        let piece = pos.piece_on(wc).assume();
-        let threat = pos.threats().contains(wt);
-        let ksq = pos.king(pos.turn());
-        self.0[m.is_quiet() as usize][ksq as usize][piece as usize][wt as usize][threat as usize]
-            .get()
+        self.graviton_ref(pos, m).get()
     }
 
     #[inline(always)]
     fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
-        let (wc, wt) = (m.whence(), m.whither());
-        let piece = pos.piece_on(wc).assume();
-        let threat = pos.threats().contains(wt);
-        let ksq = pos.king(pos.turn());
-        self.0[m.is_quiet() as usize][ksq as usize][piece as usize][wt as usize][threat as usize]
-            .update(delta);
+        self.graviton_mut(pos, m).update(delta);
     }
 }
 

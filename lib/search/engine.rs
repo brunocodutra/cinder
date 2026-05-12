@@ -193,69 +193,33 @@ impl<'a> Searcher<'a> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn update_history(&mut self, depth: f32, best: Move, moves: &Moves) {
-        let attacker_bonus = Params::attacker_history_bonus(0)
-            .mul_add(depth, *Params::attacker_history_bonus(1))
-            .min(*Params::attacker_history_bonus(2));
+        let bonus = Params::history_bonus(0)
+            .mul_add(depth, *Params::history_bonus(1))
+            .min(*Params::history_bonus(2));
 
-        let attacker_malus = Params::attacker_history_malus(0)
-            .mul_add(depth, *Params::attacker_history_malus(1))
-            .max(*Params::attacker_history_malus(2));
-
-        let defender_bonus = Params::defender_history_bonus(0)
-            .mul_add(depth, *Params::defender_history_bonus(1))
-            .min(*Params::defender_history_bonus(2));
-
-        let defender_malus = Params::defender_history_malus(0)
-            .mul_add(depth, *Params::defender_history_malus(1))
-            .max(*Params::defender_history_malus(2));
-
-        let butterfly_bonus = Params::butterfly_history_bonus(0)
-            .mul_add(depth, *Params::butterfly_history_bonus(1))
-            .min(*Params::butterfly_history_bonus(2));
-
-        let butterfly_malus = Params::butterfly_history_malus(0)
-            .mul_add(depth, *Params::butterfly_history_malus(1))
-            .max(*Params::butterfly_history_malus(2));
-
-        let counter_bonus = Params::counter_history_bonus(0)
-            .mul_add(depth, *Params::counter_history_bonus(1))
-            .min(*Params::counter_history_bonus(2));
-
-        let counter_malus = Params::counter_history_malus(0)
-            .mul_add(depth, *Params::counter_history_malus(1))
-            .max(*Params::counter_history_malus(2));
-
-        let followup_bonus = Params::followup_history_bonus(0)
-            .mul_add(depth, *Params::followup_history_bonus(1))
-            .min(*Params::followup_history_bonus(2));
-
-        let followup_malus = Params::followup_history_malus(0)
-            .mul_add(depth, *Params::followup_history_malus(1))
-            .max(*Params::followup_history_malus(2));
+        let malus = Params::history_malus(0)
+            .mul_add(depth, *Params::history_malus(1))
+            .max(*Params::history_malus(2));
 
         let pos = &self.stack.pos;
-        let bonus = [attacker_bonus, defender_bonus, butterfly_bonus];
-        self.local.histories.attacker.update(pos, best, bonus[0]);
-        self.local.histories.defender.update(pos, best, bonus[1]);
-        self.local.histories.butterfly.update(pos, best, bonus[2]);
+        self.local.histories.attacker.update(pos, best, bonus);
+        self.local.histories.defender.update(pos, best, bonus);
+        self.local.histories.butterfly.update(pos, best, bonus);
 
         if best.is_quiet() {
-            let bonus = [counter_bonus, followup_bonus];
-            for i in 0..bonus.len().min(pos.ply().cast()) {
-                self.stack.continuation(i + 1).update(pos, best, bonus[i]);
+            for i in 0..pos.ply().cast::<usize>().min(2) {
+                self.stack.continuation(i + 1).update(pos, best, bonus);
             }
         }
 
         for &(m, _) in moves.iter().take_while(|(m, _)| *m != best) {
-            let malus = [attacker_malus, defender_malus, butterfly_malus];
-            self.local.histories.attacker.update(pos, m, malus[0]);
-            self.local.histories.defender.update(pos, m, malus[1]);
-            self.local.histories.butterfly.update(pos, m, malus[2]);
+            self.local.histories.attacker.update(pos, m, malus);
+            self.local.histories.defender.update(pos, m, malus);
+            self.local.histories.butterfly.update(pos, m, malus);
 
             if best.is_quiet() && m.is_quiet() {
-                let malus = [counter_malus, followup_malus];
-                for i in 0..malus.len().min(pos.ply().cast()) {
-                    self.stack.continuation(i + 1).update(pos, m, malus[i]);
+                for i in 0..pos.ply().cast::<usize>().min(2) {
+                    self.stack.continuation(i + 1).update(pos, m, malus);
                 }
             }
         }

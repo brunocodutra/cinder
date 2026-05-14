@@ -948,6 +948,7 @@ impl<'a> Searcher<'a> {
 
         let killer = self.stack.killers[0];
         let is_check = self.stack.pos.is_check();
+        let was_quiet = self.stack.pv.head().is_none_or(Move::is_quiet);
         self.stack.values[0] = self.evaluate();
 
         moves.rate(|m| {
@@ -1009,6 +1010,7 @@ impl<'a> Searcher<'a> {
 
             lmr += convolve([
                 (1.0, Params::lmr_is_root(..)),
+                (was_quiet.cast(), Params::lmr_was_quiet(..)),
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),
                 (is_check.cast(), Params::lmr_is_check(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),

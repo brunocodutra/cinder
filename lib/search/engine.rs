@@ -802,7 +802,6 @@ impl<'a> Searcher<'a> {
                     if se_score >= se_beta {
                         extension = convolve([
                             (1.0, Params::singular_reduction_scalar(..)),
-                            (is_all.cast(), Params::singular_reduction_is_all(..)),
                             (is_cut.cast(), Params::singular_reduction_is_cut(..)),
                             (is_fh.cast(), Params::singular_reduction_is_fh(..)),
                         ]);
@@ -812,7 +811,6 @@ impl<'a> Searcher<'a> {
                         let diff = se_beta.cast::<f32>() - se_score.cast::<f32>();
                         extension = diff.powf(delta).mul(gamma).min(convolve([
                             (1.0, Params::singular_extension_scalar(..)),
-                            (is_all.cast(), Params::singular_extension_is_all(..)),
                             (is_cut.cast(), Params::singular_extension_is_cut(..)),
                             (is_fh.cast(), Params::singular_extension_is_fh(..)),
                             (is_quiet.cast(), Params::singular_extension_is_quiet(..)),

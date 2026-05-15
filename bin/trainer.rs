@@ -308,7 +308,7 @@ impl Orchestrator {
             .save_format(&[
                 SavedFormat::id("ftw")
                     .transform(|store, weights| {
-                        let factoriser = store.get("ftf").values.repeat(KingBuckets::LEN);
+                        let factoriser = store.get("ftf").values.f32().repeat(KingBuckets::LEN);
                         Vec::from_iter(weights.into_iter().zip(factoriser).map(|(w, f)| w + f))
                     })
                     .round()
@@ -329,7 +329,7 @@ impl Orchestrator {
             ])
             .use_win_rate_model()
             .loss_fn(|output, pt| {
-                let score = 300. * output.copy();
+                let score = 300. * output;
                 let q = (score - 270.) / 340.;
                 let qm = (-score - 270.) / 340.;
                 let qf = 0.5 * (1. + q.sigmoid() - qm.sigmoid());

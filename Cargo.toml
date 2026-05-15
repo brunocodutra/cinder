@@ -15,7 +15,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [features]
 spsa = ["dep:rand", "dep:ron", "dep:serde"]
-trainer = ["dep:bullet"]
+trainer = ["dep:bullet", "dep:rand"]
 no_panic = ["dep:no-panic"]
 
 [dependencies]

@@ -1,5 +1,5 @@
 #![allow(long_running_const_eval)]
-#![feature(exit_status_error)]
+#![feature(exit_status_error, mpmc_channel)]
 
 use anyhow::{Context, Error as Failure};
 use cinder::util::{StaticSeq, parsers::*};
@@ -13,8 +13,10 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 use std::io::{Write, stdout};
 use std::path::{Path, PathBuf};
+use std::sync::mpmc::channel;
+use std::thread::{available_parallelism, scope};
 use std::time::{Duration, Instant};
-use std::{fs::File, num::NonZero, ops::Div, process::Command, thread::available_parallelism};
+use std::{fs::File, iter::repeat_n, num::NonZero, ops::Div, process::Command};
 
 /// Configuration for the SPSA algorithm.
 #[derive(Debug, Args, Serialize, Deserialize)]
@@ -40,11 +42,29 @@ struct SpsaConfig {
     lr: f32,
 }
 
-/// Result of a chess game series.
-#[derive(Debug, Default, Clone, Copy)]
-struct GameResult {
+/// The setup for a match of chess.
+#[derive(Debug)]
+struct MatchSetup {
+    left: Params,
+    right: Params,
+    ak: f32,
+    delta: StaticSeq<f32, { Params::LEN }>,
+}
+
+/// The outcome of a match of chess.
+#[derive(Debug)]
+struct MatchResult {
+    setup: MatchSetup,
     wins: u32,
     losses: u32,
+}
+
+impl MatchResult {
+    fn correction(self) -> impl Iterator<Item = f32> {
+        let delta = self.setup.delta.into_iter();
+        let gradient = self.losses as f32 - self.wins as f32;
+        delta.map(move |d| -self.setup.ak * gradient / d)
+    }
 }
 
 /// Parse a single key-value pair
@@ -54,13 +74,9 @@ fn parse_key_val(s: &str) -> Result<(String, String), Failure> {
 }
 
 /// Orchestrates a series of game between engines.
-#[derive(Debug, Args, Serialize, Deserialize)]
+#[derive(Debug, Clone, Args, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MatchRunner {
-    /// How many games to run concurrently per match.
-    #[clap(long, default_value_t = available_parallelism().map_or(1, NonZero::get).div(2).max(1))]
-    concurrency: usize,
-
     /// The number of game pairs per iteration.
     #[clap(long)]
     pairs: u32,
@@ -91,9 +107,10 @@ impl MatchRunner {
         self.pairs
     }
 
-    fn run(&self, left: &Params, right: &Params) -> Result<GameResult, Failure> {
-        let pairs = self.pairs;
-        let concurrency = self.concurrency;
+    fn run(&self, setup: MatchSetup) -> Result<MatchResult, Failure> {
+        let left = &setup.left;
+        let right = &setup.right;
+        let pairs = self.pairs_per_match();
         let engine = self.engine.display();
         let tc = self.tc.as_str();
 
@@ -109,8 +126,8 @@ impl MatchRunner {
         options.extend(self.options.iter().map(|(k, v)| format!(" option.{k}={v}")));
 
         let args = format!(
-            "-games 2 -rounds {pairs} -concurrency {concurrency} -use-affinity -recover
-            -report penta=false -ratinginterval 0 -autosaveinterval 0 {openings} {tb}
+            "-games 2 -rounds {pairs} -recover {openings} {tb}
+            -report penta=false -ratinginterval 0 -autosaveinterval 0
             -draw movenumber=32 movecount=6 score=15 -resign movecount=5 score=600
             -engine name=left cmd={engine} args=--params={left}
             -engine name=right cmd={engine} args=--params={right}
@@ -130,14 +147,19 @@ impl MatchRunner {
         let losses = field("Losses:", int);
         let mut parser = many_till(anychar, separated_pair(wins, t(tag(",")), losses));
         let (_, (_, (wins, losses))) = parser.parse(&stdout).map_err(|e| e.to_owned())?;
-        Ok(GameResult { wins, losses })
+
+        Ok(MatchResult {
+            setup,
+            wins,
+            losses,
+        })
     }
 }
 
 #[derive(Debug)]
-struct DurationFormatter(Duration);
+struct HumanDuration(Duration);
 
-impl Display for DurationFormatter {
+impl Display for HumanDuration {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let days = self.0.as_secs() / 86400;
         let hours = (self.0.as_secs() / 3600) % 24;
@@ -168,6 +190,10 @@ struct SpsaTuner {
     #[clap(long)]
     iters: u32,
 
+    /// How many games to run concurrently .
+    #[clap(long, default_value_t = available_parallelism().map_or(1, NonZero::get).div(2).max(1))]
+    concurrency: usize,
+
     #[clap(flatten)]
     config: SpsaConfig,
 
@@ -185,15 +211,10 @@ struct SpsaTuner {
 }
 
 impl SpsaTuner {
-    fn gradient(&self, left: &Params, right: &Params) -> Result<f32, Failure> {
-        let result = self.runner.run(left, right)?;
-        Ok(result.losses as f32 - result.wins as f32)
-    }
-
-    fn step(&mut self) -> Result<(), Failure> {
+    fn setup(&self) -> MatchSetup {
         let games_per_step = 2. * self.runner.pairs_per_match() as f32;
         let n = games_per_step * self.iters as f32;
-        let k = games_per_step * self.step as f32;
+        let k = games_per_step * (self.step + 1) as f32;
         let a = n * self.config.ratio;
 
         let a0 = self.config.lr * self.config.grain.powf(2.) * (n + a).powf(self.config.alpha);
@@ -209,42 +230,71 @@ impl SpsaTuner {
 
         let (left, right) = self.params.perturb(delta.iter().copied());
 
-        let gradient = self.gradient(&left, &right)?;
-        let correction = delta.into_iter().map(|d| -ak * gradient / d);
-        self.params.update(correction);
-
-        Ok(())
+        MatchSetup {
+            left,
+            right,
+            ak,
+            delta,
+        }
     }
 
     fn run<P: AsRef<Path>>(&mut self, filename: P) -> Result<(), Failure> {
-        let content = serialize(self, PrettyConfig::default().compact_arrays(true))?;
-        let mut file = File::create(&filename)?;
-        write!(file, "{content}")?;
-
-        let mut stdout = stdout().lock();
-        while self.step < self.iters {
-            self.step += 1;
-            let timer = Instant::now();
-            self.step()?;
-            let elapsed = timer.elapsed();
-            self.period = (self.period.saturating_mul(self.step - 1) + elapsed) / self.step;
-
+        scope(move |s| {
             let content = serialize(self, PrettyConfig::default().compact_arrays(true))?;
             let mut file = File::create(&filename)?;
             write!(file, "{content}")?;
 
-            let period = DurationFormatter(self.period);
-            let remaining = DurationFormatter(self.period.saturating_mul(self.iters - self.step));
+            let (stx, srx) = channel();
+            let (rtx, rrx) = channel();
 
-            write!(stdout, "steps completed: {}/{}, ", self.step, self.iters)?;
-            write!(stdout, "average time per step: {period}, ")?;
-            writeln!(stdout, "estimated time remaining: {remaining}")?;
-        }
+            for (tx, rx, r) in repeat_n((rtx, srx, self.runner.clone()), self.concurrency) {
+                s.spawn(move || {
+                    loop {
+                        let setup = rx.recv().expect("expected receiver to be open");
+                        tx.send(r.run(setup)).expect("expected sender to be open");
+                    }
+                });
+            }
 
-        let params = serialize(&self.params, PrettyConfig::default().compact_arrays(true))?;
-        writeln!(stdout, "optimized parameters: {params}")?;
+            // saturate the pipeline
+            for _ in 0..self.concurrency - 1 {
+                stx.send(self.setup())?;
+            }
 
-        Ok(())
+            let mut stdout = stdout().lock();
+            while self.step < self.iters {
+                let timer = Instant::now();
+
+                stx.send(self.setup())?;
+                self.params.update(rrx.recv()??.correction());
+                self.step += 1;
+
+                let elapsed = timer.elapsed();
+                self.period = (self.period.saturating_mul(self.step - 1) + elapsed) / self.step;
+
+                let content = serialize(self, PrettyConfig::default().compact_arrays(true))?;
+                let mut file = File::create(&filename)?;
+                write!(file, "{content}")?;
+
+                let period = HumanDuration(self.period);
+                let steps_remaining = self.iters - self.step + self.concurrency as u32 - 1;
+                let remaining = HumanDuration(self.period.saturating_mul(steps_remaining));
+
+                write!(stdout, "steps completed: {}/{}, ", self.step, self.iters)?;
+                write!(stdout, "average time per step: {period}, ")?;
+                writeln!(stdout, "estimated time remaining: {remaining}")?;
+            }
+
+            drop(stx);
+            for result in rrx {
+                self.params.update(result?.correction());
+                let content = serialize(self, PrettyConfig::default().compact_arrays(true))?;
+                let mut file = File::create(&filename)?;
+                write!(file, "{content}")?;
+            }
+
+            Ok(())
+        })
     }
 }
 

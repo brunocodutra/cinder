@@ -32,7 +32,7 @@ struct SpsaConfig {
     gamma: f32,
 
     /// Final step size as a fraction of parameter range.
-    #[clap(long, default_value_t = 0.05)]
+    #[clap(long, default_value_t = 0.1)]
     grain: f32,
 
     /// Final learning rate.

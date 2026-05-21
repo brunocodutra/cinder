@@ -214,16 +214,20 @@ struct Orchestrator {
     threads: usize,
 
     /// How many positions per batch.
-    #[clap(long, default_value_t = 262144)]
+    #[clap(long, default_value_t = 131072)]
     batch_size: usize,
 
     /// How many batches per superbatch.
-    #[clap(long, default_value_t = 384)]
+    #[clap(long, default_value_t = 768)]
     batches_per_superbatch: usize,
 
     /// The target wdl fraction.
     #[clap(long, default_value_t = 0.25)]
     wdl: f32,
+
+    /// The target wdl fraction.
+    #[clap(long, default_value_t = 300.0)]
+    eval_scale: f32,
 
     #[clap(flatten)]
     filter: TrainingDataFilter,
@@ -276,7 +280,7 @@ impl Orchestrator {
 
         TrainingSchedule {
             net_id: id.to_string(),
-            eval_scale: 1.,
+            eval_scale: self.eval_scale,
             steps: TrainingSteps {
                 batch_size: self.batch_size,
                 batches_per_superbatch: self.batches_per_superbatch,
@@ -327,15 +331,7 @@ impl Orchestrator {
                 SavedFormat::id("l4ow").transpose(),
                 SavedFormat::id("l4ob"),
             ])
-            .use_win_rate_model()
-            .loss_fn(|output, pt| {
-                let score = 300. * output;
-                let q = (score - 270.) / 340.;
-                let qm = (-score - 270.) / 340.;
-                let qf = 0.5 * (1. + q.sigmoid() - qm.sigmoid());
-                qf.squared_error(pt)
-            })
-            .build(|builder, stm, ntm, phase| {
+            .build_custom(|builder, (stm, ntm, phase), target| {
                 let shape = Shape::new(Accumulator::LEN, Feature::LEN / KingBuckets::LEN);
                 let ftf = builder.new_weights("ftf", shape, InitSettings::Zeroed);
 
@@ -357,16 +353,18 @@ impl Orchestrator {
                 let stm = ft.forward(stm).crelu().pairwise_mul();
                 let ntm = ft.forward(ntm).crelu().pairwise_mul();
 
-                let l1 = stm.concat(ntm);
-                let l2 = l12.forward(l1).select(phase);
+                let l1a = stm.concat(ntm);
+                let l2 = l12.forward(l1a).select(phase);
                 let l2a = l2.concat(-l2).sqrrelu();
                 let l3 = l23.forward(l2a).select(phase);
                 let l3a = l3.concat(-l3).sqrrelu();
                 let l4 = l34.forward(l3a).select(phase);
                 let l4a = l4.concat(-l4).sqrrelu();
-                let out = l4o.forward(l4a).select(phase);
+                let out = l4o.forward(l4a).select(phase) + r2o.matmul(l2a).select(phase);
 
-                out + r2o.matmul(l2a).select(phase)
+                let loss = out.sigmoid().squared_error(target);
+                let ones = builder.new_constant(Shape::new(1, L1::LEN), &[1.0; L1::LEN]);
+                (out, loss + 0.005 * ones.matmul(l1a) / L1::LEN as f32)
             });
 
         let params = AdamWParams {
@@ -409,7 +407,7 @@ impl Orchestrator {
 
         if stage == 0 && superbatch < SB0 {
             let start = if stage == 0 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage0", start..=SB0, 1e-3..=4e-5, 0.0..=0.0);
+            let schedule = self.schedule("stage0", start..=SB0, 2e-3..=1e-4, 0.0..=0.0);
             let priming_dataloader = self.dataloader(&[priming_dataset], 0);
             trainer.run(&schedule, &settings, &priming_dataloader);
         }
@@ -422,7 +420,7 @@ impl Orchestrator {
 
         if stage < 2 || (stage == 2 && superbatch < SB2) {
             let start = if stage == 2 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage2", start..=SB2, 1e-5..=1e-6, self.wdl..=self.wdl);
+            let schedule = self.schedule("stage2", start..=SB2, 5e-5..=1e-6, self.wdl..=self.wdl);
             trainer.run(&schedule, &settings, &training_dataloader);
         }
 

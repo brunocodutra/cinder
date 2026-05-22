@@ -359,14 +359,17 @@ impl Orchestrator {
                 let l4a = l4.concat(-l4).sqrrelu();
                 let out = l4o.forward(l4a).select(phase) + r2o.matmul(l2a).select(phase);
 
+                let ones = builder.new_constant(Shape::new(1, L1::LEN), &[1.0; L1::LEN]);
+                let l1_reg = ones.matmul(l1a) / L1::LEN as f32;
+
                 let score = 300.0 * out;
                 let qp = (score - 270.0) / 340.0;
                 let qn = (-score - 270.0) / 340.0;
                 let inferred = 0.5 * (1.0 + qp.sigmoid() - qn.sigmoid());
-                let loss = inferred.squared_error(target);
 
-                let ones = builder.new_constant(Shape::new(1, L1::LEN), &[1.0; L1::LEN]);
-                (out, loss + 0.005 * ones.matmul(l1a) / L1::LEN as f32)
+                let err = inferred - target;
+                let err_relu = err.relu();
+                (out, err * err + 0.15 * err_relu * err_relu + 0.005 * l1_reg)
             });
 
         let params = AdamWParams {

@@ -8,7 +8,7 @@ use proptest::prelude::*;
 
 /// A fixed width collection of bits.
 #[derive(Debug, Display, Copy, Hash, Zeroable, Constructor)]
-#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive_const(Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, arbitrary(bound(T, Self: Debug, RangeInclusive<T>: Strategy<Value = T>)))]
 #[debug("Bits({_0:b})")]
@@ -20,13 +20,13 @@ where
 
 unsafe impl<T: Unsigned, const W: u32> NoUninit for Bits<T, W> {}
 
-unsafe impl<T: [const] Unsigned + 'static, const W: u32> const Num for Bits<T, W> {
+const unsafe impl<T: [const] Unsigned + 'static, const W: u32> Num for Bits<T, W> {
     type Repr = T;
     const MIN: Self::Repr = zero();
     const MAX: Self::Repr = ones(W);
 }
 
-unsafe impl<T: [const] Unsigned + 'static, const W: u32> const Int for Bits<T, W> {}
+const unsafe impl<T: [const] Unsigned + 'static, const W: u32> Int for Bits<T, W> {}
 
 const impl<T: [const] Unsigned, const W: u32> Bits<T, W> {
     #[expect(dead_code)]
@@ -74,14 +74,14 @@ const impl<T: [const] Unsigned, const W: u32> Bits<T, W> {
     }
 }
 
-impl<T: Unsigned, const W: u32> const Default for Bits<T, W> {
+const impl<T: Unsigned, const W: u32> Default for Bits<T, W> {
     #[inline(always)]
     fn default() -> Self {
         Bits::new(zero())
     }
 }
 
-impl<T: [const] Unsigned, const W: u32> const Not for Bits<T, W> {
+const impl<T: [const] Unsigned, const W: u32> Not for Bits<T, W> {
     type Output = Self;
 
     #[inline(always)]
@@ -90,7 +90,7 @@ impl<T: [const] Unsigned, const W: u32> const Not for Bits<T, W> {
     }
 }
 
-impl<T: [const] Unsigned, const W: u32> const BitAnd for Bits<T, W> {
+const impl<T: [const] Unsigned, const W: u32> BitAnd for Bits<T, W> {
     type Output = Self;
 
     #[inline(always)]
@@ -99,14 +99,14 @@ impl<T: [const] Unsigned, const W: u32> const BitAnd for Bits<T, W> {
     }
 }
 
-impl<T: [const] Unsigned, const W: u32> const BitAndAssign for Bits<T, W> {
+const impl<T: [const] Unsigned, const W: u32> BitAndAssign for Bits<T, W> {
     #[inline(always)]
     fn bitand_assign(&mut self, rhs: Self) {
         self.0.bitand_assign(rhs.0);
     }
 }
 
-impl<T: [const] Unsigned, const W: u32> const BitOr for Bits<T, W> {
+const impl<T: [const] Unsigned, const W: u32> BitOr for Bits<T, W> {
     type Output = Self;
 
     #[inline(always)]
@@ -115,14 +115,14 @@ impl<T: [const] Unsigned, const W: u32> const BitOr for Bits<T, W> {
     }
 }
 
-impl<T: [const] Unsigned, const W: u32> const BitOrAssign for Bits<T, W> {
+const impl<T: [const] Unsigned, const W: u32> BitOrAssign for Bits<T, W> {
     #[inline(always)]
     fn bitor_assign(&mut self, rhs: Self) {
         self.0.bitor_assign(rhs.0);
     }
 }
 
-impl<T: [const] Unsigned, const W: u32> const BitXor for Bits<T, W> {
+const impl<T: [const] Unsigned, const W: u32> BitXor for Bits<T, W> {
     type Output = Self;
 
     #[inline(always)]
@@ -131,7 +131,7 @@ impl<T: [const] Unsigned, const W: u32> const BitXor for Bits<T, W> {
     }
 }
 
-impl<T: [const] Unsigned, const W: u32> const BitXorAssign for Bits<T, W> {
+const impl<T: [const] Unsigned, const W: u32> BitXorAssign for Bits<T, W> {
     #[inline(always)]
     fn bitxor_assign(&mut self, rhs: Self) {
         self.0.bitxor_assign(rhs.0);

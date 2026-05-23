@@ -8,7 +8,7 @@ use nom::{branch::*, bytes::complete::*, combinator::*, sequence::*, *};
 use std::str::{self, FromStr};
 use std::{collections::HashSet, io::Write, time::Duration};
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct UciMove([u8; 5]);
 
 impl UciMove {
@@ -28,7 +28,7 @@ impl PartialEq<str> for UciMove {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub enum Inbound {
     Position(Box<Evaluator>),
@@ -70,7 +70,7 @@ impl Inbound {
     }
 }
 
-#[derive(Debug, Display, Clone, Eq, PartialEq, Error, From)]
+#[derive(Debug, Display, Clone, PartialEq, Eq, Error, From)]
 pub enum ParseUciError<'s> {
     #[display("unrecognized sequence `{}`", _0.input)]
     Unrecognized(#[error(not(source))] ParseError<&'s str>),

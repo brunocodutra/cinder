@@ -2,8 +2,7 @@ use crate::chess::{Color, File, Perspective, Piece, Side, Square};
 use crate::util::{Int, Num};
 
 /// The king's bucket.
-#[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct Bucket(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Bucket as Num>::Repr);
@@ -12,30 +11,29 @@ impl Bucket {
     pub const LEN: usize = Self::MAX as usize + 1;
 }
 
-unsafe impl const Num for Bucket {
+const unsafe impl Num for Bucket {
     type Repr = u8;
     const MIN: Self::Repr = 0;
     const MAX: Self::Repr = 31;
 }
 
-unsafe impl const Int for Bucket {}
+const unsafe impl Int for Bucket {}
 
 /// A bucketed feature set with horizontal mirroring.
-#[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct Feature(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Feature as Num>::Repr);
 
-unsafe impl const Num for Feature {
+const unsafe impl Num for Feature {
     type Repr = u16;
     const MIN: Self::Repr = 0;
     const MAX: Self::Repr = Self::LEN as Self::Repr - 1;
 }
 
-unsafe impl const Int for Feature {}
+const unsafe impl Int for Feature {}
 
-const impl Feature {
+impl Feature {
     /// The total number of different features.
     pub const LEN: usize = 768 * Bucket::LEN / 2;
 

@@ -2,12 +2,11 @@ use crate::chess::Move;
 use bytemuck::Zeroable;
 
 /// A set of killer moves.
-#[derive(Debug, Copy, Hash, Zeroable)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Killers(Option<Move>, Option<Move>);
 
-const impl Killers {
+impl Killers {
     /// Adds a killer move to the set.
     #[inline(always)]
     pub fn insert(&mut self, m: Move) {

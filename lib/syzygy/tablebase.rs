@@ -157,8 +157,7 @@ impl Tablebase {
     }
 }
 
-#[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ProbeResultKind {
     /// The best move is zeroing.
     Zeroing,

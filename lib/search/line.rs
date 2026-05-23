@@ -7,8 +7,7 @@ use std::ptr::copy;
 use proptest::{collection::vec, prelude::*};
 
 /// A sequence of [`Move`]s.
-#[derive(Debug, Clone, Hash)]
-#[derive_const(Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Line({self})")]
 pub struct Line<const N: usize>(
@@ -22,7 +21,7 @@ pub struct Line<const N: usize>(
     [Option<Move>; N],
 );
 
-impl<const N: usize> const Default for Line<N> {
+impl<const N: usize> Default for Line<N> {
     #[inline(always)]
     fn default() -> Self {
         Self::empty()
@@ -32,19 +31,22 @@ impl<const N: usize> const Default for Line<N> {
 impl<const N: usize> Line<N> {
     /// An empty [`Line`].
     #[inline(always)]
-    pub const fn empty() -> Self {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn empty() -> Self {
         Line([None; N])
     }
 
     /// Constructs a singular [`Line`].
     #[inline(always)]
-    pub const fn singular(m: Move) -> Self {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn singular(m: Move) -> Self {
         Line::cons(m, Line::empty())
     }
 
     /// Prepends a [`Move`] to a [`Line`].
     #[inline(always)]
-    pub const fn cons(head: Move, mut tail: Line<N>) -> Self {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn cons(head: Move, mut tail: Line<N>) -> Self {
         if N > 0 {
             unsafe {
                 let ptr = tail.0.as_mut_ptr();
@@ -58,13 +60,15 @@ impl<const N: usize> Line<N> {
 
     /// The first [`Move`]s in this [`Line`].
     #[inline(always)]
-    pub const fn head(&self) -> Option<Move> {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn head(&self) -> Option<Move> {
         if N > 0 { self.0[0] } else { None }
     }
 
     /// Truncates to a principal variation of a different length.
     #[inline(always)]
-    pub const fn truncate<const M: usize>(self) -> Line<M> {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn truncate<const M: usize>(self) -> Line<M> {
         let mut line = Line::empty();
         let len = M.min(N);
         if len > 0 {
@@ -76,6 +80,7 @@ impl<const N: usize> Line<N> {
 
     /// An iterator over the [`Move`]s in this [`Line`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn iter(&self) -> impl Iterator<Item = Move> {
         self.0.iter().map_while(|m| *m)
     }

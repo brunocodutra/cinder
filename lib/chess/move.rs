@@ -6,7 +6,7 @@ use std::num::NonZeroU16;
 
 /// A chess move.
 #[derive(Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive_const(Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, filter(#self.is_promotion() || #self.encode().slice(..2) == zero()))]
 #[repr(transparent)]
@@ -114,7 +114,7 @@ impl Display for Move {
     }
 }
 
-impl const Binary for Move {
+const impl Binary for Move {
     type Bits = Bits<u16, 16>;
 
     #[inline(always)]
@@ -130,7 +130,7 @@ impl const Binary for Move {
 
 /// A set of [`Move`]s originating from a given [`Square`].
 #[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive_const(Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, filter(!#whither.contains(#base.whence())))]
 pub struct MoveSet {
@@ -203,7 +203,7 @@ const impl MoveSet {
     }
 }
 
-impl const IntoIterator for MoveSet {
+const impl IntoIterator for MoveSet {
     type Item = Move;
     type IntoIter = MoveSetIter;
 
@@ -243,7 +243,7 @@ const impl MoveSetIter {
     }
 }
 
-impl const Iterator for MoveSetIter {
+const impl Iterator for MoveSetIter {
     type Item = Move;
 
     #[inline(always)]

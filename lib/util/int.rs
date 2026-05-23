@@ -13,7 +13,6 @@ where
     Self::Repr: [const] IntRepr,
 {
     /// An iterator over all values in the range [`Num::MIN`]..=[`Num::MAX`].
-    #[track_caller]
     #[inline(always)]
     fn iter() -> Ints<Self> {
         Ints::new()
@@ -27,7 +26,7 @@ pub struct Ints<I: Int<Repr: IntRepr>> {
     is_empty: bool,
 }
 
-impl<I: [const] Int<Repr: [const] IntRepr>> const Default for Ints<I> {
+const impl<I: [const] Int<Repr: [const] IntRepr>> Default for Ints<I> {
     #[inline(always)]
     fn default() -> Self {
         Self::new()
@@ -66,7 +65,7 @@ impl<I: Int<Repr: IntRepr>> ExactSizeIterator for Ints<I> {
     }
 }
 
-impl<I: [const] Int<Repr: [const] IntRepr>> const Iterator for Ints<I> {
+const impl<I: [const] Int<Repr: [const] IntRepr>> Iterator for Ints<I> {
     type Item = I;
 
     #[inline(always)]
@@ -92,7 +91,7 @@ impl<I: [const] Int<Repr: [const] IntRepr>> const Iterator for Ints<I> {
     }
 }
 
-impl<I: Int<Repr: IntRepr>> DoubleEndedIterator for Ints<I> {
+const impl<I: [const] Int<Repr: [const] IntRepr>> DoubleEndedIterator for Ints<I> {
     #[inline(always)]
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.is_empty {
@@ -161,39 +160,39 @@ pub const trait Signed: [const] IntRepr {}
 /// Marker trait for unsigned primitive integers.
 pub const trait Unsigned: [const] IntRepr {}
 
-unsafe impl<I: [const] IntRepr> const Num for Saturating<I> {
+const unsafe impl<I: [const] IntRepr> Num for Saturating<I> {
     type Repr = I;
     const MIN: Self::Repr = I::MIN;
     const MAX: Self::Repr = I::MAX;
 }
 
-unsafe impl<I: [const] IntRepr> const Int for Saturating<I> {}
+const unsafe impl<I: [const] IntRepr> Int for Saturating<I> {}
 
-unsafe impl const Num for bool {
+const unsafe impl Num for bool {
     type Repr = u8;
     const MIN: Self::Repr = 0x00;
     const MAX: Self::Repr = 0x01;
 }
 
-unsafe impl const Int for bool {}
+const unsafe impl Int for bool {}
 
-unsafe impl const Num for Ordering {
+const unsafe impl Num for Ordering {
     type Repr = i8;
     const MIN: Self::Repr = Ordering::Less as i8;
     const MAX: Self::Repr = Ordering::Greater as i8;
 }
 
-unsafe impl const Int for Ordering {}
+const unsafe impl Int for Ordering {}
 
 macro_rules! impl_int_for_non_zero {
     ($nz: ty, $repr: ty) => {
-        unsafe impl const Num for $nz {
+        const unsafe impl Num for $nz {
             type Repr = $repr;
             const MIN: Self::Repr = <$nz>::MIN.get();
             const MAX: Self::Repr = <$nz>::MAX.get();
         }
 
-        unsafe impl const Int for $nz {}
+        const unsafe impl Int for $nz {}
     };
 }
 
@@ -206,7 +205,7 @@ impl_int_for_non_zero!(NonZeroUsize, usize);
 
 macro_rules! impl_num_for {
     ($i: ty) => {
-        unsafe impl const Num for $i {
+        const unsafe impl Num for $i {
             type Repr = $i;
 
             const MIN: Self::Repr = <$i>::MIN;
@@ -268,18 +267,18 @@ macro_rules! impl_signed_for {
     ($i: ty) => {
         impl_num_for!($i);
 
-        impl const NumRepr for $i {
+        const impl NumRepr for $i {
             const IS_FLOAT: bool = false;
             const IS_SIGNED: bool = true;
         }
 
-        unsafe impl const Int for $i {}
+        const unsafe impl Int for $i {}
 
-        impl const IntRepr for $i {
+        const impl IntRepr for $i {
             const BITS: u32 = <$i>::BITS;
         }
 
-        impl const Signed for $i {}
+        const impl Signed for $i {}
     };
 }
 
@@ -294,18 +293,18 @@ macro_rules! impl_unsigned_for {
     ($i: ty) => {
         impl_num_for!($i);
 
-        impl const NumRepr for $i {
+        const impl NumRepr for $i {
             const IS_FLOAT: bool = false;
             const IS_SIGNED: bool = false;
         }
 
-        unsafe impl const Int for $i {}
+        const unsafe impl Int for $i {}
 
-        impl const IntRepr for $i {
+        const impl IntRepr for $i {
             const BITS: u32 = <$i>::BITS;
         }
 
-        impl const Unsigned for $i {}
+        const impl Unsigned for $i {}
     };
 }
 
@@ -322,7 +321,7 @@ mod tests {
     use test_strategy::{Arbitrary, proptest};
 
     #[derive(Debug, Copy, Hash, Arbitrary)]
-    #[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
+    #[derive_const(Clone, PartialEq, Eq, PartialOrd, Ord)]
     #[repr(u16)]
     enum Digit {
         One = 1,
@@ -336,13 +335,13 @@ mod tests {
         Nine,
     }
 
-    unsafe impl const Num for Digit {
+    const unsafe impl Num for Digit {
         type Repr = u16;
         const MIN: Self::Repr = Digit::One as u16;
         const MAX: Self::Repr = Digit::Nine as u16;
     }
 
-    unsafe impl const Int for Digit {}
+    const unsafe impl Int for Digit {}
 
     #[proptest]
     fn int_can_be_cast_from_repr(#[strategy(1u16..10)] i: u16) {

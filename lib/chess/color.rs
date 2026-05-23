@@ -5,7 +5,7 @@ use std::ops::Not;
 
 /// The color of a chess [`Piece`][`crate::chess::Piece`].
 #[derive(Debug, Display, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive_const(Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(u8)]
 pub enum Color {
@@ -15,22 +15,22 @@ pub enum Color {
     Black,
 }
 
-unsafe impl const Num for Color {
+const unsafe impl Num for Color {
     type Repr = u8;
     const MIN: Self::Repr = Color::White as u8;
     const MAX: Self::Repr = Color::Black as u8;
 }
 
-unsafe impl const Int for Color {}
+const unsafe impl Int for Color {}
 
-impl const Flip for Color {
+const impl Flip for Color {
     #[inline(always)]
     fn flip(self) -> Self {
         self.not()
     }
 }
 
-impl const Not for Color {
+const impl Not for Color {
     type Output = Self;
 
     #[inline(always)]
@@ -42,14 +42,14 @@ impl const Not for Color {
     }
 }
 
-impl const From<bool> for Color {
+const impl From<bool> for Color {
     #[inline(always)]
     fn from(b: bool) -> Self {
         Num::new(b as u8)
     }
 }
 
-impl const From<Color> for bool {
+const impl From<Color> for bool {
     #[inline(always)]
     fn from(c: Color) -> Self {
         c == Color::Black

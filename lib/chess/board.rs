@@ -4,14 +4,14 @@ use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::hash::{Hash, Hasher};
+use std::io::Write as _;
 use std::str::{self, FromStr};
-use std::{io::Write as _, slice::Iter};
 
 #[cfg(test)]
 use proptest::strategy::LazyJust;
 
 #[derive(Debug, Hash, Zeroable)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive_const(Default, Clone, PartialEq, Eq)]
 pub struct Zobrists {
     pub hash: Zobrist,
     pub pawns: Zobrist,
@@ -47,8 +47,7 @@ const impl Zobrists {
 }
 
 /// The chess board.
-#[derive(Debug, Clone)]
-#[derive_const(Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Board({self})")]
 pub struct Board {
@@ -82,8 +81,9 @@ pub struct Board {
     pub fullmoves: u32,
 }
 
-impl const Default for Board {
+impl Default for Board {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn default() -> Self {
         use Piece::*;
 
@@ -122,75 +122,87 @@ impl const Default for Board {
     }
 }
 
-const impl Board {
+impl Board {
     /// Game [`Phase`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn phase(&self) -> Phase {
         Phase::new((self.occupied().len() - 1) as u8 / 4)
     }
 
     /// The [`Color`] bitboards.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn colors(&self) -> [Bitboard; 2] {
         self.colors
     }
 
     /// The [`Role`] bitboards.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn roles(&self) -> [Bitboard; 6] {
         self.roles
     }
 
     /// The [`Piece`]s table.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn pieces(&self) -> &Aligned<[Option<Piece>; Square::MAX as usize + 1]> {
         &self.pieces
     }
 
     /// [`Square`]s occupied.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn occupied(&self) -> Bitboard {
         self.colors[Color::White as usize] ^ self.colors[Color::Black as usize]
     }
 
     /// [`Square`]s occupied by [`Piece`]s of a [`Color`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn by_color(&self, c: Color) -> Bitboard {
         self.colors[c as usize]
     }
 
     /// [`Square`]s occupied by [`Piece`]s of a [`Role`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn by_role(&self, r: Role) -> Bitboard {
         self.roles[r as usize]
     }
 
     /// [`Square`]s occupied by a [`Piece`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn by_piece(&self, p: Piece) -> Bitboard {
         self.by_color(p.color()) & self.by_role(p.role())
     }
 
     /// The [`Color`] of the piece on the given [`Square`], if any.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn color_on(&self, sq: Square) -> Option<Color> {
         self.piece_on(sq).map(Piece::color)
     }
 
     /// The [`Role`] of the piece on the given [`Square`], if any.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn role_on(&self, sq: Square) -> Option<Role> {
         self.piece_on(sq).map(Piece::role)
     }
 
     /// The [`Piece`] on the given [`Square`], if any.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn piece_on(&self, sq: Square) -> Option<Piece> {
         self.pieces[sq as usize]
     }
 
     /// [`Square`] occupied by a the king of a [`Color`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn king(&self, side: Color) -> Option<Square> {
         let piece = Piece::new(Role::King, side);
         self.by_piece(piece).into_iter().next()
@@ -198,11 +210,8 @@ const impl Board {
 
     /// Squares occupied by pinned [`Piece`]s of a [`Color`].
     #[inline(always)]
-    pub fn pinned(&self, c: Color, mask: Bitboard) -> Bitboard
-    where
-        for<'a> &'a [Role; 2]: [const] IntoIterator<IntoIter = Iter<'a, Role>>,
-        for<'a> Iter<'a, Role>: [const] Iterator<Item = &'a Role>,
-    {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn pinned(&self, c: Color, mask: Bitboard) -> Bitboard {
         let ours = mask & self.by_color(c);
         let theirs = mask & self.by_color(!c);
         let occ = ours ^ theirs;
@@ -226,11 +235,8 @@ const impl Board {
 
     /// Squares occupied by [`Piece`]s giving check to the king of a [`Color`].
     #[inline(always)]
-    pub fn checkers(&self, c: Color, mask: Bitboard) -> Bitboard
-    where
-        for<'a> &'a [Role; 2]: [const] IntoIterator<IntoIter = Iter<'a, Role>>,
-        for<'a> Iter<'a, Role>: [const] Iterator<Item = &'a Role>,
-    {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn checkers(&self, c: Color, mask: Bitboard) -> Bitboard {
         let ours = mask & self.by_color(c);
         let theirs = mask & self.by_color(!c);
         let occ = ours ^ theirs;
@@ -259,6 +265,7 @@ const impl Board {
 
     /// Squares giving direct check to the king of a [`Color`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn checking(&self, c: Color) -> [Bitboard; 4] {
         let occ = self.occupied();
         let king = self.king(c).assume();
@@ -273,11 +280,8 @@ const impl Board {
 
     /// Squares occupied by [`Square`]s threatened by [`Piece`]s of a [`Color`].
     #[inline(always)]
-    pub fn threats(&self, c: Color) -> Bitboard
-    where
-        for<'a> &'a [Role; 2]: [const] IntoIterator<IntoIter = Iter<'a, Role>>,
-        for<'a> Iter<'a, Role>: [const] Iterator<Item = &'a Role>,
-    {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn threats(&self, c: Color) -> Bitboard {
         let ours = self.by_color(!c);
         let theirs = self.by_color(c);
         let occ = ours ^ theirs;
@@ -310,6 +314,7 @@ const impl Board {
 
     /// Computes the [zobrist hashes](`Zobrists`).
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn zobrists(&self) -> Zobrists {
         let mut zobrists = Zobrists {
             hash: ZobristNumbers::castling(self.castles),
@@ -335,6 +340,7 @@ const impl Board {
 
     /// Toggles a piece on a square.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn toggle(&mut self, p: Piece, sq: Square) {
         self.pieces[sq as usize] = self.pieces[sq as usize].xor(Some(p));
 
@@ -404,7 +410,7 @@ impl Display for Board {
 
 /// The reason why parsing the FEN string failed.
 #[derive(Debug, Display, Error)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive_const(Clone, PartialEq, Eq)]
 pub enum ParseFenError {
     #[display("failed to parse piece placement")]
     InvalidPlacement,

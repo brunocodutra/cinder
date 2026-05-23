@@ -7,7 +7,7 @@ use std::{cell::SyncUnsafeCell, ops::Shl, str::FromStr};
 
 /// A chess [piece][`Role`] of a certain [`Color`].
 #[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive_const(Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(u8)]
 pub enum Piece {
@@ -198,15 +198,15 @@ const impl Piece {
     }
 }
 
-unsafe impl const Num for Piece {
+const unsafe impl Num for Piece {
     type Repr = u8;
     const MIN: Self::Repr = Piece::WhitePawn as u8;
     const MAX: Self::Repr = Piece::BlackKing as u8;
 }
 
-unsafe impl const Int for Piece {}
+const unsafe impl Int for Piece {}
 
-impl const Flip for Piece {
+const impl Flip for Piece {
     /// Mirrors this piece's [`Color`].
     #[inline(always)]
     fn flip(self) -> Self {
@@ -235,11 +235,11 @@ impl Display for Piece {
 
 /// The reason why parsing [`Piece`] failed.
 #[derive(Debug, Display, Error)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive_const(Default, Clone, PartialEq, Eq)]
 #[display("failed to parse piece")]
 pub struct ParsePieceError;
 
-impl const FromStr for Piece {
+const impl FromStr for Piece {
     type Err = ParsePieceError;
 
     #[inline(always)]

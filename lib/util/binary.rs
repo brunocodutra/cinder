@@ -12,7 +12,7 @@ pub const trait Binary: 'static + Sized {
     fn decode(bits: Self::Bits) -> Self;
 }
 
-impl<T: Unsigned, const W: u32> const Binary for Bits<T, W> {
+const impl<T: Unsigned, const W: u32> Binary for Bits<T, W> {
     type Bits = Self;
 
     #[inline(always)]
@@ -26,7 +26,7 @@ impl<T: Unsigned, const W: u32> const Binary for Bits<T, W> {
     }
 }
 
-impl<T: [const] Binary<Bits: [const] Default + [const] Eq + Int>> const Binary for Option<T> {
+const impl<T: [const] Binary<Bits: [const] Default + [const] Eq + Int>> Binary for Option<T> {
     type Bits = T::Bits;
 
     #[inline(always)]
@@ -51,7 +51,7 @@ impl<T: [const] Binary<Bits: [const] Default + [const] Eq + Int>> const Binary f
     }
 }
 
-impl const Binary for () {
+const impl Binary for () {
     type Bits = Bits<u8, 0>;
 
     #[inline(always)]
@@ -65,7 +65,7 @@ impl const Binary for () {
 
 macro_rules! impl_binary_for {
     ($i: ty) => {
-        impl const Binary for $i {
+        const impl Binary for $i {
             type Bits = Bits<$i, { <$i>::BITS }>;
 
             #[inline(always)]

@@ -25,7 +25,7 @@ use std::ops::{Deref, Div, RangeInclusive};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{fs::create_dir_all, num::NonZero, thread::available_parallelism};
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 struct KingBuckets;
 
 impl KingBuckets {
@@ -67,7 +67,7 @@ impl SparseInputType for KingBuckets {
     }
 }
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 struct Phaser;
 
 impl OutputBuckets<ChessBoard> for Phaser {
@@ -79,7 +79,7 @@ impl OutputBuckets<ChessBoard> for Phaser {
 }
 
 /// The configuration for a filter that can be applied to a game during unpacking.
-#[derive(Debug, Copy, Clone, Args)]
+#[derive(Debug, Clone, Copy, Args)]
 pub struct TrainingDataFilter {
     /// Filter out positions that have a ply count less than this value.
     #[clap(skip = 0u16)]

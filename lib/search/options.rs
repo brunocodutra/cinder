@@ -7,14 +7,14 @@ use std::{cmp::Ordering, collections::HashSet, path::PathBuf, str::FromStr};
 use proptest::strategy::LazyJust;
 
 /// The hash size in bytes.
-#[derive(Debug, Display, Copy, Clone, Eq, Ord, Hash)]
+#[derive(Debug, Display, Clone, Copy, Eq, Ord, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("HashSize({_0})")]
 #[display("{}", self.get() >> 20)]
 #[repr(transparent)]
 pub struct HashSize(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] usize);
 
-unsafe impl const Num for HashSize {
+const unsafe impl Num for HashSize {
     type Repr = usize;
 
     const MIN: Self::Repr = 0;
@@ -26,27 +26,27 @@ unsafe impl const Num for HashSize {
     const MAX: usize = 16 << 20;
 }
 
-unsafe impl const Int for HashSize {}
+const unsafe impl Int for HashSize {}
 
-impl const Default for HashSize {
+impl Default for HashSize {
     fn default() -> Self {
         HashSize(16 << 20)
     }
 }
 
-impl<I: [const] Int<Repr = usize>> const PartialEq<I> for HashSize {
+impl<I: Int<Repr = usize>> PartialEq<I> for HashSize {
     fn eq(&self, other: &I) -> bool {
         self.get().eq(&other.get())
     }
 }
 
-impl<I: [const] Int<Repr = usize>> const PartialOrd<I> for HashSize {
+impl<I: Int<Repr = usize>> PartialOrd<I> for HashSize {
     fn partial_cmp(&self, other: &I) -> Option<Ordering> {
         self.get().partial_cmp(&other.get())
     }
 }
 
-impl const Shl<u32> for HashSize {
+impl Shl<u32> for HashSize {
     type Output = Self;
 
     #[inline(always)]
@@ -55,7 +55,7 @@ impl const Shl<u32> for HashSize {
     }
 }
 
-impl const Shr<u32> for HashSize {
+impl Shr<u32> for HashSize {
     type Output = Self;
 
     #[inline(always)]
@@ -65,8 +65,7 @@ impl const Shr<u32> for HashSize {
 }
 
 /// The reason why parsing the hash size failed.
-#[derive(Debug, Display, Error)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive(Debug, Display, Default, Clone, PartialEq, Eq, Error)]
 #[display(
     "failed to parse hash size, expected integer in the range `{}..={}`",
     HashSize::lower(),
@@ -88,14 +87,14 @@ impl FromStr for HashSize {
 }
 
 /// The thread count.
-#[derive(Debug, Display, Copy, Clone, Eq, Ord, Hash)]
+#[derive(Debug, Display, Clone, Copy, Eq, Ord, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("ThreadCount({_0})")]
 #[display("{_0}")]
 #[repr(transparent)]
 pub struct ThreadCount(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] u16);
 
-unsafe impl const Num for ThreadCount {
+const unsafe impl Num for ThreadCount {
     type Repr = u16;
 
     const MIN: Self::Repr = 1;
@@ -107,29 +106,28 @@ unsafe impl const Num for ThreadCount {
     const MAX: Self::Repr = 4;
 }
 
-unsafe impl const Int for ThreadCount {}
+const unsafe impl Int for ThreadCount {}
 
-impl const Default for ThreadCount {
+impl Default for ThreadCount {
     fn default() -> Self {
         Self::new(1)
     }
 }
 
-impl<I: [const] Int<Repr = u16>> const PartialEq<I> for ThreadCount {
+impl<I: Int<Repr = u16>> PartialEq<I> for ThreadCount {
     fn eq(&self, other: &I) -> bool {
         self.get().eq(&other.get())
     }
 }
 
-impl<I: [const] Int<Repr = u16>> const PartialOrd<I> for ThreadCount {
+impl<I: Int<Repr = u16>> PartialOrd<I> for ThreadCount {
     fn partial_cmp(&self, other: &I) -> Option<Ordering> {
         self.get().partial_cmp(&other.get())
     }
 }
 
 /// The reason why parsing the thread count failed.
-#[derive(Debug, Display, Error)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive(Debug, Display, Default, Clone, PartialEq, Eq, Error)]
 #[display(
     "failed to parse thread count, expected integer in the range `{}..={}`",
     ThreadCount::lower(),
@@ -150,7 +148,7 @@ impl FromStr for ThreadCount {
 }
 
 /// Configuration for adversarial search algorithms.
-#[derive(Debug, Default, Clone, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Options {
     /// The size of the transposition table in bytes.

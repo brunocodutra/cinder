@@ -8,7 +8,7 @@ pub const trait Assume {
     fn assume(self) -> Self::Assumed;
 }
 
-impl const Assume for bool {
+const impl Assume for bool {
     type Assumed = ();
 
     #[track_caller]
@@ -19,7 +19,7 @@ impl const Assume for bool {
     }
 }
 
-impl<'a, T> const Assume for &'a NonNull<T> {
+const impl<'a, T> Assume for &'a NonNull<T> {
     type Assumed = &'a T;
 
     #[track_caller]
@@ -30,7 +30,7 @@ impl<'a, T> const Assume for &'a NonNull<T> {
     }
 }
 
-impl<'a, T> const Assume for &'a mut NonNull<T> {
+const impl<'a, T> Assume for &'a mut NonNull<T> {
     type Assumed = &'a mut T;
 
     #[track_caller]
@@ -41,7 +41,7 @@ impl<'a, T> const Assume for &'a mut NonNull<T> {
     }
 }
 
-impl<T> const Assume for Option<T> {
+const impl<T> Assume for Option<T> {
     type Assumed = T;
 
     #[track_caller]
@@ -52,7 +52,7 @@ impl<T> const Assume for Option<T> {
     }
 }
 
-impl<T, E> const Assume for Result<T, E> {
+const impl<T, E> Assume for Result<T, E> {
     type Assumed = T;
 
     #[track_caller]

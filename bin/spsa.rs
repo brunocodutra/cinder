@@ -41,7 +41,7 @@ struct SpsaConfig {
 }
 
 /// Result of a chess game series.
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 struct GameResult {
     wins: u32,
     losses: u32,

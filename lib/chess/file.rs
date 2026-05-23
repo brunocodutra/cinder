@@ -6,7 +6,7 @@ use std::{ops::Sub, str::FromStr};
 
 /// A column on the chess board.
 #[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive_const(Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(i8)]
 pub enum File {
@@ -28,15 +28,15 @@ const impl File {
     }
 }
 
-unsafe impl const Num for File {
+const unsafe impl Num for File {
     type Repr = i8;
     const MIN: Self::Repr = File::A as i8;
     const MAX: Self::Repr = File::H as i8;
 }
 
-unsafe impl const Int for File {}
+const unsafe impl Int for File {}
 
-impl const Mirror for File {
+const impl Mirror for File {
     /// Horizontally mirrors this file.
     #[inline(always)]
     fn mirror(self) -> Self {
@@ -44,7 +44,7 @@ impl const Mirror for File {
     }
 }
 
-impl const Transpose for File {
+const impl Transpose for File {
     type Transposition = Rank;
 
     /// This file's corresponding rank.
@@ -54,7 +54,7 @@ impl const Transpose for File {
     }
 }
 
-impl const Sub for File {
+const impl Sub for File {
     type Output = i8;
 
     #[inline(always)]
@@ -71,11 +71,11 @@ impl Display for File {
 
 /// The reason why parsing [`File`] failed.
 #[derive(Debug, Display, Error)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive_const(Default, Clone, PartialEq, Eq)]
 #[display("failed to parse file")]
 pub struct ParseFileError;
 
-impl const FromStr for File {
+const impl FromStr for File {
     type Err = ParseFileError;
 
     #[inline(always)]

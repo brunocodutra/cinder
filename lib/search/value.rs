@@ -3,31 +3,30 @@ use crate::search::{Ply, Score};
 use crate::util::{Binary, Bits, Bounded, Int, Num};
 use bytemuck::{NoUninit, Zeroable};
 
-#[derive(Debug, Copy, Hash, Zeroable, NoUninit)]
-#[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, NoUninit)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct ValueRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <ValueRepr as Num>::Repr);
 
-unsafe impl const Num for ValueRepr {
+const unsafe impl Num for ValueRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
     const MAX: Self::Repr = Score::MAX - 2 * (Ply::MAX + 1);
 }
 
-unsafe impl const Int for ValueRepr {}
+const unsafe impl Int for ValueRepr {}
 
 /// A position's static evaluation.
 pub type Value = Bounded<ValueRepr>;
 
-impl const Flip for Value {
+impl Flip for Value {
     #[inline(always)]
     fn flip(self) -> Self {
         -self
     }
 }
 
-impl const Binary for Value {
+impl Binary for Value {
     type Bits = Bits<u16, 14>;
 
     #[inline(always)]

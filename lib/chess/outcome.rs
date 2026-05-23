@@ -3,7 +3,7 @@ use derive_more::with_trait::Display;
 
 /// One of the possible outcomes of a chess game.
 #[derive(Debug, Display, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive_const(Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub enum Outcome {
     #[display("checkmate by the {_0} player")]

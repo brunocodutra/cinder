@@ -14,7 +14,6 @@ where
     /// Linearly interpolates between `a` and `b`.
     ///
     /// When `self` is 0, returns `a`. When `self` is 1, returns `b`.
-    #[track_caller]
     #[inline(always)]
     fn lerp(self, a: Self, b: Self) -> Self {
         Self::new(self.get().lerp(a.get(), b.get()))
@@ -40,12 +39,12 @@ pub const trait FloatRepr:
 
 macro_rules! impl_float_repr_for {
     ($f: ty) => {
-        impl const NumRepr for $f {
+        const impl NumRepr for $f {
             const IS_FLOAT: bool = true;
             const IS_SIGNED: bool = true;
         }
 
-        unsafe impl const Num for $f {
+        const unsafe impl Num for $f {
             type Repr = $f;
 
             const MIN: Self::Repr = <$f>::NEG_INFINITY;
@@ -106,9 +105,9 @@ macro_rules! impl_float_repr_for {
             }
         }
 
-        impl const FloatRepr for $f {}
+        const impl FloatRepr for $f {}
 
-        unsafe impl const Float for $f {
+        const unsafe impl Float for $f {
             #[inline(always)]
             fn lerp(self, a: Self, b: Self) -> Self {
                 <$f>::mul_add(self, b - a, a)
@@ -125,17 +124,17 @@ mod tests {
     use super::*;
     use test_strategy::{Arbitrary, proptest};
 
-    #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Arbitrary)]
+    #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Arbitrary)]
     #[repr(transparent)]
     struct Unit(#[strategy(Self::MIN..=Self::MAX)] <Unit as Num>::Repr);
 
-    unsafe impl const Num for Unit {
+    const unsafe impl Num for Unit {
         type Repr = f64;
         const MIN: Self::Repr = -1.;
         const MAX: Self::Repr = 1.;
     }
 
-    unsafe impl const Float for Unit {}
+    const unsafe impl Float for Unit {}
 
     #[proptest]
     #[expect(clippy::float_cmp)]

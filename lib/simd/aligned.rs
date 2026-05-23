@@ -4,7 +4,7 @@ use std::mem::transmute;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Debug, Hash, Zeroable, AsRef, AsMut, IntoIterator)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive_const(Default, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[as_ref(forward)]
 #[as_mut(forward)]
@@ -31,7 +31,7 @@ const impl<T> Aligned<T> {
     }
 }
 
-impl<T> const Deref for Aligned<T> {
+const impl<T> Deref for Aligned<T> {
     type Target = T;
 
     #[inline(always)]
@@ -40,7 +40,7 @@ impl<T> const Deref for Aligned<T> {
     }
 }
 
-impl<T> const DerefMut for Aligned<T> {
+const impl<T> DerefMut for Aligned<T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0

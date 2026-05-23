@@ -71,17 +71,19 @@ impl TranspositionTable {
     }
 }
 
-impl const Deref for TranspositionTable {
+impl Deref for TranspositionTable {
     type Target = [UnsafeCell<MaybeUninit<u64>>];
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn deref(&self) -> &Self::Target {
         unsafe { slice::from_raw_parts(self.entries.as_ptr().cast(), self.entries.len()) }
     }
 }
 
-impl const DerefMut for TranspositionTable {
+impl DerefMut for TranspositionTable {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { slice::from_raw_parts_mut(self.entries.as_mut_ptr().cast(), self.entries.len()) }
     }
@@ -125,17 +127,19 @@ impl ValueTable {
     }
 }
 
-impl const Deref for ValueTable {
+impl Deref for ValueTable {
     type Target = [UnsafeCell<MaybeUninit<u32>>];
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn deref(&self) -> &Self::Target {
         unsafe { slice::from_raw_parts(self.entries.as_ptr().cast(), self.entries.len()) }
     }
 }
 
-impl const DerefMut for ValueTable {
+impl DerefMut for ValueTable {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { slice::from_raw_parts_mut(self.entries.as_mut_ptr().cast(), self.entries.len()) }
     }

@@ -5,8 +5,7 @@ use std::fmt::{self, Formatter, Write};
 use std::{iter::repeat_n, str::FromStr};
 
 /// A material key.
-#[derive(Debug, Default, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Material({self})")]
 pub struct Material(
@@ -68,7 +67,7 @@ impl Material {
     }
 }
 
-impl const Flip for Material {
+impl Flip for Material {
     #[inline(always)]
     fn flip(self) -> Self {
         Material([self.0[1], self.0[0]])
@@ -106,8 +105,7 @@ impl Display for Material {
 }
 
 /// The reason why parsing [`Material`] failed.
-#[derive(Debug, Display, Error)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive(Debug, Display, Default, Clone, PartialEq, Eq, Error)]
 #[display("failed to parse material")]
 pub struct ParseMaterialError;
 
@@ -134,8 +132,7 @@ impl FromStr for Material {
     }
 }
 
-#[derive(Debug, Display, Copy, Hash, Deref)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, Hash, Deref)]
 #[debug("NormalizedMaterial({self})")]
 #[display("{_0}")]
 pub struct NormalizedMaterial(Material);

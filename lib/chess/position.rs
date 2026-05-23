@@ -10,7 +10,7 @@ use std::{num::NonZeroU32, str::FromStr};
 use proptest::{prelude::*, sample::*};
 
 /// A container with sufficient capacity to hold all [`Move`]s in any [`Position`].
-#[derive(Debug, Default, Clone, Eq, PartialEq, Hash, Deref, DerefMut, IntoIterator)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Deref, DerefMut, IntoIterator)]
 pub struct MovePack(StaticSeq<MoveSet, 32>);
 
 impl MovePack {
@@ -26,11 +26,10 @@ impl MovePack {
 }
 
 /// The [`MovePacker`] is out of capacity.
-#[derive(Debug, Display, Error, From)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive(Debug, Display, Default, Clone, PartialEq, Eq, Error, From)]
 struct CapacityError;
 
-const trait MovePacker {
+trait MovePacker {
     fn pack(
         &mut self,
         piece: Piece,
@@ -42,7 +41,7 @@ const trait MovePacker {
 
 struct NoCapacityMovePacker;
 
-impl const MovePacker for NoCapacityMovePacker {
+impl MovePacker for NoCapacityMovePacker {
     #[inline(always)]
     fn pack(
         &mut self,
@@ -59,7 +58,7 @@ impl const MovePacker for NoCapacityMovePacker {
     }
 }
 
-impl const MovePacker for MovePack {
+impl MovePacker for MovePack {
     #[inline(always)]
     fn pack(
         &mut self,
@@ -267,8 +266,7 @@ impl MoveGenerator {
 /// The current position on the board.
 ///
 /// This type guarantees that it only holds valid positions.
-#[derive(Debug, Clone)]
-#[derive_const(Eq)]
+#[derive(Debug, Clone, Eq)]
 #[debug("Position({self})")]
 pub struct Position {
     board: Board,
@@ -306,6 +304,7 @@ impl Arbitrary for Position {
 }
 
 impl Default for Position {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn default() -> Self {
         let board = Board::default();
 
@@ -323,13 +322,15 @@ impl Default for Position {
 
 impl Hash for Position {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.zobrists.hash.hash(state);
     }
 }
 
-impl const PartialEq for Position {
+impl PartialEq for Position {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn eq(&self, other: &Self) -> bool {
         self.zobrists.hash.eq(&other.zobrists.hash) && self.board.eq(&other.board)
     }
@@ -338,7 +339,8 @@ impl const PartialEq for Position {
 impl Position {
     /// The side to move.
     #[inline(always)]
-    pub const fn turn(&self) -> Color {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn turn(&self) -> Color {
         self.board.turn
     }
 
@@ -346,7 +348,8 @@ impl Position {
     ///
     /// It resets to 0 whenever a piece is captured or a pawn is moved.
     #[inline(always)]
-    pub const fn halfmoves(&self) -> u8 {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn halfmoves(&self) -> u8 {
         self.board.halfmoves
     }
 
@@ -354,120 +357,140 @@ impl Position {
     ///
     /// It starts at 1, and is incremented after every move by black.
     #[inline(always)]
-    pub const fn fullmoves(&self) -> NonZeroU32 {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn fullmoves(&self) -> NonZeroU32 {
         self.board.fullmoves.convert().assume()
     }
 
     /// The en passant square.
     #[inline(always)]
-    pub const fn en_passant(&self) -> Option<Square> {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn en_passant(&self) -> Option<Square> {
         self.board.en_passant
     }
 
     /// The castle rights.
     #[inline(always)]
-    pub const fn castles(&self) -> Castles {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn castles(&self) -> Castles {
         self.board.castles
     }
 
     /// Game [`Phase`].
     #[inline(always)]
-    pub const fn phase(&self) -> Phase {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn phase(&self) -> Phase {
         self.board.phase()
     }
 
     /// The [`Piece`]s table.
     #[inline(always)]
-    pub const fn pieces(&self) -> &Aligned<[Option<Piece>; Square::MAX as usize + 1]> {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn pieces(&self) -> &Aligned<[Option<Piece>; Square::MAX as usize + 1]> {
         self.board.pieces()
     }
 
     /// [`Square`]s occupied.
     #[inline(always)]
-    pub const fn occupied(&self) -> Bitboard {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn occupied(&self) -> Bitboard {
         self.board.occupied()
     }
 
     /// [`Square`]s occupied by pieces of a [`Color`].
     #[inline(always)]
-    pub const fn by_color(&self, side: Color) -> Bitboard {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn by_color(&self, side: Color) -> Bitboard {
         self.board.by_color(side)
     }
 
     /// [`Square`]s occupied by pieces of a [`Role`].
     #[inline(always)]
-    pub const fn by_role(&self, role: Role) -> Bitboard {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn by_role(&self, role: Role) -> Bitboard {
         self.board.by_role(role)
     }
 
     /// [`Square`]s occupied by a [`Piece`].
     #[inline(always)]
-    pub const fn by_piece(&self, piece: Piece) -> Bitboard {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn by_piece(&self, piece: Piece) -> Bitboard {
         self.board.by_piece(piece)
     }
 
     /// [`Square`]s occupied by pawns of a [`Color`].
     #[inline(always)]
-    pub const fn pawns(&self, side: Color) -> Bitboard {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn pawns(&self, side: Color) -> Bitboard {
         self.by_piece(Piece::new(Role::Pawn, side))
     }
 
     /// The [`Color`] of the [`Piece`] on the given [`Square`], if any.
     #[inline(always)]
-    pub const fn color_on(&self, sq: Square) -> Option<Color> {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn color_on(&self, sq: Square) -> Option<Color> {
         self.board.color_on(sq)
     }
 
     /// The [`Role`] of the [`Piece`] on the given [`Square`], if any.
     #[inline(always)]
-    pub const fn role_on(&self, sq: Square) -> Option<Role> {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn role_on(&self, sq: Square) -> Option<Role> {
         self.board.role_on(sq)
     }
 
     /// The [`Piece`] on the given [`Square`], if any.
     #[inline(always)]
-    pub const fn piece_on(&self, sq: Square) -> Option<Piece> {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn piece_on(&self, sq: Square) -> Option<Piece> {
         self.board.piece_on(sq)
     }
 
     /// [`Square`] occupied by a the king of a [`Color`].
     #[inline(always)]
-    pub const fn king(&self, side: Color) -> Square {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn king(&self, side: Color) -> Square {
         self.board.king(side).assume()
     }
 
     /// This position's [zobrist hashes](`Zobrists`).
     #[inline(always)]
-    pub const fn zobrists(&self) -> &Zobrists {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn zobrists(&self) -> &Zobrists {
         &self.zobrists
     }
 
     /// [`Square`]s occupied by [`Piece`]s giving check.
     #[inline(always)]
-    pub const fn checkers(&self) -> Bitboard {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn checkers(&self) -> Bitboard {
         self.checkers
     }
 
     /// [`Square`]s occupied by pinned [`Piece`]s .
     #[inline(always)]
-    pub const fn pinned(&self) -> Bitboard {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn pinned(&self) -> Bitboard {
         self.pinned
     }
 
     /// [`Square`]s threatened by opponent's [`Piece`]s .
     #[inline(always)]
-    pub const fn threats(&self) -> Bitboard {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn threats(&self) -> Bitboard {
         self.threats
     }
 
     /// An iterator over all [`Piece`]s on the board.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn iter(&self) -> impl Iterator<Item = (Piece, Square)> {
         Piece::iter().flat_map(|p| self.by_piece(p).into_iter().map(move |sq| (p, sq)))
     }
 
     /// Whether a [`Square`] is threatened by a slider of a [`Color`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn is_discovered(&self, sq: Square, side: Color, occ: Bitboard) -> bool {
         let theirs = self.by_color(side);
         let queens = self.by_role(Role::Queen);
@@ -483,13 +506,15 @@ impl Position {
 
     /// Whether the game is a draw by the 50-move rule.
     #[inline(always)]
-    pub const fn is_draw_by_50_move_rule(&self) -> bool {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn is_draw_by_50_move_rule(&self) -> bool {
         self.halfmoves() >= 100
     }
 
     /// Whether this position has insufficient material.
     #[inline(always)]
-    pub const fn is_material_insufficient(&self) -> bool {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn is_material_insufficient(&self) -> bool {
         use {Piece::*, Role::*};
         match self.occupied().len() {
             2 => true,
@@ -507,26 +532,31 @@ impl Position {
             _ => false,
         }
     }
+
     /// Whether this position is a check.
     #[inline(always)]
-    pub const fn is_check(&self) -> bool {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn is_check(&self) -> bool {
         !self.checkers().is_empty()
     }
 
     /// Whether this position is a checkmate.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn is_checkmate(&self) -> bool {
         self.is_check() && EvasionGenerator::generate(self, &mut NoCapacityMovePacker).is_ok()
     }
 
     /// Whether this position is a stalemate.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn is_stalemate(&self) -> bool {
         !self.is_check() && MoveGenerator::generate(self, &mut NoCapacityMovePacker).is_ok()
     }
 
     /// Whether the game is a draw by repetition.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn is_draw_by_repetition(&self) -> bool {
         let hash @ 1.. = self.zobrists().hash.cast() else {
             return false;
@@ -538,6 +568,7 @@ impl Position {
 
     /// The [`Outcome`] of the game in case this position is final.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn outcome(&self) -> Option<Outcome> {
         if self.is_checkmate() {
             Some(Outcome::Checkmate(!self.turn()))
@@ -665,6 +696,7 @@ impl Position {
     pub fn exchanges(&self, m: Move) -> impl Iterator<Item = (Move, Role, Role)> {
         use {Color::*, Piece::*, Role::*};
 
+        #[inline(always)]
         gen move {
             let (wc, wt) = (m.whence(), m.whither());
             if !self.threats().contains(wt) && !self.threats().contains(wc) {
@@ -879,8 +911,7 @@ impl Display for Position {
 }
 
 /// The reason why parsing the FEN string failed.
-#[derive(Debug, Display, Error, From)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive(Debug, Display, Clone, PartialEq, Eq, Error, From)]
 pub enum ParsePositionError {
     #[display("failed to parse position")]
     InvalidFen(ParseFenError),

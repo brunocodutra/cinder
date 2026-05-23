@@ -4,8 +4,7 @@ use crate::util::{Binary, Bits, Bounded, Int, Num, zero};
 use bytemuck::{NoUninit, Zeroable};
 
 /// Number of [plies][`Ply`] to mate.
-#[derive(Debug, Copy, Hash)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub enum Mate {
     #[default]
@@ -14,7 +13,7 @@ pub enum Mate {
     Mated(Ply),
 }
 
-const impl Mate {
+impl Mate {
     #[inline(always)]
     pub fn plies(self) -> Option<Ply> {
         match self {
@@ -24,24 +23,23 @@ const impl Mate {
     }
 }
 
-#[derive(Debug, Copy, Hash, Zeroable, NoUninit)]
-#[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, NoUninit)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct ScoreRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <ScoreRepr as Num>::Repr);
 
-unsafe impl const Num for ScoreRepr {
+const unsafe impl Num for ScoreRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
     const MAX: Self::Repr = 8191;
 }
 
-unsafe impl const Int for ScoreRepr {}
+const unsafe impl Int for ScoreRepr {}
 
 /// The minimax score.
 pub type Score = Bounded<ScoreRepr>;
 
-const impl Score {
+impl Score {
     /// The drawn score.
     #[inline(always)]
     pub fn drawn() -> Self {
@@ -145,14 +143,14 @@ const impl Score {
     }
 }
 
-impl const Flip for Score {
+impl Flip for Score {
     #[inline(always)]
     fn flip(self) -> Self {
         -self
     }
 }
 
-impl const Binary for Score {
+impl Binary for Score {
     type Bits = Bits<u16, 14>;
 
     #[inline(always)]

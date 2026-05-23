@@ -10,15 +10,16 @@ use derive_more::with_trait::Debug;
 #[allow(clippy::type_complexity)]
 pub struct ButterflyHistory([[[Butterfly<[[Graviton; 2]; 2]>; 2]; 2]; 2]);
 
-impl const Default for ButterflyHistory {
+impl Default for ButterflyHistory {
     #[inline(always)]
     fn default() -> Self {
         zeroed()
     }
 }
 
-const impl ButterflyHistory {
+impl ButterflyHistory {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn graviton_ref(&self, pos: &Position, m: Move) -> &Graviton {
         let (wc, wt) = (m.whence(), m.whither());
         let threats = [pos.threats().contains(wc), pos.threats().contains(wt)];
@@ -27,6 +28,7 @@ const impl ButterflyHistory {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn graviton_mut(&mut self, pos: &Position, m: Move) -> &mut Graviton {
         let (wc, wt) = (m.whence(), m.whither());
         let threats = [pos.threats().contains(wc), pos.threats().contains(wt)];
@@ -35,7 +37,7 @@ const impl ButterflyHistory {
     }
 }
 
-impl const Statistics<Move> for ButterflyHistory {
+impl Statistics<Move> for ButterflyHistory {
     type Stat = Graviton;
 
     #[inline(always)]
@@ -54,15 +56,16 @@ impl const Statistics<Move> for ButterflyHistory {
 #[debug("AttackerHistory")]
 pub struct AttackerHistory([[PieceTo<[Graviton; 2]>; 64]; 2]);
 
-impl const Default for AttackerHistory {
+impl Default for AttackerHistory {
     #[inline(always)]
     fn default() -> Self {
         zeroed()
     }
 }
 
-const impl AttackerHistory {
+impl AttackerHistory {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn graviton_ref(&self, pos: &Position, m: Move) -> &Graviton {
         let (wc, wt) = (m.whence(), m.whither());
         let piece = pos.piece_on(wc).assume();
@@ -72,6 +75,7 @@ const impl AttackerHistory {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn graviton_mut(&mut self, pos: &Position, m: Move) -> &mut Graviton {
         let (wc, wt) = (m.whence(), m.whither());
         let piece = pos.piece_on(wc).assume();
@@ -82,7 +86,7 @@ const impl AttackerHistory {
     }
 }
 
-impl const Statistics<Move> for AttackerHistory {
+impl Statistics<Move> for AttackerHistory {
     type Stat = Graviton;
 
     #[inline(always)]
@@ -101,15 +105,16 @@ impl const Statistics<Move> for AttackerHistory {
 #[debug("DefenderHistory")]
 pub struct DefenderHistory([[PieceTo<[Graviton; 2]>; 64]; 2]);
 
-impl const Default for DefenderHistory {
+impl Default for DefenderHistory {
     #[inline(always)]
     fn default() -> Self {
         zeroed()
     }
 }
 
-const impl DefenderHistory {
+impl DefenderHistory {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn graviton_ref(&self, pos: &Position, m: Move) -> &Graviton {
         let (wc, wt) = (m.whence(), m.whither());
         let piece = pos.piece_on(wc).assume();
@@ -119,6 +124,7 @@ const impl DefenderHistory {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn graviton_mut(&mut self, pos: &Position, m: Move) -> &mut Graviton {
         let (wc, wt) = (m.whence(), m.whither());
         let piece = pos.piece_on(wc).assume();
@@ -129,7 +135,7 @@ const impl DefenderHistory {
     }
 }
 
-impl const Statistics<Move> for DefenderHistory {
+impl Statistics<Move> for DefenderHistory {
     type Stat = Graviton;
 
     #[inline(always)]
@@ -148,17 +154,18 @@ impl const Statistics<Move> for DefenderHistory {
 #[debug("PieceToHistory")]
 pub struct PieceToHistory(PieceTo<Graviton>);
 
-impl const Default for PieceToHistory {
+impl Default for PieceToHistory {
     #[inline(always)]
     fn default() -> Self {
         zeroed()
     }
 }
 
-impl const Statistics<Move> for PieceToHistory {
+impl Statistics<Move> for PieceToHistory {
     type Stat = Graviton;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
         let (wc, wt) = (m.whence(), m.whither());
         let piece = pos.piece_on(wc).assume();
@@ -166,6 +173,7 @@ impl const Statistics<Move> for PieceToHistory {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
         let (wc, wt) = (m.whence(), m.whither());
         let piece = pos.piece_on(wc).assume();
@@ -178,15 +186,16 @@ impl const Statistics<Move> for PieceToHistory {
 #[debug("ContinuationHistory")]
 pub struct ContinuationHistory([PieceTo<[PieceToHistory; 2]>; 2]);
 
-impl const Default for ContinuationHistory {
+impl Default for ContinuationHistory {
     #[inline(always)]
     fn default() -> Self {
         zeroed()
     }
 }
 
-const impl ContinuationHistory {
+impl ContinuationHistory {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn get(&mut self, pos: &Position, m: Move) -> &mut PieceToHistory {
         let (wc, wt) = (m.whence(), m.whither());
         let piece = pos.piece_on(wc).assume();

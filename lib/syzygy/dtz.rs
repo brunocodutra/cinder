@@ -4,19 +4,20 @@ use bytemuck::Zeroable;
 use derive_more::with_trait::Constructor;
 use std::ops::Neg;
 
-#[derive(Debug, Copy, Hash, Constructor, Zeroable)]
-#[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Constructor, Zeroable,
+)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct DtzRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <DtzRepr as Num>::Repr);
 
-unsafe impl const Num for DtzRepr {
+const unsafe impl Num for DtzRepr {
     type Repr = i16;
     const MIN: Self::Repr = -Self::MAX;
     const MAX: Self::Repr = 32767;
 }
 
-unsafe impl const Int for DtzRepr {}
+const unsafe impl Int for DtzRepr {}
 
 /// DTZ<sub>50</sub>. Based on the distance to zeroing of the half-move clock.
 ///
@@ -33,7 +34,7 @@ unsafe impl const Int for DtzRepr {}
 /// | `1 <= n <= 100`   | Win          | Unconditional win (assuming the 50-move counter is zero). Zeroing move can be forced in `n` plies. |
 pub type Dtz = Bounded<DtzRepr>;
 
-const impl Dtz {
+impl Dtz {
     /// Increases the absolute non-zero value by `plies`.
     #[inline(always)]
     pub fn stretch(self, plies: u16) -> Dtz {
@@ -50,7 +51,7 @@ const impl Dtz {
 /// | Draw         | 0    |
 /// | Cursed win   | 101  |
 /// | Win          | 1    |
-impl const From<Wdl> for Dtz {
+impl From<Wdl> for Dtz {
     #[inline(always)]
     fn from(wdl: Wdl) -> Self {
         match wdl {
@@ -63,7 +64,7 @@ impl const From<Wdl> for Dtz {
     }
 }
 
-impl const Neg for DtzRepr {
+impl Neg for DtzRepr {
     type Output = Self;
 
     #[inline(always)]

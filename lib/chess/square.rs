@@ -7,7 +7,7 @@ use std::str::FromStr;
 
 /// A square on the chess board.
 #[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive_const(Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(i8)]
 #[rustfmt::skip]
@@ -48,15 +48,15 @@ const impl Square {
     }
 }
 
-unsafe impl const Num for Square {
+const unsafe impl Num for Square {
     type Repr = i8;
     const MIN: Self::Repr = Square::A1 as i8;
     const MAX: Self::Repr = Square::H8 as i8;
 }
 
-unsafe impl const Int for Square {}
+const unsafe impl Int for Square {}
 
-impl const Mirror for Square {
+const impl Mirror for Square {
     /// Horizontally mirrors this square.
     #[inline(always)]
     fn mirror(self) -> Self {
@@ -64,7 +64,7 @@ impl const Mirror for Square {
     }
 }
 
-impl const Flip for Square {
+const impl Flip for Square {
     /// Flips this square's [`Rank`].
     #[inline(always)]
     fn flip(self) -> Self {
@@ -72,7 +72,7 @@ impl const Flip for Square {
     }
 }
 
-impl const Transpose for Square {
+const impl Transpose for Square {
     type Transposition = Self;
 
     /// Diagonally flips this square.
@@ -82,7 +82,7 @@ impl const Transpose for Square {
     }
 }
 
-impl const Binary for Square {
+const impl Binary for Square {
     type Bits = Bits<u8, 6>;
 
     #[inline(always)]
@@ -96,7 +96,7 @@ impl const Binary for Square {
     }
 }
 
-impl Sub for Square {
+const impl Sub for Square {
     type Output = i8;
 
     #[inline(always)]
@@ -105,7 +105,7 @@ impl Sub for Square {
     }
 }
 
-impl Sub<i8> for Square {
+const impl Sub<i8> for Square {
     type Output = Self;
 
     #[inline(always)]
@@ -114,7 +114,7 @@ impl Sub<i8> for Square {
     }
 }
 
-impl Add<i8> for Square {
+const impl Add<i8> for Square {
     type Output = Self;
 
     #[inline(always)]
@@ -123,14 +123,14 @@ impl Add<i8> for Square {
     }
 }
 
-impl SubAssign<i8> for Square {
+const impl SubAssign<i8> for Square {
     #[inline(always)]
     fn sub_assign(&mut self, rhs: i8) {
         *self = *self - rhs;
     }
 }
 
-impl AddAssign<i8> for Square {
+const impl AddAssign<i8> for Square {
     #[inline(always)]
     fn add_assign(&mut self, rhs: i8) {
         *self = *self + rhs;
@@ -147,7 +147,7 @@ impl Display for Square {
 
 /// The reason why parsing [`Square`] failed.
 #[derive(Debug, Display, Error)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive_const(Clone, PartialEq, Eq)]
 pub enum ParseSquareError {
     #[display("failed to parse square")]
     InvalidFile(ParseFileError),
@@ -155,21 +155,21 @@ pub enum ParseSquareError {
     InvalidRank(ParseRankError),
 }
 
-impl const From<ParseFileError> for ParseSquareError {
+const impl From<ParseFileError> for ParseSquareError {
     #[inline(always)]
     fn from(value: ParseFileError) -> Self {
         ParseSquareError::InvalidFile(value)
     }
 }
 
-impl const From<ParseRankError> for ParseSquareError {
+const impl From<ParseRankError> for ParseSquareError {
     #[inline(always)]
     fn from(value: ParseRankError) -> Self {
         ParseSquareError::InvalidRank(value)
     }
 }
 
-impl const FromStr for Square {
+const impl FromStr for Square {
     type Err = ParseSquareError;
 
     #[inline(always)]

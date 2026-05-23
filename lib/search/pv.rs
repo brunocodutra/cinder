@@ -13,7 +13,7 @@ pub struct Pv<const N: usize = { Depth::MAX as usize }> {
     moves: Line<N>,
 }
 
-const impl<const N: usize> Pv<N> {
+impl<const N: usize> Pv<N> {
     /// An empty principal variation.
     #[inline(always)]
     pub fn empty(score: Score) -> Self {
@@ -69,32 +69,32 @@ const impl<const N: usize> Pv<N> {
     }
 }
 
-impl<const N: usize> const Eq for Pv<N> {}
+impl<const N: usize> Eq for Pv<N> {}
 
-impl<const N: usize> const PartialEq for Pv<N> {
+impl<const N: usize> PartialEq for Pv<N> {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.score.eq(&other.score)
     }
 }
 
-impl<const N: usize> const Ord for Pv<N> {
+impl<const N: usize> Ord for Pv<N> {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
         self.score.cmp(&other.score)
     }
 }
 
-impl<const N: usize> const PartialOrd for Pv<N> {
+impl<const N: usize> PartialOrd for Pv<N> {
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<T, const N: usize> const PartialEq<T> for Pv<N>
+impl<T, const N: usize> PartialEq<T> for Pv<N>
 where
-    Score: [const] PartialEq<T>,
+    Score: PartialEq<T>,
 {
     #[inline(always)]
     fn eq(&self, other: &T) -> bool {
@@ -102,9 +102,9 @@ where
     }
 }
 
-impl<T, const N: usize> const PartialOrd<T> for Pv<N>
+impl<T, const N: usize> PartialOrd<T> for Pv<N>
 where
-    Score: [const] PartialOrd<T>,
+    Score: PartialOrd<T>,
 {
     #[inline(always)]
     fn partial_cmp(&self, other: &T) -> Option<Ordering> {
@@ -119,7 +119,7 @@ impl<const N: usize> Hash for Pv<N> {
     }
 }
 
-impl<const N: usize> const Neg for Pv<N> {
+impl<const N: usize> Neg for Pv<N> {
     type Output = Self;
 
     #[inline(always)]

@@ -15,13 +15,13 @@ pub type ConstBytes<const S: usize> = Bytes<ConstMemory<S>>;
 
 /// A collection of raw bytes.
 #[derive(Debug, Copy, Hash, ConstParamTy)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive_const(Default, Clone, PartialEq, Eq)]
 pub struct Bytes<M> {
     len: <ConstCapacity as Capacity>::Usize,
     mem: M,
 }
 
-impl<T: NoUninit, const N: usize, const S: usize> const From<[T; N]> for Bytes<ConstMemory<S>> {
+const impl<T: NoUninit, const N: usize, const S: usize> From<[T; N]> for Bytes<ConstMemory<S>> {
     #[inline(always)]
     fn from(data: [T; N]) -> Self {
         const { assert!(!needs_drop::<T>()) }
@@ -157,7 +157,7 @@ const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
     }
 }
 
-impl<T, M> const Drop for Seq<T, M>
+const impl<T, M> Drop for Seq<T, M>
 where
     T: [const] Destruct,
     M: [const] Destruct + [const] Memory<T, Capacity = ConstCapacity>,
@@ -168,7 +168,7 @@ where
     }
 }
 
-impl<T, M> const Default for Seq<T, M>
+const impl<T, M> Default for Seq<T, M>
 where
     M: [const] Memory<T, Capacity = ConstCapacity>,
 {
@@ -178,7 +178,7 @@ where
     }
 }
 
-impl<T, M> const Clone for Seq<T, M>
+const impl<T, M> Clone for Seq<T, M>
 where
     T: Copy,
     M: [const] Memory<T, Capacity = ConstCapacity>,
@@ -195,14 +195,14 @@ where
     }
 }
 
-impl<T, M> const Eq for Seq<T, M>
+const impl<T, M> Eq for Seq<T, M>
 where
     T: [const] Eq,
     M: [const] Memory<T, Capacity = ConstCapacity>,
 {
 }
 
-impl<T, M> const PartialEq for Seq<T, M>
+const impl<T, M> PartialEq for Seq<T, M>
 where
     T: [const] PartialEq,
     M: [const] Memory<T, Capacity = ConstCapacity>,
@@ -224,7 +224,7 @@ where
     }
 }
 
-impl<T, M> const Deref for Seq<T, M>
+const impl<T, M> Deref for Seq<T, M>
 where
     M: [const] Memory<T, Capacity = ConstCapacity>,
 {
@@ -238,7 +238,7 @@ where
     }
 }
 
-impl<T, M> const DerefMut for Seq<T, M>
+const impl<T, M> DerefMut for Seq<T, M>
 where
     M: [const] Memory<T, Capacity = ConstCapacity>,
 {
@@ -268,7 +268,7 @@ impl<T, M: Memory<T, Capacity = ConstCapacity>> FromIterator<T> for Seq<T, M> {
     }
 }
 
-impl<'a, T, M: [const] Memory<T, Capacity = ConstCapacity>> const IntoIterator for &'a Seq<T, M> {
+const impl<'a, T, M: [const] Memory<T, Capacity = ConstCapacity>> IntoIterator for &'a Seq<T, M> {
     type Item = &'a T;
     type IntoIter = slice::Iter<'a, T>;
 
@@ -278,7 +278,7 @@ impl<'a, T, M: [const] Memory<T, Capacity = ConstCapacity>> const IntoIterator f
     }
 }
 
-impl<'a, T, M: [const] Memory<T, Capacity = ConstCapacity>> const IntoIterator
+const impl<'a, T, M: [const] Memory<T, Capacity = ConstCapacity>> IntoIterator
     for &'a mut Seq<T, M>
 {
     type Item = &'a mut T;
@@ -290,7 +290,7 @@ impl<'a, T, M: [const] Memory<T, Capacity = ConstCapacity>> const IntoIterator
     }
 }
 
-impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> const IntoIterator for Seq<T, M> {
+const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> IntoIterator for Seq<T, M> {
     type Item = T;
     type IntoIter = SeqIter<T, M>;
 
@@ -321,9 +321,19 @@ const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> SeqIter<T, M> {
             cursor: zero(),
         }
     }
+
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.seq.len().cast::<usize>() - self.cursor.cast::<usize>()
+    }
+
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
-impl<T, M> const Drop for SeqIter<T, M>
+const impl<T, M> Drop for SeqIter<T, M>
 where
     T: [const] Destruct,
     M: [const] Memory<T, Capacity = ConstCapacity>,
@@ -337,17 +347,21 @@ where
 
 impl<T, M: Memory<T, Capacity = ConstCapacity>> ExactSizeIterator for SeqIter<T, M> {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn len(&self) -> usize {
-        self.seq.len().cast::<usize>() - self.cursor.cast::<usize>()
+        Self::len(self)
     }
 }
 
-impl<T, M: Memory<T, Capacity = ConstCapacity>> Iterator for SeqIter<T, M> {
+const impl<T, M> Iterator for SeqIter<T, M>
+where
+    M: [const] Memory<T, Capacity = ConstCapacity>,
+{
     type Item = T;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.len() == 0 {
+        if Self::is_empty(self) {
             None
         } else {
             let items = self.seq.bytes.mem.as_mut();
@@ -360,15 +374,22 @@ impl<T, M: Memory<T, Capacity = ConstCapacity>> Iterator for SeqIter<T, M> {
 
     #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.len();
+        let len = Self::len(self);
         (len, Some(len))
     }
 }
 
-impl<T, M: Memory<T, Capacity = ConstCapacity>> DoubleEndedIterator for SeqIter<T, M> {
+const impl<T, M> DoubleEndedIterator for SeqIter<T, M>
+where
+    M: [const] Memory<T, Capacity = ConstCapacity>,
+{
     #[inline(always)]
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.seq.pop()
+        if Self::is_empty(self) {
+            None
+        } else {
+            self.seq.pop()
+        }
     }
 }
 

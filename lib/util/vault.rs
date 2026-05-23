@@ -1,13 +1,13 @@
 use crate::util::*;
 use bytemuck::{Pod, Zeroable};
 use derive_more::with_trait::Debug;
-use std::marker::PhantomData;
+use std::marker::{Destruct, PhantomData};
 use std::ops::{Index, IndexMut};
 
 /// The key to a [`Vault`].
 pub type Key = Bits<u64, 64>;
 
-impl<T> const Index<Key> for [T] {
+const impl<T> Index<Key> for [T] {
     type Output = T;
 
     #[inline(always)]
@@ -17,7 +17,7 @@ impl<T> const Index<Key> for [T] {
     }
 }
 
-impl<T> const IndexMut<Key> for [T] {
+const impl<T> IndexMut<Key> for [T] {
     #[inline(always)]
     fn index_mut(&mut self, key: Key) -> &mut Self::Output {
         let idx = ((key.cast::<u128>() * self.len().cast::<u128>()) >> 64) as usize;
@@ -39,18 +39,18 @@ unsafe impl<T: Binary, U: Unsigned> Pod for Vault<T, U> {}
 
 impl<T: Binary, U: Unsigned> Copy for Vault<T, U> {}
 
-impl<T: Binary, U: Unsigned> Clone for Vault<T, U> {
+const impl<T: Binary, U: Unsigned> Clone for Vault<T, U> {
     #[inline(always)]
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T, U, R, const B: u32> Vault<T, U>
+const impl<T, U, R, const B: u32> Vault<T, U>
 where
-    T: Binary<Bits = Bits<R, B>>,
-    U: Unsigned,
-    R: Unsigned,
+    T: [const] Destruct + [const] Binary<Bits = Bits<R, B>>,
+    U: [const] Unsigned,
+    R: [const] Unsigned,
 {
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
@@ -67,7 +67,6 @@ where
 
     #[inline(always)]
     #[expect(clippy::needless_pass_by_value)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn close(mut key: Key, value: T) -> Self {
         const { assert!(B <= U::BITS && U::BITS <= <Key as Num>::Repr::BITS) }
 
@@ -80,7 +79,6 @@ where
     }
 
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn open(self, key: Key) -> Option<T> {
         const { assert!(B <= U::BITS && U::BITS <= <Key as Num>::Repr::BITS) }
 

@@ -2,10 +2,10 @@ use crate::chess::Position;
 use crate::util::{Assume, Float, Num, zero};
 use bytemuck::{NoUninit, Zeroable};
 use derive_more::with_trait::Debug;
-use std::{marker::Destruct, ptr::NonNull};
+use std::ptr::NonNull;
 
 /// A trait for types that record statistics for [`Position`]s.
-pub const trait Statistics<C> {
+pub trait Statistics<C> {
     /// The stat type.
     type Stat: Stat;
 
@@ -16,7 +16,7 @@ pub const trait Statistics<C> {
     fn update(&mut self, pos: &Position, ctx: C, delta: <Self::Stat as Stat>::Value);
 }
 
-impl<C, T: [const] Statistics<C>> const Statistics<C> for &mut T {
+impl<C, T: Statistics<C>> Statistics<C> for &mut T {
     type Stat = T::Stat;
 
     #[inline(always)]
@@ -30,11 +30,7 @@ impl<C, T: [const] Statistics<C>> const Statistics<C> for &mut T {
     }
 }
 
-impl<C, T> const Statistics<C> for Option<T>
-where
-    C: [const] Destruct,
-    T: [const] Statistics<C, Stat: Stat<Value: [const] Destruct>>,
-{
+impl<C, T: Statistics<C>> Statistics<C> for Option<T> {
     type Stat = T::Stat;
 
     #[inline(always)]
@@ -53,7 +49,7 @@ where
     }
 }
 
-impl<C, T: [const] Statistics<C>> const Statistics<C> for NonNull<T> {
+impl<C, T: Statistics<C>> Statistics<C> for NonNull<T> {
     type Stat = T::Stat;
 
     #[inline(always)]
@@ -68,7 +64,7 @@ impl<C, T: [const] Statistics<C>> const Statistics<C> for NonNull<T> {
 }
 
 /// A trait for statistics counters.
-pub const trait Stat {
+pub trait Stat {
     /// The value type.
     type Value: Zeroable;
 
@@ -79,7 +75,7 @@ pub const trait Stat {
     fn update(&mut self, delta: Self::Value);
 }
 
-impl<T: [const] Stat<Value: [const] Destruct>> const Stat for &mut T {
+impl<T: Stat> Stat for &mut T {
     type Value = T::Value;
 
     #[inline(always)]
@@ -93,7 +89,7 @@ impl<T: [const] Stat<Value: [const] Destruct>> const Stat for &mut T {
     }
 }
 
-impl<T: [const] Stat<Value: [const] Destruct>> const Stat for Option<T> {
+impl<T: Stat> Stat for Option<T> {
     type Value = T::Value;
 
     #[inline(always)]
@@ -109,7 +105,7 @@ impl<T: [const] Stat<Value: [const] Destruct>> const Stat for Option<T> {
     }
 }
 
-impl<T: [const] Stat<Value: [const] Destruct>> const Stat for NonNull<T> {
+impl<T: Stat> Stat for NonNull<T> {
     type Value = T::Value;
 
     #[inline(always)]
@@ -124,21 +120,20 @@ impl<T: [const] Stat<Value: [const] Destruct>> const Stat for NonNull<T> {
 }
 
 /// A saturating accumulator that implements the "gravity" formula.
-#[derive(Debug, Copy, Zeroable, NoUninit)]
-#[derive_const(Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Zeroable, NoUninit)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct Graviton(f32);
 
-unsafe impl const Num for Graviton {
+const unsafe impl Num for Graviton {
     type Repr = f32;
     const MIN: Self::Repr = -Self::MAX;
     const MAX: Self::Repr = 1.0;
 }
 
-unsafe impl const Float for Graviton {}
+const unsafe impl Float for Graviton {}
 
-impl const Stat for Graviton {
+impl Stat for Graviton {
     type Value = <Self as Num>::Repr;
 
     #[inline(always)]

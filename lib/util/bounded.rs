@@ -19,17 +19,17 @@ where
 
 unsafe impl<T: Int<Repr: Signed>> NoUninit for Bounded<T> {}
 
-unsafe impl<T: Int<Repr: [const] Signed>> const Num for Bounded<T> {
+const unsafe impl<T: Int<Repr: [const] Signed>> Num for Bounded<T> {
     type Repr = T::Repr;
     const MIN: Self::Repr = T::MIN;
     const MAX: Self::Repr = T::MAX;
 }
 
-unsafe impl<T: Int<Repr: [const] Signed>> const Int for Bounded<T> {}
+const unsafe impl<T: Int<Repr: [const] Signed>> Int for Bounded<T> {}
 
-impl<T> const Eq for Bounded<T> where T: [const] Int<Repr: [const] Signed> {}
+const impl<T> Eq for Bounded<T> where T: [const] Int<Repr: [const] Signed> {}
 
-impl<T, U> const PartialEq<U> for Bounded<T>
+const impl<T, U> PartialEq<U> for Bounded<T>
 where
     T: [const] Int<Repr: [const] Signed>,
     U: [const] Int<Repr: [const] Signed>,
@@ -44,7 +44,7 @@ where
     }
 }
 
-impl<T> const Ord for Bounded<T>
+const impl<T> Ord for Bounded<T>
 where
     T: [const] Int<Repr: [const] Signed>,
 {
@@ -54,7 +54,7 @@ where
     }
 }
 
-impl<T, U> const PartialOrd<U> for Bounded<T>
+const impl<T, U> PartialOrd<U> for Bounded<T>
 where
     T: [const] Int<Repr: [const] Signed>,
     U: [const] Int<Repr: [const] Signed>,
@@ -69,7 +69,7 @@ where
     }
 }
 
-impl<T> const Neg for Bounded<T>
+const impl<T> Neg for Bounded<T>
 where
     T: [const] Int<Repr: [const] Signed>,
     S<T::Repr>: [const] Neg<Output = S<T::Repr>>,
@@ -82,7 +82,7 @@ where
     }
 }
 
-impl<T, U> const Add<U> for Bounded<T>
+const impl<T, U> Add<U> for Bounded<T>
 where
     T: [const] Int<Repr: [const] Signed>,
     U: [const] Int<Repr: [const] Signed>,
@@ -101,7 +101,7 @@ where
     }
 }
 
-impl<T, U> const AddAssign<U> for Bounded<T>
+const impl<T, U> AddAssign<U> for Bounded<T>
 where
     T: [const] Int<Repr: [const] Signed>,
     Self: [const] Add<U, Output = Self>,
@@ -112,7 +112,7 @@ where
     }
 }
 
-impl<T, U> const Sub<U> for Bounded<T>
+const impl<T, U> Sub<U> for Bounded<T>
 where
     T: [const] Int<Repr: [const] Signed>,
     U: [const] Int<Repr: [const] Signed>,
@@ -131,7 +131,7 @@ where
     }
 }
 
-impl<T, U> const SubAssign<U> for Bounded<T>
+const impl<T, U> SubAssign<U> for Bounded<T>
 where
     T: [const] Int<Repr: [const] Signed>,
     Self: [const] Sub<U, Output = Self>,
@@ -142,7 +142,7 @@ where
     }
 }
 
-impl<T, U> const Mul<U> for Bounded<T>
+const impl<T, U> Mul<U> for Bounded<T>
 where
     T: [const] Int<Repr: [const] Signed>,
     U: [const] Int<Repr: [const] Signed>,
@@ -161,7 +161,7 @@ where
     }
 }
 
-impl<T, U> const MulAssign<U> for Bounded<T>
+const impl<T, U> MulAssign<U> for Bounded<T>
 where
     T: [const] Int<Repr: [const] Signed>,
     Self: [const] Mul<U, Output = Self>,
@@ -172,7 +172,7 @@ where
     }
 }
 
-impl<T, U> const Div<U> for Bounded<T>
+const impl<T, U> Div<U> for Bounded<T>
 where
     T: [const] Int<Repr: [const] Signed>,
     U: [const] Int<Repr: [const] Signed>,
@@ -191,7 +191,7 @@ where
     }
 }
 
-impl<T, U> const DivAssign<U> for Bounded<T>
+const impl<T, U> DivAssign<U> for Bounded<T>
 where
     T: [const] Int<Repr: [const] Signed>,
     Self: [const] Div<U, Output = Self>,
@@ -213,11 +213,11 @@ where
 
 /// The reason why parsing [`Bounded`] failed.
 #[derive(Debug, Display, Error)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive_const(Default, Clone, PartialEq, Eq)]
 #[display("failed to parse bounded integer")]
 pub struct ParseBoundedIntegerError;
 
-impl<T: [const] Int<Repr: [const] Signed>> const FromStr for Bounded<T>
+const impl<T: [const] Int<Repr: [const] Signed>> FromStr for Bounded<T>
 where
     T::Repr: [const] FromStr<Err: [const] Destruct>,
 {
@@ -239,18 +239,18 @@ mod tests {
     use test_strategy::proptest;
 
     #[derive(Debug, Copy, Hash)]
-    #[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
+    #[derive_const(Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
     #[cfg_attr(test, derive(test_strategy::Arbitrary))]
     #[repr(transparent)]
     struct Asymmetric(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Self as Num>::Repr);
 
-    unsafe impl const Num for Asymmetric {
+    const unsafe impl Num for Asymmetric {
         type Repr = i16;
         const MIN: Self::Repr = -89;
         const MAX: Self::Repr = 131;
     }
 
-    unsafe impl const Int for Asymmetric {}
+    const unsafe impl Int for Asymmetric {}
 
     #[proptest]
     fn comparison_coerces(a: Bounded<Asymmetric>, b: i8) {

@@ -5,8 +5,7 @@ use bytemuck::Zeroable;
 use std::ops::Neg;
 
 /// The possible outcomes of a final [`Position`](`crate::chess::Position`).
-#[derive(Debug, Copy, Hash, Zeroable)]
-#[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(i8)]
 pub enum Wdl {
@@ -23,15 +22,15 @@ pub enum Wdl {
     Win = 2,
 }
 
-unsafe impl const Num for Wdl {
+const unsafe impl Num for Wdl {
     type Repr = i8;
     const MIN: Self::Repr = Self::Loss as i8;
     const MAX: Self::Repr = Self::Win as i8;
 }
 
-unsafe impl const Int for Wdl {}
+const unsafe impl Int for Wdl {}
 
-const impl Wdl {
+impl Wdl {
     /// Convert to [`Score`].
     #[inline(always)]
     pub fn to_score(self, ply: Ply) -> Score {
@@ -43,7 +42,7 @@ const impl Wdl {
     }
 }
 
-impl const Neg for Wdl {
+impl Neg for Wdl {
     type Output = Wdl;
 
     #[inline(always)]
@@ -61,7 +60,7 @@ impl const Neg for Wdl {
 /// | 0    | Draw         |
 /// | 101  | Cursed win   |
 /// | 1    | Win          |
-impl const From<Dtz> for Wdl {
+impl From<Dtz> for Wdl {
     #[inline(always)]
     fn from(dtz: Dtz) -> Self {
         match dtz.get() {

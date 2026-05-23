@@ -63,13 +63,13 @@ impl<const BYTES: ConstBytes<64>> Param<BYTES> {
     }
 }
 
-impl<const BYTES: ConstBytes<64>> const Default for Param<BYTES> {
+impl<const BYTES: ConstBytes<64>> Default for Param<BYTES> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const BYTES: ConstBytes<64>> const Deref for Param<BYTES> {
+impl<const BYTES: ConstBytes<64>> Deref for Param<BYTES> {
     type Target = [f32];
 
     #[inline(always)]
@@ -162,7 +162,8 @@ macro_rules! params {
         $(impl Params {
             /// This parameter's current value.
             #[inline(always)]
-            pub const fn $name<R: [const] SliceIndex<[f32]>>(idx: R) -> &'static R::Output {
+            #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+            pub fn $name<R: SliceIndex<[f32]>>(idx: R) -> &'static R::Output {
                 unsafe { PARAMS.get().as_ref_unchecked().$name.get_unchecked(idx) }
             }
         })*
@@ -173,7 +174,7 @@ macro_rules! params {
             pub const LEN: usize = len!($($value,)*);
 
             /// Initializes the global params.
-            pub fn init(self) {
+            pub const fn init(self) {
                 unsafe { *PARAMS.get().as_mut_unchecked() = self }
             }
 

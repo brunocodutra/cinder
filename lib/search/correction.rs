@@ -3,28 +3,28 @@ use crate::search::{Graviton, Stat, Statistics};
 use crate::util::{Binary, Bits, Num, Unsigned};
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
-use std::marker::Destruct;
 
 /// Learned corrections to evaluation relative to position structure.
 #[derive(Debug, Zeroable)]
 #[debug("Correction")]
 pub struct Correction<const N: usize>([[Graviton; N]; 2]);
 
-impl<const N: usize> const Default for Correction<N> {
+impl<const N: usize> Default for Correction<N> {
     #[inline(always)]
     fn default() -> Self {
         zeroed()
     }
 }
 
-impl<T, U, const B: u32, const N: usize> const Statistics<T> for Correction<N>
+impl<T, U, const B: u32, const N: usize> Statistics<T> for Correction<N>
 where
-    T: [const] Destruct + [const] Binary<Bits = Bits<U, B>>,
-    U: [const] Unsigned,
+    T: Binary<Bits = Bits<U, B>>,
+    U: Unsigned,
 {
     type Stat = Graviton;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn get(&self, pos: &Position, key: T) -> <Self::Stat as Stat>::Value {
         const { assert!(N > 0) }
         const { assert!(N.is_power_of_two()) }
@@ -34,6 +34,7 @@ where
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn update(&mut self, pos: &Position, key: T, delta: <Self::Stat as Stat>::Value) {
         const { assert!(N > 0) }
         const { assert!(N.is_power_of_two()) }
@@ -48,15 +49,16 @@ where
 #[debug("ContinuationCorrection")]
 pub struct ContinuationCorrection([[Butterfly<[[Correction<1>; 2]; 2]>; 2]; 2]);
 
-impl const Default for ContinuationCorrection {
+impl Default for ContinuationCorrection {
     #[inline(always)]
     fn default() -> Self {
         zeroed()
     }
 }
 
-const impl ContinuationCorrection {
+impl ContinuationCorrection {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn get(&mut self, pos: &Position, m: Move) -> &mut Correction<1> {
         let (wc, wt) = (m.whence(), m.whither());
         let threats = [pos.threats().contains(wc), pos.threats().contains(wt)];

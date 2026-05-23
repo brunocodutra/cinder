@@ -37,14 +37,14 @@ pub const trait Capacity {
 
 /// Constant [`Capacity`].
 #[derive(Debug, Copy, Hash)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive_const(Default, Clone, PartialEq, Eq)]
 pub struct ConstCapacity;
 
-impl const Capacity for ConstCapacity {
+const impl Capacity for ConstCapacity {
     type Usize = u16;
 }
 
-impl<U: const Unsigned> const Capacity for U {
+const impl<U: const Unsigned> Capacity for U {
     type Usize = U;
 }
 
@@ -75,7 +75,7 @@ pub const trait Memory<T>:
 #[repr(transparent)]
 pub struct StaticMemory<T, const N: usize>([MaybeUninit<T>; N]);
 
-impl<T, const N: usize> const Memory<T> for StaticMemory<T, N> {
+const impl<T, const N: usize> Memory<T> for StaticMemory<T, N> {
     type Capacity = ConstCapacity;
 
     #[inline(always)]
@@ -94,28 +94,28 @@ impl<T, const N: usize> const Memory<T> for StaticMemory<T, N> {
     }
 }
 
-impl<T, const N: usize> const Default for StaticMemory<T, N> {
+const impl<T, const N: usize> Default for StaticMemory<T, N> {
     #[inline(always)]
     fn default() -> Self {
         Self::uninit(ConstCapacity)
     }
 }
 
-impl<T, const N: usize> const AsRef<[MaybeUninit<T>]> for StaticMemory<T, N> {
+const impl<T, const N: usize> AsRef<[MaybeUninit<T>]> for StaticMemory<T, N> {
     #[inline(always)]
     fn as_ref(&self) -> &[MaybeUninit<T>] {
         self.0.as_slice()
     }
 }
 
-impl<T, const N: usize> const AsMut<[MaybeUninit<T>]> for StaticMemory<T, N> {
+const impl<T, const N: usize> AsMut<[MaybeUninit<T>]> for StaticMemory<T, N> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut [MaybeUninit<T>] {
         self.0.as_mut_slice()
     }
 }
 
-impl<T: Zeroable, const N: usize> const Deref for StaticMemory<T, N> {
+const impl<T: Zeroable, const N: usize> Deref for StaticMemory<T, N> {
     type Target = [T];
 
     #[inline(always)]
@@ -124,7 +124,7 @@ impl<T: Zeroable, const N: usize> const Deref for StaticMemory<T, N> {
     }
 }
 
-impl<T: Zeroable, const N: usize> const DerefMut for StaticMemory<T, N> {
+const impl<T: Zeroable, const N: usize> DerefMut for StaticMemory<T, N> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.as_mut().assume_init_mut() }
@@ -133,12 +133,12 @@ impl<T: Zeroable, const N: usize> const DerefMut for StaticMemory<T, N> {
 
 /// Const-allocated memory of `S` bytes.
 #[derive(Debug, Copy, Hash, ConstParamTy, Zeroable)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive_const(Clone, PartialEq, Eq)]
 #[debug("ConstMemory({_0:#04X?})")]
 #[repr(C, align(4))]
 pub struct ConstMemory<const S: usize>([u8; S]);
 
-impl<T: NoUninit, const S: usize> const Memory<T> for ConstMemory<S> {
+const impl<T: NoUninit, const S: usize> Memory<T> for ConstMemory<S> {
     type Capacity = ConstCapacity;
 
     #[inline(always)]
@@ -153,14 +153,14 @@ impl<T: NoUninit, const S: usize> const Memory<T> for ConstMemory<S> {
     }
 }
 
-impl<const S: usize> const Default for ConstMemory<S> {
+const impl<const S: usize> Default for ConstMemory<S> {
     #[inline(always)]
     fn default() -> Self {
         zeroed()
     }
 }
 
-impl<T, const S: usize> const AsRef<[MaybeUninit<T>]> for ConstMemory<S> {
+const impl<T, const S: usize> AsRef<[MaybeUninit<T>]> for ConstMemory<S> {
     #[inline(always)]
     fn as_ref(&self) -> &[MaybeUninit<T>] {
         const { assert!(size_of::<T>() > 0) }
@@ -168,7 +168,7 @@ impl<T, const S: usize> const AsRef<[MaybeUninit<T>]> for ConstMemory<S> {
     }
 }
 
-impl<T: NoUninit, const S: usize> const AsMut<[MaybeUninit<T>]> for ConstMemory<S> {
+const impl<T: NoUninit, const S: usize> AsMut<[MaybeUninit<T>]> for ConstMemory<S> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut [MaybeUninit<T>] {
         const { assert!(size_of::<T>() > 0) }
@@ -176,7 +176,7 @@ impl<T: NoUninit, const S: usize> const AsMut<[MaybeUninit<T>]> for ConstMemory<
     }
 }
 
-impl<const S: usize> const Deref for ConstMemory<S> {
+const impl<const S: usize> Deref for ConstMemory<S> {
     type Target = [u8];
 
     #[inline(always)]
@@ -185,14 +185,14 @@ impl<const S: usize> const Deref for ConstMemory<S> {
     }
 }
 
-impl<const S: usize> const DerefMut for ConstMemory<S> {
+const impl<const S: usize> DerefMut for ConstMemory<S> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<T: NoUninit, const N: usize, const S: usize> const From<[T; N]> for ConstMemory<S> {
+const impl<T: NoUninit, const N: usize, const S: usize> From<[T; N]> for ConstMemory<S> {
     #[inline(always)]
     fn from(data: [T; N]) -> Self {
         const { assert!(size_of::<[T; N]>() <= size_of::<ConstMemory<S>>()) }
@@ -261,21 +261,21 @@ impl<T> Memory<T> for HugePages<T> {
     }
 }
 
-impl<T> const AsRef<[MaybeUninit<T>]> for HugePages<T> {
+const impl<T> AsRef<[MaybeUninit<T>]> for HugePages<T> {
     #[inline(always)]
     fn as_ref(&self) -> &[MaybeUninit<T>] {
         unsafe { slice::from_raw_parts(self.ptr, self.capacity) }
     }
 }
 
-impl<T> const AsMut<[MaybeUninit<T>]> for HugePages<T> {
+const impl<T> AsMut<[MaybeUninit<T>]> for HugePages<T> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut [MaybeUninit<T>] {
         unsafe { slice::from_raw_parts_mut(self.ptr, self.capacity) }
     }
 }
 
-impl<T: Zeroable> const Deref for HugePages<T> {
+const impl<T: Zeroable> Deref for HugePages<T> {
     type Target = [T];
 
     #[inline(always)]
@@ -284,7 +284,7 @@ impl<T: Zeroable> const Deref for HugePages<T> {
     }
 }
 
-impl<T: Zeroable> const DerefMut for HugePages<T> {
+const impl<T: Zeroable> DerefMut for HugePages<T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.as_mut().assume_init_mut() }

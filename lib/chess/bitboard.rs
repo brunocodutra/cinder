@@ -1,14 +1,15 @@
 use crate::chess::{Butterfly, File, Flip, Rank, Square};
 use crate::util::{Assume, Int, Num};
-use bytemuck::{Zeroable, zeroed};
+use bytemuck::{Pod, Zeroable, zeroed};
 use derive_more::with_trait::{Constructor, Debug};
 use std::fmt::{self, Formatter, Write};
 use std::ops::*;
 
 /// A set of squares on a chess board.
-#[derive(Copy, Hash, Zeroable, Constructor)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive(Copy, Hash, Zeroable, Pod, Constructor)]
+#[derive_const(Default, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
+#[repr(transparent)]
 pub struct Bitboard(pub u64);
 
 const impl Bitboard {
@@ -228,7 +229,7 @@ impl Debug for Bitboard {
     }
 }
 
-impl const Deref for Bitboard {
+const impl Deref for Bitboard {
     type Target = u64;
 
     #[inline(always)]
@@ -237,7 +238,7 @@ impl const Deref for Bitboard {
     }
 }
 
-impl const Not for Bitboard {
+const impl Not for Bitboard {
     type Output = Self;
 
     #[inline(always)]
@@ -246,7 +247,7 @@ impl const Not for Bitboard {
     }
 }
 
-impl const BitAnd for Bitboard {
+const impl BitAnd for Bitboard {
     type Output = Self;
 
     #[inline(always)]
@@ -255,14 +256,14 @@ impl const BitAnd for Bitboard {
     }
 }
 
-impl const BitAndAssign for Bitboard {
+const impl BitAndAssign for Bitboard {
     #[inline(always)]
     fn bitand_assign(&mut self, rhs: Self) {
         self.0.bitand_assign(rhs.0);
     }
 }
 
-impl const BitOr for Bitboard {
+const impl BitOr for Bitboard {
     type Output = Self;
 
     #[inline(always)]
@@ -271,14 +272,14 @@ impl const BitOr for Bitboard {
     }
 }
 
-impl const BitOrAssign for Bitboard {
+const impl BitOrAssign for Bitboard {
     #[inline(always)]
     fn bitor_assign(&mut self, rhs: Self) {
         self.0.bitor_assign(rhs.0);
     }
 }
 
-impl const BitXor for Bitboard {
+const impl BitXor for Bitboard {
     type Output = Self;
 
     #[inline(always)]
@@ -287,14 +288,14 @@ impl const BitXor for Bitboard {
     }
 }
 
-impl const BitXorAssign for Bitboard {
+const impl BitXorAssign for Bitboard {
     #[inline(always)]
     fn bitxor_assign(&mut self, rhs: Self) {
         self.0.bitxor_assign(rhs.0);
     }
 }
 
-impl const Shl<u32> for Bitboard {
+const impl Shl<u32> for Bitboard {
     type Output = Self;
 
     #[inline(always)]
@@ -303,14 +304,14 @@ impl const Shl<u32> for Bitboard {
     }
 }
 
-impl const ShlAssign<u32> for Bitboard {
+const impl ShlAssign<u32> for Bitboard {
     #[inline(always)]
     fn shl_assign(&mut self, rhs: u32) {
         self.0.shl_assign(rhs);
     }
 }
 
-impl const Shr<u32> for Bitboard {
+const impl Shr<u32> for Bitboard {
     type Output = Self;
 
     #[inline(always)]
@@ -319,14 +320,14 @@ impl const Shr<u32> for Bitboard {
     }
 }
 
-impl const ShrAssign<u32> for Bitboard {
+const impl ShrAssign<u32> for Bitboard {
     #[inline(always)]
     fn shr_assign(&mut self, rhs: u32) {
         self.0.shr_assign(rhs);
     }
 }
 
-impl const Flip for Bitboard {
+const impl Flip for Bitboard {
     /// Flips all squares in the set.
     #[inline(always)]
     fn flip(self) -> Self {
@@ -334,28 +335,28 @@ impl const Flip for Bitboard {
     }
 }
 
-impl const From<File> for Bitboard {
+const impl From<File> for Bitboard {
     #[inline(always)]
     fn from(f: File) -> Self {
         f.bitboard()
     }
 }
 
-impl const From<Rank> for Bitboard {
+const impl From<Rank> for Bitboard {
     #[inline(always)]
     fn from(r: Rank) -> Self {
         r.bitboard()
     }
 }
 
-impl const From<Square> for Bitboard {
+const impl From<Square> for Bitboard {
     #[inline(always)]
     fn from(sq: Square) -> Self {
         sq.bitboard()
     }
 }
 
-impl const IntoIterator for Bitboard {
+const impl IntoIterator for Bitboard {
     type Item = Square;
     type IntoIter = Squares;
 
@@ -381,7 +382,7 @@ const impl Squares {
     }
 }
 
-impl const Iterator for Squares {
+const impl Iterator for Squares {
     type Item = Square;
 
     #[inline(always)]
@@ -420,7 +421,7 @@ const impl Subsets {
     }
 }
 
-impl const Iterator for Subsets {
+const impl Iterator for Subsets {
     type Item = Bitboard;
 
     #[inline(always)]

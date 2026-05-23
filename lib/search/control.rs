@@ -8,8 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 /// Controls the search flow.
-#[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ControlFlow {
     /// Continue searching.
     Continue,
@@ -166,7 +165,7 @@ impl<'a> Active<'a> {
     }
 }
 
-impl const Deref for Active<'_> {
+impl Deref for Active<'_> {
     type Target = GlobalControl;
 
     #[inline(always)]
@@ -204,7 +203,7 @@ impl<'a> Passive<'a> {
     }
 }
 
-impl const Deref for Passive<'_> {
+impl Deref for Passive<'_> {
     type Target = GlobalControl;
 
     #[inline(always)]
@@ -221,7 +220,7 @@ pub enum LocalControl<'a> {
     Passive(Passive<'a>),
 }
 
-impl const Deref for LocalControl<'_> {
+impl Deref for LocalControl<'_> {
     type Target = GlobalControl;
 
     #[inline(always)]

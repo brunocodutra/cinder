@@ -10,8 +10,7 @@ use std::{array, str::FromStr};
 #[cfg(test)]
 use proptest::{prelude::*, sample::*};
 
-#[derive(Debug, Clone, Hash)]
-#[derive_const(Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct CachedAccumulator {
     accumulator: Accumulator,
     pieces: Aligned<[Option<Piece>; Square::MAX as usize + 1]>,
@@ -31,8 +30,7 @@ impl Default for CachedAccumulator {
     }
 }
 
-#[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 enum Pending {
     Update,
@@ -40,7 +38,7 @@ enum Pending {
 }
 
 /// A [`Position`] evaluation stack.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq)]
 #[debug("Evaluator({})", self.deref())]
 pub struct Evaluator {
     ply: Ply,
@@ -58,9 +56,7 @@ impl Default for Evaluator {
     }
 }
 
-impl const Eq for Evaluator {}
-
-impl const PartialEq for Evaluator {
+impl PartialEq for Evaluator {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.deref().eq(other)
@@ -74,7 +70,7 @@ impl Hash for Evaluator {
     }
 }
 
-impl const Deref for Evaluator {
+impl Deref for Evaluator {
     type Target = Position;
 
     #[inline(always)]
@@ -83,7 +79,7 @@ impl const Deref for Evaluator {
     }
 }
 
-impl const Index<Ply> for Evaluator {
+impl Index<Ply> for Evaluator {
     type Output = Position;
 
     #[inline(always)]
@@ -92,7 +88,7 @@ impl const Index<Ply> for Evaluator {
     }
 }
 
-impl const Index<usize> for Evaluator {
+impl Index<usize> for Evaluator {
     type Output = Position;
 
     #[inline(always)]
@@ -173,12 +169,14 @@ impl Evaluator {
 
     /// Whether this move wins the exchange by at least `margin`.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn gaining(&self, m: Move, margin: f32) -> bool {
         self.see(m, margin - 1f32..margin) >= margin
     }
 
     /// Computes the static exchange evaluation.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn see(&self, m: Move, bounds: Range<f32>) -> f32 {
         let (mut alpha, mut beta) = (bounds.start, bounds.end);
         let mut score = self.gain(m);

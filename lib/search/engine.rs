@@ -33,8 +33,7 @@ fn convolve<const N: usize>(data: [(f32, &[f32]); N]) -> f32 {
     acc.iter().sum()
 }
 
-#[derive(Debug, Display, Copy, Hash, Error)]
-#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]
 #[display("the search was interrupted")]
 struct Interrupted;
 
@@ -1058,6 +1057,7 @@ impl<'a> Searcher<'a> {
     /// An implementation of aspiration windows with iterative deepening.
     #[inline(always)]
     fn aw(&mut self, mut moves: Moves) -> impl Iterator<Item = Info> {
+        #[inline(always)]
         gen move {
             for depth in Depth::iter() {
                 let mut reduction = 0.0;

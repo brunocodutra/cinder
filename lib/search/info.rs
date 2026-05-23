@@ -4,7 +4,7 @@ use derive_more::with_trait::Constructor;
 use std::time::Duration;
 
 /// Information about the search result.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Constructor)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Constructor)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Info {
     depth: Depth,
@@ -13,7 +13,7 @@ pub struct Info {
     pv: Pv,
 }
 
-const impl Info {
+impl Info {
     /// The depth searched.
     #[inline(always)]
     pub fn depth(&self) -> Depth {
@@ -45,7 +45,7 @@ const impl Info {
     }
 }
 
-impl const From<Pv> for Info {
+impl From<Pv> for Info {
     #[inline(always)]
     fn from(pv: Pv) -> Self {
         Info::new(Depth::new(0), Duration::ZERO, 0, pv)

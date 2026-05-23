@@ -13,7 +13,7 @@ pub const trait Flip: Sized {
     fn flip(self) -> Self;
 }
 
-impl<T: [const] Flip> const Perspective<Color> for T {
+const impl<T: [const] Flip> Perspective<Color> for T {
     #[inline(always)]
     fn perspective(self, side: Color) -> Self {
         match side {
@@ -25,7 +25,7 @@ impl<T: [const] Flip> const Perspective<Color> for T {
 
 /// One of two horizontal perspectives.
 #[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive_const(Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(u8)]
 pub enum Side {
@@ -33,22 +33,22 @@ pub enum Side {
     Right,
 }
 
-unsafe impl const Num for Side {
+const unsafe impl Num for Side {
     type Repr = u8;
     const MIN: Self::Repr = Side::Left as u8;
     const MAX: Self::Repr = Side::Right as u8;
 }
 
-unsafe impl const Int for Side {}
+const unsafe impl Int for Side {}
 
-impl const From<bool> for Side {
+const impl From<bool> for Side {
     #[inline(always)]
     fn from(b: bool) -> Self {
         Num::new(b as u8)
     }
 }
 
-impl const From<Side> for bool {
+const impl From<Side> for bool {
     #[inline(always)]
     fn from(s: Side) -> Self {
         s == Side::Right
@@ -61,7 +61,7 @@ pub const trait Mirror: Sized {
     fn mirror(self) -> Self;
 }
 
-impl<T: [const] Mirror> const Perspective<Side> for T {
+const impl<T: [const] Mirror> Perspective<Side> for T {
     #[inline(always)]
     fn perspective(self, side: Side) -> Self {
         match side {

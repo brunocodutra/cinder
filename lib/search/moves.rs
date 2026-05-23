@@ -13,7 +13,7 @@ pub type Rating = Bounded<i16>;
 pub type RatedMove = (Move, Rating);
 
 /// A collection of [`Move`]s.
-#[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Moves {
     #[cfg_attr(test, strategy(vec(any::<RatedMove>(), 0..=10usize)

@@ -5,21 +5,20 @@ use bytemuck::{Pod, Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 
 /// A linear node counter.
-#[derive(Debug, Copy, Hash, Zeroable, Pod)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Zeroable, Pod)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct Nodes(u64);
 
-unsafe impl const Num for Nodes {
+const unsafe impl Num for Nodes {
     type Repr = u64;
     const MIN: Self::Repr = u64::MIN;
     const MAX: Self::Repr = u64::MAX;
 }
 
-unsafe impl const Int for Nodes {}
+const unsafe impl Int for Nodes {}
 
-impl const Stat for Nodes {
+impl Stat for Nodes {
     type Value = <Self as Num>::Repr;
 
     #[inline(always)]
@@ -34,20 +33,20 @@ impl const Stat for Nodes {
 }
 
 /// Measures the effort spent searching a root [`Move`].
-#[derive(Debug, Clone, Hash, Zeroable)]
-#[derive_const(Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Zeroable)]
 #[debug("Attention")]
 pub struct Attention(Butterfly<Nodes>);
 
-impl const Default for Attention {
+impl Default for Attention {
     #[inline(always)]
     fn default() -> Self {
         zeroed()
     }
 }
 
-const impl Attention {
+impl Attention {
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn nodes(&mut self, m: Move) -> &mut Nodes {
         &mut self.0[m.whence() as usize][m.whither() as usize]
     }

@@ -7,21 +7,20 @@ use std::hint::unreachable_unchecked;
 use std::ops::{Range, RangeInclusive};
 
 /// The transposition age.
-#[derive(Debug, Copy, Hash, Zeroable, NoUninit)]
-#[derive_const(Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, NoUninit)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct Age(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Age as Num>::Repr);
 
-unsafe impl const Num for Age {
+const unsafe impl Num for Age {
     type Repr = u8;
     const MIN: Self::Repr = 0;
     const MAX: Self::Repr = 15;
 }
 
-unsafe impl const Int for Age {}
+const unsafe impl Int for Age {}
 
-impl const Binary for Age {
+impl Binary for Age {
     type Bits = Bits<u8, 4>;
 
     #[inline(always)]
@@ -36,8 +35,7 @@ impl const Binary for Age {
 }
 
 /// Whether the transposed score is exact or a bound.
-#[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub enum ScoreBound {
     Lower(Score),
@@ -45,10 +43,10 @@ pub enum ScoreBound {
     Exact(Score),
 }
 
-const impl ScoreBound {
+impl ScoreBound {
     // Constructs a [`ScoreBound`] normalized to [`Ply`].
-    #[track_caller]
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn new(bounds: Range<Score>, score: Score, ply: Ply) -> Self {
         (bounds.start < bounds.end).assume();
 
@@ -63,6 +61,7 @@ const impl ScoreBound {
 
     // The score bound.
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn bound(self, ply: Ply) -> Score {
         match self {
             ScoreBound::Lower(s) | ScoreBound::Upper(s) | ScoreBound::Exact(s) => {
@@ -73,6 +72,7 @@ const impl ScoreBound {
 
     /// A lower bound for the score normalized to [`Ply`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn lower(self, ply: Ply) -> Score {
         match self {
             ScoreBound::Upper(_) => Score::mated(ply),
@@ -82,6 +82,7 @@ const impl ScoreBound {
 
     /// An upper bound for the score normalized to [`Ply`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn upper(self, ply: Ply) -> Score {
         match self {
             ScoreBound::Lower(_) => Score::mating(ply),
@@ -91,15 +92,17 @@ const impl ScoreBound {
 
     /// The score range normalized to [`Ply`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn range(self, ply: Ply) -> RangeInclusive<Score> {
         self.lower(ply)..=self.upper(ply)
     }
 }
 
-impl const Binary for ScoreBound {
+impl Binary for ScoreBound {
     type Bits = Bits<u16, { 2 + <Score as Binary>::Bits::BITS }>;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn encode(&self) -> Self::Bits {
         let mut bits = Bits::default();
 
@@ -115,6 +118,7 @@ impl const Binary for ScoreBound {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn decode(mut bits: Self::Bits) -> Self {
         let score = Binary::decode(bits.pop());
 
@@ -128,8 +132,7 @@ impl const Binary for ScoreBound {
 }
 
 /// A partial search result.
-#[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Transposition {
     pub score: ScoreBound,
@@ -139,7 +142,7 @@ pub struct Transposition {
     pub was_pv: bool,
 }
 
-const impl Transposition {
+impl Transposition {
     const BITS: u32 = 1
         + <ScoreBound as Binary>::Bits::BITS
         + <Depth as Binary>::Bits::BITS
@@ -148,6 +151,7 @@ const impl Transposition {
 
     /// Constructs a [`Transposition`] given a [`ScoreBound`], the [`Depth`] searched, and the best [`Move`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn new(score: ScoreBound, depth: Depth, best: Option<Move>, was_pv: bool) -> Self {
         Transposition {
             score,
@@ -160,6 +164,7 @@ const impl Transposition {
 
     /// The principal variation normalized to [`Ply`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn transpose(self, ply: Ply) -> Pv<1> {
         Pv::new(
             self.score.bound(ply),
@@ -168,10 +173,11 @@ const impl Transposition {
     }
 }
 
-impl const Binary for Transposition {
+impl Binary for Transposition {
     type Bits = Bits<u64, { Self::BITS }>;
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn encode(&self) -> Self::Bits {
         let mut bits = Bits::default();
         bits.push(self.score.encode());
@@ -183,6 +189,7 @@ impl const Binary for Transposition {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn decode(mut bits: Self::Bits) -> Self {
         Transposition {
             was_pv: bits.pop::<u8, 1>() == Bits::new(1),

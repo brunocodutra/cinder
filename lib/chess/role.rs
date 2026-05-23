@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 /// The type of a chess [`Piece`][`crate::chess::Piece`].
 #[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive_const(Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(u8)]
 pub enum Role {
@@ -17,13 +17,13 @@ pub enum Role {
     King,
 }
 
-unsafe impl const Num for Role {
+const unsafe impl Num for Role {
     type Repr = u8;
     const MIN: Self::Repr = Role::Pawn as u8;
     const MAX: Self::Repr = Role::King as u8;
 }
 
-unsafe impl const Int for Role {}
+const unsafe impl Int for Role {}
 
 impl Display for Role {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -40,11 +40,11 @@ impl Display for Role {
 
 /// The reason why parsing the piece.
 #[derive(Debug, Display, Error)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive_const(Default, Clone, PartialEq, Eq)]
 #[display("failed to parse piece")]
 pub struct ParseRoleError;
 
-impl const FromStr for Role {
+const impl FromStr for Role {
     type Err = ParseRoleError;
 
     #[inline(always)]

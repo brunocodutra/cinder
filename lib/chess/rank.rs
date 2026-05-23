@@ -6,7 +6,7 @@ use std::{ops::Sub, str::FromStr};
 
 /// A row on the chess board.
 #[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive_const(Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(i8)]
 pub enum Rank {
@@ -28,15 +28,15 @@ const impl Rank {
     }
 }
 
-unsafe impl const Num for Rank {
+const unsafe impl Num for Rank {
     type Repr = i8;
     const MIN: Self::Repr = Rank::First as i8;
     const MAX: Self::Repr = Rank::Eighth as i8;
 }
 
-unsafe impl const Int for Rank {}
+const unsafe impl Int for Rank {}
 
-impl const Flip for Rank {
+const impl Flip for Rank {
     /// This rank from the opponent's perspective.
     #[inline(always)]
     fn flip(self) -> Self {
@@ -44,7 +44,7 @@ impl const Flip for Rank {
     }
 }
 
-impl const Transpose for Rank {
+const impl Transpose for Rank {
     type Transposition = File;
 
     /// This rank's corresponding file.
@@ -54,7 +54,7 @@ impl const Transpose for Rank {
     }
 }
 
-impl const Sub for Rank {
+const impl Sub for Rank {
     type Output = i8;
 
     #[inline(always)]
@@ -71,11 +71,11 @@ impl Display for Rank {
 
 /// The reason why parsing [`Rank`] failed.
 #[derive(Debug, Display, Error)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive_const(Default, Clone, PartialEq, Eq)]
 #[display("failed to parse rank")]
 pub struct ParseRankError;
 
-impl const FromStr for Rank {
+const impl FromStr for Rank {
     type Err = ParseRankError;
 
     #[inline(always)]

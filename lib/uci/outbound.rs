@@ -4,7 +4,7 @@ use crate::util::Num;
 use std::fmt::{self, Display, Formatter};
 use std::time::Duration;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[allow(clippy::large_enum_variant)]
 pub enum Outbound {

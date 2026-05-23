@@ -7,7 +7,7 @@ use std::{ascii::Char, ops::*, slice::Iter, str::FromStr};
 
 /// The castling rights in a chess [`Position`][`crate::chess::Position`].
 #[derive(Debug, Copy, Hash, Zeroable)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive_const(Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Castles({self})")]
 pub struct Castles(Bits<u8, 4>);
@@ -50,14 +50,14 @@ const impl Castles {
     }
 }
 
-impl const Default for Castles {
+const impl Default for Castles {
     #[inline(always)]
     fn default() -> Self {
         Castles::all()
     }
 }
 
-impl const Not for Castles {
+const impl Not for Castles {
     type Output = Self;
 
     #[inline(always)]
@@ -66,7 +66,7 @@ impl const Not for Castles {
     }
 }
 
-impl const BitAnd for Castles {
+const impl BitAnd for Castles {
     type Output = Self;
 
     #[inline(always)]
@@ -75,14 +75,14 @@ impl const BitAnd for Castles {
     }
 }
 
-impl const BitAndAssign for Castles {
+const impl BitAndAssign for Castles {
     #[inline(always)]
     fn bitand_assign(&mut self, rhs: Self) {
         self.0.bitand_assign(rhs.0);
     }
 }
 
-impl const BitOr for Castles {
+const impl BitOr for Castles {
     type Output = Self;
 
     #[inline(always)]
@@ -91,14 +91,14 @@ impl const BitOr for Castles {
     }
 }
 
-impl const BitOrAssign for Castles {
+const impl BitOrAssign for Castles {
     #[inline(always)]
     fn bitor_assign(&mut self, rhs: Self) {
         self.0.bitor_assign(rhs.0);
     }
 }
 
-impl const BitXor for Castles {
+const impl BitXor for Castles {
     type Output = Self;
 
     #[inline(always)]
@@ -107,14 +107,14 @@ impl const BitXor for Castles {
     }
 }
 
-impl const BitXorAssign for Castles {
+const impl BitXorAssign for Castles {
     #[inline(always)]
     fn bitxor_assign(&mut self, rhs: Self) {
         self.0.bitxor_assign(rhs.0);
     }
 }
 
-impl const From<Square> for Castles {
+const impl From<Square> for Castles {
     #[inline(always)]
     fn from(sq: Square) -> Self {
         const CASTLES: [Castles; 64] = const {
@@ -150,11 +150,11 @@ impl Display for Castles {
 
 /// The reason why parsing [`Castles`] failed.
 #[derive(Debug, Display, Error)]
-#[derive_const(Default, Clone, Eq, PartialEq)]
+#[derive_const(Default, Clone, PartialEq, Eq)]
 #[display("failed to parse castling rights")]
 pub struct ParseCastlesError;
 
-impl const FromStr for Castles
+const impl FromStr for Castles
 where
     for<'a> &'a [Char]: [const] IntoIterator<IntoIter = Iter<'a, Char>>,
     for<'a> Iter<'a, Char>: [const] Iterator<Item = &'a Char>,

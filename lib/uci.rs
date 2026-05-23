@@ -146,7 +146,7 @@ mod tests {
     use std::time::Duration;
     use test_strategy::proptest;
 
-    #[derive(Debug, Default, Clone, Eq, PartialEq)]
+    #[derive(Debug, Default, Clone, PartialEq, Eq)]
     struct MockStream(VecDeque<Inbound>);
 
     impl MockStream {

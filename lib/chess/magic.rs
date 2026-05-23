@@ -2,7 +2,7 @@ use crate::chess::{Bitboard, Square};
 use crate::util::Num;
 
 #[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive_const(Clone, PartialEq, Eq)]
 pub struct Magic(Bitboard, u64, usize);
 
 const impl Magic {

@@ -6,8 +6,7 @@ use derive_more::with_trait::Deref;
 use std::{hint::unreachable_unchecked, io, marker::PhantomData, path::Path};
 
 /// Metric stored in a table: WDL or DTZ.
-#[derive(Debug, Copy, Hash)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Metric {
     /// WDL<sub>50</sub>.
     Wdl,
@@ -37,12 +36,11 @@ impl TableDescriptor for Dtz {
 }
 
 /// Table layout flags.
-#[derive(Debug, Copy, Hash, Deref)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deref)]
 #[repr(transparent)]
 struct Layout(Bits<u8, 8>);
 
-unsafe impl const Num for Layout {
+const unsafe impl Num for Layout {
     type Repr = u8;
     const MIN: Self::Repr = u8::MIN;
     const MAX: Self::Repr = u8::MAX;
@@ -56,12 +54,11 @@ impl Layout {
 }
 
 /// Sub-table format flags.
-#[derive(Debug, Copy, Hash, Deref)]
-#[derive_const(Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deref)]
 #[repr(transparent)]
 struct Flag(Bits<u8, 8>);
 
-unsafe impl const Num for Flag {
+const unsafe impl Num for Flag {
     type Repr = u8;
     const MIN: Self::Repr = u8::MIN;
     const MAX: Self::Repr = u8::MAX;
@@ -577,7 +574,7 @@ struct Symbol {
     len: u8,
 }
 
-const impl Symbol {
+impl Symbol {
     fn new() -> Symbol {
         Symbol { lr: [0; 3], len: 0 }
     }
@@ -793,7 +790,7 @@ struct BlockLengthBuffer {
 }
 
 /// Readahead direction.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Readahead {
     Forward,
     Backward,

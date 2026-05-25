@@ -25,9 +25,9 @@ impl<T: Layer> Layer for Aligned<T> {
 }
 
 /// The first hidden layer.
-pub type L1<'a> = (&'a Accumulator, &'a Accumulator);
+pub type Li<'a> = (&'a Accumulator, &'a Accumulator);
 
-impl Layer for L1<'_> {
+impl Layer for Li<'_> {
     const LEN: usize = Accumulator::LEN;
     type Neuron = <Accumulator as Layer>::Neuron;
 }

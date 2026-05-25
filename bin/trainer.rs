@@ -339,7 +339,7 @@ impl Orchestrator {
                 ft.weights = (ft.weights + ftf.repeat(KingBuckets::LEN))
                     .clip_pass_through_grad(-max_weight, max_weight);
 
-                let l12 = builder.new_affine("l12", L1::LEN, Phase::LEN * Ln::LEN / 2);
+                let l12 = builder.new_affine("l12", Li::LEN, Phase::LEN * Ln::LEN / 2);
                 let l23 = builder.new_affine("l23", Ln::LEN, Phase::LEN * Ln::LEN / 2);
                 let l34 = builder.new_affine("l34", Ln::LEN, Phase::LEN * Ln::LEN / 2);
                 let l4o = builder.new_affine("l4o", Ln::LEN, Phase::LEN);
@@ -359,8 +359,8 @@ impl Orchestrator {
                 let l4a = l4.concat(-l4).sqrrelu();
                 let out = l4o.forward(l4a).select(phase) + r2o.matmul(l2a).select(phase);
 
-                let ones = builder.new_constant(Shape::new(1, L1::LEN), &[1.0; L1::LEN]);
-                let l1_reg = ones.matmul(l1a) / L1::LEN as f32;
+                let ones = builder.new_constant(Shape::new(1, Li::LEN), &[1.0; Li::LEN]);
+                let l1_reg = ones.matmul(l1a) / Li::LEN as f32;
 
                 let score = 300.0 * out;
                 let qp = (score - 270.0) / 340.0;

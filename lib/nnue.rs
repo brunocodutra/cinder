@@ -6,22 +6,22 @@ use std::{ptr, slice};
 mod accumulator;
 mod evaluator;
 mod feature;
-mod hidden;
-mod input;
 mod layer;
-mod output;
-mod residual;
+mod lin;
+mod lnn;
+mod lno;
+mod lro;
 mod synapse;
 mod transformer;
 
 pub use accumulator::*;
 pub use evaluator::*;
 pub use feature::*;
-pub use hidden::*;
-pub use input::*;
 pub use layer::*;
-pub use output::*;
-pub use residual::*;
+pub use lin::*;
+pub use lnn::*;
+pub use lno::*;
+pub use lro::*;
 pub use synapse::*;
 pub use transformer::*;
 
@@ -95,7 +95,7 @@ const NNUE: Nnue = Nnue::new();
 #[derive(Debug, Zeroable)]
 pub struct Nnue {
     transformer: Transformer,
-    nn: [Input<Residual<Hidden<Hidden<Output>>>>; Phase::LEN],
+    nn: [Lin<Lro<Lnn<Lnn<Lno>>>>; Phase::LEN],
 }
 
 const impl Nnue {
@@ -109,9 +109,9 @@ const impl Nnue {
 
         for phase in Phase::iter() {
             let nn = &mut nnue.nn[phase.cast::<usize>()];
-            let mut weight = [[0i8; L1::LEN]; Ln::LEN / 2];
+            let mut weight = [[0i8; Li::LEN]; Ln::LEN / 2];
             cursor += unsafe { copy_bytes(&mut weight, &bytes[cursor..]) };
-            let mut blocks = [[0i8; 4]; L1::LEN * Ln::LEN / 8];
+            let mut blocks = [[0i8; 4]; Li::LEN * Ln::LEN / 8];
             arrange_in_blocks(&weight, &mut blocks);
             interleave(&blocks, &mut nn.weight.0, Ln::LEN);
         }
@@ -171,7 +171,7 @@ const impl Nnue {
     }
 
     #[inline(always)]
-    pub fn nn(phase: Phase) -> &'static Input<Residual<Hidden<Hidden<Output>>>> {
+    pub fn nn(phase: Phase) -> &'static Lin<Lro<Lnn<Lnn<Lno>>>> {
         let idx = phase.cast::<usize>();
         unsafe { NNUE.nn.get_unchecked(idx) }
     }

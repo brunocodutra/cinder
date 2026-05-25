@@ -1,23 +1,23 @@
-use crate::nnue::{FTQ, HLS, L1, Layer, Ln, Synapse};
+use crate::nnue::{FTQ, HLS, Layer, Li, Ln, Synapse};
 use crate::{simd::*, util::Assume};
 use bytemuck::Zeroable;
 use std::{array, ops::Mul};
 
-const I: usize = L1::LEN;
+const I: usize = Li::LEN;
 const O: usize = Ln::LEN / 2;
 
 const I2F: f32 = (1 << 9) as f32 / (FTQ as f32 * FTQ as f32 * HLS as f32);
 
 /// The input connection.
 #[derive(Debug, Zeroable)]
-pub struct Input<S> {
+pub struct Lin<S> {
     pub bias: Aligned<[f32; O]>,
     pub weight: Aligned<[[i8; 4]; I * O / 4]>,
     pub next: S,
 }
 
-impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Input<S> {
-    type Input<'a> = L1<'a>;
+impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Lin<S> {
+    type Input<'a> = Li<'a>;
     type Output = f32;
 
     #[inline(always)]

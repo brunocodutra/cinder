@@ -8,13 +8,13 @@ const O: usize = Ln::LEN / 2;
 
 /// A hidden connection.
 #[derive(Debug, Zeroable)]
-pub struct Hidden<S> {
+pub struct Lnn<S> {
     pub bias: Aligned<[f32; O]>,
     pub weight: Aligned<[[f32; 1]; I * O]>,
     pub next: S,
 }
 
-impl<S: for<'a> Synapse<Input<'a> = Ln<'a>>> Synapse for Hidden<S> {
+impl<S: for<'a> Synapse<Input<'a> = Ln<'a>>> Synapse for Lnn<S> {
     type Input<'a> = Ln<'a>;
     type Output = S::Output;
 

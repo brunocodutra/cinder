@@ -82,7 +82,7 @@ impl OutputBuckets<ChessBoard> for Phaser {
 #[derive(Debug, Clone, Copy, Args)]
 pub struct TrainingDataFilter {
     /// Filter out positions that have a ply count less than this value.
-    #[clap(skip = 0u16)]
+    #[clap(skip = 16u16)]
     pub min_ply: u16,
     /// Filter out positions that have an absolute score above this value.
     #[clap(long, default_value_t = 10000)]
@@ -252,12 +252,8 @@ enum Mode {
 }
 
 impl Orchestrator {
-    fn dataloader(&self, data: &[&str], min_ply: u16) -> impl DataLoader<ChessBoard> {
-        let filter = TrainingDataFilter {
-            min_ply,
-            ..self.filter
-        };
-
+    fn dataloader(&self, data: &[&str]) -> impl DataLoader<ChessBoard> {
+        let filter = self.filter.clone();
         SfBinpackLoader::new_concat_multiple(data, 1024, self.threads, move |entry| {
             !filter.should_skip(entry)
         })
@@ -408,12 +404,12 @@ impl Orchestrator {
 
         let priming_dataset = self.datasets.first().context("expected dataset")?;
         let training_datasets = Vec::from_iter(self.datasets[1..].iter().map(Deref::deref));
-        let training_dataloader = self.dataloader(&training_datasets, 16);
+        let training_dataloader = self.dataloader(&training_datasets);
 
         if stage == 0 && superbatch < SB0 {
             let start = if stage == 0 { superbatch + 1 } else { 1 };
             let schedule = self.schedule("stage0", start..=SB0, 2e-3..=1e-4, 0.0..=0.0);
-            let priming_dataloader = self.dataloader(&[priming_dataset], 0);
+            let priming_dataloader = self.dataloader(&[priming_dataset]);
             trainer.run(&schedule, &settings, &priming_dataloader);
         }
 

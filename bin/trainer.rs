@@ -79,7 +79,7 @@ impl OutputBuckets<ChessBoard> for Phaser {
 }
 
 /// The configuration for a filter that can be applied to a game during unpacking.
-#[derive(Debug, Clone, Copy, Args)]
+#[derive(Debug, Clone, Args)]
 pub struct TrainingDataFilter {
     /// Filter out positions that have a ply count less than this value.
     #[clap(skip = 16u16)]
@@ -199,8 +199,8 @@ impl TrainingDataFilter {
 }
 
 const SB0: usize = 200;
-const SB1: usize = 700;
-const SB2: usize = 100;
+const SB1: usize = 600;
+const SB2: usize = 200;
 
 /// An efficiently updatable neural network (NNUE) trainer.
 #[derive(Debug, Parser)]
@@ -421,7 +421,7 @@ impl Orchestrator {
 
         if stage < 2 || (stage == 2 && superbatch < SB2) {
             let start = if stage == 2 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage2", start..=SB2, 5e-5..=1e-6, self.wdl..=self.wdl);
+            let schedule = self.schedule("stage2", start..=SB2, 2e-5..=1e-6, self.wdl..=self.wdl);
             trainer.run(&schedule, &settings, &training_dataloader);
         }
 

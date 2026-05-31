@@ -62,7 +62,7 @@ mac-aarch64-sme:
 define build
 	@echo "Building target $1"
 	cargo build --profile=dist --bin=cinder \
-		--config='build.rustflags=["-Ctarget-cpu=$3", "-Zlocation-detail=none"]' \
+		--config='target.$2.rustflags=["-Ctarget-cpu=$3", "-Zlocation-detail=none"]' \
 		--target-dir=$(TARGET_DIR)/$1/ --target=$2 $4
 
 	@mkdir -p $(BIN_DIR)

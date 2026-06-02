@@ -5,14 +5,12 @@ use bullet::game::formats::bulletformat::ChessBoard;
 use bullet::game::formats::sfbinpack::TrainingDataEntry;
 use bullet::game::formats::sfbinpack::chess::r#move::MoveType;
 use bullet::game::formats::sfbinpack::chess::piecetype::PieceType;
-use bullet::game::inputs::SparseInputType;
-use bullet::game::outputs::OutputBuckets;
+use bullet::game::{inputs::SparseInputType, outputs::OutputBuckets};
 use bullet::lr::{LinearDecayLR, Warmup};
 use bullet::nn::optimiser::{AdamW, AdamWParams};
 use bullet::nn::{InitSettings, Shape};
-use bullet::trainer::save::SavedFormat;
 use bullet::trainer::schedule::{TrainingSchedule, TrainingSteps};
-use bullet::trainer::settings::LocalSettings;
+use bullet::trainer::{save::SavedFormat, settings::LocalSettings};
 use bullet::value::ValueTrainerBuilder;
 use bullet::value::loader::{DataLoader, SfBinpackLoader};
 use bullet::wdl::LinearWDL;
@@ -23,7 +21,27 @@ use clap::{Args, Parser, Subcommand};
 use rand::{Rng, rng};
 use std::ops::{Deref, Div, RangeInclusive};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::{fs::create_dir_all, num::NonZero, thread::available_parallelism};
+use std::{cell::Cell, fs::create_dir_all, num::NonZero, thread::available_parallelism};
+
+const fn spline(p: f64, points: &[(f64, f64)]) -> f64 {
+    let mut i = 0;
+    while i < points.len() - 1 {
+        if p >= points[i].0 && p < points[i + 1].0 {
+            let t = (p - points[i].0) / (points[i + 1].0 - points[i].0);
+            return points[i].1 + t * (points[i + 1].1 - points[i].1);
+        }
+
+        i += 1;
+    }
+
+    if p < points[0].0 {
+        points[0].1
+    } else if p >= points[points.len() - 1].0 {
+        points[points.len() - 1].1
+    } else {
+        panic!()
+    }
+}
 
 #[derive(Debug, Default, Clone, Copy)]
 struct KingBuckets;
@@ -81,37 +99,29 @@ impl OutputBuckets<ChessBoard> for Phaser {
 /// The configuration for a filter that can be applied to a game during unpacking.
 #[derive(Debug, Clone, Args)]
 pub struct TrainingDataFilter {
-    /// Filter out positions that have a ply count less than this value.
-    #[clap(skip = 16u16)]
-    pub min_ply: u16,
     /// Filter out positions that have an absolute score above this value.
     #[clap(long, default_value_t = 10000)]
     pub max_score: u16,
     /// Filter out positions where score diverges from the result by more than this value.
-    #[clap(long, default_value_t = 1000)]
+    #[clap(long, default_value_t = 2500)]
     pub max_score_anomaly: u16,
     /// The probability of skipping a random position.
     #[clap(long, default_value_t = 0.25)]
-    pub random_skip_chance: f64,
+    pub random_rejection: f64,
     /// Whether to enable adaptive piece count filtering.
     #[clap(long, default_value_t = true)]
     pub piece_count_filter: bool,
     /// Whether to skip positions based on the WDL model.
     #[clap(long, default_value_t = true)]
     pub wdl_filter: bool,
+    /// Whether to skip positions based on the ply.
+    #[clap(long, default_value_t = true)]
+    pub ply_filter: bool,
 }
 
 impl TrainingDataFilter {
-    /// By how much this position's score deviates from the game result.
-    fn score_anomaly(entry: &TrainingDataEntry) -> i16 {
-        match entry.result {
-            0 => entry.score,
-            r => i16::min(r.signum() * entry.score, 0),
-        }
-    }
-
     /// How likely the end-game result predicted from the current score is.
-    fn predicted_result_chance(entry: &TrainingDataEntry) -> f64 {
+    fn predicted_result_chance(&self, entry: &TrainingDataEntry) -> f64 {
         /// This win rate model returns the probability of winning given the score
         /// and a game-ply. The model fits rather accurately the LTC fishtest statistics.
         const WDL_MODEL_PARAMS_A: [f64; 4] = [-3.68389304, 30.07065921, -60.52878723, 149.53378557];
@@ -142,9 +152,9 @@ impl TrainingDataFilter {
             WDL_MODEL_MAX_SCORE,
         );
 
-        let w = 1. / (1. + f64::exp((a - x) / b));
-        let l = 1. / (1. + f64::exp((a + x) / b));
-        let d = (1. - w - l).max(0.);
+        let w = 1.0 / (1.0 + f64::exp((a - x) / b));
+        let l = 1.0 / (1.0 + f64::exp((a + x) / b));
+        let d = 1.0 - w - l;
 
         match entry.result {
             1.. => w,
@@ -153,8 +163,13 @@ impl TrainingDataFilter {
         }
     }
 
+    /// Probability of rejecting a position based on wdl deviation
+    fn predicted_result_rejection(&self, entry: &TrainingDataEntry) -> f64 {
+        1.0 - self.predicted_result_chance(entry).clamp(0.0, 1.0)
+    }
+
     /// Adaptive piece count filtering to maintain desired distribution.
-    fn piece_count_rejection(entry: &TrainingDataEntry) -> f64 {
+    fn piece_count_rejection(&self, entry: &TrainingDataEntry) -> f64 {
         #[rustfmt::skip]
         const DESIRED_DISTRIBUTION: [f64; 33] = [
             0.018411966423, 0.020641545085, 0.022727271053,
@@ -180,21 +195,86 @@ impl TrainingDataFilter {
 
         // Calculate the acceptance probability for this piece count
         let acceptance = 0.5 * DESIRED_DISTRIBUTION[pc] / frequency;
-        1. - acceptance.clamp(0., 1.)
+        1.0 - acceptance.clamp(0.0, 1.0)
     }
 
-    pub fn should_skip(&self, entry: &TrainingDataEntry) -> bool {
-        let mut rng = rng();
+    /// Whether we consider this ply too early.
+    fn early_ply_rejection(&self, entry: &TrainingDataEntry) -> f64 {
+        const EARLY_PLY_ACCEPTANCE: [f64; 31] = {
+            let mut table = [0.0f64; 31];
 
-        entry.ply < self.min_ply
-            || entry.score.unsigned_abs() > self.max_score
-            || Self::score_anomaly(entry).unsigned_abs() > self.max_score_anomaly
+            let points = [(12.0, 0.0), (16.0, 0.4), (18.0, 0.65), (20.0, 1.0)];
+
+            let mut i = 0;
+            while i < table.len() {
+                table[i] = spline(i as f64, &points).clamp(0.0, 1.0);
+                i += 1;
+            }
+
+            table
+        };
+
+        let ply = entry.ply as usize;
+        if ply < EARLY_PLY_ACCEPTANCE.len() {
+            1.0 - EARLY_PLY_ACCEPTANCE[ply]
+        } else {
+            0.0
+        }
+    }
+
+    /// By how much this position's score deviates from the game result.
+    fn score_anomaly(&self, entry: &TrainingDataEntry) -> i16 {
+        match entry.result {
+            0 => entry.score,
+            r => i16::min(r.signum() * entry.score, 0),
+        }
+    }
+
+    /// Whether the position score doesn't seem trustworthy.
+    fn is_suspicious_score(&self, entry: &TrainingDataEntry) -> bool {
+        thread_local! {
+            static LAST_PLY: Cell<i32> = const { Cell::new(-1) };
+            static LAST_SCORE: Cell<Option<i16>> = const { Cell::new(None) };
+        }
+
+        // Detect placeholder zero: a position where score=0 was written
+        // because the entry is to be skipped, not a genuine eval.
+        let is_placeholder_zero = entry.ply as i32 > LAST_PLY.get()
+            && LAST_SCORE.get().is_some_and(|s| s.abs() > 100)
+            && entry.result != 0
+            && entry.score == 0;
+
+        LAST_PLY.set(entry.ply as i32);
+
+        if is_placeholder_zero {
+            return true;
+        }
+
+        LAST_SCORE.set(Some(entry.score));
+
+        entry.score.unsigned_abs() > self.max_score
+            || self.score_anomaly(entry).unsigned_abs() > self.max_score_anomaly
+    }
+
+    /// Whether this position is tactical or forced.
+    fn is_noisy_position(&self, entry: &TrainingDataEntry) -> bool {
+        entry.pos.is_checked(entry.pos.side_to_move())
             || entry.mv.mtype() != MoveType::Normal
             || entry.pos.piece_at(entry.mv.to()).piece_type() != PieceType::None
-            || entry.pos.is_checked(entry.pos.side_to_move())
-            || rng.random_bool(self.random_skip_chance)
-            || (self.wdl_filter && rng.random_bool(1. - Self::predicted_result_chance(entry)))
-            || (self.piece_count_filter && rng.random_bool(Self::piece_count_rejection(entry)))
+    }
+
+    fn should_skip(&self, entry: &TrainingDataEntry) -> bool {
+        let mut rng = rng();
+
+        // IMPORTANT: evaluated unconditionally due to thread-local side-effect.
+        let is_suspicious_score = self.is_suspicious_score(entry);
+
+        is_suspicious_score
+            || self.is_noisy_position(entry)
+            || rng.random_bool(self.random_rejection)
+            || (self.ply_filter && rng.random_bool(self.early_ply_rejection(entry)))
+            || (self.wdl_filter && rng.random_bool(self.predicted_result_rejection(entry)))
+            || (self.piece_count_filter && rng.random_bool(self.piece_count_rejection(entry)))
     }
 }
 
@@ -210,7 +290,7 @@ struct Orchestrator {
     checkpoints: String,
 
     /// How many threads to use for data loading.
-    #[clap(long, default_value_t = available_parallelism().map_or(1, NonZero::get).div(2).max(1))]
+    #[clap(long, default_value_t = available_parallelism().map_or(1, NonZero::get).div(4).max(1))]
     threads: usize,
 
     /// How many positions per batch.

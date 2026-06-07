@@ -30,7 +30,7 @@ where
         const { assert!(N.is_power_of_two()) }
         const { assert!(N.trailing_zeros() <= B) }
         let idx = key.encode().slice(..N.trailing_zeros()).cast::<usize>();
-        self.0[pos.turn() as usize][idx].get()
+        self.0[pos.turn()][idx].get()
     }
 
     #[inline(always)]
@@ -40,7 +40,7 @@ where
         const { assert!(N.is_power_of_two()) }
         const { assert!(N.trailing_zeros() <= B) }
         let idx = key.encode().slice(..N.trailing_zeros()).cast::<usize>();
-        self.0[pos.turn() as usize][idx].update(delta);
+        self.0[pos.turn()][idx].update(delta);
     }
 }
 
@@ -60,9 +60,9 @@ impl ContinuationCorrection {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn get(&mut self, pos: &Position, m: Move) -> &mut Correction<1> {
+        let is_check = pos.is_check() as usize;
         let (wc, wt) = (m.whence(), m.whither());
-        let threats = [pos.threats().contains(wc), pos.threats().contains(wt)];
-        &mut self.0[pos.turn() as usize][pos.is_check() as usize][wc as usize][wt as usize]
-            [threats[0] as usize][threats[1] as usize]
+        let threats = [pos.attackers(wc).is_empty(), pos.attackers(wt).is_empty()];
+        &mut self.0[pos.turn()][is_check][wc][wt][threats[0] as usize][threats[1] as usize]
     }
 }

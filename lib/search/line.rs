@@ -7,7 +7,7 @@ use std::ptr::copy;
 use proptest::{collection::vec, prelude::*};
 
 /// A sequence of [`Move`]s.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("Line({self})")]
 pub struct Line<const N: usize>(
@@ -112,7 +112,7 @@ mod tests {
 
     #[proptest]
     fn cons_truncates_tail(l: Line<3>, m: Move) {
-        let cons = Line::<3>::cons(m, l.clone());
+        let cons = Line::<3>::cons(m, l);
         assert_eq!(cons.0[0], Some(m));
         assert_eq!(cons.0[1..], l.0[..2]);
     }
@@ -124,6 +124,6 @@ mod tests {
 
     #[proptest]
     fn truncate_discards_moves(l: Line<3>) {
-        assert_eq!(&l.clone().truncate::<2>().0[..], &l.0[..2]);
+        assert_eq!(&l.truncate::<2>().0[..], &l.0[..2]);
     }
 }

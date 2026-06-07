@@ -1,9 +1,9 @@
-use crate::chess::{Castles, MovePack, MoveSet, Position};
+use crate::chess::{Castles, Move, Moves, Piece, Position, Role};
 use crate::syzygy::{Dtz, DtzTable, Material, NormalizedMaterial, TableDescriptor, Wdl, WdlTable};
-use crate::util::{Num, zero};
+use crate::util::{Int, Num, zero};
 use derive_more::with_trait::Debug;
 use rustc_hash::FxHashMap;
-use std::{collections::hash_map::Entry, ffi::OsStr, io, path::Path, str::FromStr};
+use std::{collections::hash_map::Entry, ffi::OsStr, io, iter::repeat_n, path::Path, str::FromStr};
 
 /// Syzygy tables are available for up to 7 pieces.
 pub const MAX_PIECES: usize = 7;
@@ -78,18 +78,19 @@ impl Tablebase {
             return None;
         }
 
-        // Track best values for en passant and regular captures separately.
-        let mut best_capture = Wdl::Loss;
-        let mut best_ep = Wdl::Loss;
+        let mut moves = pos.moves();
+        let captures = moves.iter_mut().partition_in_place(|m| m.is_capture());
 
-        let moves = pos.moves();
+        // Track best values for en passant and regular captures separately.
+        let mut best_ep = Wdl::Loss;
+        let mut best_capture = Wdl::Loss;
         let mut all_are_en_passant = None;
-        for m in moves.unpack_if(MoveSet::is_capture) {
+        for m in moves.iter().copied().take(captures) {
             let is_pawn = pos.pawns(pos.turn()).contains(m.whence());
             let is_en_passant = pos.en_passant() == Some(m.whither()) && is_pawn;
             all_are_en_passant = Some(all_are_en_passant.unwrap_or(true) && is_en_passant);
 
-            let mut next = pos.clone();
+            let mut next = *pos;
             next.play(m);
 
             match -self.probe_ab(&next, Wdl::Loss, -best_capture)? {
@@ -103,8 +104,10 @@ impl Tablebase {
             }
         }
 
+        let notcap = moves.into_iter().skip(captures).collect();
+
         if best_ep.max(best_capture) == Wdl::Win {
-            return Some(ProbeResult::zeroing(self, pos, moves, Wdl::Win));
+            return Some(ProbeResult::zeroing(self, pos, notcap, Wdl::Win));
         }
 
         // max(v, best_capture) is the true WDL value of the position,
@@ -114,21 +117,21 @@ impl Tablebase {
         // Play the best en passant move if it is strictly better,
         // or if the position would otherwise be stalemate
         if best_ep > v.max(best_capture) || (all_are_en_passant == Some(true) && v == Wdl::Draw) {
-            return Some(ProbeResult::zeroing(self, pos, moves, best_ep));
+            return Some(ProbeResult::zeroing(self, pos, notcap, best_ep));
         }
 
         best_capture = best_ep.max(best_capture);
         if best_capture >= v && best_capture > Wdl::Draw {
-            Some(ProbeResult::zeroing(self, pos, moves, best_capture))
+            Some(ProbeResult::zeroing(self, pos, notcap, best_capture))
         } else {
             let wdl = v.max(best_capture);
-            Some(ProbeResult::maybe_not_zeroing(self, pos, moves, wdl))
+            Some(ProbeResult::maybe_not_zeroing(self, pos, notcap, wdl))
         }
     }
 
     fn probe_ab(&self, pos: &Position, mut alpha: Wdl, beta: Wdl) -> Option<Wdl> {
-        for m in pos.moves().unpack_if(MoveSet::is_capture) {
-            let mut next = pos.clone();
+        for m in pos.noisy().into_iter().filter(|m| m.is_capture()) {
+            let mut next = *pos;
             next.play(m);
             alpha = alpha.max(-self.probe_ab(&next, -beta, -alpha)?);
             if alpha >= beta {
@@ -143,14 +146,20 @@ impl Tablebase {
         if pos.occupied().len() == 2 {
             Some(Wdl::Draw)
         } else {
-            let material = Material::from_iter(pos.iter().map(|(p, _)| p));
+            let material: Material = Piece::iter()
+                .flat_map(|p| repeat_n(p, pos.by_piece(p).len()))
+                .collect();
+
             let key = material.normalize();
             Some(self.wdl.get(&key)?.probe(pos, material))
         }
     }
 
     fn get_dtz(&self, pos: &Position, wdl: Wdl) -> Option<Dtz> {
-        let material = Material::from_iter(pos.iter().map(|(p, _)| p));
+        let material: Material = Piece::iter()
+            .flat_map(|p| repeat_n(p, pos.by_piece(p).len()))
+            .collect();
+
         let key = material.normalize();
         let plies = self.dtz.get(&key)?.probe(pos, material, wdl)?;
         Some(Dtz::from(wdl).stretch(plies))
@@ -171,38 +180,38 @@ pub struct ProbeResult<'a> {
     kind: ProbeResultKind,
     tb: &'a Tablebase,
     pos: &'a Position,
-    moves: MovePack,
+    notcap: Moves,
     wdl: Wdl,
 }
 
 impl<'a> ProbeResult<'a> {
-    fn zeroing(tb: &'a Tablebase, pos: &'a Position, moves: MovePack, wdl: Wdl) -> Self {
+    fn zeroing(tb: &'a Tablebase, pos: &'a Position, notcap: Moves, wdl: Wdl) -> Self {
         Self {
             kind: ProbeResultKind::Zeroing,
             tb,
             pos,
-            moves,
+            notcap,
             wdl,
         }
     }
 
-    fn maybe_not_zeroing(tb: &'a Tablebase, pos: &'a Position, moves: MovePack, wdl: Wdl) -> Self {
+    fn maybe_not_zeroing(tb: &'a Tablebase, pos: &'a Position, notcap: Moves, wdl: Wdl) -> Self {
         Self {
             kind: ProbeResultKind::MaybeNotZeroing,
             tb,
             pos,
-            moves,
+            notcap,
             wdl,
         }
     }
 
     /// The [`Wdl`] if [`Position::halfmoves`] were zero.
-    pub fn wdl_after_zeroing(&self) -> Wdl {
+    pub fn wdl_after_zeroing(self) -> Wdl {
         self.wdl
     }
 
     /// The true [`Wdl`] of the [`Position`].
-    pub fn wdl(&self) -> Option<Wdl> {
+    pub fn wdl(self) -> Option<Wdl> {
         match self.pos.halfmoves() {
             n @ 1.. => Some(self.dtz()?.stretch(n as u16).into()),
             0 => Some(self.wdl),
@@ -210,20 +219,18 @@ impl<'a> ProbeResult<'a> {
     }
 
     /// The [`Dtz`] of the [`Position`].
-    pub fn dtz(&self) -> Option<Dtz> {
+    pub fn dtz(mut self) -> Option<Dtz> {
         if self.kind == ProbeResultKind::Zeroing || self.wdl == Wdl::Draw {
             return Some(self.wdl.into());
         }
 
-        let is_pawn_push = |ms: MoveSet| {
-            let turn = self.pos.turn();
-            !ms.is_capture() && self.pos.pawns(turn).contains(ms.whence())
-        };
+        let is_pawn_push = |m: &Move| self.pos[m.whence()].role() == Some(Role::Pawn);
+        let pushes = self.notcap.iter_mut().partition_in_place(is_pawn_push);
 
         // If winning, check for a winning pawn move.
         if self.wdl > Wdl::Draw {
-            for m in self.moves.unpack_if(is_pawn_push) {
-                let mut next = self.pos.clone();
+            for m in self.notcap.iter().copied().take(pushes) {
+                let mut next = *self.pos;
                 next.play(m);
                 if -self.tb.probe(&next)?.wdl_after_zeroing() == self.wdl {
                     return Some(self.wdl.into());
@@ -241,9 +248,8 @@ impl<'a> ProbeResult<'a> {
         };
 
         // Otherwise, do a 1-ply search to find the best DTZ.
-        let is_not_zeroing = |ms: MoveSet| ms.is_quiet() && !is_pawn_push(ms);
-        for m in self.moves.unpack_if(is_not_zeroing) {
-            let mut next = self.pos.clone();
+        for m in self.notcap.into_iter().skip(pushes) {
+            let mut next = *self.pos;
             next.play(m);
             let v = -self.tb.probe(&next)?.dtz()?;
             if v == Dtz::new(1) && next.is_checkmate() {

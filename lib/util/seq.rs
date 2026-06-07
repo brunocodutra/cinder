@@ -1,4 +1,4 @@
-use crate::util::*;
+use crate::{simd::*, util::*};
 use bytemuck::{NoUninit, Zeroable};
 use derive_more::with_trait::Debug;
 use std::hash::{Hash, Hasher};
@@ -16,6 +16,7 @@ pub type ConstBytes<const S: usize> = Bytes<ConstMemory<S>>;
 /// A collection of raw bytes.
 #[derive(Debug, Copy, Hash, ConstParamTy)]
 #[derive_const(Default, Clone, PartialEq, Eq)]
+#[repr(C)]
 pub struct Bytes<M> {
     len: <ConstCapacity as Capacity>::Usize,
     mem: M,
@@ -43,6 +44,7 @@ pub type StaticSeq<T, const N: usize> = Seq<T, StaticMemory<T, N>>;
 #[derive(Debug)]
 #[debug("Seq({:?})", self.deref())]
 #[debug(bounds(T: Debug))]
+#[repr(transparent)]
 pub struct Seq<T, M: Memory<T, Capacity = ConstCapacity>> {
     bytes: Bytes<M>,
     phantom: PhantomData<T>,
@@ -151,9 +153,49 @@ const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
     where
         T: [const] Destruct,
     {
-        let tail = self.len().min(len);
-        unsafe { ptr::drop_in_place(self.get_mut(tail..).assume()) };
-        self.bytes.len = tail.cast();
+        if len < self.len() {
+            unsafe { self.resize(len) }
+        }
+    }
+
+    /// Resizes this sequence to `len`.
+    ///
+    /// # Safety
+    ///
+    /// If `len > self.len()` the extra elements must be initialized prior to access.
+    #[inline(always)]
+    pub unsafe fn resize(&mut self, len: usize)
+    where
+        T: [const] Destruct,
+    {
+        if len < self.len() {
+            unsafe { ptr::drop_in_place(self.get_mut(len..).assume()) };
+        }
+
+        self.bytes.len = len.cast();
+    }
+}
+
+impl<T, M: Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
+    /// Extends this sequence with the elements in a `Simd` vector.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn extend_from_simd<E, const N: usize>(
+        &mut self,
+        vec: Simd<E, N>,
+        mask: <Simd<E, N> as Compress>::Bitmask,
+    ) where
+        E: SimdElement,
+        Simd<E, N>: Compress,
+    {
+        const { assert!(align_of::<T>() >= align_of::<E>()) }
+        const { assert!(size_of::<T>() == size_of::<E>()) }
+
+        let end = self.len();
+        let ptr = self.as_mut_ptr().wrapping_add(end).cast();
+        let slice = unsafe { slice::from_raw_parts_mut(ptr, N) };
+        vec.compress(mask).copy_to_slice(slice);
+        unsafe { self.resize(end + mask.count_ones().cast::<usize>()) };
     }
 }
 

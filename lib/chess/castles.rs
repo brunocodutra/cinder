@@ -12,6 +12,14 @@ use std::{ascii::Char, ops::*, slice::Iter, str::FromStr};
 #[debug("Castles({self})")]
 pub struct Castles(Bits<u8, 4>);
 
+const unsafe impl Num for Castles {
+    type Repr = u8;
+    const MIN: Self::Repr = 0;
+    const MAX: Self::Repr = 15;
+}
+
+const unsafe impl Int for Castles {}
+
 const impl Castles {
     /// No castling rights.
     #[inline(always)]
@@ -35,12 +43,6 @@ const impl Castles {
             Square::G8 => Some(Move::regular(Square::H8, Square::F8, None)),
             _ => None,
         }
-    }
-
-    /// A unique number the represents this castling rights configuration.
-    #[inline(always)]
-    pub fn index(self) -> u8 {
-        self.0.get()
     }
 
     /// Whether the rights for the given castling square.
@@ -117,18 +119,15 @@ const impl BitXorAssign for Castles {
 const impl From<Square> for Castles {
     #[inline(always)]
     fn from(sq: Square) -> Self {
-        const CASTLES: [Castles; 64] = const {
-            let mut castles = [Castles::none(); 64];
-            castles[Square::A1 as usize] = Castles(Bits::new(0b0010));
-            castles[Square::H1 as usize] = Castles(Bits::new(0b0001));
-            castles[Square::E1 as usize] = Castles(Bits::new(0b0011));
-            castles[Square::A8 as usize] = Castles(Bits::new(0b1000));
-            castles[Square::H8 as usize] = Castles(Bits::new(0b0100));
-            castles[Square::E8 as usize] = Castles(Bits::new(0b1100));
-            castles
-        };
-
-        CASTLES[sq as usize]
+        match sq {
+            Square::A1 => Castles(Bits::new(0b0010)),
+            Square::H1 => Castles(Bits::new(0b0001)),
+            Square::E1 => Castles(Bits::new(0b0011)),
+            Square::A8 => Castles(Bits::new(0b1000)),
+            Square::H8 => Castles(Bits::new(0b0100)),
+            Square::E8 => Castles(Bits::new(0b1100)),
+            _ => Castles::none(),
+        }
     }
 }
 
@@ -148,8 +147,24 @@ impl Display for Castles {
     }
 }
 
+const impl<T> Index<Castles> for [T; Castles::MAX as usize + 1] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, c: Castles) -> &Self::Output {
+        self.get(c.cast::<usize>()).assume()
+    }
+}
+
+const impl<T> IndexMut<Castles> for [T; Castles::MAX as usize + 1] {
+    #[inline(always)]
+    fn index_mut(&mut self, c: Castles) -> &mut Self::Output {
+        self.get_mut(c.cast::<usize>()).assume()
+    }
+}
+
 /// The reason why parsing [`Castles`] failed.
-#[derive(Debug, Display, Error)]
+#[derive(Debug, Display, Copy, Error)]
 #[derive_const(Default, Clone, PartialEq, Eq)]
 #[display("failed to parse castling rights")]
 pub struct ParseCastlesError;

@@ -30,7 +30,7 @@ impl<C, T: Statistics<C>> Statistics<C> for &mut T {
     }
 }
 
-impl<C, T: Statistics<C>> Statistics<C> for Option<T> {
+impl<C, T: Statistics<C, Stat: Stat<Value: Zeroable>>> Statistics<C> for Option<T> {
     type Stat = T::Stat;
 
     #[inline(always)]
@@ -66,7 +66,7 @@ impl<C, T: Statistics<C>> Statistics<C> for NonNull<T> {
 /// A trait for statistics counters.
 pub trait Stat {
     /// The value type.
-    type Value: Zeroable;
+    type Value: Num;
 
     /// Returns the current [`Self::Value`].
     fn get(&self) -> Self::Value;
@@ -89,7 +89,7 @@ impl<T: Stat> Stat for &mut T {
     }
 }
 
-impl<T: Stat> Stat for Option<T> {
+impl<T: Stat<Value: Zeroable>> Stat for Option<T> {
     type Value = T::Value;
 
     #[inline(always)]

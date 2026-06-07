@@ -1,9 +1,8 @@
-use crate::simd::{Aligned, V2, W2};
-use crate::util::Assume;
+use crate::{simd::*, util::Assume};
 use std::simd::prelude::*;
 
 /// Trait for [`Simd<u32, _>` ] types that implement `nnz`.
-pub trait Nzs<const N: usize>: AsMut<[u16]> {
+pub trait Nzs<const N: usize> {
     /// Fills `self` with indices to non-zero_elements.
     fn nzs(&mut self, ns: &[[V2<u32>; 2]; N]) -> usize;
 }
@@ -15,7 +14,7 @@ impl<const M: usize, const N: usize> Nzs<N> for Aligned<[u16; M]> {
     fn nzs(&mut self, ns: &[[u32x16; 2]; N]) -> usize {
         const { assert!(M == N * 2 * W2) }
 
-        use std::{arch::x86_64::*, mem::transmute};
+        use std::arch::x86_64::*;
 
         let mut len = 0;
         let mut base = u16x32::from_array([
@@ -30,12 +29,8 @@ impl<const M: usize, const N: usize> Nzs<N> for Aligned<[u16; M]> {
             let count = mask.count_ones() as usize;
 
             if count > 0 {
-                let indices = unsafe {
-                    transmute::<__m512i, u16x32>(_mm512_maskz_compress_epi16(
-                        mask,
-                        transmute::<u16x32, __m512i>(base),
-                    ))
-                };
+                let indices: u16x32 =
+                    unsafe { _mm512_maskz_compress_epi16(mask, base.into()).into() };
 
                 let slice = self.get_mut(len..).assume();
                 (slice.len() >= u16x32::LEN).assume();
@@ -56,7 +51,7 @@ impl<const M: usize, const N: usize> Nzs<N> for Aligned<[u16; M]> {
         const { assert!(M == N * 2 * W2) }
         const NNZ_OFFSETS: Aligned<[u16x8; 256]> = {
             let mut offsets = Aligned([u16x8::splat(0); 256]);
-            let table: &mut [[u16; 8]; 256] = offsets.cast_mut();
+            let table: &mut [[u16; 8]; 256] = offsets.as_mut();
 
             let mut i = 0;
             while i < 256 {

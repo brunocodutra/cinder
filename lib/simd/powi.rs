@@ -1,3 +1,4 @@
+use crate::util::{Num, NumRepr};
 use std::ops::MulAssign;
 use std::simd::{SimdElement, prelude::*};
 
@@ -9,13 +10,13 @@ pub trait Powi {
 
 impl<T, const N: usize> Powi for Simd<T, N>
 where
-    T: SimdElement + From<i8>,
     Self: MulAssign,
+    T: NumRepr + SimdElement,
 {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn powi<const E: u32>(mut self) -> Self {
-        let mut result = Self::splat(1.into());
+        let mut result = Self::splat(1i8.cast());
 
         let mut exp = E;
         for _ in 0..32 - E.leading_zeros() {

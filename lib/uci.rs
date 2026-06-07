@@ -143,7 +143,7 @@ mod tests {
     use futures::executor::block_on;
     use std::collections::{HashSet, VecDeque};
     use std::task::{Context, Poll};
-    use std::time::Duration;
+    use std::{assert_matches, time::Duration};
     use test_strategy::proptest;
 
     #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -206,10 +206,7 @@ mod tests {
         }]);
 
         block_on(uci.run()).expect("is ok");
-        assert!(matches!(
-            uci.output.last(),
-            Some(Outbound::BestMove(Some(..)))
-        ));
+        assert_matches!(uci.output.last(), Some(Outbound::BestMove(Some(..))));
     }
 
     #[proptest]
@@ -237,10 +234,7 @@ mod tests {
         }]);
 
         block_on(uci.run()).expect("is ok");
-        assert!(matches!(
-            uci.output.last(),
-            Some(Outbound::BestMove(Some(..)))
-        ));
+        assert_matches!(uci.output.last(), Some(Outbound::BestMove(Some(..))));
     }
 
     #[proptest]
@@ -264,10 +258,7 @@ mod tests {
         }]);
 
         block_on(uci.run()).expect("is ok");
-        assert!(matches!(
-            uci.output.last(),
-            Some(Outbound::BestMove(Some(..)))
-        ));
+        assert_matches!(uci.output.last(), Some(Outbound::BestMove(Some(..))));
     }
 
     #[proptest]
@@ -291,10 +282,7 @@ mod tests {
         }]);
 
         block_on(uci.run()).expect("is ok");
-        assert!(matches!(
-            uci.output.last(),
-            Some(Outbound::BestMove(Some(..)))
-        ));
+        assert_matches!(uci.output.last(), Some(Outbound::BestMove(Some(..))));
     }
 
     #[proptest]
@@ -318,10 +306,7 @@ mod tests {
         }]);
 
         block_on(uci.run()).expect("is ok");
-        assert!(matches!(
-            uci.output.last(),
-            Some(Outbound::BestMove(Some(..)))
-        ));
+        assert_matches!(uci.output.last(), Some(Outbound::BestMove(Some(..))));
     }
 
     #[proptest]
@@ -345,10 +330,7 @@ mod tests {
         }]);
 
         block_on(uci.run()).expect("is ok");
-        assert!(matches!(
-            uci.output.last(),
-            Some(Outbound::BestMove(Some(..)))
-        ));
+        assert_matches!(uci.output.last(), Some(Outbound::BestMove(Some(..))));
     }
 
     #[proptest]
@@ -360,10 +342,7 @@ mod tests {
         mut uci: MockUci,
     ) {
         block_on(uci.run()).expect("is ok");
-        assert!(matches!(
-            uci.output.last(),
-            Some(Outbound::BestMove(Some(..)))
-        ));
+        assert_matches!(uci.output.last(), Some(Outbound::BestMove(Some(..))));
     }
 
     #[proptest]
@@ -375,7 +354,7 @@ mod tests {
         mut uci: MockUci,
     ) {
         block_on(uci.run()).expect("is ok");
-        assert!(matches!(uci.output.last(), Some(Outbound::BestMove(None))));
+        assert_matches!(uci.output.last(), Some(Outbound::BestMove(None)));
     }
 
     #[proptest]
@@ -394,10 +373,7 @@ mod tests {
         mut uci: MockUci,
     ) {
         block_on(uci.run()).expect("is ok");
-        assert!(matches!(
-            uci.output.last(),
-            Some(Outbound::BestMove(Some(..)))
-        ));
+        assert_matches!(uci.output.last(), Some(Outbound::BestMove(Some(..))));
     }
 
     #[proptest]
@@ -424,7 +400,7 @@ mod tests {
         uci.input = MockStream::new([Inbound::Perft(p)]);
 
         block_on(uci.run()).expect("is ok");
-        assert!(matches!(&*uci.output, [Outbound::Info { .. }]));
+        assert_matches!(&*uci.output, [Outbound::Info { .. }]);
     }
 
     #[proptest]

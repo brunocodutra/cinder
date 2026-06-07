@@ -31,7 +31,7 @@ impl From<Info> for Outbound {
             depth: info.depth().cast(),
             nodes: info.nodes(),
             time: info.time(),
-            pv: Some(info.pv().clone()),
+            pv: Some(info.pv()),
         }
     }
 }

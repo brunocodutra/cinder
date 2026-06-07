@@ -1,5 +1,4 @@
-use crate::chess::Phase;
-use crate::util::{Int, Num};
+use crate::{chess::Phase, util::Int};
 use bytemuck::{Zeroable, zeroed};
 use std::{ptr, slice};
 
@@ -108,7 +107,7 @@ const impl Nnue {
         cursor += unsafe { copy_bytes(&mut nnue.transformer.bias.0, &bytes[cursor..]) };
 
         for phase in Phase::iter() {
-            let nn = &mut nnue.nn[phase.cast::<usize>()];
+            let nn = &mut nnue.nn[phase];
             let mut weight = [[0i8; Li::LEN]; Ln::LEN / 2];
             cursor += unsafe { copy_bytes(&mut weight, &bytes[cursor..]) };
             let mut blocks = [[0i8; 4]; Li::LEN * Ln::LEN / 8];
@@ -117,46 +116,46 @@ const impl Nnue {
         }
 
         for phase in Phase::iter() {
-            let nn = &mut nnue.nn[phase.cast::<usize>()];
+            let nn = &mut nnue.nn[phase];
             cursor += unsafe { copy_bytes(&mut nn.bias.0, &bytes[cursor..]) };
         }
 
         for phase in Phase::iter() {
-            let nn = &mut nnue.nn[phase.cast::<usize>()].next;
+            let nn = &mut nnue.nn[phase].next;
             cursor += unsafe { copy_bytes(&mut nn.weight.0, &bytes[cursor..]) };
         }
 
         for phase in Phase::iter() {
-            let nn = &mut nnue.nn[phase.cast::<usize>()].next.next;
+            let nn = &mut nnue.nn[phase].next.next;
             let mut weight = [[0f32; Ln::LEN]; Ln::LEN / 2];
             cursor += unsafe { copy_bytes(&mut weight, &bytes[cursor..]) };
             arrange_in_blocks(&weight, &mut nn.weight.0);
         }
 
         for phase in Phase::iter() {
-            let nn = &mut nnue.nn[phase.cast::<usize>()].next.next;
+            let nn = &mut nnue.nn[phase].next.next;
             cursor += unsafe { copy_bytes(&mut nn.bias.0, &bytes[cursor..]) };
         }
 
         for phase in Phase::iter() {
-            let nn = &mut nnue.nn[phase.cast::<usize>()].next.next.next;
+            let nn = &mut nnue.nn[phase].next.next.next;
             let mut weight = [[0f32; Ln::LEN]; Ln::LEN / 2];
             cursor += unsafe { copy_bytes(&mut weight, &bytes[cursor..]) };
             arrange_in_blocks(&weight, &mut nn.weight.0);
         }
 
         for phase in Phase::iter() {
-            let nn = &mut nnue.nn[phase.cast::<usize>()].next.next.next;
+            let nn = &mut nnue.nn[phase].next.next.next;
             cursor += unsafe { copy_bytes(&mut nn.bias.0, &bytes[cursor..]) };
         }
 
         for phase in Phase::iter() {
-            let nn = &mut nnue.nn[phase.cast::<usize>()].next.next.next.next;
+            let nn = &mut nnue.nn[phase].next.next.next.next;
             cursor += unsafe { copy_bytes(&mut nn.weight.0, &bytes[cursor..]) };
         }
 
         for phase in Phase::iter() {
-            let nn = &mut nnue.nn[phase.cast::<usize>()].next.next.next.next;
+            let nn = &mut nnue.nn[phase].next.next.next.next;
             let mut bias = 0f32;
             cursor += unsafe { copy_bytes(&mut bias, &bytes[cursor..]) };
             nn.bias.0 = [bias / nn.bias.0.len() as f32; _];
@@ -172,8 +171,7 @@ const impl Nnue {
 
     #[inline(always)]
     pub fn nn(phase: Phase) -> &'static Lin<Lro<Lnn<Lnn<Lno>>>> {
-        let idx = phase.cast::<usize>();
-        unsafe { NNUE.nn.get_unchecked(idx) }
+        &NNUE.nn[phase]
     }
 }
 

@@ -2,6 +2,7 @@ use crate::chess::{Bitboard, File, Flip, Transpose};
 use crate::util::{Assume, Int, Num};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
+use std::ops::{Index, IndexMut};
 use std::{ops::Sub, str::FromStr};
 
 /// A row on the chess board.
@@ -70,7 +71,7 @@ impl Display for Rank {
 }
 
 /// The reason why parsing [`Rank`] failed.
-#[derive(Debug, Display, Error)]
+#[derive(Debug, Display, Copy, Error)]
 #[derive_const(Default, Clone, PartialEq, Eq)]
 #[display("failed to parse rank")]
 pub struct ParseRankError;
@@ -87,6 +88,22 @@ const impl FromStr for Rank {
         c.checked_sub(b'1')
             .and_then(Num::convert)
             .ok_or(ParseRankError)
+    }
+}
+
+const impl<T> Index<Rank> for [T; Rank::MAX as usize + 1] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, r: Rank) -> &Self::Output {
+        self.get(r.cast::<usize>()).assume()
+    }
+}
+
+const impl<T> IndexMut<Rank> for [T; Rank::MAX as usize + 1] {
+    #[inline(always)]
+    fn index_mut(&mut self, r: Rank) -> &mut Self::Output {
+        self.get_mut(r.cast::<usize>()).assume()
     }
 }
 

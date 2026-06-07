@@ -4,7 +4,7 @@ use derive_more::with_trait::Constructor;
 use std::time::Duration;
 
 /// Information about the search result.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Constructor)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Constructor)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Info {
     depth: Depth,
@@ -40,8 +40,8 @@ impl Info {
 
     /// The principal variation.
     #[inline(always)]
-    pub fn pv(&self) -> &Pv {
-        &self.pv
+    pub fn pv(&self) -> Pv {
+        self.pv
     }
 }
 

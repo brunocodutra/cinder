@@ -1,17 +1,16 @@
-use crate::util::{Assume, Int, Num};
-use crate::{chess::*, simd::Aligned};
-use bytemuck::Zeroable;
-use derive_more::with_trait::{Debug, Display, Error};
+use crate::chess::*;
+use crate::util::{Assume, Int, Num, zero};
+use bytemuck::{Zeroable, zeroed};
+use derive_more::with_trait::{Debug, Deref, Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::hash::{Hash, Hasher};
 use std::io::Write as _;
 use std::str::{self, FromStr};
 
 #[cfg(test)]
-use proptest::strategy::LazyJust;
+use proptest::prelude::*;
 
-#[derive(Debug, Hash, Zeroable)]
-#[derive_const(Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Zeroable)]
 pub struct Zobrists {
     pub hash: Zobrist,
     pub pawns: Zobrist,
@@ -21,9 +20,35 @@ pub struct Zobrists {
     pub black: Zobrist,
 }
 
-const impl Zobrists {
+impl Zobrists {
     #[inline(always)]
-    pub fn toggle(&mut self, p: Piece, sq: Square) {
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn new(board: &Board) -> Self {
+        let mut zobrists = Zobrists {
+            hash: ZobristNumbers::castling(board.castles),
+            ..Default::default()
+        };
+
+        if board.turn == Color::Black {
+            zobrists.hash ^= ZobristNumbers::turn();
+        }
+
+        if let Some(ep) = board.en_passant {
+            zobrists.hash ^= ZobristNumbers::en_passant(ep.file());
+        }
+
+        for p in Piece::iter() {
+            for sq in board.by_piece(p) {
+                zobrists.xor(sq, p);
+            }
+        }
+
+        zobrists
+    }
+
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn xor(&mut self, sq: Square, p: Piece) {
         self.hash ^= ZobristNumbers::psq(p, sq);
 
         if p.role() == Role::Pawn {
@@ -47,38 +72,29 @@ const impl Zobrists {
 }
 
 /// The chess board.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(test, derive(test_strategy::Arbitrary))]
+#[derive(Debug, Clone, Copy, Eq, Deref)]
 #[debug("Board({self})")]
 pub struct Board {
-    #[cfg_attr(test, strategy(LazyJust::new(move || {
-        let mut roles = [Bitboard::empty(); 6];
-        for (i, o) in #pieces.iter().enumerate() {
-            if let Some(p) = o {
-                roles[p.role() as usize] |= <Square as Num>::new(i as i8).bitboard();
-            }
-        }
-
-        roles
-    })))]
-    roles: [Bitboard; Role::MAX as usize + 1],
-    #[cfg_attr(test, strategy(LazyJust::new(move || {
-        let mut colors = [Bitboard::empty(); 2];
-        for (i, o) in #pieces.iter().enumerate() {
-            if let Some(p) = o {
-                colors[p.color() as usize] |= <Square as Num>::new(i as i8).bitboard();
-            }
-        }
-
-        colors
-    })))]
-    colors: [Bitboard; Color::MAX as usize + 1],
-    pieces: Aligned<[Option<Piece>; Square::MAX as usize + 1]>,
     pub turn: Color,
     pub castles: Castles,
     pub en_passant: Option<Square>,
     pub halfmoves: u8,
     pub fullmoves: u32,
+
+    #[deref]
+    placement: Placement,
+    squares: SquareByIdx,
+    roles: RoleByIdx,
+}
+
+#[cfg(test)]
+impl Arbitrary for Board {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        any::<Position>().prop_map_into().boxed()
+    }
 }
 
 impl Default for Board {
@@ -88,37 +104,51 @@ impl Default for Board {
         use Piece::*;
 
         #[rustfmt::skip]
-        let pieces = Aligned([
-            Some(WhiteRook), Some(WhiteKnight), Some(WhiteBishop), Some(WhiteQueen), Some(WhiteKing), Some(WhiteBishop), Some(WhiteKnight), Some(WhiteRook),
-            Some(WhitePawn), Some(WhitePawn),   Some(WhitePawn),   Some(WhitePawn),  Some(WhitePawn), Some(WhitePawn),   Some(WhitePawn),   Some(WhitePawn),
-            None,            None,              None,              None,             None,            None,              None,              None,
-            None,            None,              None,              None,             None,            None,              None,              None,
-            None,            None,              None,              None,             None,            None,              None,              None,
-            None,            None,              None,              None,             None,            None,              None,              None,
-            Some(BlackPawn), Some(BlackPawn),   Some(BlackPawn),   Some(BlackPawn),  Some(BlackPawn), Some(BlackPawn),   Some(BlackPawn),   Some(BlackPawn),
-            Some(BlackRook), Some(BlackKnight), Some(BlackBishop), Some(BlackQueen), Some(BlackKing), Some(BlackBishop), Some(BlackKnight), Some(BlackRook),
+        let placement = Placement::new([
+            Place::new(WhiteRook, Idx::new(5)), Place::new(WhiteKnight, Idx::new(3)), Place::new(WhiteBishop, Idx::new(1)), Place::new(WhiteQueen, Idx::new(7)), Place::new(WhiteKing, Idx::new(0)),  Place::new(WhiteBishop, Idx::new(2)), Place::new(WhiteKnight, Idx::new(4)), Place::new(WhiteRook, Idx::new(6)),
+            Place::new(WhitePawn, Idx::new(8)), Place::new(WhitePawn, Idx::new(9)),   Place::new(WhitePawn, Idx::new(10)),  Place::new(WhitePawn, Idx::new(11)), Place::new(WhitePawn, Idx::new(12)), Place::new(WhitePawn, Idx::new(13)),  Place::new(WhitePawn, Idx::new(14)),  Place::new(WhitePawn, Idx::new(15)),
+            zero(),                             zero(),                               zero(),                               zero(),                              zero(),                              zero(),                               zero(),                               zero(),
+            zero(),                             zero(),                               zero(),                               zero(),                              zero(),                              zero(),                               zero(),                               zero(),
+            zero(),                             zero(),                               zero(),                               zero(),                              zero(),                              zero(),                               zero(),                               zero(),
+            zero(),                             zero(),                               zero(),                               zero(),                              zero(),                              zero(),                               zero(),                               zero(),
+            Place::new(BlackPawn, Idx::new(8)), Place::new(BlackPawn, Idx::new(9)),   Place::new(BlackPawn, Idx::new(10)),  Place::new(BlackPawn, Idx::new(11)), Place::new(BlackPawn, Idx::new(12)), Place::new(BlackPawn, Idx::new(13)),  Place::new(BlackPawn, Idx::new(14)),  Place::new(BlackPawn, Idx::new(15)),
+            Place::new(BlackRook, Idx::new(5)), Place::new(BlackKnight, Idx::new(3)), Place::new(BlackBishop, Idx::new(1)), Place::new(BlackQueen, Idx::new(7)), Place::new(BlackKing, Idx::new(0)),  Place::new(BlackBishop, Idx::new(2)), Place::new(BlackKnight, Idx::new(4)), Place::new(BlackRook, Idx::new(6)),
         ]);
 
+        let squares = SquareByIdx::new(&placement);
+        let roles = RoleByIdx::new(&placement);
+
         Self {
-            roles: [
-                Bitboard::new(0x00FF00000000FF00),
-                Bitboard::new(0x4200000000000042),
-                Bitboard::new(0x2400000000000024),
-                Bitboard::new(0x8100000000000081),
-                Bitboard::new(0x0800000000000008),
-                Bitboard::new(0x1000000000000010),
-            ],
-            colors: [
-                Bitboard::new(0x000000000000FFFF),
-                Bitboard::new(0xFFFF000000000000),
-            ],
-            pieces,
             turn: Color::White,
             castles: Castles::all(),
             en_passant: None,
             halfmoves: 0,
             fullmoves: 1,
+            placement,
+            squares,
+            roles,
         }
+    }
+}
+
+impl PartialEq for Board {
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn eq(&self, other: &Self) -> bool {
+        self.turn == other.turn
+            && self.castles == other.castles
+            && self.en_passant == other.en_passant
+            && self.halfmoves == other.halfmoves
+            && self.fullmoves == other.fullmoves
+            && self.placement.pieces() == other.placement.pieces()
+    }
+}
+
+impl Hash for Board {
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.zobrists().hash.hash(state);
     }
 }
 
@@ -130,230 +160,127 @@ impl Board {
         Phase::new((self.occupied().len() - 1) as u8 / 4)
     }
 
-    /// The [`Color`] bitboards.
+    /// The [`Placement`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn colors(&self) -> [Bitboard; 2] {
-        self.colors
+    pub fn placement(&self) -> &Placement {
+        &self.placement
     }
 
-    /// The [`Role`] bitboards.
+    /// Squares by piece [`Idx`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn roles(&self) -> [Bitboard; 6] {
-        self.roles
+    pub fn squares(&self) -> &SquareByIdx {
+        &self.squares
     }
 
-    /// The [`Piece`]s table.
+    /// Roles by piece [`Idx`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn pieces(&self) -> &Aligned<[Option<Piece>; Square::MAX as usize + 1]> {
-        &self.pieces
+    pub fn roles(&self) -> &RoleByIdx {
+        &self.roles
     }
 
     /// [`Square`]s occupied.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn occupied(&self) -> Bitboard {
-        self.colors[Color::White as usize] ^ self.colors[Color::Black as usize]
+        self.placement.occupied()
     }
 
     /// [`Square`]s occupied by [`Piece`]s of a [`Color`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn by_color(&self, c: Color) -> Bitboard {
-        self.colors[c as usize]
+        self.placement.by_color(c)
     }
 
     /// [`Square`]s occupied by [`Piece`]s of a [`Role`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn by_role(&self, r: Role) -> Bitboard {
-        self.roles[r as usize]
+        self.placement.by_role(r)
     }
 
     /// [`Square`]s occupied by a [`Piece`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn by_piece(&self, p: Piece) -> Bitboard {
-        self.by_color(p.color()) & self.by_role(p.role())
-    }
-
-    /// The [`Color`] of the piece on the given [`Square`], if any.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn color_on(&self, sq: Square) -> Option<Color> {
-        self.piece_on(sq).map(Piece::color)
-    }
-
-    /// The [`Role`] of the piece on the given [`Square`], if any.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn role_on(&self, sq: Square) -> Option<Role> {
-        self.piece_on(sq).map(Piece::role)
-    }
-
-    /// The [`Piece`] on the given [`Square`], if any.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn piece_on(&self, sq: Square) -> Option<Piece> {
-        self.pieces[sq as usize]
+        self.placement.by_piece(p)
     }
 
     /// [`Square`] occupied by a the king of a [`Color`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn king(&self, side: Color) -> Option<Square> {
-        let piece = Piece::new(Role::King, side);
-        self.by_piece(piece).into_iter().next()
-    }
-
-    /// Squares occupied by pinned [`Piece`]s of a [`Color`].
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn pinned(&self, c: Color, mask: Bitboard) -> Bitboard {
-        let ours = mask & self.by_color(c);
-        let theirs = mask & self.by_color(!c);
-        let occ = ours ^ theirs;
-
-        let king = self.king(c).assume();
-        let queens = self.by_role(Role::Queen);
-
-        let mut pinned = Bitboard::empty();
-        for &role in &[Role::Bishop, Role::Rook] {
-            let slider = Piece::new(role, c);
-            for wc in theirs & slider.attacks(king, theirs) & (queens | self.by_role(role)) {
-                let blockers = occ & Bitboard::segment(king, wc);
-                if blockers.len() == 1 {
-                    pinned |= blockers & ours;
-                }
-            }
-        }
-
-        pinned
-    }
-
-    /// Squares occupied by [`Piece`]s giving check to the king of a [`Color`].
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn checkers(&self, c: Color, mask: Bitboard) -> Bitboard {
-        let ours = mask & self.by_color(c);
-        let theirs = mask & self.by_color(!c);
-        let occ = ours ^ theirs;
-
-        let king = self.king(c).assume();
-        let queens = self.by_role(Role::Queen);
-
-        let mut checkers = Bitboard::empty();
-        for &role in &[Role::Pawn, Role::Knight] {
-            let stepper = Piece::new(role, c);
-            checkers |= theirs & self.by_role(role) & stepper.attacks(king, occ);
-        }
-
-        for &role in &[Role::Bishop, Role::Rook] {
-            let slider = Piece::new(role, c);
-            for wc in theirs & slider.attacks(king, theirs) & (queens | self.by_role(role)) {
-                let blockers = occ & Bitboard::segment(king, wc);
-                if blockers.is_empty() {
-                    checkers |= wc.bitboard();
-                }
-            }
-        }
-
-        checkers
+        self.squares[side][Idx::KING]
     }
 
     /// Squares giving direct check to the king of a [`Color`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn checking(&self, c: Color) -> [Bitboard; 4] {
-        let occ = self.occupied();
-        let king = self.king(c).assume();
+        let rays = self.king(c).assume().rays();
+        let furled = self.furl(*rays);
+        let mask = furled.visible().unfurl(*rays.inv()) & rays.inv().valid();
 
-        [
-            Piece::new(Role::Pawn, c).attacks(king, occ),
-            Piece::new(Role::Knight, c).attacks(king, occ),
-            Piece::new(Role::Bishop, c).attacks(king, occ),
-            Piece::new(Role::Rook, c).attacks(king, occ),
-        ]
+        use Role::*;
+        let pawns = furled.attacks(Piece::new(Pawn, c)).unfurl(*rays.inv());
+        let knights = furled.attacks(Piece::new(Knight, c)).unfurl(*rays.inv());
+        let bishops = furled.attacks(Piece::new(Bishop, c)).unfurl(*rays.inv());
+        let rooks = furled.attacks(Piece::new(Rook, c)).unfurl(*rays.inv());
+        [pawns & mask, knights & mask, bishops & mask, rooks & mask]
     }
 
-    /// Squares occupied by [`Square`]s threatened by [`Piece`]s of a [`Color`].
+    /// Computes [`Pins`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn threats(&self, c: Color) -> Bitboard {
-        let ours = self.by_color(!c);
-        let theirs = self.by_color(c);
-        let occ = ours ^ theirs;
+    pub fn pins(&self, threats: &Threats) -> Pins {
+        Pins::new(self, threats)
+    }
 
-        let king = self.king(!c).assume();
-        let pawns = theirs & self.by_role(Role::Pawn);
-        let mut threats = Bitboard::empty();
-
-        use File::*;
-        threats |= match c {
-            Color::White => ((pawns << 7) & !H.bitboard()) | ((pawns << 9) & !A.bitboard()),
-            Color::Black => ((pawns >> 7) & !A.bitboard()) | ((pawns >> 9) & !H.bitboard()),
-        };
-
-        let blockers = occ.without(king);
-        for &role in &[Role::Knight, Role::King] {
-            for wc in theirs & self.by_role(role) {
-                threats |= Piece::new(role, c).attacks(wc, blockers);
-            }
-        }
-
-        for &role in &[Role::Bishop, Role::Rook] {
-            for wc in theirs & (self.by_role(role) | self.by_role(Role::Queen)) {
-                threats |= Piece::new(role, c).attacks(wc, blockers);
-            }
-        }
-
-        threats
+    /// Computes [`Threats`] .
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn threats(&self) -> Threats {
+        Threats::new(self)
     }
 
     /// Computes the [zobrist hashes](`Zobrists`).
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn zobrists(&self) -> Zobrists {
-        let mut zobrists = Zobrists {
-            hash: ZobristNumbers::castling(self.castles),
-            ..Default::default()
-        };
-
-        if self.turn == Color::Black {
-            zobrists.hash ^= ZobristNumbers::turn();
-        }
-
-        if let Some(ep) = self.en_passant {
-            zobrists.hash ^= ZobristNumbers::en_passant(ep.file());
-        }
-
-        for p in Piece::iter() {
-            for sq in self.by_piece(p) {
-                zobrists.toggle(p, sq);
-            }
-        }
-
-        zobrists
+        Zobrists::new(self)
     }
 
-    /// Toggles a piece on a square.
+    /// Removes a [`Place`] from a [`Square`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn toggle(&mut self, p: Piece, sq: Square) {
-        self.pieces[sq as usize] = self.pieces[sq as usize].xor(Some(p));
+    pub fn outplace(&mut self, sq: Square) {
+        debug_assert_ne!(self.placement[sq], Place::empty());
 
-        let bit = sq.bitboard();
-        self.roles[p.role() as usize] ^= bit;
-        self.colors[p.color() as usize] ^= bit;
+        let idx = self.placement[sq].idx().assume();
+        let color = self.placement[sq].color().assume();
+
+        self.roles[color][idx] = None;
+        self.squares[color][idx] = None;
+        self.placement = self.placement.splice(sq.bitboard(), zeroed());
     }
-}
 
-impl Hash for Board {
+    /// Relocates a [`Place`] to a [`Square`].
     #[inline(always)]
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.zobrists().hash.hash(state);
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn displace(&mut self, wc: Square, wt: Square, p: Place) {
+        debug_assert_ne!(self.placement[wc], Place::empty());
+        debug_assert_eq!(self.placement[wt], Place::empty());
+
+        let idx = p.idx().assume();
+        let color = p.color().assume();
+
+        self.roles[color][idx] = p.role();
+        self.squares[color][idx] = Some(wt);
+        self.placement = self.placement.splice(wc.bitboard(), zeroed());
+        self.placement = self.placement.splice(wt.bitboard(), p);
     }
 }
 
@@ -367,7 +294,7 @@ impl Display for Board {
                 buffer[0] = if sq.rank() == Rank::First { b' ' } else { b'/' };
             }
 
-            match self.piece_on(sq) {
+            match self.placement[sq].piece() {
                 None => skip += 1,
                 Some(p) => {
                     buffer[1] = buffer[0];
@@ -409,8 +336,7 @@ impl Display for Board {
 }
 
 /// The reason why parsing the FEN string failed.
-#[derive(Debug, Display, Error)]
-#[derive_const(Clone, PartialEq, Eq)]
+#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, Error)]
 pub enum ParseFenError {
     #[display("failed to parse piece placement")]
     InvalidPlacement,
@@ -439,27 +365,40 @@ impl FromStr for Board {
             return Err(ParseFenError::InvalidPlacement);
         };
 
-        let mut pieces: Aligned<[_; Square::MAX as usize + 1]> = Aligned([None; _]);
-        let mut roles: [_; Role::MAX as usize + 1] = Default::default();
-        let mut colors: [_; Color::MAX as usize + 1] = Default::default();
+        let mut idx = [0u8; 2];
+        let mut placement = Placement::default();
+        let mut squares = SquareByIdx::default();
+        let mut roles = RoleByIdx::default();
+
         for (rank, segment) in board.split('/').rev().enumerate() {
             let mut file = 0;
             for c in segment.chars() {
-                let mut buffer = [0; 4];
-
                 if file >= 8 || rank >= 8 {
                     return Err(ParseFenError::InvalidPlacement);
                 } else if let Some(skip) = c.to_digit(10) {
                     file += skip;
-                } else if let Ok(p) = Piece::from_str(c.encode_utf8(&mut buffer)) {
-                    let sq = Square::new(File::new(file as i8), Rank::new(rank as i8));
-                    colors[p.color() as usize] ^= sq.bitboard();
-                    roles[p.role() as usize] ^= sq.bitboard();
-                    pieces[sq as usize] = Some(p);
-                    file += 1;
-                } else {
-                    return Err(ParseFenError::InvalidPlacement);
+                    continue;
                 }
+
+                let mut buffer = [0; 4];
+                let sq = Square::new(File::new(file as i8), Rank::new(rank as i8));
+                let Ok(p) = Piece::from_str(c.encode_utf8(&mut buffer)) else {
+                    return Err(ParseFenError::InvalidPlacement);
+                };
+
+                let idx = if p.role() == Role::King {
+                    Idx::new(0)
+                } else if idx[p.color()] >= Idx::MAX {
+                    return Err(ParseFenError::InvalidPlacement);
+                } else {
+                    idx[p.color()] += 1;
+                    Idx::new(idx[p.color()])
+                };
+
+                placement[sq] = Place::new(p, idx);
+                squares[p.color()][idx] = Some(sq);
+                roles[p.color()][idx] = Some(p.role());
+                file += 1;
             }
         }
 
@@ -500,14 +439,14 @@ impl FromStr for Board {
         }
 
         Ok(Board {
-            roles,
-            colors,
-            pieces,
             turn,
             castles,
             en_passant,
             halfmoves,
             fullmoves,
+            placement,
+            squares,
+            roles,
         })
     }
 }
@@ -542,15 +481,15 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn by_color_returns_squares_occupied_by_pieces_of_a_color(b: Board, c: Color) {
         for sq in b.by_color(c) {
-            assert_eq!(b.piece_on(sq).map(Piece::color), Some(c));
+            assert_eq!(b[sq].color(), Some(c));
         }
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn by_color_returns_squares_occupied_by_pieces_of_a_role(b: Board, r: Role) {
+    fn by_role_returns_squares_occupied_by_pieces_of_a_role(b: Board, r: Role) {
         for sq in b.by_role(r) {
-            assert_eq!(b.piece_on(sq).map(Piece::role), Some(r));
+            assert_eq!(b[sq].role(), Some(r));
         }
     }
 
@@ -558,7 +497,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn by_piece_returns_squares_occupied_by_a_piece(b: Board, p: Piece) {
         for sq in b.by_piece(p) {
-            assert_eq!(b.piece_on(sq), Some(p));
+            assert_eq!(b[sq].piece(), Some(p));
         }
     }
 
@@ -566,39 +505,29 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn king_returns_square_occupied_by_a_king(b: Board, c: Color) {
         if let Some(sq) = b.king(c) {
-            assert_eq!(b.piece_on(sq), Some(Piece::new(Role::King, c)));
+            assert_eq!(b[sq].piece(), Some(Piece::new(Role::King, c)));
         }
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn piece_on_returns_piece_on_the_given_square(b: Board, sq: Square) {
-        assert_eq!(
-            b.piece_on(sq),
-            Option::zip(b.color_on(sq), b.role_on(sq)).map(|(c, r)| Piece::new(r, c))
-        );
+    fn outplace_removes_place_from_square(mut b: Board, #[filter(!#b[#sq].is_empty())] sq: Square) {
+        b.outplace(sq);
+        assert_eq!(b[sq], Place::empty());
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn toggle_removes_piece_from_square(
+    fn displace_relocates_place_to_square(
         mut b: Board,
-        #[filter(#b.piece_on(#sq).is_some())] sq: Square,
+        #[filter(!#b[#wc].is_empty())] wc: Square,
+        #[filter(#b[#wt].is_empty())] wt: Square,
     ) {
-        let p = b.piece_on(sq).unwrap();
-        b.toggle(p, sq);
-        assert_eq!(b.piece_on(sq), None);
-    }
+        let p = b[wc];
 
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
-    fn toggle_places_piece_on_square(
-        mut b: Board,
-        #[filter(#b.piece_on(#sq).is_none())] sq: Square,
-        p: Piece,
-    ) {
-        b.toggle(p, sq);
-        assert_eq!(b.piece_on(sq), Some(p));
+        b.displace(wc, wt, p);
+        assert_eq!(b[wc], Place::empty());
+        assert_eq!(b[wt], p);
     }
 
     #[proptest]
@@ -610,7 +539,7 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     #[expect(clippy::string_slice)]
-    fn parsing_board_fails_for_invalid_fen(
+    fn parsing_board_fails_for_invalid_placement(
         b: Board,
         #[strategy(..=#b.to_string().len())] n: usize,
         #[strategy("[^[:ascii:]]+")] r: String,

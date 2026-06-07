@@ -1,5 +1,5 @@
 use std::ops::{Mul, Shl, Shr};
-use std::{mem::transmute, simd::prelude::*};
+use std::simd::prelude::*;
 
 /// Trait for [`Simd<i16, _>` ] types that implement `mul_high`.
 pub trait MulHigh: SimdInt<Scalar = i16> {
@@ -19,9 +19,7 @@ impl MulHigh for i16x32 {
 
         unsafe {
             use std::arch::x86_64::*;
-            let a = transmute::<Self, __m512i>(self);
-            let b = transmute::<Self, __m512i>(x.shl(16 - B as i16));
-            transmute::<__m512i, Self>(_mm512_mulhi_epi16(a, b))
+            _mm512_mulhi_epi16(self.into(), x.shl(16 - B as i16).into()).into()
         }
     }
 }
@@ -38,9 +36,7 @@ impl MulHigh for i16x16 {
 
         unsafe {
             use std::arch::x86_64::*;
-            let a = transmute::<Self, __m256i>(self);
-            let b = transmute::<Self, __m256i>(x.shl(16 - B as i16));
-            transmute::<__m256i, Self>(_mm256_mulhi_epi16(a, b))
+            _mm256_mulhi_epi16(self.into(), x.shl(16 - B as i16).into()).into()
         }
     }
 }
@@ -57,9 +53,7 @@ impl MulHigh for i16x8 {
 
         unsafe {
             use std::arch::x86_64::*;
-            let a = transmute::<Self, __m128i>(self);
-            let b = transmute::<Self, __m128i>(x.shl(16 - B as i16));
-            transmute::<__m128i, Self>(_mm_mulhi_epi16(a, b))
+            _mm_mulhi_epi16(self.into(), x.shl(16 - B as i16).into()).into()
         }
     }
 
@@ -74,9 +68,7 @@ impl MulHigh for i16x8 {
 
         unsafe {
             use std::arch::aarch64::*;
-            let a = transmute::<Self, int16x8_t>(self);
-            let b = transmute::<Self, int16x8_t>(x.shl(16 - 1 - B as i16));
-            transmute::<int16x8_t, Self>(vqdmulhq_s16(a, b))
+            vqdmulhq_s16(self.into(), x.shl(16 - 1 - B as i16).into()).into()
         }
     }
 

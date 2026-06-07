@@ -1,5 +1,4 @@
-use std::mem::{transmute, transmute_copy};
-use std::simd::prelude::*;
+use std::{mem::transmute, simd::prelude::*};
 
 /// Trait for [`Simd<i16, _>` ] types that implement `pack`.
 pub trait Pack: SimdInt<Scalar = i16> {
@@ -21,9 +20,7 @@ impl Pack for i16x32 {
 
         unsafe {
             use std::arch::x86_64::*;
-            let a = transmute::<Self, __m512i>(self);
-            let b = transmute::<Self, __m512i>(x);
-            transmute::<__m512i, Self::Output>(_mm512_packus_epi16(a, b))
+            _mm512_packus_epi16(self.into(), x.into()).into()
         }
     }
 }
@@ -39,9 +36,7 @@ impl Pack for i16x16 {
 
         unsafe {
             use std::arch::x86_64::*;
-            let a = transmute::<Self, __m256i>(self);
-            let b = transmute::<Self, __m256i>(x);
-            transmute::<__m256i, Self::Output>(_mm256_packus_epi16(a, b))
+            _mm256_packus_epi16(self.into(), x.into()).into()
         }
     }
 }
@@ -57,9 +52,7 @@ impl Pack for i16x8 {
 
         unsafe {
             use std::arch::x86_64::*;
-            let a = transmute::<Self, __m128i>(self);
-            let b = transmute::<Self, __m128i>(x);
-            transmute::<__m128i, Self::Output>(_mm_packus_epi16(a, b))
+            _mm_packus_epi16(self.into(), x.into()).into()
         }
     }
 
@@ -71,9 +64,9 @@ impl Pack for i16x8 {
 
         unsafe {
             use std::arch::aarch64::*;
-            let a = vqmovun_s16(transmute::<Self, int16x8_t>(self));
-            let b = vqmovun_s16(transmute::<Self, int16x8_t>(x));
-            transmute::<uint8x16_t, Self::Output>(vcombine_u8(a, b))
+            let a = vqmovun_s16(self).into();
+            let b = vqmovun_s16(x).into();
+            vcombine_u8(a, b).into()
         }
     }
 
@@ -93,7 +86,7 @@ fn fallback(a: i16x8, b: i16x8) -> u8x16 {
     debug_assert!(b.simd_lt(Simd::splat(255)).all());
     let a = a.simd_max(Simd::splat(0)).cast::<u8>();
     let b = b.simd_max(Simd::splat(0)).cast::<u8>();
-    unsafe { transmute_copy::<[u8x8; 2], u8x16>(&[a, b]) }
+    unsafe { transmute::<[u8x8; 2], u8x16>([a, b]) }
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 use crate::nnue::{Accumulator, Feature, Layer};
-use crate::simd::Aligned;
+use crate::simd::*;
 use crate::util::{Assume, Num};
 use bytemuck::Zeroable;
 use derive_more::with_trait::Debug;

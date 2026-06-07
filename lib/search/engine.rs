@@ -1,4 +1,4 @@
-use crate::chess::{Move, MoveSet, Position, Role, Zobrists};
+use crate::chess::{Move, Position, RatedMoves, Role, Zobrists};
 use crate::search::{ControlFlow::*, *};
 use crate::{nnue::Evaluator, params::Params, syzygy::Syzygy, util::*};
 use bytemuck::{Zeroable, fill_zeroes, zeroed};
@@ -191,7 +191,7 @@ impl<'a> Searcher<'a> {
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn update_history(&mut self, depth: f32, best: Move, moves: &Moves) {
+    fn update_history(&mut self, depth: f32, best: Move, moves: &RatedMoves) {
         let bonus = Params::history_bonus(0)
             .mul_add(depth, *Params::history_bonus(1))
             .min(*Params::history_bonus(2));
@@ -443,8 +443,7 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(alpha));
         }
 
-        self.stack.values[ply.cast::<usize>()] = self.evaluate();
-
+        self.stack.values[ply] = self.evaluate();
         let transposition = self.transposition();
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0) {
             if let Some(t) = transposition {
@@ -468,7 +467,7 @@ impl<'a> Searcher<'a> {
 
         let is_check = self.stack.pos.is_check();
         let was_pv = transposition.is_some_and(|t| t.was_pv);
-        let mut moves = Moves::from_iter(self.stack.pos.moves().unpack_if(MoveSet::is_noisy));
+        let mut moves = RatedMoves::from_iter(self.stack.pos.noisy());
 
         moves.rate(|m| {
             if Some(m) == transposition.and_then(|t| t.best) {
@@ -579,8 +578,7 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(alpha));
         }
 
-        self.stack.values[ply.cast::<usize>()] = self.evaluate();
-
+        self.stack.values[ply] = self.evaluate();
         let transposition = self.transposition();
         if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0) {
             if let Some(t) = transposition.filter(|t| t.depth.cast::<f32>() >= depth) {
@@ -688,8 +686,8 @@ impl<'a> Searcher<'a> {
         let was_cut = transposition.is_some_and(|t| matches!(t.score, ScoreBound::Lower(_)));
         let was_quiet = transposition.is_none_or(|t| t.best.is_none_or(Move::is_quiet));
 
-        let mut moves = Moves::from_iter(self.stack.pos.moves().unpack());
-        let killer = self.stack.killers[ply.cast::<usize>()];
+        let mut moves = RatedMoves::from_iter(self.stack.pos.moves());
+        let killer = self.stack.killers[ply];
 
         moves.rate(|m| {
             if Some(m) == transposition.and_then(|t| t.best) {
@@ -921,7 +919,7 @@ impl<'a> Searcher<'a> {
         if matches!(score, ScoreBound::Lower(_)) {
             self.update_history(depth, head, &moves);
             if head.is_quiet() {
-                self.stack.killers[ply.cast::<usize>()].insert(head);
+                self.stack.killers[ply].insert(head);
             }
         }
 
@@ -936,7 +934,7 @@ impl<'a> Searcher<'a> {
     #[inline(always)]
     fn root(
         &mut self,
-        moves: &mut Moves,
+        moves: &mut RatedMoves,
         depth: f32,
         bounds: Range<Score>,
     ) -> Result<Pv, Interrupted> {
@@ -1056,7 +1054,7 @@ impl<'a> Searcher<'a> {
 
     /// An implementation of aspiration windows with iterative deepening.
     #[inline(always)]
-    fn aw(&mut self, mut moves: Moves) -> impl Iterator<Item = Info> {
+    fn aw(&mut self, mut moves: RatedMoves) -> impl Iterator<Item = Info> {
         #[inline(always)]
         gen move {
             for depth in Depth::iter() {
@@ -1091,13 +1089,13 @@ impl<'a> Searcher<'a> {
                             upper = score.cast::<f32>() + window;
                             reduction += Params::aw_fh_reduction(0);
                             let (time, nodes) = (self.ctrl.elapsed(), self.ctrl.visited());
-                            yield Info::new(depth - 1, time, nodes, self.stack.pv.clone());
+                            yield Info::new(depth - 1, time, nodes, self.stack.pv);
                         }
 
                         _ => {
                             self.stack.pv = partial;
                             let (time, nodes) = (self.ctrl.elapsed(), self.ctrl.visited());
-                            break yield Info::new(depth, time, nodes, self.stack.pv.clone());
+                            break yield Info::new(depth, time, nodes, self.stack.pv);
                         }
                     }
                 }
@@ -1134,12 +1132,12 @@ impl<'e, 'p> Search<'e, 'p> {
 
     /// Moves to search.
     #[inline(always)]
-    fn moves_to_search(&self) -> Moves {
+    fn moves_to_search(&self) -> RatedMoves {
         let Some(dtz) = self.engine.shared.syzygy.dtz(self.pos) else {
-            return self.pos.moves().unpack().collect();
+            return RatedMoves::from_iter(self.pos.moves());
         };
 
-        Moves::from_iter(self.pos.moves().unpack().filter(|m| {
+        RatedMoves::from_iter(self.pos.moves().into_iter().filter(|m| {
             let mut next = Position::clone(self.pos);
             next.play(*m);
 
@@ -1164,7 +1162,7 @@ impl<'e, 'p> Search<'e, 'p> {
     /// Concludes the search and returns [`Info`] about the best [`Pv`].
     #[inline(always)]
     pub fn conclude(self) -> Info {
-        self.result.clone()
+        self.result
     }
 }
 
@@ -1201,7 +1199,7 @@ impl Stream for Search<'_, '_> {
                 poll => return poll,
             };
 
-            this.result = info.clone();
+            this.result = info;
             return Poll::Ready(Some(info));
         }
 
@@ -1229,7 +1227,7 @@ impl Stream for Search<'_, '_> {
                 };
 
                 search.result = pv.into();
-                return Poll::Ready(Some(search.result.clone()));
+                return Poll::Ready(Some(search.result));
             }
 
             search.engine.shared.tt.age();
@@ -1386,7 +1384,7 @@ mod tests {
     fn nw_returns_transposition_if_beta_too_high(
         #[by_ref] mut e: Engine,
         #[filter(#pos.outcome().is_none() && !#pos.is_check())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
+        #[map(|s: Selector| s.select(#pos.moves()))] m: Move,
         #[filter(!#b.is_decisive())] b: Score,
         was_pv: bool,
         d: Depth,
@@ -1411,7 +1409,7 @@ mod tests {
     fn nw_returns_transposition_if_beta_too_low(
         #[by_ref] mut e: Engine,
         #[filter(#pos.outcome().is_none() && !#pos.is_check())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
+        #[map(|s: Selector| s.select(#pos.moves()))] m: Move,
         #[filter(!#b.is_decisive())] b: Score,
         was_pv: bool,
         d: Depth,
@@ -1435,7 +1433,7 @@ mod tests {
     fn nw_returns_transposition_if_exact(
         #[by_ref] mut e: Engine,
         #[filter(#pos.outcome().is_none() && !#pos.is_check())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves().unpack()))] m: Move,
+        #[map(|s: Selector| s.select(#pos.moves()))] m: Move,
         #[filter(!#b.is_decisive())] b: Score,
         was_pv: bool,
         d: Depth,
@@ -1529,7 +1527,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn ab_returns_lost_score_if_game_ends_in_checkmate(
         mut e: Engine,
-        #[filter(#pos.outcome().is_some_and(Outcome::is_decisive))] pos: Evaluator,
+        #[filter(#pos.is_checkmate())] pos: Evaluator,
         m: Move,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
@@ -1557,7 +1555,7 @@ mod tests {
         s: Score,
     ) {
         let pos = Evaluator::new(pos);
-        let moves = Moves::from_iter(pos.moves().unpack());
+        let moves = RatedMoves::from_iter(pos.moves());
         let global = GlobalControl::new(&pos, Limits::time(Duration::ZERO));
         let ctrl = LocalControl::active(&global);
         let stack = Stack::new(pos, Pv::empty(s));
@@ -1574,7 +1572,7 @@ mod tests {
         s: Score,
     ) {
         let pos = Evaluator::new(pos);
-        let moves = Moves::from_iter(pos.moves().unpack());
+        let moves = RatedMoves::from_iter(pos.moves());
         let global = GlobalControl::new(&pos, Limits::depth(Depth::lower()));
         let ctrl = LocalControl::active(&global);
         let stack = Stack::new(pos, Pv::empty(s));
@@ -1591,7 +1589,7 @@ mod tests {
         s: Score,
     ) {
         let pos = Evaluator::new(pos);
-        let moves = Moves::from_iter(pos.moves().unpack());
+        let moves = RatedMoves::from_iter(pos.moves());
         let global = GlobalControl::new(&pos, Limits::nodes(0));
         let ctrl = LocalControl::active(&global);
         let stack = Stack::new(pos, Pv::empty(s));

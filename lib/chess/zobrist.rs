@@ -1,11 +1,11 @@
-use crate::{chess::*, util::Key};
+use crate::chess::{Castles, File, Piece, PieceTo, Square};
+use crate::{simd::*, util::Key};
 use bytemuck::{Pod, Zeroable, zeroed};
-use std::mem::transmute;
 
 /// A type representing a [`Position`]'s [zobrist hashes](`Zobrists`).
 pub type Zobrist = Key;
 
-#[derive(Debug, Copy, Clone, Zeroable, Pod)]
+#[derive(Debug, Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
 pub struct ZobristNumbers {
     pieces: PieceTo<u64>,
@@ -17,18 +17,17 @@ pub struct ZobristNumbers {
 /// Zobrist constants initialized using the [Wyrand] PRNG.
 ///
 /// [Wyrand]: https://github.com/wangyi-fudan/wyhash
-static ZOBRIST: ZobristNumbers = const {
-    let mut zobrist: ZobristNumbers = zeroed();
+const ZOBRIST: Aligned<ZobristNumbers> = const {
+    let mut zobrist: Aligned<ZobristNumbers> = zeroed();
 
-    const NUMBERS: usize = size_of::<ZobristNumbers>() / size_of::<u64>();
-    let numbers = unsafe { transmute::<&mut ZobristNumbers, &mut [u64; NUMBERS]>(&mut zobrist) };
+    let numbers = zobrist.as_mut::<[u64; size_of::<ZobristNumbers>() / size_of::<u64>()]>();
     let mut state = 0x88C65730C3783F39u64;
 
     let mut i = 0;
     while i < numbers.len() {
         state = state.wrapping_add(0xA0761D6478BD642F);
-        let hi_lo = (state as u128).wrapping_mul((state ^ 0xE7037ED1A0B428DB) as u128);
-        let [hi, lo] = unsafe { transmute::<u128, [u64; 2]>(hi_lo) };
+        let hi_lo = Aligned((state as u128).wrapping_mul((state ^ 0xE7037ED1A0B428DB) as u128));
+        let [hi, lo] = hi_lo.as_ref::<[u64; 2]>();
         numbers[i] = hi ^ lo;
         i += 1;
     }
@@ -39,17 +38,17 @@ static ZOBRIST: ZobristNumbers = const {
 const impl ZobristNumbers {
     #[inline(always)]
     pub fn psq(piece: Piece, sq: Square) -> Zobrist {
-        Zobrist::new(ZOBRIST.pieces[piece as usize][sq as usize])
+        Zobrist::new(ZOBRIST.pieces[piece][sq])
     }
 
     #[inline(always)]
     pub fn castling(castles: Castles) -> Zobrist {
-        Zobrist::new(ZOBRIST.castles[castles.index() as usize])
+        Zobrist::new(ZOBRIST.castles[castles])
     }
 
     #[inline(always)]
     pub fn en_passant(file: File) -> Zobrist {
-        Zobrist::new(ZOBRIST.en_passant[file as usize])
+        Zobrist::new(ZOBRIST.en_passant[file])
     }
 
     #[inline(always)]

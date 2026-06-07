@@ -212,7 +212,7 @@ where
 }
 
 /// The reason why parsing [`Bounded`] failed.
-#[derive(Debug, Display, Error)]
+#[derive(Debug, Display, Copy, Error)]
 #[derive_const(Default, Clone, PartialEq, Eq)]
 #[display("failed to parse bounded integer")]
 pub struct ParseBoundedIntegerError;

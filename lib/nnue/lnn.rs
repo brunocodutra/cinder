@@ -36,9 +36,9 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>>> Synapse for Lnn<S> {
         const K: usize = 2;
 
         const { assert!(I.is_multiple_of(K)) }
-        let xs: &[[f32; K]; I / K] = input.cast();
-        let ws: &[[[V2<f32>; O / W2]; K]; I / K] = self.weight.cast();
-        let bs: &[V2<f32>; O / W2] = self.bias.cast();
+        let xs: &[[f32; K]; I / K] = input.as_ref();
+        let ws: &[[[V2<f32>; O / W2]; K]; I / K] = self.weight.as_ref();
+        let bs: &[V2<f32>; O / W2] = self.bias.as_ref();
 
         let mut acc = [[Simd::splat(0.); K]; O / W2];
 
@@ -90,6 +90,6 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>>> Synapse for Lnn<S> {
             output.map(|i| i.simd_min(Simd::splat(0.)).powi::<2>()),
         ]);
 
-        self.next.forward(active.cast())
+        self.next.forward(active.as_ref())
     }
 }

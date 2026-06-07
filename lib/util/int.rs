@@ -152,6 +152,14 @@ pub const trait IntRepr:
 {
     /// This primitive's size in number of bits.
     const BITS: u32;
+
+    fn count_ones(self) -> u32;
+
+    fn leading_zeros(self) -> u32;
+    fn trailing_zeros(self) -> u32;
+
+    fn wrapping_add(self, rhs: Self) -> Self;
+    fn wrapping_sub(self, rhs: Self) -> Self;
 }
 
 /// Marker trait for signed primitive integers.
@@ -276,6 +284,31 @@ macro_rules! impl_signed_for {
 
         const impl IntRepr for $i {
             const BITS: u32 = <$i>::BITS;
+
+            #[inline(always)]
+            fn count_ones(self) -> u32 {
+                <$i>::count_ones(self)
+            }
+
+            #[inline(always)]
+            fn leading_zeros(self) -> u32 {
+                <$i>::leading_zeros(self)
+            }
+
+            #[inline(always)]
+            fn trailing_zeros(self) -> u32 {
+                <$i>::trailing_zeros(self)
+            }
+
+            #[inline(always)]
+            fn wrapping_add(self, rhs: Self) -> Self {
+                <$i>::wrapping_add(self, rhs)
+            }
+
+            #[inline(always)]
+            fn wrapping_sub(self, rhs: Self) -> Self {
+                <$i>::wrapping_sub(self, rhs)
+            }
         }
 
         const impl Signed for $i {}
@@ -302,6 +335,31 @@ macro_rules! impl_unsigned_for {
 
         const impl IntRepr for $i {
             const BITS: u32 = <$i>::BITS;
+
+            #[inline(always)]
+            fn count_ones(self) -> u32 {
+                <$i>::count_ones(self)
+            }
+
+            #[inline(always)]
+            fn leading_zeros(self) -> u32 {
+                <$i>::leading_zeros(self)
+            }
+
+            #[inline(always)]
+            fn trailing_zeros(self) -> u32 {
+                <$i>::trailing_zeros(self)
+            }
+
+            #[inline(always)]
+            fn wrapping_add(self, rhs: Self) -> Self {
+                <$i>::wrapping_add(self, rhs)
+            }
+
+            #[inline(always)]
+            fn wrapping_sub(self, rhs: Self) -> Self {
+                <$i>::wrapping_sub(self, rhs)
+            }
         }
 
         const impl Unsigned for $i {}

@@ -26,8 +26,8 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Lin<S
         const { assert!(I.is_multiple_of(2 * W8)) }
         const { assert!(O.is_multiple_of(W2)) }
 
-        let us: &[[V4<i16>; I / W8]; 2] = us.cast();
-        let them: &[[V4<i16>; I / W8]; 2] = them.cast();
+        let us: &[[V4<i16>; I / W8]; 2] = us.as_ref();
+        let them: &[[V4<i16>; I / W8]; 2] = them.as_ref();
 
         let active: Aligned<[[V8<u8>; 2]; I / W8 / 2]> = Aligned(array::from_fn(|i| {
             let xl00 = us[0][2 * i].simd_min(Simd::splat(FTQ));
@@ -50,11 +50,11 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Lin<S
         }));
 
         let mut nzs = Aligned([0u16; I / 4]);
-        let nzs_len = nzs.nzs(active.cast::<[[V2<u32>; 2]; I / W2 / 8]>());
+        let nzs_len = nzs.nzs(active.as_ref::<[[V2<u32>; 2]; I / W2 / 8]>());
 
-        let xs: &[u8x4; I / 4] = active.cast();
-        let ws: &[[V8<i8>; O / W2]; I / 4] = self.weight.cast();
-        let bs: &[V2<f32>; O / W2] = self.bias.cast();
+        let xs: &[u8x4; I / 4] = active.as_ref();
+        let ws: &[[V8<i8>; O / W2]; I / 4] = self.weight.as_ref();
+        let bs: &[V2<f32>; O / W2] = self.bias.as_ref();
 
         #[cfg(any(target_feature = "avx2", target_feature = "neon"))]
         const K: usize = 4;
@@ -74,13 +74,13 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Lin<S
             #[cfg(any(target_feature = "avx2", target_feature = "neon"))]
             let nz3 = *nzs.get(i + 3).assume() as usize;
 
-            let x0 = *Aligned([*xs.get(nz0).assume(); W2]).cast();
-            let x1 = *Aligned([*xs.get(nz1).assume(); W2]).cast();
+            let x0 = Aligned([*xs.get(nz0).assume(); W2]).cast();
+            let x1 = Aligned([*xs.get(nz1).assume(); W2]).cast();
 
             #[cfg(any(target_feature = "avx2", target_feature = "neon"))]
-            let x2 = *Aligned([*xs.get(nz2).assume(); W2]).cast();
+            let x2 = Aligned([*xs.get(nz2).assume(); W2]).cast();
             #[cfg(any(target_feature = "avx2", target_feature = "neon"))]
-            let x3 = *Aligned([*xs.get(nz3).assume(); W2]).cast();
+            let x3 = Aligned([*xs.get(nz3).assume(); W2]).cast();
 
             for (j, a) in acc.iter_mut().enumerate() {
                 {
@@ -97,7 +97,7 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Lin<S
         }
 
         for &nz in nzs.get(nzs_len - nzs_len % K..nzs_len).assume() {
-            let x = *Aligned([*xs.get(nz as usize).assume(); W2]).cast();
+            let x = Aligned([*xs.get(nz as usize).assume(); W2]).cast();
             for (j, a) in acc.iter_mut().enumerate() {
                 a[0] = ws.get(nz as usize).assume()[j].mul_add_4x8(x, a[0]);
             }
@@ -113,7 +113,7 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Lin<S
             output.map(|i| i.simd_min(Simd::splat(0.)).powi::<2>()),
         ]);
 
-        let result = self.next.forward(active.cast()).reduce_sum();
+        let result = self.next.forward(active.as_ref()).reduce_sum();
         result.mul(HLS as f32)
     }
 }

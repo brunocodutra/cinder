@@ -1,9 +1,9 @@
-use crate::chess::{Bitboard, Color, Flip, Magic, Perspective, Rank, Role, Square};
-use crate::util::{Assume, Int, Num};
-use bytemuck::zeroed;
+use crate::chess::{Color, Flip, Role};
+use crate::util::{Assume, Binary, Bits, Int, Num};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
-use std::{cell::SyncUnsafeCell, ops::Shl, str::FromStr};
+use std::ops::{Index, IndexMut};
+use std::{hint::unreachable_unchecked, str::FromStr};
 
 /// A chess [piece][`Role`] of a certain [`Color`].
 #[derive(Debug, Copy, Hash)]
@@ -26,110 +26,6 @@ pub enum Piece {
 }
 
 const impl Piece {
-    #[inline(always)]
-    fn forks(wc: Square, color: Color) -> Bitboard {
-        pub static FORKS: SyncUnsafeCell<[[Bitboard; 64]; 2]> = SyncUnsafeCell::new(zeroed());
-
-        #[cold]
-        #[ctor::ctor]
-        #[cfg(not(miri))]
-        #[inline(never)]
-        unsafe fn init() {
-            let forks = unsafe { FORKS.get().as_mut_unchecked() };
-
-            for color in Color::iter() {
-                for wc in Square::iter() {
-                    let steps = [(-1, 1), (1, 1)];
-                    let moves = Bitboard::fill(wc.perspective(color), &steps, Bitboard::full());
-                    forks[color as usize][wc as usize] = moves.perspective(color).without(wc);
-                }
-            }
-        }
-
-        unsafe { FORKS.get().as_ref_unchecked()[color as usize][wc as usize] }
-    }
-
-    #[inline(always)]
-    fn jumps(wc: Square) -> Bitboard {
-        pub static JUMPS: SyncUnsafeCell<[Bitboard; 64]> = SyncUnsafeCell::new(zeroed());
-
-        #[cold]
-        #[ctor::ctor]
-        #[cfg(not(miri))]
-        #[inline(never)]
-        unsafe fn init() {
-            let jumps = unsafe { JUMPS.get().as_mut_unchecked() };
-
-            for wc in Square::iter() {
-                #[rustfmt::skip]
-                let steps = [(-2, 1), (-1, 2), (1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1)];
-                let moves = Bitboard::fill(wc, &steps, Bitboard::full()).without(wc);
-                jumps[wc as usize] = moves;
-            }
-        }
-
-        unsafe { JUMPS.get().as_ref_unchecked()[wc as usize] }
-    }
-
-    #[inline(always)]
-    fn steps(wc: Square) -> Bitboard {
-        pub static SLIDES: SyncUnsafeCell<[Bitboard; 64]> = SyncUnsafeCell::new(zeroed());
-
-        #[cold]
-        #[ctor::ctor]
-        #[cfg(not(miri))]
-        #[inline(never)]
-        unsafe fn init() {
-            let slides = unsafe { SLIDES.get().as_mut_unchecked() };
-
-            for wc in Square::iter() {
-                #[rustfmt::skip]
-                let steps = [(-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1)];
-                let moves = Bitboard::fill(wc, &steps, Bitboard::full()).without(wc);
-                slides[wc as usize] = moves;
-            }
-        }
-
-        unsafe { SLIDES.get().as_ref_unchecked()[wc as usize] }
-    }
-
-    #[inline(always)]
-    fn slides(idx: usize) -> Bitboard {
-        pub static BITBOARDS: SyncUnsafeCell<[Bitboard; 88772]> = SyncUnsafeCell::new(zeroed());
-
-        #[cold]
-        #[ctor::ctor]
-        #[cfg(not(miri))]
-        #[inline(never)]
-        unsafe fn init() {
-            let bitboard = unsafe { BITBOARDS.get().as_mut_unchecked() };
-
-            for wc in Square::iter() {
-                let magic = Magic::bishop(wc);
-                for bb in magic.mask().subsets() {
-                    let blockers = bb | !magic.mask();
-                    let steps = [(-1, 1), (1, 1), (1, -1), (-1, -1)];
-                    let moves = Bitboard::fill(wc, &steps, blockers).without(wc);
-                    let idx = (bb.wrapping_mul(magic.factor()) >> 55) as usize + magic.offset();
-                    debug_assert!(bitboard[idx] == moves || bitboard[idx] == Bitboard::empty());
-                    bitboard[idx] = moves;
-                }
-
-                let magic = Magic::rook(wc);
-                for bb in magic.mask().subsets() {
-                    let blockers = bb | !magic.mask();
-                    let steps = [(-1, 0), (0, 1), (1, 0), (0, -1)];
-                    let moves = Bitboard::fill(wc, &steps, blockers).without(wc);
-                    let idx = (bb.wrapping_mul(magic.factor()) >> 52) as usize + magic.offset();
-                    debug_assert!(bitboard[idx] == moves || bitboard[idx] == Bitboard::empty());
-                    bitboard[idx] = moves;
-                }
-            }
-        }
-
-        unsafe { *BITBOARDS.get().as_ref_unchecked().get(idx).assume() }
-    }
-
     /// Constructs [`Piece`] from a pair of [`Color`] and [`Role`].
     #[inline(always)]
     pub fn new(r: Role, c: Color) -> Self {
@@ -147,55 +43,6 @@ const impl Piece {
     pub fn color(self) -> Color {
         Num::new(self.get() & 0b1)
     }
-
-    /// This piece's possible attacks from a given square.
-    #[inline(always)]
-    pub fn attacks(self, wc: Square, occupied: Bitboard) -> Bitboard {
-        match self.role() {
-            Role::Pawn => Self::forks(wc, self.color()),
-            Role::Knight => Self::jumps(wc),
-            Role::King => Self::steps(wc),
-
-            Role::Bishop => {
-                let magic = Magic::bishop(wc);
-                let blockers = occupied & magic.mask();
-                let idx = (blockers.wrapping_mul(magic.factor()) >> 55) as usize + magic.offset();
-                Self::slides(idx)
-            }
-
-            Role::Rook => {
-                let magic = Magic::rook(wc);
-                let blockers = occupied & magic.mask();
-                let idx = (blockers.wrapping_mul(magic.factor()) >> 52) as usize + magic.offset();
-                Self::slides(idx)
-            }
-
-            Role::Queen => {
-                let magic = Magic::bishop(wc);
-                let blockers = occupied & magic.mask();
-                let idb = (blockers.wrapping_mul(magic.factor()) >> 55) as usize + magic.offset();
-                let magic = Magic::rook(wc);
-                let blockers = occupied & magic.mask();
-                let idr = (blockers.wrapping_mul(magic.factor()) >> 52) as usize + magic.offset();
-                Self::slides(idb) | Self::slides(idr)
-            }
-        }
-    }
-
-    /// This piece's possible moves from a given square.
-    #[inline(always)]
-    pub fn moves(self, wc: Square, ours: Bitboard, theirs: Bitboard) -> Bitboard {
-        let occ = ours ^ theirs;
-        if self.role() != Role::Pawn {
-            self.attacks(wc, occ) & !ours
-        } else {
-            let empty = !occ;
-            let color = self.color();
-            let third = Rank::Third.bitboard();
-            let push = wc.bitboard().perspective(color).shl(8).perspective(color) & empty;
-            push | ((push.perspective(color) & third).shl(8).perspective(color) & empty)
-        }
-    }
 }
 
 const unsafe impl Num for Piece {
@@ -211,6 +58,47 @@ const impl Flip for Piece {
     #[inline(always)]
     fn flip(self) -> Self {
         Num::new(self.get() ^ Piece::BlackPawn.get())
+    }
+}
+
+const impl Binary for Piece {
+    type Bits = Bits<u8, 4>;
+
+    #[inline(always)]
+    fn encode(&self) -> Self::Bits {
+        match self {
+            Piece::WhitePawn => Bits::new(0b0010),
+            Piece::WhiteKnight => Bits::new(0b0011),
+            Piece::WhiteBishop => Bits::new(0b0101),
+            Piece::WhiteRook => Bits::new(0b0110),
+            Piece::WhiteQueen => Bits::new(0b0111),
+            Piece::WhiteKing => Bits::new(0b0001),
+            Piece::BlackPawn => Bits::new(0b1010),
+            Piece::BlackKnight => Bits::new(0b1011),
+            Piece::BlackBishop => Bits::new(0b1101),
+            Piece::BlackRook => Bits::new(0b1110),
+            Piece::BlackQueen => Bits::new(0b1111),
+            Piece::BlackKing => Bits::new(0b1001),
+        }
+    }
+
+    #[inline(always)]
+    fn decode(bits: Self::Bits) -> Self {
+        match bits.get() {
+            0b0010 => Piece::WhitePawn,
+            0b0011 => Piece::WhiteKnight,
+            0b0101 => Piece::WhiteBishop,
+            0b0110 => Piece::WhiteRook,
+            0b0111 => Piece::WhiteQueen,
+            0b0001 => Piece::WhiteKing,
+            0b1010 => Piece::BlackPawn,
+            0b1011 => Piece::BlackKnight,
+            0b1101 => Piece::BlackBishop,
+            0b1110 => Piece::BlackRook,
+            0b1111 => Piece::BlackQueen,
+            0b1001 => Piece::BlackKing,
+            _ => unsafe { unreachable_unchecked() },
+        }
     }
 }
 
@@ -234,7 +122,7 @@ impl Display for Piece {
 }
 
 /// The reason why parsing [`Piece`] failed.
-#[derive(Debug, Display, Error)]
+#[derive(Debug, Display, Copy, Error)]
 #[derive_const(Default, Clone, PartialEq, Eq)]
 #[display("failed to parse piece")]
 pub struct ParsePieceError;
@@ -259,6 +147,22 @@ const impl FromStr for Piece {
             "k" => Ok(Piece::BlackKing),
             _ => Err(ParsePieceError),
         }
+    }
+}
+
+const impl<T> Index<Piece> for [T; Piece::MAX as usize + 1] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, p: Piece) -> &Self::Output {
+        self.get(p.cast::<usize>()).assume()
+    }
+}
+
+const impl<T> IndexMut<Piece> for [T; Piece::MAX as usize + 1] {
+    #[inline(always)]
+    fn index_mut(&mut self, p: Piece) -> &mut Self::Output {
+        self.get_mut(p.cast::<usize>()).assume()
     }
 }
 
@@ -287,34 +191,15 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn piece_cannot_attack_onto_themselves(p: Piece, wc: Square, bb: Bitboard) {
-        assert!(!p.attacks(wc, bb).contains(wc));
-    }
-
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
-    fn piece_cannot_move_onto_themselves(p: Piece, wc: Square, a: Bitboard, b: Bitboard) {
-        assert!(!p.moves(wc, a, b).contains(wc));
-    }
-
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
-    fn piece_can_only_move_to_empty_or_opponent_piece(
-        p: Piece,
-        wc: Square,
-        a: Bitboard,
-        b: Bitboard,
-    ) {
-        for sq in p.moves(wc, a, b) {
-            assert!(a.inverse().union(b).contains(sq));
-        }
-    }
-
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
     fn flipping_piece_preserves_role_and_mirrors_color(p: Piece) {
         assert_eq!(p.flip().role(), p.role());
         assert_eq!(p.flip().color(), !p.color());
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn decoding_encoded_piece_is_an_identity(p: Piece) {
+        assert_eq!(Piece::decode(p.encode()), p);
     }
 
     #[proptest]

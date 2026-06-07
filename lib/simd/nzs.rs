@@ -1,9 +1,8 @@
-use crate::simd::{Aligned, V2, W2};
-use crate::util::Assume;
+use crate::{simd::*, util::Assume};
 use std::simd::prelude::*;
 
 /// Trait for [`Simd<u32, _>` ] types that implement `nnz`.
-pub trait Nzs<const N: usize>: AsMut<[u16]> {
+pub trait Nzs<const N: usize> {
     /// Fills `self` with indices to non-zero_elements.
     fn nzs(&mut self, ns: &[[V2<u32>; 2]; N]) -> usize;
 }
@@ -15,35 +14,22 @@ impl<const M: usize, const N: usize> Nzs<N> for Aligned<[u16; M]> {
     fn nzs(&mut self, ns: &[[u32x16; 2]; N]) -> usize {
         const { assert!(M == N * 2 * W2) }
 
-        use std::{arch::x86_64::*, mem::transmute};
+        use std::{arch::x86_64::*, array};
 
         let mut len = 0;
-        let mut base = u16x32::from_array([
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-            24, 25, 26, 27, 28, 29, 30, 31,
-        ]);
+        let mut iota = u16x32::from_array(array::from_fn(|i| i as u16));
 
         for [n0, n1] in ns {
             let mask0 = n0.simd_gt(Simd::splat(0)).to_bitmask();
             let mask1 = n1.simd_gt(Simd::splat(0)).to_bitmask();
             let mask = unsafe { _mm512_kunpackw(mask1 as u32, mask0 as u32) };
-            let count = mask.count_ones() as usize;
 
-            if count > 0 {
-                let indices = unsafe {
-                    transmute::<__m512i, u16x32>(_mm512_maskz_compress_epi16(
-                        mask,
-                        transmute::<u16x32, __m512i>(base),
-                    ))
-                };
-
-                let slice = self.get_mut(len..).assume();
-                (slice.len() >= u16x32::LEN).assume();
-                indices.copy_to_slice(slice);
-                len += count;
+            if mask != 0 {
+                iota.compress_store(mask, self.get_mut(len..).assume());
+                len += mask.count_ones() as usize;
             }
 
-            base += u16x32::splat(32);
+            iota += u16x32::splat(32);
         }
 
         len

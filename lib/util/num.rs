@@ -1,6 +1,6 @@
 use crate::util::Assume;
 use bytemuck::{Pod, Zeroable};
-use std::{fmt::Debug, marker::Destruct, mem::transmute_copy};
+use std::{marker::Destruct, mem::transmute_copy};
 
 /// Trait for types that represent numeric types.
 ///
@@ -77,7 +77,6 @@ pub const unsafe trait Num: 'static + Send + Sync + Copy {
 /// Marker trait for primitive numeric types.
 pub const trait NumRepr:
     [const] Num<Repr = Self>
-    + Debug
     + [const] Destruct
     + [const] Default
     + [const] PartialEq

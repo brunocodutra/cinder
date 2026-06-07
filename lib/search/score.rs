@@ -1,7 +1,7 @@
 use crate::chess::Flip;
 use crate::search::{Ply, Value};
-use crate::util::{Binary, Bits, Bounded, Int, Num, zero};
-use bytemuck::{NoUninit, Zeroable};
+use crate::util::{Binary, Bits, Bounded, Int, Num};
+use bytemuck::{NoUninit, Zeroable, zeroed};
 
 /// Number of [plies][`Ply`] to mate.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
@@ -127,13 +127,13 @@ impl Score {
     /// Returns true if the score represents a won position.
     #[inline(always)]
     pub fn is_win(self) -> bool {
-        self > Self::winning(zero())
+        self > Self::winning(zeroed())
     }
 
     /// Returns true if the score represents a lost position.
     #[inline(always)]
     pub fn is_loss(self) -> bool {
-        self < Self::losing(zero())
+        self < Self::losing(zeroed())
     }
 
     /// Returns true if the score represents a won or lost position.

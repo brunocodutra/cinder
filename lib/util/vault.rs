@@ -1,5 +1,5 @@
 use crate::util::*;
-use bytemuck::{Pod, Zeroable};
+use bytemuck::{Pod, Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 use std::marker::{Destruct, PhantomData};
 use std::ops::{Index, IndexMut};
@@ -54,13 +54,13 @@ where
 {
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.bits == zero()
+        self.bits == zeroed()
     }
 
     #[inline(always)]
     pub fn empty() -> Self {
         Vault {
-            bits: zero(),
+            bits: zeroed(),
             phantom: PhantomData,
         }
     }

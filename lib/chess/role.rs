@@ -1,7 +1,8 @@
-use crate::util::{Int, Num};
+use crate::util::{Assume, Binary, Bits, Int, Num};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
-use std::str::FromStr;
+use std::ops::{Index, IndexMut};
+use std::{hint::unreachable_unchecked, str::FromStr};
 
 /// The type of a chess [`Piece`][`crate::chess::Piece`].
 #[derive(Debug, Copy, Hash)]
@@ -25,6 +26,35 @@ const unsafe impl Num for Role {
 
 const unsafe impl Int for Role {}
 
+const impl Binary for Role {
+    type Bits = Bits<u8, 3>;
+
+    #[inline(always)]
+    fn encode(&self) -> Self::Bits {
+        match self {
+            Role::Pawn => Bits::new(0b010),
+            Role::Knight => Bits::new(0b011),
+            Role::Bishop => Bits::new(0b101),
+            Role::Rook => Bits::new(0b110),
+            Role::Queen => Bits::new(0b111),
+            Role::King => Bits::new(0b001),
+        }
+    }
+
+    #[inline(always)]
+    fn decode(bits: Self::Bits) -> Self {
+        match bits.get() {
+            0b010 => Role::Pawn,
+            0b011 => Role::Knight,
+            0b101 => Role::Bishop,
+            0b110 => Role::Rook,
+            0b111 => Role::Queen,
+            0b001 => Role::King,
+            _ => unsafe { unreachable_unchecked() },
+        }
+    }
+}
+
 impl Display for Role {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -39,7 +69,7 @@ impl Display for Role {
 }
 
 /// The reason why parsing the piece.
-#[derive(Debug, Display, Error)]
+#[derive(Debug, Display, Copy, Error)]
 #[derive_const(Default, Clone, PartialEq, Eq)]
 #[display("failed to parse piece")]
 pub struct ParseRoleError;
@@ -61,6 +91,22 @@ const impl FromStr for Role {
     }
 }
 
+const impl<T> Index<Role> for [T; Role::MAX as usize + 1] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, p: Role) -> &Self::Output {
+        self.get(p.cast::<usize>()).assume()
+    }
+}
+
+const impl<T> IndexMut<Role> for [T; Role::MAX as usize + 1] {
+    #[inline(always)]
+    fn index_mut(&mut self, p: Role) -> &mut Self::Output {
+        self.get_mut(p.cast::<usize>()).assume()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,6 +116,12 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn role_guarantees_zero_value_optimization() {
         assert_eq!(size_of::<Option<Role>>(), size_of::<Role>());
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn decoding_encoded_role_is_an_identity(r: Role) {
+        assert_eq!(Role::decode(r.encode()), r);
     }
 
     #[proptest]

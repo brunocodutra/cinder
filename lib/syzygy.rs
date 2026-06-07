@@ -73,7 +73,7 @@ impl Syzygy {
     /// This [`Position`]'s [`Wdl`].
     #[inline(always)]
     pub fn wdl(&self, pos: &Position) -> Option<Wdl> {
-        if self.max_pieces() >= pos.occupied().len() {
+        if self.max_pieces() >= pos.occupied().count() as usize {
             let probe = self.tablebase.probe(pos)?;
             self.hits.fetch_add(1, Ordering::Relaxed);
             probe.wdl()
@@ -85,7 +85,7 @@ impl Syzygy {
     /// This [`Position`]'s [`Dtz`].
     #[inline(always)]
     pub fn dtz(&self, pos: &Position) -> Option<Dtz> {
-        if self.max_pieces() >= pos.occupied().len() {
+        if self.max_pieces() >= pos.occupied().count() as usize {
             let probe = self.tablebase.probe(pos)?;
             self.hits.fetch_add(1, Ordering::Relaxed);
             probe.dtz()

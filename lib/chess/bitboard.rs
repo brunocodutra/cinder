@@ -1,22 +1,31 @@
 use crate::chess::{Butterfly, File, Flip, Rank, Square};
+use crate::simd::*;
 use crate::util::{Assume, Int, Num};
 use bytemuck::{Pod, Zeroable, zeroed};
-use derive_more::with_trait::{Constructor, Debug};
+use derive_more::with_trait::{Constructor, Debug, From};
 use std::fmt::{self, Formatter, Write};
-use std::ops::*;
+use std::{iter::FusedIterator, ops::*};
 
 /// A set of squares on a chess board.
-#[derive(Copy, Hash, Zeroable, Pod, Constructor)]
+#[derive(Copy, Hash, Zeroable, Pod, Constructor, From)]
 #[derive_const(Default, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
-pub struct Bitboard(pub u64);
+pub struct Bitboard(<Bitboard as Num>::Repr);
+
+const unsafe impl Num for Bitboard {
+    type Repr = u64;
+    const MIN: Self::Repr = u64::MIN;
+    const MAX: Self::Repr = u64::MAX;
+}
+
+const unsafe impl Int for Bitboard {}
 
 const impl Bitboard {
     /// An empty board.
     #[inline(always)]
     pub fn empty() -> Self {
-        Bitboard::new(0)
+        zeroed()
     }
 
     /// A full board.
@@ -100,15 +109,15 @@ const impl Bitboard {
                     let df = wt.file() - wc.file();
                     let dr = wt.rank() - wc.rank();
                     if df == 0 && dr == 0 {
-                        lines[wc as usize][wt as usize] = wc.bitboard();
+                        lines[wc][wt] = wc.bitboard();
                     } else if df == 0 {
-                        lines[wc as usize][wt as usize] = wc.file().bitboard();
+                        lines[wc][wt] = wc.file().bitboard();
                     } else if dr == 0 {
-                        lines[wc as usize][wt as usize] = wc.rank().bitboard();
+                        lines[wc][wt] = wc.rank().bitboard();
                     } else if df.abs() == dr.abs() {
                         let steps = [(df.signum(), dr.signum()), (-df.signum(), -dr.signum())];
                         let bb = Bitboard::fill(wc, &steps, Bitboard::empty());
-                        lines[wc as usize][wt as usize] = bb;
+                        lines[wc][wt] = bb;
                     }
                 }
             }
@@ -116,7 +125,7 @@ const impl Bitboard {
             lines
         };
 
-        LINES[whence as usize][whither as usize]
+        LINES[whence][whither]
     }
 
     /// Bitboard with squares in the open segment between two squares.
@@ -141,7 +150,7 @@ const impl Bitboard {
                     if df == 0 || dr == 0 || df.abs() == dr.abs() {
                         let steps = [(df.signum(), dr.signum())];
                         let bb = Bitboard::fill(wc, &steps, wt.bitboard());
-                        segments[wc as usize][wt as usize] = bb.without(wc).without(wt);
+                        segments[wc][wt] = bb.without(wc).without(wt);
                     }
                 }
             }
@@ -149,7 +158,7 @@ const impl Bitboard {
             segments
         };
 
-        SEGMENTS[whence as usize][whither as usize]
+        SEGMENTS[whence][whither]
     }
 
     /// The number of [`Square`]s in the set.
@@ -161,55 +170,43 @@ const impl Bitboard {
     /// Whether the board is empty.
     #[inline(always)]
     pub fn is_empty(self) -> bool {
-        self.len() == 0
+        self == Self::empty()
     }
 
     /// Whether this [`Square`] is in the set.
     #[inline(always)]
     pub fn contains(self, sq: Square) -> bool {
-        !sq.bitboard().intersection(self).is_empty()
+        self & sq.bitboard() != zeroed()
     }
 
     /// Adds a [`Square`] to this bitboard.
     #[inline(always)]
     pub fn with(self, sq: Square) -> Self {
-        sq.bitboard().union(self)
+        sq.bitboard().bitor(self)
     }
 
     /// Removes a [`Square`]s from this bitboard.
     #[inline(always)]
     pub fn without(self, sq: Square) -> Self {
-        sq.bitboard().inverse().intersection(self)
+        sq.bitboard().not().bitand(self)
     }
 
-    /// The set of [`Square`]s not in this bitboard.
+    /// Rotates the bitboard.
     #[inline(always)]
-    pub fn inverse(self) -> Self {
-        Bitboard(!self.0)
+    pub fn rotate_left(self, n: u32) -> Self {
+        Bitboard(self.0.rotate_left(n))
     }
 
-    /// The set of [`Square`]s in both bitboards.
+    /// Rotates the bitboard.
     #[inline(always)]
-    pub fn intersection(self, bb: Bitboard) -> Self {
-        Bitboard(self.0 & bb.0)
-    }
-
-    /// The set of [`Square`]s in either bitboard.
-    #[inline(always)]
-    pub fn union(self, bb: Bitboard) -> Self {
-        Bitboard(self.0 | bb.0)
+    pub fn rotate_right(self, n: u32) -> Self {
+        Bitboard(self.0.rotate_right(n))
     }
 
     /// An iterator over the [`Square`]s in this bitboard.
     #[inline(always)]
     pub fn iter(self) -> Squares {
         Squares::new(self)
-    }
-
-    /// An iterator over the subsets of this bitboard.
-    #[inline(always)]
-    pub fn subsets(self) -> Subsets {
-        Subsets::new(self)
     }
 }
 
@@ -252,14 +249,62 @@ const impl BitAnd for Bitboard {
 
     #[inline(always)]
     fn bitand(self, rhs: Self) -> Self::Output {
-        Self(self.0.bitand(rhs.0))
+        self.bitand(rhs.0)
+    }
+}
+
+const impl BitAnd<u64> for Bitboard {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitand(self, rhs: u64) -> Self::Output {
+        Self(self.0.bitand(rhs))
+    }
+}
+
+impl<T: MaskElement> BitAnd<M<T, 64>> for Bitboard {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitand(self, rhs: M<T, 64>) -> Self::Output {
+        Self(self.0.bitand(rhs.to_bitmask()))
+    }
+}
+
+impl<T: MaskElement> BitAnd<Mask<T, 64>> for Bitboard {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitand(self, rhs: Mask<T, 64>) -> Self::Output {
+        Self(self.0.bitand(rhs.to_bitmask()))
     }
 }
 
 const impl BitAndAssign for Bitboard {
     #[inline(always)]
     fn bitand_assign(&mut self, rhs: Self) {
-        self.0.bitand_assign(rhs.0);
+        self.bitand_assign(rhs.0);
+    }
+}
+
+const impl BitAndAssign<u64> for Bitboard {
+    #[inline(always)]
+    fn bitand_assign(&mut self, rhs: u64) {
+        self.0.bitand_assign(rhs);
+    }
+}
+
+impl<T: MaskElement> BitAndAssign<M<T, 64>> for Bitboard {
+    #[inline(always)]
+    fn bitand_assign(&mut self, rhs: M<T, 64>) {
+        self.0.bitand_assign(rhs.to_bitmask());
+    }
+}
+
+impl<T: MaskElement> BitAndAssign<Mask<T, 64>> for Bitboard {
+    #[inline(always)]
+    fn bitand_assign(&mut self, rhs: Mask<T, 64>) {
+        self.0.bitand_assign(rhs.to_bitmask());
     }
 }
 
@@ -268,14 +313,62 @@ const impl BitOr for Bitboard {
 
     #[inline(always)]
     fn bitor(self, rhs: Self) -> Self::Output {
-        Self(self.0.bitor(rhs.0))
+        self.bitor(rhs.0)
+    }
+}
+
+const impl BitOr<u64> for Bitboard {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitor(self, rhs: u64) -> Self::Output {
+        Self(self.0.bitor(rhs))
+    }
+}
+
+impl<T: MaskElement> BitOr<M<T, 64>> for Bitboard {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitor(self, rhs: M<T, 64>) -> Self::Output {
+        Self(self.0.bitor(rhs.to_bitmask()))
+    }
+}
+
+impl<T: MaskElement> BitOr<Mask<T, 64>> for Bitboard {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitor(self, rhs: Mask<T, 64>) -> Self::Output {
+        Self(self.0.bitor(rhs.to_bitmask()))
     }
 }
 
 const impl BitOrAssign for Bitboard {
     #[inline(always)]
     fn bitor_assign(&mut self, rhs: Self) {
-        self.0.bitor_assign(rhs.0);
+        self.bitor_assign(rhs.0);
+    }
+}
+
+const impl BitOrAssign<u64> for Bitboard {
+    #[inline(always)]
+    fn bitor_assign(&mut self, rhs: u64) {
+        self.0.bitor_assign(rhs);
+    }
+}
+
+impl<T: MaskElement> BitOrAssign<M<T, 64>> for Bitboard {
+    #[inline(always)]
+    fn bitor_assign(&mut self, rhs: M<T, 64>) {
+        self.0.bitor_assign(rhs.to_bitmask());
+    }
+}
+
+impl<T: MaskElement> BitOrAssign<Mask<T, 64>> for Bitboard {
+    #[inline(always)]
+    fn bitor_assign(&mut self, rhs: Mask<T, 64>) {
+        self.0.bitor_assign(rhs.to_bitmask());
     }
 }
 
@@ -284,14 +377,62 @@ const impl BitXor for Bitboard {
 
     #[inline(always)]
     fn bitxor(self, rhs: Self) -> Self::Output {
-        Self(self.0.bitxor(rhs.0))
+        self.bitxor(rhs.0)
+    }
+}
+
+const impl BitXor<u64> for Bitboard {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitxor(self, rhs: u64) -> Self::Output {
+        Self(self.0.bitxor(rhs))
+    }
+}
+
+impl<T: MaskElement> BitXor<M<T, 64>> for Bitboard {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitxor(self, rhs: M<T, 64>) -> Self::Output {
+        Self(self.0.bitxor(rhs.to_bitmask()))
+    }
+}
+
+impl<T: MaskElement> BitXor<Mask<T, 64>> for Bitboard {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitxor(self, rhs: Mask<T, 64>) -> Self::Output {
+        Self(self.0.bitxor(rhs.to_bitmask()))
     }
 }
 
 const impl BitXorAssign for Bitboard {
     #[inline(always)]
     fn bitxor_assign(&mut self, rhs: Self) {
-        self.0.bitxor_assign(rhs.0);
+        self.bitxor_assign(rhs.0);
+    }
+}
+
+const impl BitXorAssign<u64> for Bitboard {
+    #[inline(always)]
+    fn bitxor_assign(&mut self, rhs: u64) {
+        self.0.bitxor_assign(rhs);
+    }
+}
+
+impl<T: MaskElement> BitXorAssign<M<T, 64>> for Bitboard {
+    #[inline(always)]
+    fn bitxor_assign(&mut self, rhs: M<T, 64>) {
+        self.0.bitxor_assign(rhs.to_bitmask());
+    }
+}
+
+impl<T: MaskElement> BitXorAssign<Mask<T, 64>> for Bitboard {
+    #[inline(always)]
+    fn bitxor_assign(&mut self, rhs: Mask<T, 64>) {
+        self.0.bitxor_assign(rhs.to_bitmask());
     }
 }
 
@@ -356,6 +497,28 @@ const impl From<Square> for Bitboard {
     }
 }
 
+impl<T: MaskElement> From<M<T, 64>> for Bitboard {
+    #[inline(always)]
+    fn from(mask: M<T, 64>) -> Self {
+        Bitboard(mask.to_bitmask())
+    }
+}
+
+impl<T: MaskElement> From<Mask<T, 64>> for Bitboard {
+    #[inline(always)]
+    fn from(mask: Mask<T, 64>) -> Self {
+        Bitboard(mask.to_bitmask())
+    }
+}
+
+#[cfg(target_feature = "avx512f")]
+impl<T: MaskElement> From<Bitboard> for M<T, 64> {
+    #[inline(always)]
+    fn from(bb: Bitboard) -> Self {
+        M::from_bitmask(bb.0)
+    }
+}
+
 const impl IntoIterator for Bitboard {
     type Item = Square;
     type IntoIter = Squares;
@@ -378,7 +541,7 @@ const impl Squares {
 
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.0.is_empty()
     }
 }
 
@@ -410,31 +573,7 @@ impl ExactSizeIterator for Squares {
     }
 }
 
-/// An iterator over the subsets of a [`Bitboard`].
-#[derive(Debug)]
-pub struct Subsets(u64, Option<u64>);
-
-const impl Subsets {
-    #[inline(always)]
-    pub fn new(bb: Bitboard) -> Self {
-        Self(bb.0, Some(0))
-    }
-}
-
-const impl Iterator for Subsets {
-    type Item = Bitboard;
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        let bits = self.1?;
-        self.1 = match bits.wrapping_sub(self.0) & self.0 {
-            0 => None,
-            next => Some(next),
-        };
-
-        Some(Bitboard(bits))
-    }
-}
+impl FusedIterator for Squares {}
 
 #[cfg(test)]
 mod tests {
@@ -563,17 +702,8 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn inverse_returns_squares_not_in_set(bb: Bitboard) {
-        let pp = bb.inverse();
-        for sq in Square::iter() {
-            assert_ne!(bb.contains(sq), pp.contains(sq));
-        }
-    }
-
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
     fn intersection_returns_squares_in_both_sets(a: Bitboard, b: Bitboard) {
-        let c = a.intersection(b);
+        let c = a.bitand(b);
         for sq in Square::iter() {
             assert_eq!(c.contains(sq), a.contains(sq) && b.contains(sq));
         }
@@ -582,7 +712,7 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn union_returns_squares_in_either_set(a: Bitboard, b: Bitboard) {
-        let c = a.union(b);
+        let c = a.bitor(b);
         for sq in Square::iter() {
             assert_eq!(c.contains(sq), a.contains(sq) || b.contains(sq));
         }
@@ -603,15 +733,6 @@ mod tests {
         let v = Vec::from_iter(bb);
         assert_eq!(bb.iter().len(), v.len());
         assert_eq!(bb.contains(sq), v.contains(&sq));
-    }
-
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
-    fn can_iterate_over_subsets_of_a_bitboard(a: [Square; 6], b: [Square; 3]) {
-        let a = a.into_iter().fold(Bitboard::empty(), Bitboard::with);
-        let b = b.into_iter().fold(Bitboard::empty(), Bitboard::with);
-        let set: HashSet<_> = a.subsets().collect();
-        assert_eq!(a & b == b, set.contains(&b));
     }
 
     #[proptest]

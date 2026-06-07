@@ -21,19 +21,22 @@ impl ButterflyHistory {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn graviton_ref(&self, pos: &Position, m: Move) -> &Graviton {
+        let is_check = pos.is_check() as usize;
+        let is_quiet = m.is_quiet() as usize;
         let (wc, wt) = (m.whence(), m.whither());
-        let threats = [pos.threats().contains(wc), pos.threats().contains(wt)];
-        &self.0[pos.turn() as usize][pos.is_check() as usize][m.is_quiet() as usize][wc as usize]
-            [wt as usize][threats[0] as usize][threats[1] as usize]
+        let attacked = [!pos.attackers(wc).is_empty(), !pos.attackers(wt).is_empty()];
+        &self.0[pos.turn()][is_check][is_quiet][wc][wt][attacked[0] as usize][attacked[1] as usize]
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn graviton_mut(&mut self, pos: &Position, m: Move) -> &mut Graviton {
+        let is_check = pos.is_check() as usize;
+        let is_quiet = m.is_quiet() as usize;
         let (wc, wt) = (m.whence(), m.whither());
-        let threats = [pos.threats().contains(wc), pos.threats().contains(wt)];
-        &mut self.0[pos.turn() as usize][pos.is_check() as usize][m.is_quiet() as usize]
-            [wc as usize][wt as usize][threats[0] as usize][threats[1] as usize]
+        let attacked = [!pos.attackers(wc).is_empty(), !pos.attackers(wt).is_empty()];
+        &mut self.0[pos.turn()][is_check][is_quiet][wc][wt][attacked[0] as usize]
+            [attacked[1] as usize]
     }
 }
 
@@ -68,21 +71,20 @@ impl AttackerHistory {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn graviton_ref(&self, pos: &Position, m: Move) -> &Graviton {
         let (wc, wt) = (m.whence(), m.whither());
-        let piece = pos.piece_on(wc).assume();
-        let threat = pos.threats().contains(wt);
         let ksq = pos.king(!pos.turn());
-        &self.0[m.is_quiet() as usize][ksq as usize][piece as usize][wt as usize][threat as usize]
+        let piece = pos[wc].piece().assume();
+        let attacked = !pos.attackers(wt).is_empty();
+        &self.0[m.is_quiet() as usize][ksq][piece][wt][attacked as usize]
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn graviton_mut(&mut self, pos: &Position, m: Move) -> &mut Graviton {
         let (wc, wt) = (m.whence(), m.whither());
-        let piece = pos.piece_on(wc).assume();
-        let threat = pos.threats().contains(wt);
         let ksq = pos.king(!pos.turn());
-        &mut self.0[m.is_quiet() as usize][ksq as usize][piece as usize][wt as usize]
-            [threat as usize]
+        let piece = pos[wc].piece().assume();
+        let attacked = !pos.attackers(wt).is_empty();
+        &mut self.0[m.is_quiet() as usize][ksq][piece][wt][attacked as usize]
     }
 }
 
@@ -117,21 +119,20 @@ impl DefenderHistory {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn graviton_ref(&self, pos: &Position, m: Move) -> &Graviton {
         let (wc, wt) = (m.whence(), m.whither());
-        let piece = pos.piece_on(wc).assume();
-        let threat = pos.threats().contains(wt);
         let ksq = pos.king(pos.turn());
-        &self.0[m.is_quiet() as usize][ksq as usize][piece as usize][wt as usize][threat as usize]
+        let piece = pos[wc].piece().assume();
+        let attacked = !pos.attackers(wt).is_empty();
+        &self.0[m.is_quiet() as usize][ksq][piece][wt][attacked as usize]
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn graviton_mut(&mut self, pos: &Position, m: Move) -> &mut Graviton {
         let (wc, wt) = (m.whence(), m.whither());
-        let piece = pos.piece_on(wc).assume();
-        let threat = pos.threats().contains(wt);
         let ksq = pos.king(pos.turn());
-        &mut self.0[m.is_quiet() as usize][ksq as usize][piece as usize][wt as usize]
-            [threat as usize]
+        let piece = pos[wc].piece().assume();
+        let attacked = !pos.attackers(wt).is_empty();
+        &mut self.0[m.is_quiet() as usize][ksq][piece][wt][attacked as usize]
     }
 }
 
@@ -168,16 +169,16 @@ impl Statistics<Move> for PieceToHistory {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
         let (wc, wt) = (m.whence(), m.whither());
-        let piece = pos.piece_on(wc).assume();
-        self.0[piece as usize][wt as usize].get()
+        let piece = pos[wc].piece().assume();
+        self.0[piece][wt].get()
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
         let (wc, wt) = (m.whence(), m.whither());
-        let piece = pos.piece_on(wc).assume();
-        self.0[piece as usize][wt as usize].update(delta);
+        let piece = pos[wc].piece().assume();
+        self.0[piece][wt].update(delta);
     }
 }
 
@@ -198,8 +199,8 @@ impl ContinuationHistory {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn get(&mut self, pos: &Position, m: Move) -> &mut PieceToHistory {
         let (wc, wt) = (m.whence(), m.whither());
-        let piece = pos.piece_on(wc).assume();
-        let threat = pos.threats().contains(wt);
-        &mut self.0[m.is_quiet() as usize][piece as usize][wt as usize][threat as usize]
+        let piece = pos[wc].piece().assume();
+        let attacked = !pos.attackers(wt).is_empty();
+        &mut self.0[m.is_quiet() as usize][piece][wt][attacked as usize]
     }
 }

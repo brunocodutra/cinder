@@ -2,7 +2,7 @@ use crate::chess::*;
 use crate::util::{Assume, Binary, Bits, Int, Num};
 use derive_more::with_trait::{Display, Error, From};
 use std::fmt::{self, Formatter};
-use std::ops::{Add, AddAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Index, IndexMut, Sub, SubAssign};
 use std::str::FromStr;
 
 /// A square on the chess board.
@@ -45,6 +45,12 @@ const impl Square {
     #[inline(always)]
     pub fn bitboard(self) -> Bitboard {
         Bitboard::new(1 << self.get())
+    }
+
+    /// Returns [`Rays`] from this square.
+    #[inline(always)]
+    pub fn rays(self) -> Rays {
+        self.into()
     }
 }
 
@@ -145,8 +151,24 @@ impl Display for Square {
     }
 }
 
+const impl<T> Index<Square> for [T; Square::MAX as usize + 1] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, sq: Square) -> &Self::Output {
+        self.get(sq.cast::<usize>()).assume()
+    }
+}
+
+const impl<T> IndexMut<Square> for [T; Square::MAX as usize + 1] {
+    #[inline(always)]
+    fn index_mut(&mut self, sq: Square) -> &mut Self::Output {
+        self.get_mut(sq.cast::<usize>()).assume()
+    }
+}
+
 /// The reason why parsing [`Square`] failed.
-#[derive(Debug, Display, Error)]
+#[derive(Debug, Display, Copy, Error)]
 #[derive_const(Clone, PartialEq, Eq)]
 pub enum ParseSquareError {
     #[display("failed to parse square")]
@@ -209,12 +231,6 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn decoding_encoded_square_is_an_identity(sq: Square) {
-        assert_eq!(Square::decode(sq.encode()), sq);
-    }
-
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
     fn mirroring_square_mirrors_its_file(sq: Square) {
         assert_eq!(sq.mirror(), Square::new(sq.file().mirror(), sq.rank()));
     }
@@ -232,6 +248,12 @@ mod tests {
             sq.transpose(),
             Square::new(sq.rank().transpose(), sq.file().transpose())
         );
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn decoding_encoded_square_is_an_identity(sq: Square) {
+        assert_eq!(Square::decode(sq.encode()), sq);
     }
 
     #[proptest]

@@ -1,22 +1,36 @@
 mod aligned;
+mod broadcast1x8;
+mod compress;
+mod find;
 mod halve;
+mod mask;
 mod mul4x8;
 mod muladd4x8;
 mod mulhi;
 mod nzs;
 mod pack;
+mod permute;
 mod powi;
+mod shlv;
+mod shuffle;
 
 pub use aligned::*;
+pub use broadcast1x8::*;
+pub use compress::*;
+pub use find::*;
 pub use halve::*;
+pub use mask::*;
 pub use mul4x8::*;
 pub use muladd4x8::*;
 pub use mulhi::*;
 pub use nzs::*;
 pub use pack::*;
+pub use permute::*;
 pub use powi::*;
+pub use shlv::*;
+pub use shuffle::*;
 
-pub use std::simd::{StdFloat, prelude::*};
+pub use std::simd::{prelude::*, *};
 
 #[cfg(target_feature = "avx512f")]
 const WIDTH: usize = 64;

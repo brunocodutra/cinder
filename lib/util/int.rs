@@ -1,6 +1,6 @@
 use crate::util::{Assume, Num, NumRepr};
-use bytemuck::{Zeroable, zeroed};
-use std::{cmp::Ordering, hint::unreachable_unchecked, mem::transmute_copy};
+use bytemuck::zeroed;
+use std::{cmp::Ordering, hint::unreachable_unchecked, iter::FusedIterator, mem::transmute_copy};
 use std::{num::*, ops::*};
 
 /// Trait for types that can be represented by a int range of primitive integers.
@@ -58,13 +58,6 @@ const impl<I: [const] Int<Repr: [const] IntRepr>> Ints<I> {
     }
 }
 
-impl<I: Int<Repr: IntRepr>> ExactSizeIterator for Ints<I> {
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.len()
-    }
-}
-
 const impl<I: [const] Int<Repr: [const] IntRepr>> Iterator for Ints<I> {
     type Item = I;
 
@@ -109,16 +102,22 @@ const impl<I: [const] Int<Repr: [const] IntRepr>> DoubleEndedIterator for Ints<I
     }
 }
 
-#[inline(always)]
-pub const fn zero<U: Zeroable>() -> U {
-    zeroed()
+impl<I: Int<Repr: IntRepr>> ExactSizeIterator for Ints<I> {
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len()
+    }
 }
 
+impl<I: Int<Repr: IntRepr>> FusedIterator for Ints<I> {}
+
 #[inline(always)]
-pub const fn ones<U: Unsigned>(n: u32) -> U {
-    match n {
-        0 => zero(),
-        n => unsafe { transmute_copy(&(u128::MAX >> (u128::BITS - n))) },
+pub const fn ones<U: [const] Unsigned>(n: u32) -> U {
+    if n >= U::BITS {
+        U::MAX
+    } else {
+        let one = 1.cast::<U>();
+        (one << n) - 1.cast::<U>()
     }
 }
 
@@ -144,14 +143,22 @@ pub const trait IntRepr:
     + [const] BitOrAssign
     + [const] BitXor<Output = Self>
     + [const] BitXorAssign
-    + [const] Shl<Output = Self>
+    + [const] Shl<u32, Output = Self>
     + [const] ShlAssign
-    + [const] Shr<Output = Self>
+    + [const] Shr<u32, Output = Self>
     + [const] ShrAssign
     + [const] Not<Output = Self>
 {
     /// This primitive's size in number of bits.
     const BITS: u32;
+
+    fn count_ones(self) -> u32;
+
+    fn leading_zeros(self) -> u32;
+    fn trailing_zeros(self) -> u32;
+
+    fn wrapping_add(self, rhs: Self) -> Self;
+    fn wrapping_sub(self, rhs: Self) -> Self;
 }
 
 /// Marker trait for signed primitive integers.
@@ -245,7 +252,7 @@ macro_rules! impl_num_for {
 
                 if (N::MIN..=N::MAX).contains(&i)
                     && i.cast::<Self>() == self
-                    && (i < zero()) == (self < zero())
+                    && (i < zeroed()) == (self < zeroed())
                 {
                     Some(N::new(i))
                 } else {
@@ -276,6 +283,31 @@ macro_rules! impl_signed_for {
 
         const impl IntRepr for $i {
             const BITS: u32 = <$i>::BITS;
+
+            #[inline(always)]
+            fn count_ones(self) -> u32 {
+                <$i>::count_ones(self)
+            }
+
+            #[inline(always)]
+            fn leading_zeros(self) -> u32 {
+                <$i>::leading_zeros(self)
+            }
+
+            #[inline(always)]
+            fn trailing_zeros(self) -> u32 {
+                <$i>::trailing_zeros(self)
+            }
+
+            #[inline(always)]
+            fn wrapping_add(self, rhs: Self) -> Self {
+                <$i>::wrapping_add(self, rhs)
+            }
+
+            #[inline(always)]
+            fn wrapping_sub(self, rhs: Self) -> Self {
+                <$i>::wrapping_sub(self, rhs)
+            }
         }
 
         const impl Signed for $i {}
@@ -302,6 +334,31 @@ macro_rules! impl_unsigned_for {
 
         const impl IntRepr for $i {
             const BITS: u32 = <$i>::BITS;
+
+            #[inline(always)]
+            fn count_ones(self) -> u32 {
+                <$i>::count_ones(self)
+            }
+
+            #[inline(always)]
+            fn leading_zeros(self) -> u32 {
+                <$i>::leading_zeros(self)
+            }
+
+            #[inline(always)]
+            fn trailing_zeros(self) -> u32 {
+                <$i>::trailing_zeros(self)
+            }
+
+            #[inline(always)]
+            fn wrapping_add(self, rhs: Self) -> Self {
+                <$i>::wrapping_add(self, rhs)
+            }
+
+            #[inline(always)]
+            fn wrapping_sub(self, rhs: Self) -> Self {
+                <$i>::wrapping_sub(self, rhs)
+            }
         }
 
         const impl Unsigned for $i {}
@@ -478,5 +535,10 @@ mod tests {
         assert_eq!(i.saturate::<u32>(), u32::from(i));
         assert_eq!(i.saturate::<f32>(), f32::from(i));
         assert_eq!(i.saturate::<f64>(), f64::from(i));
+    }
+
+    #[proptest]
+    fn ones_returns_trailing_ones(#[strategy(0u32..=32)] n: u32) {
+        assert_eq!(ones::<u32>(n).trailing_ones(), n);
     }
 }

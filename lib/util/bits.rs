@@ -1,5 +1,5 @@
-use crate::util::{Int, Num, Unsigned, ones, zero};
-use bytemuck::{NoUninit, Zeroable};
+use crate::util::{Int, Num, Unsigned, ones};
+use bytemuck::{NoUninit, Zeroable, zeroed};
 use derive_more::with_trait::{Constructor, Debug, Display};
 use std::{marker::Destruct, ops::*};
 
@@ -14,7 +14,9 @@ use proptest::prelude::*;
 #[debug("Bits({_0:b})")]
 #[display("{_0:b}")]
 #[repr(transparent)]
-pub struct Bits<T, const W: u32>(#[cfg_attr(test, strategy(zero()..=ones(W)))] T)
+pub struct Bits<T, const W: u32>(
+    #[cfg_attr(test, strategy(<Self as Num>::MIN..=<Self as Num>::MAX))] T,
+)
 where
     T: Unsigned;
 
@@ -22,8 +24,8 @@ unsafe impl<T: Unsigned, const W: u32> NoUninit for Bits<T, W> {}
 
 const unsafe impl<T: [const] Unsigned + 'static, const W: u32> Num for Bits<T, W> {
     type Repr = T;
-    const MIN: Self::Repr = zero();
-    const MAX: Self::Repr = ones(W);
+    const MIN: Self::Repr = zeroed();
+    const MAX: Self::Repr = ones::<u128>(W).cast();
 }
 
 const unsafe impl<T: [const] Unsigned + 'static, const W: u32> Int for Bits<T, W> {}
@@ -77,7 +79,7 @@ const impl<T: [const] Unsigned, const W: u32> Bits<T, W> {
 const impl<T: Unsigned, const W: u32> Default for Bits<T, W> {
     #[inline(always)]
     fn default() -> Self {
-        Bits::new(zero())
+        Bits::new(zeroed())
     }
 }
 

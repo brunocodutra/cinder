@@ -29,12 +29,8 @@ impl Mul4x8 for i8x64 {
 
         unsafe {
             use std::arch::x86_64::*;
-            let w = transmute::<Self, __m512i>(self);
-            let x = transmute::<Self::Unsigned, __m512i>(x);
-            transmute::<__m512i, Self::Output>(_mm512_madd_epi16(
-                _mm512_maddubs_epi16(x, w),
-                _mm512_set1_epi16(1),
-            ))
+            let y = _mm512_maddubs_epi16(x.into(), self.into());
+            _mm512_madd_epi16(y, _mm512_set1_epi16(1)).into()
         }
     }
 }
@@ -59,12 +55,8 @@ impl Mul4x8 for i8x32 {
 
         unsafe {
             use std::arch::x86_64::*;
-            let w = transmute::<Self, __m256i>(self);
-            let x = transmute::<Self::Unsigned, __m256i>(x);
-            transmute::<__m256i, Self::Output>(_mm256_madd_epi16(
-                _mm256_maddubs_epi16(x, w),
-                _mm256_set1_epi16(1),
-            ))
+            let y = _mm256_maddubs_epi16(x.into(), self.into());
+            _mm256_madd_epi16(y, _mm256_set1_epi16(1)).into()
         }
     }
 }
@@ -89,12 +81,8 @@ impl Mul4x8 for i8x16 {
 
         unsafe {
             use std::arch::x86_64::*;
-            let w = transmute::<Self, __m128i>(self);
-            let x = transmute::<Self::Unsigned, __m128i>(x);
-            transmute::<__m128i, Self::Output>(_mm_madd_epi16(
-                _mm_maddubs_epi16(x, w),
-                _mm_set1_epi16(1),
-            ))
+            let y = _mm_maddubs_epi16(x.into(), self.into());
+            _mm_madd_epi16(y, _mm_set1_epi16(1)).into()
         }
     }
 
@@ -116,13 +104,13 @@ impl Mul4x8 for i8x16 {
         unsafe {
             use std::arch::aarch64::*;
 
-            let w = transmute::<Self, int8x16_t>(self);
+            let w = self.into();
             let x = transmute::<Self::Unsigned, int8x16_t>(x);
 
             let r = vmull_s8(vget_low_s8(w), vget_low_s8(x));
             let s = vmull_high_s8(w, x);
 
-            transmute::<int32x4_t, Self::Output>(vpaddq_s32(vpaddlq_s16(r), vpaddlq_s16(s)))
+            vpaddq_s32(vpaddlq_s16(r), vpaddlq_s16(s)).into()
         }
     }
 

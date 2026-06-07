@@ -1,4 +1,5 @@
-use crate::util::{Int, Num};
+use crate::util::{Assume, Int, Num};
+use std::ops::{Index, IndexMut};
 
 /// The game phase.
 #[derive(Debug, Copy, Hash)]
@@ -18,3 +19,19 @@ const unsafe impl Num for Phase {
 }
 
 const unsafe impl Int for Phase {}
+
+const impl<T> Index<Phase> for [T; Phase::MAX as usize + 1] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, p: Phase) -> &Self::Output {
+        self.get(p.cast::<usize>()).assume()
+    }
+}
+
+const impl<T> IndexMut<Phase> for [T; Phase::MAX as usize + 1] {
+    #[inline(always)]
+    fn index_mut(&mut self, p: Phase) -> &mut Self::Output {
+        self.get_mut(p.cast::<usize>()).assume()
+    }
+}

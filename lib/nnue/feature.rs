@@ -1,5 +1,6 @@
 use crate::chess::{Color, File, Perspective, Piece, Side, Square};
-use crate::util::{Int, Num};
+use crate::util::{Assume, Int, Num};
+use std::ops::{Index, IndexMut};
 
 /// The king's bucket.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -18,6 +19,22 @@ const unsafe impl Num for Bucket {
 }
 
 const unsafe impl Int for Bucket {}
+
+const impl<T> Index<Bucket> for [T; Bucket::MAX as usize + 1] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, b: Bucket) -> &Self::Output {
+        self.get(b.cast::<usize>()).assume()
+    }
+}
+
+const impl<T> IndexMut<Bucket> for [T; Bucket::MAX as usize + 1] {
+    #[inline(always)]
+    fn index_mut(&mut self, b: Bucket) -> &mut Self::Output {
+        self.get_mut(b.cast::<usize>()).assume()
+    }
+}
 
 /// A bucketed feature set with horizontal mirroring.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -63,7 +80,23 @@ impl Feature {
             28, 29, 30, 31, 15, 14, 13, 12,
         ];
 
-        Num::new(BUCKETS[ksq.perspective(side).cast::<usize>()])
+        Num::new(BUCKETS[ksq.perspective(side)])
+    }
+}
+
+const impl<T> Index<Feature> for [T; Feature::MAX as usize + 1] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, f: Feature) -> &Self::Output {
+        self.get(f.cast::<usize>()).assume()
+    }
+}
+
+const impl<T> IndexMut<Feature> for [T; Feature::MAX as usize + 1] {
+    #[inline(always)]
+    fn index_mut(&mut self, f: Feature) -> &mut Self::Output {
+        self.get_mut(f.cast::<usize>()).assume()
     }
 }
 

@@ -1058,11 +1058,13 @@ impl<T: TableDescriptor> Table<T> {
 
         // For pawns there are sub-tables for each file (a, b, c, d) the
         // leading pawn can be placed on.
-        let file = &self.files[if material.has_pawns() {
+        let file = if !material.has_pawns() {
+            &self.files[0]
+        } else {
             let reference_pawn = self.files[0].sides[0].groups.pieces[0];
             debug_assert_eq!(reference_pawn.role(), Role::Pawn);
             let color = reference_pawn.color().perspective(pov);
-            let lead_pawns = pos.pawns(color);
+            let lead_pawns = Bitboard::from(pos.pawns(color));
 
             used |= lead_pawns;
             sqs.extend(lead_pawns.into_iter().map(|sq| sq.perspective(pov)));
@@ -1074,13 +1076,11 @@ impl<T: TableDescriptor> Table<T> {
                 }
             }
             if sqs[0].file() >= File::E {
-                sqs[0].mirror().file() as usize
+                &self.files[sqs[0].mirror().file() as usize]
             } else {
-                sqs[0].file() as usize
+                &self.files[sqs[0].file() as usize]
             }
-        } else {
-            0
-        }];
+        };
 
         // WDL tables have sub-tables for each side to move.
         let side = &file.sides[if bside {
@@ -1105,7 +1105,7 @@ impl<T: TableDescriptor> Table<T> {
         let lead_pawns_count = sqs.len().cast::<usize>();
 
         for piece in side.groups.pieces.iter().skip(lead_pawns_count) {
-            let candidates = pos.by_piece(piece.perspective(pov)) & !used;
+            let candidates = !used & pos.by_piece(piece.perspective(pov));
             let sq = candidates.into_iter().next().assume();
             sqs.push(sq.perspective(pov));
             used |= sq.bitboard();

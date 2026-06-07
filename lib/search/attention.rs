@@ -33,7 +33,7 @@ impl Stat for Nodes {
 }
 
 /// Measures the effort spent searching a root [`Move`].
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Zeroable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Zeroable)]
 #[debug("Attention")]
 pub struct Attention(Butterfly<Nodes>);
 
@@ -48,6 +48,6 @@ impl Attention {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn nodes(&mut self, m: Move) -> &mut Nodes {
-        &mut self.0[m.whence() as usize][m.whither() as usize]
+        &mut self.0[m.whence()][m.whither()]
     }
 }

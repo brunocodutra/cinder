@@ -4,7 +4,7 @@ use std::time::Duration;
 /// Search limits that can be applied simultaneously.
 ///
 /// The search stops when the first limit is reached.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Limits {
     /// The maximum number of plies to search.

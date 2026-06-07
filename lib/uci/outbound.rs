@@ -35,7 +35,7 @@ impl From<Info> for Outbound {
             seldepth: info.seldepth(),
             nodes: info.nodes(),
             tbhits: info.tbhits(),
-            pv: Some(info.pv().clone()),
+            pv: Some(info.pv()),
         }
     }
 }

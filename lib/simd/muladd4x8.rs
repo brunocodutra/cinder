@@ -20,12 +20,8 @@ impl MulAdd4x8 for i8x64 {
         debug_assert!(x.simd_lt(Simd::splat(128)).all());
 
         unsafe {
-            use std::{arch::x86_64::*, mem::transmute};
-            transmute::<__m512i, Self::Output>(_mm512_dpbusd_epi32(
-                transmute::<Self::Output, __m512i>(y),
-                transmute::<Self::Unsigned, __m512i>(x),
-                transmute::<Self, __m512i>(self),
-            ))
+            use std::arch::x86_64::*;
+            _mm512_dpbusd_epi32(y.into(), x.into(), self.into()).into()
         }
     }
 
@@ -49,12 +45,8 @@ impl MulAdd4x8 for i8x32 {
         debug_assert!(x.simd_lt(Simd::splat(128)).all());
 
         unsafe {
-            use std::{arch::x86_64::*, mem::transmute};
-            transmute::<__m256i, Self::Output>(_mm256_dpbusd_epi32(
-                transmute::<Self::Output, __m256i>(y),
-                transmute::<Self::Unsigned, __m256i>(x),
-                transmute::<Self, __m256i>(self),
-            ))
+            use std::arch::x86_64::*;
+            _mm256_dpbusd_epi32(y.into(), x.into(), self.into()).into()
         }
     }
 
@@ -77,12 +69,8 @@ impl MulAdd4x8 for i8x16 {
         debug_assert!(x.simd_lt(Simd::splat(128)).all());
 
         unsafe {
-            use std::{arch::x86_64::*, mem::transmute};
-            transmute::<__m128i, Self::Output>(_mm_dpbusd_epi32(
-                transmute::<Self::Output, __m128i>(y),
-                transmute::<Self::Unsigned, __m128i>(x),
-                transmute::<Self, __m128i>(self),
-            ))
+            use std::arch::x86_64::*;
+            _mm_dpbusd_epi32(y.into(), x.into(), self.into()).into()
         }
     }
 
@@ -94,11 +82,8 @@ impl MulAdd4x8 for i8x16 {
 
         unsafe {
             use std::{arch::aarch64::*, mem::transmute};
-            transmute::<int32x4_t, Self::Output>(vdotq_s32(
-                transmute::<Self::Output, int32x4_t>(y),
-                transmute::<Self::Unsigned, int8x16_t>(x),
-                transmute::<Self, int8x16_t>(self),
-            ))
+            let x = transmute::<Self::Unsigned, int8x16_t>(x);
+            vdotq_s32(y.into(), x, self.into()).into()
         }
     }
 

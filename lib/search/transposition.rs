@@ -1,7 +1,7 @@
 use crate::chess::Move;
 use crate::search::{Depth, Line, Ply, Pv, Score};
-use crate::util::{Assume, Binary, Bits, Int, Num, zero};
-use bytemuck::{NoUninit, Zeroable};
+use crate::util::{Assume, Binary, Bits, Int, Num};
+use bytemuck::{NoUninit, Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 use std::hint::unreachable_unchecked;
 use std::ops::{Range, RangeInclusive};
@@ -112,7 +112,7 @@ impl Binary for ScoreBound {
             ScoreBound::Exact(_) => bits.push(Bits::<u8, 2>::new(0b11)),
         }
 
-        bits.push(self.bound(zero()).encode());
+        bits.push(self.bound(zeroed()).encode());
 
         bits
     }
@@ -157,7 +157,7 @@ impl Transposition {
             score,
             depth,
             best,
-            age: zero(),
+            age: zeroed(),
             was_pv,
         }
     }

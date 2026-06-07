@@ -1,5 +1,6 @@
-use crate::util::{Bounded, Int, Num};
+use crate::util::{Assume, Bounded, Int, Num};
 use bytemuck::{NoUninit, Zeroable};
+use std::ops::{Index, IndexMut};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, NoUninit)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
@@ -22,3 +23,23 @@ const unsafe impl Int for PlyRepr {}
 
 /// The number of half-moves played.
 pub type Ply = Bounded<PlyRepr>;
+
+const impl Ply {
+    pub const LEN: usize = Self::MAX as usize + 1;
+}
+
+const impl<T> Index<Ply> for [T; Ply::LEN] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, p: Ply) -> &Self::Output {
+        self.get(p.cast::<usize>()).assume()
+    }
+}
+
+const impl<T> IndexMut<Ply> for [T; Ply::LEN] {
+    #[inline(always)]
+    fn index_mut(&mut self, p: Ply) -> &mut Self::Output {
+        self.get_mut(p.cast::<usize>()).assume()
+    }
+}

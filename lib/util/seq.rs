@@ -1,11 +1,11 @@
-use crate::util::*;
-use bytemuck::{NoUninit, Zeroable};
+use crate::{simd::*, util::*};
+use bytemuck::{NoUninit, Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 use std::hash::{Hash, Hasher};
 use std::marker::{ConstParamTy, Destruct, PhantomData};
 use std::mem::{ManuallyDrop, needs_drop};
 use std::ops::{Deref, DerefMut};
-use std::{ptr, slice};
+use std::{iter::FusedIterator, ptr, slice};
 
 #[cfg(test)]
 use proptest::{collection::*, prelude::*};
@@ -43,6 +43,7 @@ pub type StaticSeq<T, const N: usize> = Seq<T, StaticMemory<T, N>>;
 #[derive(Debug)]
 #[debug("Seq({:?})", self.deref())]
 #[debug(bounds(T: Debug))]
+#[repr(transparent)]
 pub struct Seq<T, M: Memory<T, Capacity = ConstCapacity>> {
     bytes: Bytes<M>,
     phantom: PhantomData<T>,
@@ -92,7 +93,7 @@ const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
         Seq {
             phantom: PhantomData,
             bytes: Bytes {
-                len: zero(),
+                len: zeroed(),
                 mem: M::uninit(ConstCapacity),
             },
         }
@@ -151,9 +152,48 @@ const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
     where
         T: [const] Destruct,
     {
-        let tail = self.len().min(len);
-        unsafe { ptr::drop_in_place(self.get_mut(tail..).assume()) };
-        self.bytes.len = tail.cast();
+        if len < self.len() {
+            unsafe { self.resize(len) }
+        }
+    }
+
+    /// Resizes this sequence to `len`.
+    ///
+    /// # Safety
+    ///
+    /// If `len > self.len()` the extra elements must be initialized prior to access.
+    #[inline(always)]
+    pub unsafe fn resize(&mut self, len: usize)
+    where
+        T: [const] Destruct,
+    {
+        if len < self.len() {
+            unsafe { ptr::drop_in_place(self.get_mut(len..).assume()) };
+        }
+
+        self.bytes.len = len.cast();
+    }
+}
+
+impl<T, M: Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
+    /// Extends this sequence with the elements in a `Simd` vector.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn extend_from_simd<E, const N: usize>(
+        &mut self,
+        vec: Simd<E, N>,
+        mask: <Simd<E, N> as Compress>::Bitmask,
+    ) where
+        E: SimdElement,
+        Simd<E, N>: Compress,
+    {
+        const { assert!(align_of::<T>() >= align_of::<E>()) }
+        const { assert!(size_of::<T>() == size_of::<E>()) }
+
+        let end = self.len();
+        let ptr = self.as_mut_ptr().wrapping_add(end).cast();
+        vec.compress_store(mask, unsafe { slice::from_raw_parts_mut(ptr, N) });
+        unsafe { self.resize(end + mask.count_ones().cast::<usize>()) };
     }
 }
 
@@ -164,7 +204,7 @@ where
 {
     #[inline(always)]
     fn drop(&mut self) {
-        self.truncate(zero());
+        self.truncate(zeroed());
     }
 }
 
@@ -318,7 +358,7 @@ const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> SeqIter<T, M> {
     fn new(seq: Seq<T, M>) -> Self {
         SeqIter {
             seq: ManuallyDrop::new(seq),
-            cursor: zero(),
+            cursor: zeroed(),
         }
     }
 
@@ -342,14 +382,6 @@ where
     fn drop(&mut self) {
         const { assert!(!needs_drop::<M>()) }
         self.seq.truncate(self.cursor.cast());
-    }
-}
-
-impl<T, M: Memory<T, Capacity = ConstCapacity>> ExactSizeIterator for SeqIter<T, M> {
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn len(&self) -> usize {
-        Self::len(self)
     }
 }
 
@@ -392,6 +424,16 @@ where
         }
     }
 }
+
+impl<T, M: Memory<T, Capacity = ConstCapacity>> ExactSizeIterator for SeqIter<T, M> {
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn len(&self) -> usize {
+        Self::len(self)
+    }
+}
+
+impl<T, M: Memory<T, Capacity = ConstCapacity>> FusedIterator for SeqIter<T, M> {}
 
 #[cfg(test)]
 mod tests {

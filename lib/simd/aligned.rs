@@ -1,39 +1,40 @@
 use bytemuck::Zeroable;
-use derive_more::with_trait::{AsMut, AsRef, IntoIterator};
-use std::mem::transmute;
+use std::mem::{transmute, transmute_copy};
 use std::ops::{Deref, DerefMut};
 
-#[derive(Debug, Hash, Zeroable, AsRef, AsMut, IntoIterator)]
+#[derive(Debug, Copy, Hash, Zeroable)]
 #[derive_const(Default, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
-#[as_ref(forward)]
-#[as_mut(forward)]
 #[repr(align(64))]
-pub struct Aligned<T>(#[into_iterator(owned, ref, ref_mut)] pub T);
+pub struct Aligned<T>(pub T);
 
 const impl<T> Aligned<T> {
-    /// Transmutes `&self` to a `&U`.
-    #[track_caller]
+    /// Transmutes `&self` to `&U`.
     #[inline(always)]
-    pub fn cast<U>(&self) -> &U {
+    pub fn cast_ref<U>(&self) -> &U {
         const { assert!(align_of::<Self>() >= align_of::<U>()) }
         const { assert!(size_of::<T>() == size_of::<U>()) }
         unsafe { transmute::<&T, &U>(&self.0) }
     }
 
     /// Transmutes `&mut self` to `&mut U`.
-    #[track_caller]
     #[inline(always)]
     pub fn cast_mut<U>(&mut self) -> &mut U {
         const { assert!(align_of::<Self>() >= align_of::<U>()) }
         const { assert!(size_of::<T>() == size_of::<U>()) }
         unsafe { transmute::<&mut T, &mut U>(&mut self.0) }
     }
+
+    /// Transmutes `&self` to `U` by copy.
+    #[inline(always)]
+    pub fn cast<U>(&self) -> U {
+        const { assert!(size_of::<T>() == size_of::<U>()) }
+        unsafe { transmute_copy::<T, U>(&self.0) }
+    }
 }
 
 const impl<T> Deref for Aligned<T> {
     type Target = T;
-
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.0

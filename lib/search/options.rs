@@ -65,7 +65,7 @@ impl Shr<u32> for HashSize {
 }
 
 /// The reason why parsing the hash size failed.
-#[derive(Debug, Display, Default, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Display, Default, Clone, Copy, PartialEq, Eq, Error)]
 #[display(
     "failed to parse hash size, expected integer in the range `{}..={}`",
     HashSize::lower(),
@@ -127,7 +127,7 @@ impl<I: Int<Repr = u16>> PartialOrd<I> for ThreadCount {
 }
 
 /// The reason why parsing the thread count failed.
-#[derive(Debug, Display, Default, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Display, Default, Clone, Copy, PartialEq, Eq, Error)]
 #[display(
     "failed to parse thread count, expected integer in the range `{}..={}`",
     ThreadCount::lower(),

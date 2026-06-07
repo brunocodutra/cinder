@@ -2,6 +2,7 @@ use crate::chess::{Bitboard, Mirror, Rank, Transpose};
 use crate::util::{Assume, Int, Num};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
+use std::ops::{Index, IndexMut};
 use std::{ops::Sub, str::FromStr};
 
 /// A column on the chess board.
@@ -20,14 +21,6 @@ pub enum File {
     H,
 }
 
-const impl File {
-    /// Returns a [`Bitboard`] that only contains this file.
-    #[inline(always)]
-    pub fn bitboard(self) -> Bitboard {
-        Bitboard::new(0x0101010101010101 << self.get())
-    }
-}
-
 const unsafe impl Num for File {
     type Repr = i8;
     const MIN: Self::Repr = File::A as i8;
@@ -35,6 +28,16 @@ const unsafe impl Num for File {
 }
 
 const unsafe impl Int for File {}
+
+const impl File {
+    pub const LEN: usize = Self::MAX as usize + 1;
+
+    /// Returns a [`Bitboard`] that only contains this file.
+    #[inline(always)]
+    pub fn bitboard(self) -> Bitboard {
+        Bitboard::new(0x0101010101010101 << self.get())
+    }
+}
 
 const impl Mirror for File {
     /// Horizontally mirrors this file.
@@ -70,7 +73,7 @@ impl Display for File {
 }
 
 /// The reason why parsing [`File`] failed.
-#[derive(Debug, Display, Error)]
+#[derive(Debug, Display, Copy, Error)]
 #[derive_const(Default, Clone, PartialEq, Eq)]
 #[display("failed to parse file")]
 pub struct ParseFileError;
@@ -87,6 +90,22 @@ const impl FromStr for File {
         c.checked_sub(b'a')
             .and_then(Num::convert)
             .ok_or(ParseFileError)
+    }
+}
+
+const impl<T> Index<File> for [T; File::LEN] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, f: File) -> &Self::Output {
+        self.get(f.cast::<usize>()).assume()
+    }
+}
+
+const impl<T> IndexMut<File> for [T; File::LEN] {
+    #[inline(always)]
+    fn index_mut(&mut self, f: File) -> &mut Self::Output {
+        self.get_mut(f.cast::<usize>()).assume()
     }
 }
 

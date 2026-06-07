@@ -2,7 +2,7 @@ use crate::chess::*;
 use crate::util::{Assume, Binary, Bits, Int, Num};
 use derive_more::with_trait::{Display, Error, From};
 use std::fmt::{self, Formatter};
-use std::ops::{Add, AddAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Index, IndexMut, Sub, SubAssign};
 use std::str::FromStr;
 
 /// A square on the chess board.
@@ -22,7 +22,17 @@ pub enum Square {
     A8, B8, C8, D8, E8, F8, G8, H8,
 }
 
+const unsafe impl Num for Square {
+    type Repr = i8;
+    const MIN: Self::Repr = Square::A1 as i8;
+    const MAX: Self::Repr = Square::H8 as i8;
+}
+
+const unsafe impl Int for Square {}
+
 const impl Square {
+    pub const LEN: usize = Self::MAX as usize + 1;
+
     /// Constructs [`Square`] from a pair of [`File`] and [`Rank`].
     #[inline(always)]
     pub fn new(f: File, r: Rank) -> Self {
@@ -46,15 +56,13 @@ const impl Square {
     pub fn bitboard(self) -> Bitboard {
         Bitboard::new(1 << self.get())
     }
-}
 
-const unsafe impl Num for Square {
-    type Repr = i8;
-    const MIN: Self::Repr = Square::A1 as i8;
-    const MAX: Self::Repr = Square::H8 as i8;
+    /// Returns [`Rays`] from this square.
+    #[inline(always)]
+    pub fn rays(self) -> Rays {
+        self.into()
+    }
 }
-
-const unsafe impl Int for Square {}
 
 const impl Mirror for Square {
     /// Horizontally mirrors this square.
@@ -145,8 +153,24 @@ impl Display for Square {
     }
 }
 
+const impl<T> Index<Square> for [T; Square::LEN] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, sq: Square) -> &Self::Output {
+        self.get(sq.cast::<usize>()).assume()
+    }
+}
+
+const impl<T> IndexMut<Square> for [T; Square::LEN] {
+    #[inline(always)]
+    fn index_mut(&mut self, sq: Square) -> &mut Self::Output {
+        self.get_mut(sq.cast::<usize>()).assume()
+    }
+}
+
 /// The reason why parsing [`Square`] failed.
-#[derive(Debug, Display, Error)]
+#[derive(Debug, Display, Copy, Error)]
 #[derive_const(Clone, PartialEq, Eq)]
 pub enum ParseSquareError {
     #[display("failed to parse square")]
@@ -209,12 +233,6 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn decoding_encoded_square_is_an_identity(sq: Square) {
-        assert_eq!(Square::decode(sq.encode()), sq);
-    }
-
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
     fn mirroring_square_mirrors_its_file(sq: Square) {
         assert_eq!(sq.mirror(), Square::new(sq.file().mirror(), sq.rank()));
     }
@@ -232,6 +250,12 @@ mod tests {
             sq.transpose(),
             Square::new(sq.rank().transpose(), sq.file().transpose())
         );
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn decoding_encoded_square_is_an_identity(sq: Square) {
+        assert_eq!(Square::decode(sq.encode()), sq);
     }
 
     #[proptest]

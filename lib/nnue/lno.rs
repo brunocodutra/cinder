@@ -21,9 +21,9 @@ impl Synapse for Lno {
     fn forward(&self, input: Self::Input<'_>) -> Self::Output {
         const { assert!(I.is_multiple_of(W2)) }
 
-        let xs: &[V2<f32>; I / W2] = input.cast();
-        let ws: &[V2<f32>; I / W2] = self.weight.cast();
-        let bs: &[V2<f32>; I / W2] = self.bias.cast();
+        let xs: &[V2<f32>; I / W2] = input.cast_ref();
+        let ws: &[V2<f32>; I / W2] = self.weight.cast_ref();
+        let bs: &[V2<f32>; I / W2] = self.bias.cast_ref();
         let output: [_; I / W2] = array::from_fn(|i| ws[i].mul_add(xs[i], bs[i]));
         output.iter().sum::<V2<f32>>()
     }

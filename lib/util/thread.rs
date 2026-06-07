@@ -8,14 +8,12 @@ const STACK_SIZE: usize = 16 << 20;
 pub struct Handle<T>(JoinHandle<T>);
 
 impl<T> Handle<T> {
-    #[track_caller]
     #[inline(always)]
     pub fn join(self) -> T {
         self.0.join().assume()
     }
 }
 
-#[track_caller]
 #[inline(always)]
 pub fn spawn<F, T>(f: F) -> Handle<T>
 where

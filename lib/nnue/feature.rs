@@ -1,15 +1,12 @@
 use crate::chess::{Color, File, Perspective, Piece, Side, Square};
-use crate::util::{Int, Num};
+use crate::util::{Assume, Int, Num};
+use std::ops::{Index, IndexMut};
 
 /// The king's bucket.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct Bucket(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Bucket as Num>::Repr);
-
-impl Bucket {
-    pub const LEN: usize = Self::MAX as usize + 1;
-}
 
 const unsafe impl Num for Bucket {
     type Repr = u8;
@@ -18,6 +15,43 @@ const unsafe impl Num for Bucket {
 }
 
 const unsafe impl Int for Bucket {}
+
+const impl Bucket {
+    pub const LEN: usize = Self::MAX as usize + 1;
+
+    #[inline(always)]
+    pub fn new(side: Color, ksq: Square) -> Self {
+        #[rustfmt::skip]
+        const BUCKETS: [u8; 64] = [
+            16, 17, 18, 19,  3,  2,  1,  0,
+            20, 21, 22, 23,  7,  6,  5,  4,
+            24, 25, 26, 27, 11, 10,  9,  8,
+            24, 25, 26, 27, 11, 10,  9,  8,
+            28, 29, 30, 31, 15, 14, 13, 12,
+            28, 29, 30, 31, 15, 14, 13, 12,
+            28, 29, 30, 31, 15, 14, 13, 12,
+            28, 29, 30, 31, 15, 14, 13, 12,
+        ];
+
+        Num::new(BUCKETS[ksq.perspective(side)])
+    }
+}
+
+const impl<T> Index<Bucket> for [T; Bucket::LEN] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, b: Bucket) -> &Self::Output {
+        self.get(b.cast::<usize>()).assume()
+    }
+}
+
+const impl<T> IndexMut<Bucket> for [T; Bucket::LEN] {
+    #[inline(always)]
+    fn index_mut(&mut self, b: Bucket) -> &mut Self::Output {
+        self.get_mut(b.cast::<usize>()).assume()
+    }
+}
 
 /// A bucketed feature set with horizontal mirroring.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -33,7 +67,7 @@ const unsafe impl Num for Feature {
 
 const unsafe impl Int for Feature {}
 
-impl Feature {
+const impl Feature {
     /// The total number of different features.
     pub const LEN: usize = 768 * Bucket::LEN / 2;
 
@@ -41,29 +75,27 @@ impl Feature {
     #[inline(always)]
     pub fn new(side: Color, ksq: Square, piece: Piece, sq: Square) -> Self {
         let chirality = Side::from(ksq.file() < File::E);
-        let bucket = Self::bucket(side, ksq.perspective(chirality)).cast::<u16>();
+        let bucket = Bucket::new(side, ksq.perspective(chirality));
         let psq = 64 * piece.perspective(side).cast::<u16>()
             + sq.perspective(side).perspective(chirality).cast::<u16>();
 
-        Num::new(psq + 768 * bucket)
+        Num::new(psq + 768 * bucket.cast::<u16>())
     }
+}
 
-    /// Constructs a [`Feature`].
+const impl<T> Index<Feature> for [T; Feature::LEN] {
+    type Output = T;
+
     #[inline(always)]
-    pub fn bucket(side: Color, ksq: Square) -> Bucket {
-        #[rustfmt::skip]
-        const BUCKETS: [u8; 64] = [
-            16, 17, 18, 19,  3,  2,  1,  0,
-            20, 21, 22, 23,  7,  6,  5,  4,
-            24, 25, 26, 27, 11, 10,  9,  8,
-            24, 25, 26, 27, 11, 10,  9,  8,
-            28, 29, 30, 31, 15, 14, 13, 12,
-            28, 29, 30, 31, 15, 14, 13, 12,
-            28, 29, 30, 31, 15, 14, 13, 12,
-            28, 29, 30, 31, 15, 14, 13, 12,
-        ];
+    fn index(&self, f: Feature) -> &Self::Output {
+        self.get(f.cast::<usize>()).assume()
+    }
+}
 
-        Num::new(BUCKETS[ksq.perspective(side).cast::<usize>()])
+const impl<T> IndexMut<Feature> for [T; Feature::LEN] {
+    #[inline(always)]
+    fn index_mut(&mut self, f: Feature) -> &mut Self::Output {
+        self.get_mut(f.cast::<usize>()).assume()
     }
 }
 

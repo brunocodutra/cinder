@@ -5,7 +5,7 @@ use std::hash::{Hash, Hasher};
 use std::{cmp::Ordering, ops::Neg};
 
 /// The principal variation.
-#[derive(Debug, Clone, Constructor, Deref)]
+#[derive(Debug, Clone, Copy, Constructor, Deref)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Pv<const N: usize = { Depth::MAX as usize }> {
     #[deref]
@@ -152,17 +152,17 @@ mod tests {
 
     #[proptest]
     fn clamping_constrains_score_to_interval(pv: Pv, l: Score, #[filter(#r >= #l)] r: Score) {
-        assert_eq!(pv.clone().clip(l, r).score(), pv.score().clip(l, r));
+        assert_eq!(pv.clip(l, r).score(), pv.score().clip(l, r));
     }
 
     #[proptest]
     fn clamping_preserves_moves(pv: Pv, l: Score, #[filter(#r >= #l)] r: Score) {
-        assert_eq!(pv.clone().clip(l, r).moves(), pv.moves());
+        assert_eq!(pv.clip(l, r).moves(), pv.moves());
     }
 
     #[proptest]
     fn negation_changes_score(pv: Pv) {
-        assert_eq!(pv.clone().neg().score(), -pv.score());
+        assert_eq!(pv.neg().score(), -pv.score());
     }
 
     #[proptest]
@@ -177,15 +177,12 @@ mod tests {
 
     #[proptest]
     fn truncate_discards_moves(pv: Pv) {
-        assert_eq!(
-            &pv.moves().clone().truncate::<2>(),
-            pv.truncate::<2>().moves()
-        );
+        assert_eq!(pv.moves().truncate::<2>(), *pv.truncate::<2>().moves());
     }
 
     #[proptest]
     fn transpose_preserves_score(pv: Pv, m: Move) {
-        assert_eq!(pv.clone().transpose(m).score(), pv.score());
+        assert_eq!(pv.transpose(m).score(), pv.score());
     }
 
     #[proptest]

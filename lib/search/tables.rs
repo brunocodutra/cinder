@@ -148,7 +148,6 @@ impl DerefMut for ValueTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::zero;
     use std::fmt::Debug;
     use test_strategy::proptest;
 
@@ -176,7 +175,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn tt_load_returns_none_if_slot_is_empty(s: HashSize, k: Zobrist) {
         let mut tt = TranspositionTable::new(s);
-        tt.entries[k] = zero();
+        tt.entries[k] = zeroed();
         assert_eq!(tt.load(k), None);
     }
 
@@ -200,7 +199,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn tt_stores_value_if_slot_is_empty(s: HashSize, k: Zobrist, mut v: Transposition) {
         let mut tt = TranspositionTable::new(s);
-        tt[k] = zero();
+        tt[k] = zeroed();
         tt.store(k, v);
         v.age = *tt.age.get_mut();
         assert_eq!(tt.load(k), Some(v));
@@ -226,7 +225,7 @@ mod tests {
     fn tt_store_replaces_value_if_age_is_different(
         s: HashSize,
         k: Zobrist,
-        #[filter(#u.age != zero())] u: Transposition,
+        #[filter(#u.age != zeroed())] u: Transposition,
         mut v: Transposition,
     ) {
         let mut tt = TranspositionTable::new(s);
@@ -270,7 +269,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn vt_load_returns_none_if_slot_is_empty(s: HashSize, k: Zobrist) {
         let mut vt = ValueTable::new(s);
-        *vt.entries[k].get_mut() = zero();
+        *vt.entries[k].get_mut() = zeroed();
         assert_eq!(vt.load(k), None);
     }
 
@@ -294,7 +293,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn vt_stores_value_if_slot_is_empty(s: HashSize, k: Zobrist, v: Value) {
         let mut vt = ValueTable::new(s);
-        *vt.entries[k].get_mut() = zero();
+        *vt.entries[k].get_mut() = zeroed();
         vt.store(k, v);
         assert_eq!(vt.load(k), Some(v));
     }

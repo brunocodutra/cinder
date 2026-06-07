@@ -1,7 +1,7 @@
 use crate::nnue::{Accumulator, Bucket, Feature, Nnue, Synapse};
-use crate::util::{Assume, Int, Num, zero};
+use crate::util::{Assume, Int, Num};
 use crate::{chess::*, params::Params, search::Ply, simd::*};
-use bytemuck::zeroed;
+use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, Index, Range};
@@ -10,19 +10,17 @@ use std::{array, str::FromStr};
 #[cfg(test)]
 use proptest::{prelude::*, sample::*};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct CachedAccumulator {
     accumulator: Accumulator,
-    pieces: Aligned<[Option<Piece>; Square::MAX as usize + 1]>,
-    occupied: Bitboard,
+    placement: Placement,
 }
 
 impl Default for CachedAccumulator {
     fn default() -> Self {
         let mut cache = CachedAccumulator {
             accumulator: zeroed(),
-            pieces: Aligned([None; Square::MAX as usize + 1]),
-            occupied: Bitboard::empty(),
+            placement: zeroed(),
         };
 
         Nnue::transformer().refresh(&mut cache.accumulator);
@@ -30,11 +28,12 @@ impl Default for CachedAccumulator {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Zeroable)]
 #[repr(u8)]
 enum Pending {
+    Refresh = 0,
     Update,
-    Refresh,
+    None,
 }
 
 /// A [`Position`] evaluation stack.
@@ -42,15 +41,14 @@ enum Pending {
 #[debug("Evaluator({})", self.deref())]
 pub struct Evaluator {
     ply: Ply,
-    positions: [Position; Ply::MAX as usize + 1],
-    accumulator: [[Accumulator; Ply::MAX as usize + 1]; 2],
-    pending: [[Option<Pending>; Ply::MAX as usize + 1]; 2],
-    // move[i] leads to pos[i + 1]
-    moves: [Option<Move>; Ply::MAX as usize],
-    cache: [[CachedAccumulator; Bucket::LEN]; 2],
+    positions: [Position; Ply::LEN],
+    accumulator: [[Accumulator; Ply::LEN]; Color::LEN],
+    pending: [[Pending; Ply::LEN]; Color::LEN],
+    cache: [[CachedAccumulator; Bucket::LEN]; Color::LEN],
 }
 
 impl Default for Evaluator {
+    #[inline(always)]
     fn default() -> Self {
         Self::new(Position::default())
     }
@@ -76,6 +74,15 @@ impl Deref for Evaluator {
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.index(self.ply)
+    }
+}
+
+impl Index<Square> for Evaluator {
+    type Output = Place;
+
+    #[inline(always)]
+    fn index(&self, sq: Square) -> &Self::Output {
+        self.deref().index(sq)
     }
 }
 
@@ -109,7 +116,7 @@ impl Arbitrary for Evaluator {
 
                 for _ in 0..plies.cast::<usize>() {
                     if pos.outcome().is_none() {
-                        pos.push(selector.try_select(pos.moves().unpack()));
+                        pos.push(selector.try_select(pos.moves()));
                     } else {
                         break;
                     }
@@ -124,14 +131,13 @@ impl Arbitrary for Evaluator {
 
 impl Evaluator {
     /// Constructs the evaluator from a [`Position`].
-    #[expect(clippy::needless_pass_by_value)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn new(pos: Position) -> Self {
         let mut evaluator = Evaluator {
-            ply: zero(),
-            positions: array::from_fn(|_| pos.clone()),
+            ply: zeroed(),
+            positions: [pos; Ply::LEN],
             accumulator: zeroed(),
-            pending: [[None; Ply::MAX as usize + 1]; 2],
-            moves: [None; Ply::MAX as usize],
+            pending: zeroed(),
             cache: Default::default(),
         };
 
@@ -141,6 +147,7 @@ impl Evaluator {
 
     /// The current [`Ply`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn ply(&self) -> Ply {
         self.ply
     }
@@ -149,10 +156,10 @@ impl Evaluator {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn gain(&self, m: Move) -> f32 {
-        let mut gain = 0.;
+        let mut gain = 0.0;
 
         if m.is_noisy() {
-            if let Some(victim) = self.role_on(m.whither()) {
+            if let Some(victim) = self[m.whither()].role() {
                 gain += Params::piece_values(victim.cast::<usize>());
             } else if m.is_capture() {
                 gain += Params::piece_values(Role::Pawn.cast::<usize>());
@@ -186,8 +193,10 @@ impl Evaluator {
             return alpha;
         }
 
+        let role = self[m.whence()].role().assume();
+
         score -= match m.promotion() {
-            None => Params::piece_values(self.role_on(m.whence()).assume().cast::<usize>()),
+            None => Params::piece_values(role.cast::<usize>()),
             Some(promotion) => Params::piece_values(promotion.cast::<usize>()),
         };
 
@@ -200,7 +209,7 @@ impl Evaluator {
         let mut exchanges = self.exchanges(m);
 
         loop {
-            let Some((_, captor, _)) = exchanges.next() else {
+            let Some((_, captor)) = exchanges.next() else {
                 break beta;
             };
 
@@ -211,7 +220,7 @@ impl Evaluator {
                 break alpha;
             }
 
-            let Some((_, captor, _)) = exchanges.next() else {
+            let Some((_, captor)) = exchanges.next() else {
                 break alpha;
             };
 
@@ -230,28 +239,20 @@ impl Evaluator {
     pub fn push(&mut self, m: Option<Move>) {
         (self.ply < Ply::MAX).assume();
 
-        let turn = self.turn();
-        let idx = self.ply.cast::<usize>();
-
         self.ply += 1;
-        self.moves[idx] = m;
-        self.pending[0][idx + 1] = Some(Pending::Update);
-        self.pending[1][idx + 1] = Some(Pending::Update);
+        self.pending[0][self.ply] = Pending::Update;
+        self.pending[1][self.ply] = Pending::Update;
+        self.positions[self.ply] = self.positions[self.ply - 1];
 
-        let (left, right) = self.positions.split_at_mut(idx + 1);
-        let (prev, pos) = (&left[left.len() - 1], &mut right[0]);
-        pos.clone_from(prev);
+        let Some(m) = m else {
+            return self.positions[self.ply].pass();
+        };
 
-        match self.moves[idx] {
-            Some(m) => pos.play(m),
-            None => pos.pass(),
-        }
-
-        if let Some(m) = self.moves[idx] {
-            if prev.role_on(m.whence()) == Some(Role::King) {
-                if Feature::bucket(turn, m.whence()) != Feature::bucket(turn, m.whither()) {
-                    self.pending[turn.cast::<usize>()][idx + 1] = Some(Pending::Refresh);
-                }
+        let turn = self.turn();
+        self.positions[self.ply].play(m);
+        if self[m.whither()].role() == Some(Role::King) {
+            if Bucket::new(turn, m.whence()) != Bucket::new(turn, m.whither()) {
+                self.pending[turn][self.ply] = Pending::Refresh;
             }
         }
     }
@@ -265,139 +266,114 @@ impl Evaluator {
     }
 
     /// Resets the evaluator stack from the current [`Position`].
+    #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn reset(&mut self) {
-        for side in Color::iter() {
-            self.refresh(side);
+        if self.ply > 0 {
+            self.positions[0] = self.positions[self.ply];
+            self.ply = zeroed();
         }
 
-        if self.ply > 0 {
-            let idx = self.ply.cast::<usize>();
-            unsafe { self.positions.swap_unchecked(0, idx) };
-            unsafe { self.accumulator[0].swap_unchecked(0, idx) };
-            unsafe { self.accumulator[1].swap_unchecked(0, idx) };
-            unsafe { self.pending[0].swap_unchecked(0, idx) };
-            unsafe { self.pending[1].swap_unchecked(0, idx) };
-            self.ply = zero();
+        for side in Color::iter() {
+            self.pending[side][0] = Pending::Refresh;
+            self.refresh(side, zeroed());
         }
     }
 
     /// Evaluates the [`Position`] at the current [`Ply`].
+    #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn evaluate(&mut self) -> f32 {
         for side in Color::iter() {
             let mut idx = self.ply.cast::<usize>();
 
             loop {
-                idx = match self.pending[side.cast::<usize>()][idx] {
-                    Some(Pending::Update) => idx.checked_sub(1).assume(),
-                    Some(Pending::Refresh) => break self.refresh(side),
-                    None => {
+                match self.pending[side][idx] {
+                    Pending::Refresh => self.refresh(side, idx.convert().assume()),
+                    Pending::Update => idx = idx.checked_sub(1).assume(),
+                    Pending::None => {
                         break for i in idx + 1..=self.ply.cast::<usize>() {
                             self.update(side, i.convert().assume());
                         };
                     }
-                };
+                }
             }
         }
 
-        let idx = self.ply.cast::<usize>();
-        self.pending[0][idx].is_none().assume();
-        self.pending[1][idx].is_none().assume();
-
-        let us = self.turn() as usize;
-        let them = self.turn().flip() as usize;
-        Nnue::nn(self.phase()).forward((&self.accumulator[us][idx], &self.accumulator[them][idx]))
+        let us = self.turn();
+        let them = self.turn().flip();
+        Nnue::nn(self.phase()).forward((
+            &self.accumulator[us][self.ply],
+            &self.accumulator[them][self.ply],
+        ))
     }
 
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn refresh(&mut self, side: Color) {
-        let idx = self.ply.cast::<usize>();
-        let pos = &self.positions[idx];
+    fn refresh(&mut self, side: Color, ply: Ply) {
+        debug_assert_eq!(self.pending[side][ply], Pending::Refresh);
+        self.pending[side][ply] = Pending::None;
+
+        let pos = &self.positions[ply];
         let ksq = pos.king(side);
-        let bucket = Feature::bucket(side, ksq).cast::<usize>();
-
-        let cache = &self.cache[side.cast::<usize>()][bucket];
-        let current: &u8x64 = cache.pieces.cast();
-        let target: &u8x64 = pos.pieces().cast();
-        let diff = Bitboard(current.simd_ne(*target).to_bitmask());
-
-        let mut to_sub = Squares::new(cache.occupied & diff);
-        let mut to_add = Squares::new(pos.occupied() & diff);
-
-        while !to_sub.is_empty() || !to_add.is_empty() {
-            let sub = array::from_fn(|_| {
-                to_sub.next().map(|sq| {
-                    let cache = &self.cache[side.cast::<usize>()][bucket];
-                    let piece = cache.pieces[sq.cast::<usize>()].assume();
-                    Feature::new(side, ksq, piece, sq)
-                })
-            });
-
-            let add = array::from_fn(|_| {
-                to_add.next().map(|sq| {
-                    let piece = pos.piece_on(sq).assume();
-                    Feature::new(side, ksq, piece, sq)
-                })
-            });
-
-            let cache = &mut self.cache[side.cast::<usize>()][bucket];
+        let bucket = Bucket::new(side, ksq);
+        let cache = &mut self.cache[side][bucket];
+        accumulate(side, ksq, &cache.placement, pos, |sub, add| {
             Nnue::transformer().accumulate_in_place(&mut cache.accumulator, sub, add);
-        }
+        });
 
-        let cache = &mut self.cache[side.cast::<usize>()][bucket];
-        cache.pieces = pos.pieces().clone();
-        cache.occupied = pos.occupied();
-
-        self.pending[side.cast::<usize>()][idx] = None;
-        self.accumulator[side.cast::<usize>()][idx].clone_from(&cache.accumulator);
+        cache.placement = *pos.placement();
+        self.accumulator[side][ply] = cache.accumulator;
     }
 
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn update(&mut self, side: Color, ply: Ply) {
+        debug_assert_eq!(self.pending[side][ply], Pending::Update);
+        self.pending[side][ply] = Pending::None;
+
         (ply > 0).assume();
-
-        let idx = ply.cast::<usize>();
-        self.pending[side.cast::<usize>()][idx] = None;
-
-        let mut sub = [None; 2];
-        let mut add = [None; 2];
-
-        if let Some(m) = self.moves[idx - 1] {
-            let pos = &self.positions[idx];
-            let prev = &self.positions[idx - 1];
-            let (wc, wt) = (m.whence(), m.whither());
-            let promotion = m.promotion();
-            let role = prev.role_on(wc).assume();
-            let turn = prev.turn();
-
-            let ksq = pos.king(side);
-            let old = Piece::new(role, turn);
-            let new = Piece::new(promotion.unwrap_or(role), turn);
-            sub[0] = Some(Feature::new(side, ksq, old, wc));
-            add[0] = Some(Feature::new(side, ksq, new, wt));
-
-            let capture = match prev.role_on(wt) {
-                _ if !m.is_capture() => None,
-                Some(r) => Some((r, wt)),
-                None => Some((Role::Pawn, Square::new(wt.file(), wc.rank()))),
-            };
-
-            if let Some((r, sq)) = capture {
-                let victim = Piece::new(r, !turn);
-                sub[1] = Some(Feature::new(side, ksq, victim, sq));
-            } else if role == Role::King && (wt - wc).abs() == 2 {
-                let m = Castles::rook(wt).assume();
-                let rook = Piece::new(Role::Rook, turn);
-                sub[1] = Some(Feature::new(side, ksq, rook, m.whence()));
-                add[1] = Some(Feature::new(side, ksq, rook, m.whither()));
-            }
-        }
-
-        let (left, right) = self.accumulator[side.cast::<usize>()].split_at_mut(idx);
+        let new = &self.positions[ply];
+        let old = &self.positions[ply - 1];
+        let (left, right) = self.accumulator[side].split_at_mut(ply.cast());
         let (src, dst) = (&left[left.len() - 1], &mut right[0]);
-        Nnue::transformer().accumulate(src, dst, sub, add);
+        let diff = accumulate(side, new.king(side), old, new, |sub, add| {
+            Nnue::transformer().accumulate(src, dst, sub, add);
+        });
+
+        if diff.is_empty() {
+            *dst = *src;
+        }
     }
+}
+
+#[inline(always)]
+#[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+fn accumulate<F>(side: Color, ksq: Square, old: &Placement, new: &Placement, mut acc: F) -> Bitboard
+where
+    F: FnMut([Option<Feature>; 2], [Option<Feature>; 2]),
+{
+    let diff: M8x64 = old.pieces().simd_ne(new.pieces()).into();
+    let mut to_sub = Bitboard::from(diff & old.occupied()).iter();
+    let mut to_add = Bitboard::from(diff & new.occupied()).iter();
+
+    while !to_sub.is_empty() || !to_add.is_empty() {
+        let sub = array::from_fn(|_| {
+            to_sub.next().map(|sq| {
+                let piece = old[sq].piece().assume();
+                Feature::new(side, ksq, piece, sq)
+            })
+        });
+
+        let add = array::from_fn(|_| {
+            to_add.next().map(|sq| {
+                let piece = new[sq].piece().assume();
+                Feature::new(side, ksq, piece, sq)
+            })
+        });
+
+        acc(sub, add);
+    }
+
+    diff.into()
 }
 
 impl FromStr for Evaluator {
@@ -421,10 +397,7 @@ mod tests {
     fn evaluator_updates_accumulator_lazily(
         #[filter(#pos.outcome().is_none())] mut pos: Evaluator,
     ) {
-        assert_eq!(
-            pos.evaluate(),
-            Evaluator::new(pos.deref().clone()).evaluate()
-        );
+        assert_eq!(pos.evaluate(), Evaluator::new(*pos).evaluate());
     }
 
     #[proptest]
@@ -442,9 +415,9 @@ mod tests {
         ("1r3r2/5p2/4p2p/2k1n1P1/2PN1nP1/1P3P2/8/2KR1B1R b - - 0 1", "b8b3", -298.60876),
         ("1r3r2/5p2/4p2p/4n1P1/kPPN1nP1/5P2/8/2KR1B1R b - - 0 1", "b8b4", 50.39684),
         ("1r5k/p4pp1/2p1p2p/qpQP3P/2P2P2/1P1R4/P4rP1/1K1R4 b - - 0 1", "a5a2", 50.39684),
-        ("2r1k2r/pb4pp/5p1b/2KB3n/1N2N3/3P1PB1/PPP1P1PP/R2Q3R w k - 0 1", "d5c6", -201.29071),
+        ("2r1k2r/pb4pp/5p1b/2KB3n/1N2N3/3P1PB1/PPP1P1PP/R2Q3R w k - 0 1", "d5c6", 0.0),
         ("2r1k2r/pb4pp/5p1b/2KB3n/4N3/2NP1PB1/PPP1P1PP/R2Q3R w k - 0 1", "d5c6", -201.29071),
-        ("2r1k3/pbr3pp/5p1b/2KB3n/1N2N3/3P1PB1/PPP1P1PP/R2Q3R w - - 0 1", "d5c6", -201.29071),
+        ("2r1k3/pbr3pp/5p1b/2KB3n/1N2N3/3P1PB1/PPP1P1PP/R2Q3R w - - 0 1", "d5c6", -184.75441),
         ("2r1r1k1/pp1bppbp/3p1np1/q3P3/2P2P2/1P2B3/P1N1B1PP/2RQ1RK1 b - - 0 1", "d6e5", 50.39684),
         ("2r2r1k/6bp/p7/2q2p1Q/3PpP2/1B6/P5PP/2RR3K b - - 0 1", "c5c1", 65.753235),
         ("2r2rk1/5pp1/pp5p/q2p4/P3n3/1Q3NP1/1P2PP1P/2RR2K1 b - - 0 1", "c8c1", 0.0),
@@ -513,7 +486,8 @@ mod tests {
     ) {
         let (fen, uci, value) = entry;
         let e: Evaluator = fen.parse()?;
-        let m = e.moves().unpack().find(|m| m.to_string() == uci).unwrap();
+        let mut moves = e.moves().into_iter();
+        let m = moves.find(|m| m.to_string() == uci).unwrap();
         assert_eq!(e.see(m, -f32::MAX..f32::MAX), value);
 
         assert!(e.gaining(m, value));

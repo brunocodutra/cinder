@@ -1,5 +1,5 @@
 use crate::nnue::{Accumulator, Feature, Layer};
-use crate::simd::Aligned;
+use crate::simd::*;
 use crate::util::{Assume, Num};
 use bytemuck::Zeroable;
 use derive_more::with_trait::Debug;
@@ -19,7 +19,7 @@ impl Transformer {
     /// Refreshes `accumulator`.
     #[inline(always)]
     pub fn refresh(&self, accumulator: &mut Aligned<[i16; N]>) {
-        accumulator.clone_from(&self.bias);
+        *accumulator = self.bias;
     }
 
     /// Updates `acc` by adding and removing features.
@@ -121,10 +121,6 @@ impl Transformer {
         add: [Option<Feature>; 2],
     ) {
         match (sub, add) {
-            ([None, None], [None, None]) => {
-                dst.clone_from(src);
-            }
-
             ([None, None], [Some(a1), None]) => {
                 let a1 = self.weight.get(a1.cast::<usize>()).assume();
 

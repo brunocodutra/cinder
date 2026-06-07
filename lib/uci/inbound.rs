@@ -117,12 +117,11 @@ impl UciParser {
 
                 if let Some(moves) = moves {
                     for s in moves.split_ascii_whitespace() {
-                        let take2 = take::<_, _, ParseError<&str>>(2usize);
-                        let (_, whence) = take2.map_res(Square::from_str).parse(s).finish()?;
-
-                        let moves = pos.moves();
-                        let mut moves_iter = moves.unpack_if(|ms| ms.whence() == whence);
-                        let Some(m) = moves_iter.find(|m| UciMove::new(*m) == *s) else {
+                        let take = take::<usize, _, ParseError<&str>>;
+                        let square = take(2).map_res(Square::from_str);
+                        let (_, (_, wt)) = (take(2), square).parse(s).finish()?;
+                        let mut moves = pos.moves_to(wt.bitboard()).into_iter();
+                        let Some(m) = moves.find(|m| UciMove::new(*m) == *s) else {
                             return Err(ParseUciError::IllegalMove(s));
                         };
 
@@ -234,7 +233,7 @@ mod tests {
         input.push_str("position startpos moves");
 
         for _ in 0..n {
-            let m = selector.select(pos.moves().unpack());
+            let m = selector.select(pos.moves());
             input.push(' ');
             input.push_str(&m.to_string());
             pos.play(m);
@@ -269,7 +268,7 @@ mod tests {
 
         for _ in 0..n {
             prop_assume!(pos.outcome().is_none());
-            let m = selector.select(pos.moves().unpack());
+            let m = selector.select(pos.moves());
             input.push(' ');
             input.push_str(&m.to_string());
             pos.play(m);
@@ -304,7 +303,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn parsing_position_with_illegal_move_fails(
         mut p: UciParser,
-        #[filter(!Position::default().moves().unpack().any(|m| UciMove::new(m) == *#m.to_string()))]
+        #[filter(!Position::default().moves().into_iter().any(|m| UciMove::new(m) == *#m.to_string()))]
         m: Move,
     ) {
         assert_eq!(

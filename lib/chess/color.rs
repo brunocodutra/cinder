@@ -1,7 +1,7 @@
 use crate::chess::Flip;
-use crate::util::{Int, Num};
+use crate::util::{Assume, Binary, Bits, Int, Num};
 use derive_more::with_trait::Display;
-use std::ops::Not;
+use std::ops::{Index, IndexMut, Not};
 
 /// The color of a chess [`Piece`][`crate::chess::Piece`].
 #[derive(Debug, Display, Copy, Hash)]
@@ -23,10 +23,28 @@ const unsafe impl Num for Color {
 
 const unsafe impl Int for Color {}
 
+const impl Color {
+    pub const LEN: usize = Self::MAX as usize + 1;
+}
+
 const impl Flip for Color {
     #[inline(always)]
     fn flip(self) -> Self {
         self.not()
+    }
+}
+
+const impl Binary for Color {
+    type Bits = Bits<u8, 1>;
+
+    #[inline(always)]
+    fn encode(&self) -> Self::Bits {
+        self.convert().assume()
+    }
+
+    #[inline(always)]
+    fn decode(bits: Self::Bits) -> Self {
+        bits.convert().assume()
     }
 }
 
@@ -45,14 +63,30 @@ const impl Not for Color {
 const impl From<bool> for Color {
     #[inline(always)]
     fn from(b: bool) -> Self {
-        Num::new(b as u8)
+        b.convert().assume()
     }
 }
 
 const impl From<Color> for bool {
     #[inline(always)]
     fn from(c: Color) -> Self {
-        c == Color::Black
+        c.convert().assume()
+    }
+}
+
+const impl<T> Index<Color> for [T; Color::LEN] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, c: Color) -> &Self::Output {
+        self.get(c.cast::<usize>()).assume()
+    }
+}
+
+const impl<T> IndexMut<Color> for [T; Color::LEN] {
+    #[inline(always)]
+    fn index_mut(&mut self, c: Color) -> &mut Self::Output {
+        self.get_mut(c.cast::<usize>()).assume()
     }
 }
 
@@ -65,6 +99,12 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn color_guarantees_zero_value_optimization() {
         assert_eq!(size_of::<Option<Color>>(), size_of::<Color>());
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn decoding_encoded_color_is_an_identity(c: Color) {
+        assert_eq!(Color::decode(c.encode()), c);
     }
 
     #[proptest]

@@ -14,13 +14,13 @@ jobs:
     - uses: actions/checkout@v5
     - run: make linux-aarch64-neon
       if: matrix.os == 'ubuntu-26.04-arm'
-    - run: make linux-x86-64-sse4 linux-x86-64-avx2 linux-x86-64-avx512 linux-x86-64-vnni512
+    - run: make linux-x86-64-sse4 linux-x86-64-avx2 linux-x86-64-avx512
       if: matrix.os == 'ubuntu-latest'
     - run: make windows-aarch64-neon
       if: matrix.os == 'windows-11-arm'
-    - run: make windows-x86-64-sse4 windows-x86-64-avx2 windows-x86-64-avx512 windows-x86-64-vnni512
+    - run: make windows-x86-64-sse4 windows-x86-64-avx2 windows-x86-64-avx512
       if: matrix.os == 'windows-latest'
-    - run: make mac-aarch64-neon mac-aarch64-sme
+    - run: make mac-aarch64-neon
       if: matrix.os == 'macOS-latest'
     - run: ls "${{ github.workspace }}/target/bin/"
     - uses: svenstaro/upload-release-action@v2

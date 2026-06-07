@@ -21,8 +21,8 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Lro<S
     fn forward(&self, input: Self::Input<'_>) -> Self::Output {
         const { assert!(I.is_multiple_of(W2)) }
 
-        let xs: &[V2<f32>; I / W2] = input.cast();
-        let ws: &[V2<f32>; I / W2] = self.weight.cast();
+        let xs: &[V2<f32>; I / W2] = input.cast_ref();
+        let ws: &[V2<f32>; I / W2] = self.weight.cast_ref();
         let res: [_; I / W2] = array::from_fn(|i| ws[i] * xs[i]);
         res.iter().sum::<V2<f32>>() + self.next.forward(input)
     }

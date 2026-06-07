@@ -1,5 +1,5 @@
 use crate::chess::{Color, Flip, Perspective, Piece, Role};
-use crate::util::{Int, Num};
+use crate::util::Int;
 use derive_more::with_trait::{Debug, Deref, Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{iter::repeat_n, str::FromStr};
@@ -19,12 +19,12 @@ pub struct Material(
 impl Material {
     #[inline(always)]
     pub fn left(self, role: Role) -> usize {
-        self.0[0][role.cast::<usize>()].into()
+        self.0[0][role].into()
     }
 
     #[inline(always)]
     pub fn right(self, role: Role) -> usize {
-        self.0[1][role.cast::<usize>()].into()
+        self.0[1][role].into()
     }
 
     #[inline(always)]
@@ -79,7 +79,7 @@ impl FromIterator<Piece> for Material {
     fn from_iter<T: IntoIterator<Item = Piece>>(iter: T) -> Self {
         let mut material = Material::default();
         for piece in iter {
-            material.0[piece.color() as usize][piece.role() as usize] += 1;
+            material.0[piece.color()][piece.role()] += 1;
         }
 
         material
@@ -105,7 +105,7 @@ impl Display for Material {
 }
 
 /// The reason why parsing [`Material`] failed.
-#[derive(Debug, Display, Default, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Display, Default, Clone, Copy, PartialEq, Eq, Error)]
 #[display("failed to parse material")]
 pub struct ParseMaterialError;
 
@@ -120,7 +120,7 @@ impl FromStr for Material {
             for s in s.split_inclusive(|_| true) {
                 #[expect(clippy::map_err_ignore)]
                 let piece: Piece = s.parse().map_err(|_| ParseMaterialError)?;
-                material.0[i][piece.role().cast::<usize>()] += 1;
+                material.0[i][piece.role()] += 1;
             }
         }
 

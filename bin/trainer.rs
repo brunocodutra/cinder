@@ -12,8 +12,9 @@ use bullet::nn::{InitSettings, Shape};
 use bullet::trainer::schedule::{TrainingSchedule, TrainingSteps};
 use bullet::trainer::{save::SavedFormat, settings::LocalSettings};
 use bullet::value::ValueTrainerBuilder;
-use bullet::value::loader::{DataLoader, SfBinpackLoader};
+use bullet::value::loader::SfBinpackLoader;
 use bullet::wdl::LinearWDL;
+use bullet_trainer::reader::DataReader;
 use bytemuck::zeroed;
 use cinder::chess::{Color, Flip, Phase, Piece, Role, Square};
 use cinder::{nnue::*, util::Num};
@@ -312,14 +313,17 @@ struct Orchestrator {
     #[clap(long, value_delimiter = ',')]
     datasets: Vec<String>,
 
-    /// Whether to resume training from a checkpoint.
+    /// Whether to start from scratch or resume from a checkpoint.
     #[clap(subcommand)]
-    mode: Option<Mode>,
+    mode: Mode,
 }
 
 /// Controls whether to resume training from a checkpoint.
 #[derive(Debug, Subcommand)]
 enum Mode {
+    /// Start training from scratch.
+    Start,
+
     /// Resumes from a checkpoint.
     Resume {
         /// The stage to resume from
@@ -332,7 +336,7 @@ enum Mode {
 }
 
 impl Orchestrator {
-    fn dataloader(&self, data: &[&str]) -> impl DataLoader<ChessBoard> {
+    fn dataloader(&self, data: &[&str]) -> impl DataReader<ChessBoard> {
         let filter = self.filter.clone();
         SfBinpackLoader::new_concat_multiple(data, 1024, self.threads, move |entry| {
             !filter.should_skip(entry)
@@ -423,8 +427,9 @@ impl Orchestrator {
                 let shape = Shape::new(Phase::LEN, Ln::LEN);
                 let r2o = builder.new_weights("r2o", shape, InitSettings::Zeroed);
 
-                let stm = ft.forward(stm).crelu().pairwise_mul();
-                let ntm = ft.forward(ntm).crelu().pairwise_mul();
+                let ft = |input, start, end| ft.slice(start, end).forward(input).crelu();
+                let stm = ft(stm, 0, Li::LEN / 2) * ft(stm, Li::LEN / 2, Li::LEN);
+                let ntm = ft(ntm, 0, Li::LEN / 2) * ft(ntm, Li::LEN / 2, Li::LEN);
 
                 let l1a = stm.concat(ntm);
                 let l2 = l12.forward(l1a).select(phase);
@@ -472,12 +477,12 @@ impl Orchestrator {
         };
 
         let (stage, superbatch) = match self.mode {
-            Some(Mode::Resume { stage, superbatch }) => (stage, superbatch),
-            None => (0, 0),
+            Mode::Resume { stage, superbatch } => (stage, superbatch),
+            Mode::Start => (0, 0),
         };
 
         create_dir_all(&self.checkpoints)?;
-        if matches!(self.mode, Some(Mode::Resume { .. })) {
+        if matches!(self.mode, Mode::Resume { .. }) {
             let checkpoint = format!("{}/stage{}-{}", self.checkpoints, stage, superbatch);
             trainer.load_from_checkpoint(&checkpoint);
         }

@@ -15,7 +15,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [features]
 spsa = ["dep:rand", "dep:ron", "dep:serde"]
-trainer = ["dep:bullet", "dep:rand"]
+trainer = ["dep:bullet", "dep:bullet_trainer", "dep:rand"]
 no_panic = ["dep:no-panic"]
 
 [dependencies]
@@ -70,6 +70,7 @@ serde = { version = "1.0.228", optional = true, default-features = false, featur
 
 # trainer
 bullet = { git = "https://github.com/jw1912/bullet", package = "bullet_lib", optional = true, default-features = false }
+bullet_trainer = { git = "https://github.com/jw1912/bullet", package = "bullet-trainer", optional = true, default-features = false }
 
 # no_panic
 no-panic = { version = "0.1.36", default-features = false, optional = true }

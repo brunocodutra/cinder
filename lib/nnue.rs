@@ -89,7 +89,7 @@ const fn interleave<T: Copy, const N: usize>(input: &[T; N], output: &mut [T; N]
     }
 }
 
-const NNUE: Nnue = Nnue::new();
+static NNUE: Nnue = Nnue::new();
 
 /// An Efficiently Updatable Neural Network.
 #[derive(Debug, Zeroable)]

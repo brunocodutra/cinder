@@ -60,7 +60,7 @@ impl Display for Outbound {
                 write!(f, " nodes {nodes} nps {nps} tbhits {tbhits}")?;
 
                 if let Some(pv) = pv {
-                    const NORMALIZE_TO_PAWN_VALUE: i32 = 68;
+                    const NORMALIZE_TO_PAWN_VALUE: i32 = 70;
                     let normalized_score = pv.score().cast::<i32>() * 100 / NORMALIZE_TO_PAWN_VALUE;
 
                     match pv.score().mate() {

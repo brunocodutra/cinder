@@ -5,7 +5,7 @@ pub use inbound::*;
 pub use outbound::*;
 
 use crate::search::{Engine, Limits};
-use crate::{chess::Color, nnue::Evaluator, warn};
+use crate::{chess::Color, nnue::Evaluator, util::Num, warn};
 use futures::{prelude::*, select_biased as select, stream::FusedStream};
 use std::{fmt::Debug, pin::Pin, time::Instant};
 
@@ -113,10 +113,11 @@ where
                     let time = timer.elapsed();
 
                     let info = Outbound::Info {
+                        time,
                         depth: plies,
+                        seldepth: plies.cast(),
                         nodes,
                         tbhits: 0,
-                        time,
                         pv: None,
                     };
 

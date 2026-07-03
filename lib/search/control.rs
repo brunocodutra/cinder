@@ -90,6 +90,7 @@ pub struct Active<'a> {
     global: &'a GlobalControl,
     attention: Attention,
     peak_depth: Depth,
+    peak_ply: Ply,
     score_trend: f32,
     global_nodes: u64,
     nodes: u64,
@@ -102,10 +103,16 @@ impl<'a> Active<'a> {
             global,
             attention: Default::default(),
             peak_depth: Depth::lower(),
+            peak_ply: Ply::lower(),
             score_trend: f32::NAN,
             global_nodes: 0,
             nodes: 0,
         }
+    }
+
+    #[inline(always)]
+    pub fn seldepth(&self) -> u16 {
+        self.peak_ply.cast::<u16>() + 1
     }
 
     #[inline(always)]
@@ -124,6 +131,8 @@ impl<'a> Active<'a> {
         } else if ply == 0 && depth > self.peak_depth {
             self.score_trend = Params::score_trend_inertia(0).lerp(self.score_trend, score);
             self.peak_depth = depth;
+        } else if ply > self.peak_ply {
+            self.peak_ply = ply;
         }
 
         if self.nodes.is_multiple_of(2048) || ply == 0 {
@@ -178,22 +187,36 @@ impl Deref for Active<'_> {
 #[derive(Debug)]
 pub struct Passive<'a> {
     global: &'a GlobalControl,
+    peak_ply: Ply,
     nodes: u64,
 }
 
 impl<'a> Passive<'a> {
     #[inline(always)]
     pub fn new(global: &'a GlobalControl) -> Self {
-        Passive { global, nodes: 0 }
+        Passive {
+            global,
+            peak_ply: Ply::lower(),
+            nodes: 0,
+        }
     }
 
     #[inline(always)]
-    pub fn check(&mut self) -> ControlFlow {
+    pub fn seldepth(&self) -> u16 {
+        self.peak_ply.cast::<u16>() + 1
+    }
+
+    #[inline(always)]
+    pub fn check(&mut self, _: Depth, ply: Ply, _: &Pv) -> ControlFlow {
         if self.abort.load(Ordering::Relaxed) {
             return ControlFlow::Abort;
         }
 
         self.nodes += 1;
+        if ply > self.peak_ply {
+            self.peak_ply = ply;
+        }
+
         const LAP: u64 = 16384;
         if self.nodes.is_multiple_of(LAP) {
             self.global.nodes.fetch_add(LAP, Ordering::Relaxed);
@@ -243,6 +266,14 @@ impl<'a> LocalControl<'a> {
         LocalControl::Passive(Passive::new(global))
     }
 
+    #[inline(always)]
+    pub fn seldepth(&self) -> u16 {
+        match self {
+            LocalControl::Active(ctrl) => ctrl.seldepth(),
+            LocalControl::Passive(ctrl) => ctrl.seldepth(),
+        }
+    }
+
     /// The PV [`Attention`] statistics.
     #[inline(always)]
     pub fn attention(&mut self, head: Move) -> Option<NonNull<Nodes>> {
@@ -257,7 +288,7 @@ impl<'a> LocalControl<'a> {
     pub fn check(&mut self, depth: Depth, ply: Ply, pv: &Pv) -> ControlFlow {
         match self {
             LocalControl::Active(ctrl) => ctrl.check(depth, ply, pv),
-            LocalControl::Passive(ctrl) => ctrl.check(),
+            LocalControl::Passive(ctrl) => ctrl.check(depth, ply, pv),
         }
     }
 }
@@ -294,11 +325,15 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn passive_counts_nodes_visited(pos: Evaluator) {
+    fn passive_counts_nodes_visited(
+        #[filter(#d < Depth::MAX)] d: Depth,
+        pos: Evaluator,
+        #[filter(#pv.head().is_some())] pv: Pv,
+    ) {
         let global = GlobalControl::new(&pos, Limits::none());
         let mut passive = Passive::new(&global);
         assert_eq!(passive.nodes, 0);
-        assert_eq!(passive.check(), ControlFlow::Continue);
+        assert_eq!(passive.check(d, pos.ply(), &pv), ControlFlow::Continue);
         assert_eq!(passive.nodes, 1);
     }
 

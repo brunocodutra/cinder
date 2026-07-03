@@ -11,10 +11,11 @@ pub enum Outbound {
     BestMove(Option<Move>),
     ReadyOk,
     Info {
+        time: Duration,
         depth: u8,
+        seldepth: u16,
         nodes: u64,
         tbhits: u64,
-        time: Duration,
         pv: Option<Pv>,
     },
     UciOk,
@@ -29,10 +30,11 @@ impl From<Option<Move>> for Outbound {
 impl From<Info> for Outbound {
     fn from(info: Info) -> Self {
         Outbound::Info {
+            time: info.time(),
             depth: info.depth().cast(),
+            seldepth: info.seldepth(),
             nodes: info.nodes(),
             tbhits: info.tbhits(),
-            time: info.time(),
             pv: Some(info.pv().clone()),
         }
     }
@@ -45,19 +47,17 @@ impl Display for Outbound {
             Outbound::BestMove(Some(best)) => write!(f, "bestmove {best}"),
             Outbound::ReadyOk => f.write_str("readyok"),
             Outbound::Info {
+                time,
                 depth,
+                seldepth,
                 nodes,
                 tbhits,
-                time,
                 pv,
             } => {
                 let ms = time.as_millis();
                 let nps = *nodes as u128 * 1000 / ms.max(1);
-
-                write!(
-                    f,
-                    "info depth {depth} time {ms} nodes {nodes} nps {nps} tbhits {tbhits}"
-                )?;
+                write!(f, "info depth {depth} seldepth {seldepth} time {ms}")?;
+                write!(f, " nodes {nodes} nps {nps} tbhits {tbhits}")?;
 
                 if let Some(pv) = pv {
                     const NORMALIZE_TO_PAWN_VALUE: i32 = 68;
@@ -127,6 +127,7 @@ mod tests {
         let info = (
             tag("info"),
             field("depth", int::<u64>),
+            field("seldepth", int::<u64>),
             field("time", millis),
             field("nodes", int::<u64>),
             field("nps", int::<u64>),

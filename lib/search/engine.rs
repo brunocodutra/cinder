@@ -1092,17 +1092,21 @@ impl<'a> Searcher<'a> {
 
                             self.stack.pv = partial;
                             let pv = self.stack.pv.clone();
+                            let time = self.ctrl.elapsed();
+                            let nodes = self.ctrl.visited();
+                            let seldepth = self.ctrl.seldepth();
                             let tbhits = self.shared.syzygy.hits();
-                            let (time, nodes) = (self.ctrl.elapsed(), self.ctrl.visited());
-                            yield Info::new(depth - 1, time, nodes, tbhits, pv);
+                            yield Info::new(time, depth - 1, seldepth, nodes, tbhits, pv);
                         }
 
                         _ => {
                             self.stack.pv = partial;
                             let pv = self.stack.pv.clone();
+                            let time = self.ctrl.elapsed();
+                            let nodes = self.ctrl.visited();
+                            let seldepth = self.ctrl.seldepth();
                             let tbhits = self.shared.syzygy.hits();
-                            let (time, nodes) = (self.ctrl.elapsed(), self.ctrl.visited());
-                            break yield Info::new(depth, time, nodes, tbhits, pv);
+                            break yield Info::new(time, depth, seldepth, nodes, tbhits, pv);
                         }
                     }
                 }

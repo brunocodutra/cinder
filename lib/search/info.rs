@@ -7,24 +7,31 @@ use std::time::Duration;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Constructor)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Info {
-    depth: Depth,
     time: Duration,
+    depth: Depth,
+    seldepth: u16,
     nodes: u64,
     tbhits: u64,
     pv: Pv,
 }
 
 impl Info {
+    /// The duration searched.
+    #[inline(always)]
+    pub fn time(&self) -> Duration {
+        self.time
+    }
+
     /// The depth searched.
     #[inline(always)]
     pub fn depth(&self) -> Depth {
         self.depth
     }
 
-    /// The duration searched.
+    /// The deepest ply searched.
     #[inline(always)]
-    pub fn time(&self) -> Duration {
-        self.time
+    pub fn seldepth(&self) -> u16 {
+        self.seldepth
     }
 
     /// The number of nodes searched.
@@ -55,6 +62,6 @@ impl Info {
 impl From<Pv> for Info {
     #[inline(always)]
     fn from(pv: Pv) -> Self {
-        Info::new(Depth::new(0), Duration::ZERO, 0, 0, pv)
+        Info::new(Duration::ZERO, Depth::new(0), 0, 0, 0, pv)
     }
 }

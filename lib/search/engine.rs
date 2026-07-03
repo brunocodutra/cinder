@@ -1086,18 +1086,23 @@ impl<'a> Searcher<'a> {
                         }
 
                         score if (upper.saturate::<Score>()..Score::upper()).contains(&score) => {
-                            self.stack.pv = partial;
                             window *= Params::aw_width(2);
                             upper = score.cast::<f32>() + window;
                             reduction += Params::aw_fh_reduction(0);
+
+                            self.stack.pv = partial;
+                            let pv = self.stack.pv.clone();
+                            let tbhits = self.shared.syzygy.hits();
                             let (time, nodes) = (self.ctrl.elapsed(), self.ctrl.visited());
-                            yield Info::new(depth - 1, time, nodes, self.stack.pv.clone());
+                            yield Info::new(depth - 1, time, nodes, tbhits, pv);
                         }
 
                         _ => {
                             self.stack.pv = partial;
+                            let pv = self.stack.pv.clone();
+                            let tbhits = self.shared.syzygy.hits();
                             let (time, nodes) = (self.ctrl.elapsed(), self.ctrl.visited());
-                            break yield Info::new(depth, time, nodes, self.stack.pv.clone());
+                            break yield Info::new(depth, time, nodes, tbhits, pv);
                         }
                     }
                 }
@@ -1211,6 +1216,7 @@ impl Stream for Search<'_, '_> {
             let (tx, rx) = unbounded();
             search.channel = Some(rx);
 
+            search.engine.shared.syzygy.reset_hits();
             let pos: &Evaluator = unsafe { &*(&raw const *search.pos) };
             let ctrl: &GlobalControl = unsafe { &*(&raw const search.ctrl) };
             let executor: &mut Executor = unsafe { &mut *(&raw mut search.engine.executor) };

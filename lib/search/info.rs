@@ -10,6 +10,7 @@ pub struct Info {
     depth: Depth,
     time: Duration,
     nodes: u64,
+    tbhits: u64,
     pv: Pv,
 }
 
@@ -32,6 +33,12 @@ impl Info {
         self.nodes
     }
 
+    /// The number of successful tablebase probes.
+    #[inline(always)]
+    pub fn tbhits(&self) -> u64 {
+        self.tbhits
+    }
+
     /// The search score.
     #[inline(always)]
     pub fn score(&self) -> Score {
@@ -48,6 +55,6 @@ impl Info {
 impl From<Pv> for Info {
     #[inline(always)]
     fn from(pv: Pv) -> Self {
-        Info::new(Depth::new(0), Duration::ZERO, 0, pv)
+        Info::new(Depth::new(0), Duration::ZERO, 0, 0, pv)
     }
 }

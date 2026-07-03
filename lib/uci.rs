@@ -115,6 +115,7 @@ where
                     let info = Outbound::Info {
                         depth: plies,
                         nodes,
+                        tbhits: 0,
                         time,
                         pv: None,
                     };

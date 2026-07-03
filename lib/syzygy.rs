@@ -1,4 +1,5 @@
 use crate::{chess::Position, warn};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::{fs::read_dir, path::Path};
 
 mod dtz;
@@ -19,6 +20,7 @@ pub use wdl::*;
 #[derive(Debug, Default)]
 pub struct Syzygy {
     tablebase: Tablebase,
+    hits: AtomicU64,
 }
 
 impl Syzygy {
@@ -46,6 +48,18 @@ impl Syzygy {
         self.tablebase.max_pieces()
     }
 
+    /// The number of successful probes so far.
+    #[inline(always)]
+    pub fn hits(&self) -> u64 {
+        self.hits.load(Ordering::Relaxed)
+    }
+
+    /// Resets hits counter.
+    #[inline(always)]
+    pub fn reset_hits(&self) {
+        self.hits.store(0, Ordering::Relaxed);
+    }
+
     /// This [`Position`]'s [`Wdl`] if immediately following a zeroing move.
     #[inline(always)]
     pub fn wdl_after_zeroing(&self, pos: &Position) -> Option<Wdl> {
@@ -60,7 +74,9 @@ impl Syzygy {
     #[inline(always)]
     pub fn wdl(&self, pos: &Position) -> Option<Wdl> {
         if self.max_pieces() >= pos.occupied().len() {
-            self.tablebase.probe(pos)?.wdl()
+            let probe = self.tablebase.probe(pos)?;
+            self.hits.fetch_add(1, Ordering::Relaxed);
+            probe.wdl()
         } else {
             None
         }
@@ -70,7 +86,9 @@ impl Syzygy {
     #[inline(always)]
     pub fn dtz(&self, pos: &Position) -> Option<Dtz> {
         if self.max_pieces() >= pos.occupied().len() {
-            self.tablebase.probe(pos)?.dtz()
+            let probe = self.tablebase.probe(pos)?;
+            self.hits.fetch_add(1, Ordering::Relaxed);
+            probe.dtz()
         } else {
             None
         }

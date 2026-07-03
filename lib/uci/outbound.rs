@@ -13,6 +13,7 @@ pub enum Outbound {
     Info {
         depth: u8,
         nodes: u64,
+        tbhits: u64,
         time: Duration,
         pv: Option<Pv>,
     },
@@ -30,6 +31,7 @@ impl From<Info> for Outbound {
         Outbound::Info {
             depth: info.depth().cast(),
             nodes: info.nodes(),
+            tbhits: info.tbhits(),
             time: info.time(),
             pv: Some(info.pv().clone()),
         }
@@ -45,12 +47,17 @@ impl Display for Outbound {
             Outbound::Info {
                 depth,
                 nodes,
+                tbhits,
                 time,
                 pv,
             } => {
                 let ms = time.as_millis();
                 let nps = *nodes as u128 * 1000 / ms.max(1);
-                write!(f, "info depth {depth} time {ms} nodes {nodes} nps {nps}")?;
+
+                write!(
+                    f,
+                    "info depth {depth} time {ms} nodes {nodes} nps {nps} tbhits {tbhits}"
+                )?;
 
                 if let Some(pv) = pv {
                     const NORMALIZE_TO_PAWN_VALUE: i32 = 68;
@@ -115,13 +122,18 @@ mod tests {
     }
 
     fn info(input: &str) -> IResult<&str, &str, ParseError<&str>> {
-        let depth = field("depth", int::<u64>);
-        let time = field("time", millis);
-        let nodes = field("nodes", int::<u64>);
-        let nps = field("nps", int::<u64>);
         let score = field("score", (t(alt([tag("cp"), tag("mate")])), int::<i64>));
         let pv = field("pv", separated_list1(tag(" "), word));
-        let info = (tag("info"), depth, time, nodes, nps, opt((score, opt(pv))));
+        let info = (
+            tag("info"),
+            field("depth", int::<u64>),
+            field("time", millis),
+            field("nodes", int::<u64>),
+            field("nps", int::<u64>),
+            field("tbhits", int::<u64>),
+            opt((score, opt(pv))),
+        );
+
         recognize((info, eof)).parse(input)
     }
 

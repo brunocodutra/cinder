@@ -67,16 +67,19 @@ where
                     binc,
                     ..
                 } => {
-                    let clock = match self.pos.turn() {
-                        Color::White => Option::zip(wtime, winc),
-                        Color::Black => Option::zip(btime, binc),
+                    let (t, i) = match self.pos.turn() {
+                        Color::White => (wtime, winc),
+                        Color::Black => (btime, binc),
                     };
 
                     let limits = Limits {
                         depth,
                         nodes,
                         time,
-                        clock,
+                        clock: match (t, i) {
+                            (None, None) => None,
+                            (t, i) => Some((t.unwrap_or_default(), i.unwrap_or_default())),
+                        },
                     };
 
                     let mut search = self.engine.search(&self.pos, limits);
@@ -203,6 +206,62 @@ mod tests {
             btime: Some(Duration::from_millis(bt)),
             winc: Some(Duration::from_millis(wi)),
             binc: Some(Duration::from_millis(bi)),
+            mtg: None,
+            mate: None,
+        }]);
+
+        block_on(uci.run()).expect("is ok");
+        assert!(matches!(
+            uci.output.last(),
+            Some(Outbound::BestMove(Some(..)))
+        ));
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn handles_go_time_left_with_only_increment(
+        #[by_ref]
+        #[filter(#uci.pos.outcome().is_none())]
+        mut uci: MockUci,
+        #[strategy(..10u64)] wi: u64,
+        #[strategy(..10u64)] bi: u64,
+    ) {
+        uci.input = MockStream::new([Inbound::Go {
+            depth: None,
+            nodes: None,
+            time: None,
+            wtime: None,
+            btime: None,
+            winc: Some(Duration::from_millis(wi)),
+            binc: Some(Duration::from_millis(bi)),
+            mtg: None,
+            mate: None,
+        }]);
+
+        block_on(uci.run()).expect("is ok");
+        assert!(matches!(
+            uci.output.last(),
+            Some(Outbound::BestMove(Some(..)))
+        ));
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn handles_go_time_left_with_no_increment(
+        #[by_ref]
+        #[filter(#uci.pos.outcome().is_none())]
+        mut uci: MockUci,
+        #[strategy(..10u64)] wt: u64,
+        #[strategy(..10u64)] bt: u64,
+    ) {
+        uci.input = MockStream::new([Inbound::Go {
+            depth: None,
+            nodes: None,
+            time: None,
+            wtime: Some(Duration::from_millis(wt)),
+            btime: Some(Duration::from_millis(bt)),
+            winc: None,
+            binc: None,
             mtg: None,
             mate: None,
         }]);

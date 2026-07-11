@@ -24,7 +24,8 @@ impl PartialEq<str> for UciMove {
     #[inline(always)]
     fn eq(&self, other: &str) -> bool {
         let len = if self.0[4] == b'\0' { 4 } else { 5 };
-        other == unsafe { str::from_utf8_unchecked(&self.0[..len]) }
+        let this = unsafe { str::from_utf8_unchecked(&self.0[..len]) };
+        this.compare_no_case(other) == CompareResult::Ok
     }
 }
 

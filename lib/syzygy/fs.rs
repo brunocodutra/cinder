@@ -1,6 +1,6 @@
 use crate::util::Assume;
 use memmap2::{Mmap, MmapOptions};
-use std::{fs::File, io, path::Path, slice::SliceIndex};
+use std::{io, path::Path, slice::SliceIndex};
 
 #[derive(Debug)]
 pub struct RandomAccessFile {
@@ -9,9 +9,17 @@ pub struct RandomAccessFile {
 
 impl RandomAccessFile {
     /// Opens a file for random read requests.
-    #[inline(always)]
     pub fn new(path: &Path) -> io::Result<Self> {
-        let file = File::open(path)?;
+        let mut open_options = std::fs::OpenOptions::new();
+
+        #[cfg(windows)]
+        let open_options = {
+            use std::os::windows::fs::OpenOptionsExt;
+            use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_RANDOM_ACCESS;
+            open_options.custom_flags(FILE_FLAG_RANDOM_ACCESS)
+        };
+
+        let file = open_options.read(true).open(path)?;
         let mmap = unsafe { MmapOptions::new().map(&file)? };
 
         #[cfg(unix)]

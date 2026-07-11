@@ -76,6 +76,10 @@ bullet_trainer = { git = "https://github.com/jw1912/bullet", package = "bullet-t
 # no_panic
 no-panic = { version = "0.1.36", default-features = false, optional = true }
 
+# windows
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem"] }
+
 [dev-dependencies]
 proptest = { version = "1.11.0" }
 rand = { version = "0.10.1" }

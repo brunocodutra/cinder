@@ -219,10 +219,7 @@
     unused_macro_rules
 )]
 #![cfg_attr(test, recursion_limit = "1024")]
-#![cfg_attr(
-    target_arch = "aarch64",
-    feature(stdarch_aarch64_prefetch, stdarch_neon_dotprod)
-)]
+#![cfg_attr(target_arch = "aarch64", feature(stdarch_aarch64_prefetch))]
 #![feature(
     adt_const_params,
     ascii_char,

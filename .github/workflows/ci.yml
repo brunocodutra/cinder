@@ -89,7 +89,6 @@ jobs:
         CFLAGS: "-fsanitize=${{ matrix.sanitizer }}"
         CXXFLAGS: "-fsanitize=${{ matrix.sanitizer }}"
         RUSTFLAGS: "-Zsanitizer=${{ matrix.sanitizer }} -Ctarget-cpu=native"
-        PROPTEST_CASES: 32
 
   coverage:
     needs: [test]
@@ -104,7 +103,6 @@ jobs:
     - run: cargo llvm-cov --workspace --all-targets --features spsa,trainer --lcov --output-path lcov.info
       env:
         RUSTFLAGS: "-Ctarget-cpu=native"
-        PROPTEST_CASES: 32
     - uses: codecov/codecov-action@v5
       with:
         token: ${{secrets.CODECOV_TOKEN}}
@@ -116,12 +114,17 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macOS-latest]
+        os: [ubuntu-26.04-arm, ubuntu-latest, windows-11-arm, windows-latest, macOS-latest]
     steps:
     - uses: actions/checkout@v5
-    - run: make linux-x86-64-sse4 linux-x86-64-avx2
-      if: runner.os == 'Linux'
-    - run: make windows-x86-64-sse4 windows-x86-64-avx2
-      if: runner.os == 'Windows'
+    - run: make linux-aarch64-neon
+      if: matrix.os == 'ubuntu-26.04-arm'
+    - run: make linux-x86-64-sse4 linux-x86-64-avx2 linux-x86-64-avx512 linux-x86-64-vnni512
+      if: matrix.os == 'ubuntu-latest'
+    - run: make windows-aarch64-neon
+      if: matrix.os == 'windows-11-arm'
+    - run: make windows-x86-64-sse4 windows-x86-64-avx2 windows-x86-64-avx512 windows-x86-64-vnni512
+      if: matrix.os == 'windows-latest'
     - run: make mac-aarch64-neon mac-aarch64-sme
-      if: runner.os == 'macOS'
+      if: matrix.os == 'macOS-latest'
+

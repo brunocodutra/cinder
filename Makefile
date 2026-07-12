@@ -1,4 +1,4 @@
-CRATE_VERSION := 0.5.1
+CRATE_VERSION := 0.5.2
 TARGET_DIR := $(CURDIR)/target
 BIN_DIR := $(TARGET_DIR)/bin
 
@@ -24,6 +24,9 @@ spsa:
 native:
 	$(call build,native,$(shell rustc --print host-tuple),native,)
 
+linux-aarch64-neon:
+	$(call build,neon,aarch64-unknown-linux-musl,,)
+
 linux-x86-64-sse4:
 	$(call build,sse4,x86_64-unknown-linux-gnu,x86-64-v2,)
 
@@ -35,6 +38,9 @@ linux-x86-64-avx512:
 
 linux-x86-64-vnni512:
 	$(call build,vnni512,x86_64-unknown-linux-gnu,znver5,) # placeholder for x86-64-v5
+
+windows-aarch64-neon:
+	$(call build,neon,aarch64-pc-windows-msvc,,)
 
 windows-x86-64-sse4:
 	$(call build,sse4,x86_64-pc-windows-msvc,x86-64-v2,)
@@ -54,13 +60,17 @@ mac-aarch64-neon:
 mac-aarch64-sme:
 	$(call build,sme,aarch64-apple-darwin,apple-m4,)
 
+
 .PHONY: default spsa native
+.PHONY: linux-aarch64-neon
 .PHONY: linux-x86-64-sse4 linux-x86-64-avx2 linux-x86-64-avx512 linux-x86-64-vnni512
+.PHONY: windows-aarch64-neon
 .PHONY: windows-x86-64-sse4 windows-x86-64-avx2 windows-x86-64-avx512 windows-x86-64-vnni512
 .PHONY: mac-aarch64-neon mac-aarch64-sme
 
 define build
 	@echo "Building target $1"
+	rustup target add $2
 	cargo build --profile=dist --bin=cinder \
 		--config='target.$2.rustflags=["-Ctarget-cpu=$3", "-Zlocation-detail=none"]' \
 		--target-dir=$(TARGET_DIR)/$1/ --target=$2 $4

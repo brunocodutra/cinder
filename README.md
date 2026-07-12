@@ -22,14 +22,15 @@ Use the tables below as a reference for which binary to pick.
 The table is ordered from most compatible to most performant.
 You should prefer the most performant binary that runs on your machine.
 
-| Suffix    | Description                                                      |
-|-----------|------------------------------------------------------------------|
-| `sse4`    | Compatible with most Intel and AMD CPUs                          |
-| `avx2`    | Compatible with Intel Haswell (2013+) and AMD Excavator (2015+)  |
-| `avx512`  | Compatible with Intel Skylake-X (2017+) and AMD Zen 4 (2022+)    |
-| `vnni512` | Compatible with Intel Cascade Lake (2019+) and AMD Zen 4 (2022+) |
-| `neon`    | Apple Silicon M1/M2/M3                                           |
-| `sme`     | Apple Silicon M4+                                                |
+| Suffix      | Description                                                      |
+|-------------|------------------------------------------------------------------|
+| `*-sse4`    | Compatible with most Intel and AMD CPUs                          |
+| `*-avx2`    | Compatible with Intel Haswell (2013+) and AMD Excavator (2015+)  |
+| `*-avx512`  | Compatible with Intel Skylake-X (2017+) and AMD Zen 4 (2022+)    |
+| `*-vnni512` | Compatible with Intel Cascade Lake (2019+) and AMD Zen 4 (2022+) |
+| `*-neon`    | Compatible with most ARM64 CPUs                                  |
+| `mac-neon`  | Apple Silicon M1/M2/M3                                           |
+| `mac-sme`   | Apple Silicon M4+                                                |
 
 ### Building from source
 

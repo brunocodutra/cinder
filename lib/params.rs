@@ -205,7 +205,7 @@ macro_rules! params {
 
 params! {
     moves_left: [-1.1250302, 129.7077],
-    moves_left_limits: [0.9204693, 55.388912],
+    moves_left_limits: [0.9204693, 20.388912],
     soft_time_fraction: [0.58262795],
     hard_time_fraction: [0.81017804],
     score_trend_inertia: [0.12942228],

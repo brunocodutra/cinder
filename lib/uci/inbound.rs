@@ -44,6 +44,9 @@ pub enum Inbound {
         mtg: Option<u8>,
         mate: Option<u8>,
     },
+    Bench {
+        depth: Option<Depth>,
+    },
     Perft(u8),
     SetOptionHash(HashSize),
     SetOptionThreads(ThreadCount),
@@ -97,6 +100,7 @@ impl UciParser {
             tag("go"),
             tag("setoption"),
             tag("perft"),
+            tag("bench"),
             tag("isready"),
             tag("ucinewgame"),
             tag("uci"),
@@ -182,6 +186,13 @@ impl UciParser {
 
                 let mut setoption = terminated(options, eof);
                 let (_, uci) = setoption.parse(args).finish()?;
+                Ok(uci)
+            }
+
+            (args, "bench") => {
+                let depth = field("depth", int);
+                let mut bench = terminated(opt(depth).map(|depth| Inbound::Bench { depth }), eof);
+                let (_, uci) = bench.parse(args).finish()?;
                 Ok(uci)
             }
 

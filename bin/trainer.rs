@@ -3,21 +3,20 @@
 use anyhow::{Context, Error as Failure};
 use bullet::game::formats::bulletformat::ChessBoard;
 use bullet::game::formats::sfbinpack::TrainingDataEntry;
-use bullet::game::formats::sfbinpack::chess::r#move::MoveType;
-use bullet::game::formats::sfbinpack::chess::piecetype::PieceType;
+use bullet::game::formats::sfbinpack::chess::{r#move::MoveType, piecetype::PieceType};
 use bullet::game::{inputs::SparseInputType, outputs::OutputBuckets};
 use bullet::lr::{LinearDecayLR, Warmup};
 use bullet::nn::optimiser::{AdamW, AdamWParams};
 use bullet::nn::{InitSettings, Shape};
 use bullet::trainer::schedule::{TrainingSchedule, TrainingSteps};
 use bullet::trainer::{save::SavedFormat, settings::LocalSettings};
-use bullet::value::ValueTrainerBuilder;
-use bullet::value::loader::SfBinpackLoader;
+use bullet::value::{ValueTrainerBuilder, loader::SfBinpackLoader};
 use bullet::wdl::LinearWDL;
 use bullet_trainer::reader::DataReader;
 use bytemuck::zeroed;
-use cinder::chess::{Color, Flip, Phase, Piece, Role, Square};
-use cinder::{nnue::*, util::Num};
+use cinder::chess::{Board, Color, Idx, Phase, Piece, Place, Position, Role, Square};
+use cinder::nnue::*;
+use cinder::util::{Assume, Int, Num, StaticSeq};
 use clap::{Args, Parser, Subcommand};
 use rand::{prelude::*, rng};
 use std::ops::{Deref, Div, RangeInclusive};
@@ -45,44 +44,113 @@ const fn spline(p: f64, points: &[(f64, f64)]) -> f64 {
 }
 
 #[derive(Debug, Default, Clone, Copy)]
-struct KingBuckets;
+struct Features;
 
-impl KingBuckets {
-    const LEN: usize = Bucket::LEN / 2;
+impl Features {
+    const LEN: usize = KAFeature::LEN + TIFeature::LEN;
+    const BUCKETS: usize = KingBucket::LEN / 2;
 }
 
-impl SparseInputType for KingBuckets {
+impl SparseInputType for Features {
     type RequiredDataType = ChessBoard;
 
     fn num_inputs(&self) -> usize {
-        Feature::LEN
+        Self::LEN + 768
     }
 
     fn max_active(&self) -> usize {
-        32
+        32 + 32 + 128
     }
 
     fn map_features<F: FnMut(usize, usize)>(&self, pos: &Self::RequiredDataType, mut f: F) {
-        let our_king = <Square as Num>::new(pos.our_ksq() as _);
-        let opp_king = <Square as Num>::new(pos.opp_ksq() as _).flip();
+        let mut board = Board::empty();
 
+        let mut idx = [0u8; 2];
         for (p, sq) in pos.into_iter() {
             let sq = <Square as Num>::new(sq as _);
-            let piece = Piece::new(Role::new(p & 7), Color::new((p & 8) >> 3));
+            let p = Piece::new(Role::new(p & 7), Color::new((p & 8) >> 3));
 
-            f(
-                Feature::new(Color::White, our_king, piece, sq).cast(),
-                Feature::new(Color::Black, opp_king, piece, sq).cast(),
-            )
+            let idx = if p.role() == Role::King {
+                Idx::new(0)
+            } else {
+                idx[p.color()] += 1;
+                Idx::new(idx[p.color()])
+            };
+
+            board.emplace(sq, Place::new(p, idx));
+        }
+
+        use Color::*;
+        let pos = Position::from(board);
+        let ksqs = [pos.king(White), pos.king(Black)];
+
+        let occupied = pos.occupied().cast();
+        let attacks = pos.threats().map(|t| t.mask(occupied));
+
+        let mut stm_ti_features = StaticSeq::<TIFeature, 128>::new();
+        let mut ntm_ti_features = StaticSeq::<TIFeature, 128>::new();
+
+        for c in Color::iter() {
+            for sq in Square::iter() {
+                let indices = attacks[c][sq];
+                let dst = pos[sq].piece().assume();
+
+                for idx in indices {
+                    let wc = pos.squares()[c][idx].assume();
+                    let src = Piece::new(pos.roles()[c][idx].assume(), c);
+
+                    if let Some(f) = TIFeature::new(White, ksqs[White], src, wc, dst, sq) {
+                        stm_ti_features.push(f);
+                    }
+
+                    if let Some(f) = TIFeature::new(Black, ksqs[Black], src, wc, dst, sq) {
+                        ntm_ti_features.push(f);
+                    }
+                }
+            }
+        }
+
+        assert_eq!(stm_ti_features.len(), ntm_ti_features.len());
+        for (stm, ntm) in stm_ti_features.into_iter().zip(ntm_ti_features) {
+            f(stm.cast(), ntm.cast());
+        }
+
+        for sq in Square::iter() {
+            if let Some(p) = pos[sq].piece() {
+                f(
+                    TIFeature::LEN + KAFeature::new(White, ksqs[White], p, sq).cast::<usize>(),
+                    TIFeature::LEN + KAFeature::new(Black, ksqs[Black], p, sq).cast::<usize>(),
+                );
+
+                f(
+                    Self::LEN + PSQFeature::new(White, ksqs[White], p, sq).cast::<usize>(),
+                    Self::LEN + PSQFeature::new(Black, ksqs[Black], p, sq).cast::<usize>(),
+                );
+            }
         }
     }
 
     fn shorthand(&self) -> String {
-        format!("768x{}hm", Self::LEN)
+        format!("768x{}ti", Self::BUCKETS)
     }
 
     fn description(&self) -> String {
-        "Horizontally mirrored, king bucketed psqt chess inputs".to_owned()
+        "threat inputs".to_owned()
+    }
+
+    fn is_factorised(&self) -> bool {
+        true
+    }
+
+    fn merge_factoriser(&self, mut weights: Vec<f32>) -> Vec<f32> {
+        let unmerged = &mut weights[TIFeature::LEN * Accumulator::LEN..];
+        let (ka, factorizers) = unmerged.split_at_mut(KAFeature::LEN * Accumulator::LEN);
+        for (factorizer, ka) in factorizers.iter().cycle().zip(ka) {
+            *ka += factorizer;
+        }
+
+        weights.truncate(Self::LEN * Accumulator::LEN);
+        weights
     }
 }
 
@@ -383,13 +451,22 @@ impl Orchestrator {
         let mut trainer = ValueTrainerBuilder::default()
             .dual_perspective()
             .optimiser(AdamW)
-            .inputs(KingBuckets)
+            .inputs(Features)
             .output_buckets(Phaser)
             .save_format(&[
                 SavedFormat::id("ftw")
-                    .transform(|store, weights| {
-                        let factoriser = store.get("ftf").values.f32().repeat(KingBuckets::LEN);
-                        Vec::from_iter(weights.into_iter().zip(factoriser).map(|(w, f)| w + f))
+                    .transform(|_, mut weights| {
+                        weights.truncate(TIFeature::LEN * Accumulator::LEN);
+                        weights
+                    })
+                    .round()
+                    .quantise::<i16>(FTQ),
+                SavedFormat::id("ftw")
+                    .transform(|_, weights| {
+                        let mut merged = Features.merge_factoriser(weights);
+                        merged.copy_within(TIFeature::LEN * Accumulator::LEN.., 0);
+                        merged.truncate(KAFeature::LEN * Accumulator::LEN);
+                        merged
                     })
                     .round()
                     .quantise::<i16>(FTQ),
@@ -397,7 +474,7 @@ impl Orchestrator {
                 SavedFormat::id("l12w")
                     .transpose()
                     .round()
-                    .quantise::<i8>(HLS),
+                    .quantise::<i8>(HLQ),
                 SavedFormat::id("l12b"),
                 SavedFormat::id("r2o").transpose(),
                 SavedFormat::id("l23w").transpose(),
@@ -409,15 +486,8 @@ impl Orchestrator {
             ])
             .use_win_rate_model()
             .build_custom(|builder, (stm, ntm, phase), target| {
-                let shape = Shape::new(Accumulator::LEN, Feature::LEN / KingBuckets::LEN);
-                let ftf = builder.new_weights("ftf", shape, InitSettings::Zeroed);
-
-                let mut ft = builder.new_affine("ft", Feature::LEN, Accumulator::LEN);
+                let ft = builder.new_affine("ft", Features.num_inputs(), Accumulator::LEN);
                 ft.init_with_effective_input_size(32);
-
-                let max_weight = i16::MAX as f32 / 32. / FTQ as f32;
-                ft.weights = (ft.weights + ftf.repeat(KingBuckets::LEN))
-                    .clip_pass_through_grad(-max_weight, max_weight);
 
                 let l12 = builder.new_affine("l12", Li::LEN, Phase::LEN * Ln::LEN / 2);
                 let l23 = builder.new_affine("l23", Ln::LEN, Phase::LEN * Ln::LEN / 2);
@@ -459,15 +529,24 @@ impl Orchestrator {
             ..AdamWParams::default()
         };
 
-        let max_weight = HLQ as f32 / HLS as f32;
-        let clipped = AdamWParams {
-            min_weight: -max_weight,
-            max_weight,
-            ..params
-        };
-
         trainer.optimiser.set_params(params);
-        trainer.optimiser.set_params_for_weight("l12w", clipped);
+        trainer.optimiser.set_params_for_weight(
+            "ftw",
+            AdamWParams {
+                min_weight: (i16::MIN as f32 - 128.0 * i8::MIN as f32) / (64.0 * FTQ as f32),
+                max_weight: (i16::MAX as f32 - 128.0 * i8::MAX as f32) / (64.0 * FTQ as f32),
+                ..params
+            },
+        );
+
+        trainer.optimiser.set_params_for_weight(
+            "l12w",
+            AdamWParams {
+                min_weight: i8::MIN as f32 / HLQ as f32,
+                max_weight: i8::MAX as f32 / HLQ as f32,
+                ..params
+            },
+        );
 
         let settings = LocalSettings {
             threads: self.threads,

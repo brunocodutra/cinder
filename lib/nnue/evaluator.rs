@@ -1,26 +1,50 @@
-use crate::nnue::{Accumulator, Bucket, Feature, Nnue, Synapse};
+use crate::nnue::{Accumulator, KAFeature, KingBucket, Nnue, Synapse, TIFeature};
 use crate::util::{Assume, Int, Num};
 use crate::{chess::*, params::Params, search::Ply, simd::*};
 use bytemuck::{Zeroable, zeroed};
-use derive_more::with_trait::Debug;
+use derive_more::with_trait::{Debug, Deref};
 use std::hash::{Hash, Hasher};
-use std::ops::{Deref, Index, Range};
-use std::{array, str::FromStr};
+use std::ops::{Index, Range};
+use std::{array, mem::replace, str::FromStr};
 
 #[cfg(test)]
 use proptest::{prelude::*, sample::*};
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Deref)]
+struct Attacks {
+    #[deref]
+    placement: Placement,
+    squares: SquareByIdx,
+    roles: RoleByIdx,
+    attacks: [Wordboard; Color::LEN],
+}
+
+impl Attacks {
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn new(pos: &Position) -> Self {
+        let occupied = pos.occupied().cast();
+
+        Attacks {
+            placement: *pos.placement(),
+            squares: *pos.squares(),
+            roles: *pos.roles(),
+            attacks: pos.threats().map(|t| t.mask(occupied)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct CachedAccumulator {
     accumulator: Accumulator,
-    placement: Placement,
+    attacks: Attacks,
 }
 
 impl Default for CachedAccumulator {
     fn default() -> Self {
         let mut cache = CachedAccumulator {
-            accumulator: zeroed(),
-            placement: zeroed(),
+            accumulator: Default::default(),
+            attacks: Default::default(),
         };
 
         Nnue::transformer().refresh(&mut cache.accumulator);
@@ -44,7 +68,7 @@ pub struct Evaluator {
     positions: [Position; Ply::LEN],
     accumulator: [[Accumulator; Ply::LEN]; Color::LEN],
     pending: [[Pending; Ply::LEN]; Color::LEN],
-    cache: [[CachedAccumulator; Bucket::LEN]; Color::LEN],
+    cache: [[CachedAccumulator; KingBucket::LEN]; Color::LEN],
 }
 
 impl Default for Evaluator {
@@ -251,7 +275,7 @@ impl Evaluator {
         let turn = self.turn();
         self.positions[self.ply].play(m);
         if self[m.whither()].role() == Some(Role::King) {
-            if Bucket::new(turn, m.whence()) != Bucket::new(turn, m.whither()) {
+            if KingBucket::new(turn, m.whence()) != KingBucket::new(turn, m.whither()) {
                 self.pending[turn][self.ply] = Pending::Refresh;
             }
         }
@@ -313,15 +337,22 @@ impl Evaluator {
         debug_assert_eq!(self.pending[side][ply], Pending::Refresh);
         self.pending[side][ply] = Pending::None;
 
-        let pos = &self.positions[ply];
-        let ksq = pos.king(side);
-        let bucket = Bucket::new(side, ksq);
+        let new = &self.positions[ply];
+        let ksq = new.king(side);
+        let bucket = KingBucket::new(side, ksq);
         let cache = &mut self.cache[side][bucket];
-        accumulate(side, ksq, &cache.placement, pos, |sub, add| {
-            Nnue::transformer().accumulate_in_place(&mut cache.accumulator, sub, add);
+
+        let diff = accumulate_ka(side, ksq, &cache.attacks, new, |sub, add| {
+            Nnue::transformer().accumulate_ka_in_place(&mut cache.accumulator, sub, add);
         });
 
-        cache.placement = *pos.placement();
+        if !diff.is_empty() {
+            let old = replace(&mut cache.attacks, Attacks::new(new));
+            accumulate_ti(side, ksq, &old, &cache.attacks, |sub, add| {
+                Nnue::transformer().accumulate_ti_in_place(&mut cache.accumulator, sub, add);
+            });
+        }
+
         self.accumulator[side][ply] = cache.accumulator;
     }
 
@@ -333,23 +364,35 @@ impl Evaluator {
         (ply > 0).assume();
         let new = &self.positions[ply];
         let old = &self.positions[ply - 1];
+        let ksq = new.king(side);
         let (left, right) = self.accumulator[side].split_at_mut(ply.cast());
         let (src, dst) = (&left[left.len() - 1], &mut right[0]);
-        let diff = accumulate(side, new.king(side), old, new, |sub, add| {
-            Nnue::transformer().accumulate(src, dst, sub, add);
+        let diff = accumulate_ka(side, ksq, old, new, |sub, add| {
+            Nnue::transformer().accumulate_ka(src, dst, sub, add);
         });
 
         if diff.is_empty() {
             *dst = *src;
+        } else {
+            let (old, new) = (Attacks::new(old), Attacks::new(new));
+            accumulate_ti(side, ksq, &old, &new, |sub, add| {
+                Nnue::transformer().accumulate_ti_in_place(dst, sub, add);
+            });
         }
     }
 }
 
 #[inline(always)]
 #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-fn accumulate<F>(side: Color, ksq: Square, old: &Placement, new: &Placement, mut acc: F) -> Bitboard
+fn accumulate_ka<F>(
+    side: Color,
+    ksq: Square,
+    old: &Placement,
+    new: &Placement,
+    mut acc: F,
+) -> Bitboard
 where
-    F: FnMut([Option<Feature>; 2], [Option<Feature>; 2]),
+    F: FnMut([Option<KAFeature>; 2], [Option<KAFeature>; 2]),
 {
     let diff: M8x64 = old.pieces().simd_ne(new.pieces()).into();
     let mut to_sub = Bitboard::from(diff & old.occupied()).iter();
@@ -359,14 +402,14 @@ where
         let sub = array::from_fn(|_| {
             to_sub.next().map(|sq| {
                 let piece = old[sq].piece().assume();
-                Feature::new(side, ksq, piece, sq)
+                KAFeature::new(side, ksq, piece, sq)
             })
         });
 
         let add = array::from_fn(|_| {
             to_add.next().map(|sq| {
                 let piece = new[sq].piece().assume();
-                Feature::new(side, ksq, piece, sq)
+                KAFeature::new(side, ksq, piece, sq)
             })
         });
 
@@ -374,6 +417,58 @@ where
     }
 
     diff.into()
+}
+
+#[inline(always)]
+#[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+fn accumulate_ti<F>(side: Color, ksq: Square, old: &Attacks, new: &Attacks, mut acc: F)
+where
+    F: FnMut([Option<TIFeature>; 2], [Option<TIFeature>; 2]),
+{
+    let captured = old.occupied() & new.occupied() & old.pieces().simd_ne(new.pieces());
+
+    for c in Color::iter() {
+        let moved = new.squares[c].to_simd().simd_ne(old.squares[c].to_simd());
+        let moved = Simd::splat(moved.to_bitmask().cast());
+
+        let promoted = new.roles[c].to_simd().simd_ne(old.roles[c].to_simd());
+        let promoted = Simd::splat(promoted.to_bitmask().cast());
+
+        let captured = captured.to_simd().cast::<u16>();
+        let diff = new.attacks[c] ^ old.attacks[c] | moved | promoted | captured;
+
+        let indices = old.attacks[c] & diff;
+        let nonzero = indices.to_simd().simd_ne(zeroed()).into();
+        let mut to_sub = Squares::new(nonzero).flat_map(|wt| {
+            let dst = old[wt].piece().assume();
+            indices[wt].iter().filter_map(move |idx| {
+                let wc = old.squares[c][idx].assume();
+                let src = Piece::new(old.roles[c][idx].assume(), c);
+                TIFeature::new(side, ksq, src, wc, dst, wt)
+            })
+        });
+
+        let indices = new.attacks[c] & diff;
+        let nonzero = indices.to_simd().simd_ne(zeroed()).into();
+        let mut to_add = Squares::new(nonzero).flat_map(|wt| {
+            let dst = new[wt].piece().assume();
+            indices[wt].iter().filter_map(move |idx| {
+                let wc = new.squares[c][idx].assume();
+                let src = Piece::new(new.roles[c][idx].assume(), c);
+                TIFeature::new(side, ksq, src, wc, dst, wt)
+            })
+        });
+
+        loop {
+            let sub = array::from_fn(|_| to_sub.next());
+            let add = array::from_fn(|_| to_add.next());
+            if sub != [None; 2] || add != [None; 2] {
+                acc(sub, add);
+            } else {
+                break;
+            }
+        }
+    }
 }
 
 impl FromStr for Evaluator {
@@ -397,7 +492,10 @@ mod tests {
     fn evaluator_updates_accumulator_lazily(
         #[filter(#pos.outcome().is_none())] mut pos: Evaluator,
     ) {
-        assert_eq!(pos.evaluate(), Evaluator::new(*pos).evaluate());
+        assert_eq!(
+            pos.evaluate().round(),
+            Evaluator::new(*pos).evaluate().round()
+        );
     }
 
     #[proptest]

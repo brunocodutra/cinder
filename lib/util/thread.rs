@@ -2,7 +2,7 @@ use crate::util::Assume;
 use std::thread::{Builder, JoinHandle};
 
 /// The stack size for spawned threads.
-const STACK_SIZE: usize = 16 << 20;
+const STACK_SIZE: usize = 8 << 20;
 
 #[derive(Debug)]
 pub struct Handle<T>(JoinHandle<T>);

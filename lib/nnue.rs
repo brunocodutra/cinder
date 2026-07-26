@@ -24,14 +24,11 @@ pub use lro::*;
 pub use synapse::*;
 pub use transformer::*;
 
-/// Quantization constant for the feature transformer.
+/// Quantization scale for the feature transformer.
 pub const FTQ: i16 = 255;
 
-/// Quantization constant for the hidden layers.
-pub const HLQ: i16 = 127;
-
 /// Quantization scale for the hidden layers.
-pub const HLS: i16 = 64;
+pub const HLQ: i16 = 64;
 
 const unsafe fn copy_bytes<T>(dst: &mut T, src: &[u8]) -> usize {
     let len = size_of_val(dst);
@@ -99,11 +96,12 @@ pub struct Nnue {
 
 const impl Nnue {
     fn new() -> Self {
-        let bytes = include_bytes!("nnue/nnue.bin");
+        let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/nnue.bin"));
         let mut nnue: Self = zeroed();
         let mut cursor = 0;
 
-        cursor += unsafe { copy_bytes(&mut nnue.transformer.weight.0, &bytes[cursor..]) };
+        cursor += unsafe { copy_bytes(&mut nnue.transformer.ti.0, &bytes[cursor..]) };
+        cursor += unsafe { copy_bytes(&mut nnue.transformer.ka.0, &bytes[cursor..]) };
         cursor += unsafe { copy_bytes(&mut nnue.transformer.bias.0, &bytes[cursor..]) };
 
         for phase in Phase::iter() {
@@ -182,17 +180,25 @@ mod tests {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn feature_transformer_does_not_overflow() {
+        let transformer = Nnue::transformer();
         (0..Accumulator::LEN).for_each(|i| {
-            let transformer = Nnue::transformer();
             let bias = transformer.bias[i] as i32;
-            let mut features = Vec::from_iter(transformer.weight.iter().map(|a| a[i] as i32));
+            let (mut lower, mut upper) = (bias, bias);
 
-            for weights in features.as_chunks_mut::<768>().0 {
-                let (small, _, _) = weights.select_nth_unstable(32);
-                assert!(small.iter().fold(bias, |s, &v| s + v).abs() <= i16::MAX as i32);
-                let (_, _, large) = weights.select_nth_unstable(735);
-                assert!(large.iter().fold(bias, |s, &v| s + v).abs() <= i16::MAX as i32);
+            let mut ka = Vec::from_iter(transformer.ka.iter().map(|a| a[i]));
+            let mut ti = Vec::from_iter(transformer.ti.iter().map(|a| a[i]));
+
+            for (n, ws) in [(32, &mut ka), (90, &mut ti)] {
+                let (small, _, _) = ws.select_nth_unstable(n);
+                small.iter().for_each(|&v| lower += v as i32);
+
+                let len = ws.len();
+                let (_, _, large) = ws.select_nth_unstable(len - 1 - n);
+                large.iter().for_each(|&v| upper += v as i32);
             }
+
+            assert!((i16::MIN as i32..=i16::MAX as i32).contains(&lower));
+            assert!((i16::MIN as i32..=i16::MAX as i32).contains(&upper));
         });
     }
 }

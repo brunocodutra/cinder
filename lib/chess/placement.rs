@@ -2,7 +2,7 @@ use crate::chess::{Color, Furl, Piece, Rays, Role, Square, Unfurl};
 use crate::simd::*;
 use crate::util::{Assume, Binary, Bits, Int, Num};
 use bytemuck::{NoUninit, Pod, Zeroable, zeroed};
-use derive_more::with_trait::{Constructor, Debug, Deref, DerefMut, Display};
+use derive_more::with_trait::{Constructor, Debug, Deref, DerefMut, Display, IntoIterator};
 use std::hash::{Hash, Hasher};
 use std::{iter::FusedIterator, mem::transmute_copy, ops::*};
 
@@ -10,7 +10,7 @@ use std::{iter::FusedIterator, mem::transmute_copy, ops::*};
 use proptest::prelude::*;
 
 /// A place on the board.
-#[derive(Debug, Copy, Hash, Zeroable, NoUninit)]
+#[derive(Debug, Copy, Hash, Zeroable, NoUninit, Deref)]
 #[derive_const(Default, Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Place(Bits<u8, 8>);
@@ -428,8 +428,8 @@ impl<T: MaskElement> From<M<T, 16>> for IdxSet {
 #[cfg(target_feature = "avx512f")]
 impl<T: MaskElement> From<IdxSet> for M<T, 16> {
     #[inline(always)]
-    fn from(bb: IdxSet) -> Self {
-        M::from_bitmask(bb.0 as u64)
+    fn from(indices: IdxSet) -> Self {
+        M::from_bitmask(indices.0 as u64)
     }
 }
 
@@ -602,8 +602,7 @@ impl Placement {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn blend(&self, mask: M8x64, place: Place) -> Self {
-        let places = Self::new([place; _]).to_simd();
-        Self::from_simd(mask.select(places, self.to_simd()))
+        Self::from_simd(mask.select(Simd::splat(place.get()), self.to_simd()))
     }
 
     /// Sets a place.
@@ -635,8 +634,6 @@ impl Placement {
 
         #[cfg(not(target_feature = "avx512f"))]
         unsafe {
-            use std::mem::transmute;
-
             #[rustfmt::skip]
             const S0: u8x64 = Simd::from_array([
                 0x00, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80,
@@ -661,7 +658,9 @@ impl Placement {
                 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80,
             ]);
 
-            transmute::<(u8x64, u8x64), u16x64>(S0.shuffle(indices).interleave(S1.shuffle(indices)))
+            transmute_copy::<(u8x64, u8x64), u16x64>(
+                &S0.shuffle(indices).interleave(S1.shuffle(indices)),
+            )
         }
     }
 
@@ -1010,9 +1009,9 @@ impl Unfurl for FurledPlacement {
 }
 
 /// [`IdxSet`] for each [`Square`].
-#[derive(Debug, Clone, Copy, Eq, Zeroable, Deref, DerefMut)]
+#[derive(Debug, Clone, Copy, Eq, Zeroable, Deref, DerefMut, IntoIterator)]
 #[repr(transparent)]
-pub struct Wordboard([IdxSet; Square::LEN]);
+pub struct Wordboard(#[into_iterator(owned, ref, ref_mut)] [IdxSet; Square::LEN]);
 
 impl Default for Wordboard {
     #[inline(always)]
@@ -1044,6 +1043,20 @@ impl Wordboard {
     pub fn matching(&self, mask: IdxSet) -> M16x64 {
         let masked = self.to_simd().bitand(Simd::splat(*mask));
         masked.simd_ne(zeroed()).into()
+    }
+
+    /// Masks this vector.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn mask(&self, mask: M16x64) -> Self {
+        Self::from_simd(mask.select(self.to_simd(), zeroed()))
+    }
+
+    /// Blends a value into this vector.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn blend(&self, mask: M16x64, indices: IdxSet) -> Self {
+        Self::from_simd(mask.select(Simd::splat(indices.get()), self.to_simd()))
     }
 
     /// Converts to the equivalent simd type by copy.
@@ -1169,9 +1182,9 @@ impl BitXorAssign<u16x64> for Wordboard {
 /// Information by each piece on the board by [`Idx`].
 ///
 /// Requires `size_of::<T> == size_of::<u8>()`.
-#[derive(Debug, Default, Clone, Copy, Eq, Constructor, Deref, DerefMut)]
+#[derive(Debug, Default, Clone, Copy, Eq, Constructor, Deref, DerefMut, IntoIterator)]
 #[repr(transparent)]
-pub struct ByIdx<T: Copy>([T; Idx::LEN]);
+pub struct ByIdx<T: Copy>(#[into_iterator(owned, ref, ref_mut)] [T; Idx::LEN]);
 
 impl<T: Copy + PartialEq> PartialEq for ByIdx<T> {
     #[inline(always)]
@@ -1218,9 +1231,9 @@ impl<T: Copy + PartialEq> ByIdx<T> {
 }
 
 /// The [`Square`] of each piece on the board by [`Color`] and [`Idx`].
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Deref, DerefMut)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Deref, DerefMut, IntoIterator)]
 #[repr(transparent)]
-pub struct SquareByIdx([ByIdx<Option<Square>>; Color::LEN]);
+pub struct SquareByIdx(#[into_iterator(owned, ref, ref_mut)] [ByIdx<Option<Square>>; Color::LEN]);
 
 impl SquareByIdx {
     #[inline(always)]
@@ -1241,9 +1254,9 @@ impl SquareByIdx {
 }
 
 /// The [`Role`] of each piece on the board by [`Color`] and [`Idx`].
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Deref, DerefMut)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Deref, DerefMut, IntoIterator)]
 #[repr(transparent)]
-pub struct RoleByIdx([ByIdx<Option<Role>>; Color::LEN]);
+pub struct RoleByIdx(#[into_iterator(owned, ref, ref_mut)] [ByIdx<Option<Role>>; Color::LEN]);
 
 impl RoleByIdx {
     #[inline(always)]

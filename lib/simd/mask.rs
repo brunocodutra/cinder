@@ -107,6 +107,27 @@ impl<T: MaskElement, const N: usize> M<T, N> {
     /// Converts to a scalar bitmask.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn cast<U: MaskElement>(self) -> M<U, N> {
+        #[cfg(target_feature = "avx512f")]
+        {
+            M {
+                inner: self.inner,
+                phantom: PhantomData,
+            }
+        }
+
+        #[cfg(not(target_feature = "avx512f"))]
+        {
+            M {
+                inner: self.inner.cast(),
+                phantom: PhantomData,
+            }
+        }
+    }
+
+    /// Converts to a scalar bitmask.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn to_bitmask(self) -> u64 {
         #[cfg(target_feature = "avx512f")]
         {

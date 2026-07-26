@@ -1,4 +1,4 @@
-use crate::nnue::{FTQ, HLS, Layer, Li, Ln, Synapse};
+use crate::nnue::{FTQ, HLQ, Layer, Li, Ln, Synapse};
 use crate::{simd::*, util::Assume};
 use bytemuck::Zeroable;
 use std::{array, ops::Mul};
@@ -6,7 +6,7 @@ use std::{array, ops::Mul};
 const I: usize = Li::LEN;
 const O: usize = Ln::LEN / 2;
 
-const I2F: f32 = (1 << 9) as f32 / (FTQ as f32 * FTQ as f32 * HLS as f32);
+const I2F: f32 = (1 << 9) as f32 / (FTQ as f32 * FTQ as f32 * HLQ as f32);
 
 /// The input connection.
 #[derive(Debug, Zeroable)]
@@ -122,6 +122,6 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Lin<S
         ]);
 
         let result = self.next.forward(active.cast_ref()).reduce_sum();
-        result.mul(HLS as f32)
+        result.mul(HLQ as f32)
     }
 }

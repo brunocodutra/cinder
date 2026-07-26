@@ -1,4 +1,4 @@
-use crate::nnue::{Accumulator, Feature, Layer};
+use crate::nnue::{Accumulator, KAFeature, Layer, TIFeature};
 use crate::simd::*;
 use crate::util::{Assume, Num};
 use bytemuck::Zeroable;
@@ -12,7 +12,8 @@ const N: usize = Accumulator::LEN;
 #[debug("Transformer<{N}>")]
 pub struct Transformer {
     pub bias: Aligned<[i16; N]>,
-    pub weight: Aligned<[[i16; N]; Feature::LEN]>,
+    pub ka: Aligned<[[i16; N]; KAFeature::LEN]>,
+    pub ti: Aligned<[[i16; N]; TIFeature::LEN]>,
 }
 
 impl Transformer {
@@ -22,18 +23,71 @@ impl Transformer {
         *accumulator = self.bias;
     }
 
-    /// Updates `acc` by adding and removing features.
+    /// Updates `dst` by adding and removing [`KAFeature`]s from `src`.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn accumulate_in_place(
+    pub fn accumulate_ka(
+        &self,
+        src: &Aligned<[i16; N]>,
+        dst: &mut Aligned<[i16; N]>,
+        sub: [Option<KAFeature>; 2],
+        add: [Option<KAFeature>; 2],
+    ) {
+        match (sub, add) {
+            ([None, None], [Some(a1), None]) => {
+                let a1 = self.ka.get(a1.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    dst[i] = src[i] + a1[i];
+                }
+            }
+
+            ([Some(s1), None], [Some(a1), None]) => {
+                let s1 = self.ka.get(s1.cast::<usize>()).assume();
+                let a1 = self.ka.get(a1.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    dst[i] = src[i] + a1[i] - s1[i];
+                }
+            }
+
+            ([Some(s1), Some(s2)], [Some(a1), None]) => {
+                let s1 = self.ka.get(s1.cast::<usize>()).assume();
+                let s2 = self.ka.get(s2.cast::<usize>()).assume();
+                let a1 = self.ka.get(a1.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    dst[i] = src[i] + a1[i] - s1[i] - s2[i];
+                }
+            }
+
+            ([Some(s1), Some(s2)], [Some(a1), Some(a2)]) => {
+                let s1 = self.ka.get(s1.cast::<usize>()).assume();
+                let s2 = self.ka.get(s2.cast::<usize>()).assume();
+                let a1 = self.ka.get(a1.cast::<usize>()).assume();
+                let a2 = self.ka.get(a2.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    dst[i] = src[i] + a1[i] - s1[i] + a2[i] - s2[i];
+                }
+            }
+
+            _ => unsafe { unreachable_unchecked() },
+        }
+    }
+
+    /// Updates `acc` by adding and removing [`KAFeature`]s.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn accumulate_ka_in_place(
         &self,
         acc: &mut Aligned<[i16; N]>,
-        sub: [Option<Feature>; 2],
-        add: [Option<Feature>; 2],
+        sub: [Option<KAFeature>; 2],
+        add: [Option<KAFeature>; 2],
     ) {
         match (sub, add) {
             ([Some(s1), None], [None, None]) => {
-                let s1 = self.weight.get(s1.cast::<usize>()).assume();
+                let s1 = self.ka.get(s1.cast::<usize>()).assume();
 
                 for i in 0..N {
                     acc[i] -= s1[i];
@@ -41,7 +95,7 @@ impl Transformer {
             }
 
             ([None, None], [Some(a1), None]) => {
-                let a1 = self.weight.get(a1.cast::<usize>()).assume();
+                let a1 = self.ka.get(a1.cast::<usize>()).assume();
 
                 for i in 0..N {
                     acc[i] += a1[i];
@@ -49,8 +103,8 @@ impl Transformer {
             }
 
             ([Some(s1), Some(s2)], [None, None]) => {
-                let s1 = self.weight.get(s1.cast::<usize>()).assume();
-                let s2 = self.weight.get(s2.cast::<usize>()).assume();
+                let s1 = self.ka.get(s1.cast::<usize>()).assume();
+                let s2 = self.ka.get(s2.cast::<usize>()).assume();
 
                 for i in 0..N {
                     acc[i] -= s1[i] + s2[i];
@@ -58,8 +112,8 @@ impl Transformer {
             }
 
             ([None, None], [Some(a1), Some(a2)]) => {
-                let a1 = self.weight.get(a1.cast::<usize>()).assume();
-                let a2 = self.weight.get(a2.cast::<usize>()).assume();
+                let a1 = self.ka.get(a1.cast::<usize>()).assume();
+                let a2 = self.ka.get(a2.cast::<usize>()).assume();
 
                 for i in 0..N {
                     acc[i] += a1[i] + a2[i];
@@ -67,8 +121,8 @@ impl Transformer {
             }
 
             ([Some(s1), None], [Some(a1), None]) => {
-                let s1 = self.weight.get(s1.cast::<usize>()).assume();
-                let a1 = self.weight.get(a1.cast::<usize>()).assume();
+                let s1 = self.ka.get(s1.cast::<usize>()).assume();
+                let a1 = self.ka.get(a1.cast::<usize>()).assume();
 
                 for i in 0..N {
                     acc[i] += a1[i] - s1[i];
@@ -76,9 +130,9 @@ impl Transformer {
             }
 
             ([Some(s1), None], [Some(a1), Some(a2)]) => {
-                let s1 = self.weight.get(s1.cast::<usize>()).assume();
-                let a1 = self.weight.get(a1.cast::<usize>()).assume();
-                let a2 = self.weight.get(a2.cast::<usize>()).assume();
+                let s1 = self.ka.get(s1.cast::<usize>()).assume();
+                let a1 = self.ka.get(a1.cast::<usize>()).assume();
+                let a2 = self.ka.get(a2.cast::<usize>()).assume();
 
                 for i in 0..N {
                     acc[i] += a1[i] - s1[i] + a2[i];
@@ -86,9 +140,9 @@ impl Transformer {
             }
 
             ([Some(s1), Some(s2)], [Some(a1), None]) => {
-                let s1 = self.weight.get(s1.cast::<usize>()).assume();
-                let s2 = self.weight.get(s2.cast::<usize>()).assume();
-                let a1 = self.weight.get(a1.cast::<usize>()).assume();
+                let s1 = self.ka.get(s1.cast::<usize>()).assume();
+                let s2 = self.ka.get(s2.cast::<usize>()).assume();
+                let a1 = self.ka.get(a1.cast::<usize>()).assume();
 
                 for i in 0..N {
                     acc[i] += a1[i] - s1[i] - s2[i];
@@ -96,10 +150,10 @@ impl Transformer {
             }
 
             ([Some(s1), Some(s2)], [Some(a1), Some(a2)]) => {
-                let s1 = self.weight.get(s1.cast::<usize>()).assume();
-                let s2 = self.weight.get(s2.cast::<usize>()).assume();
-                let a1 = self.weight.get(a1.cast::<usize>()).assume();
-                let a2 = self.weight.get(a2.cast::<usize>()).assume();
+                let s1 = self.ka.get(s1.cast::<usize>()).assume();
+                let s2 = self.ka.get(s2.cast::<usize>()).assume();
+                let a1 = self.ka.get(a1.cast::<usize>()).assume();
+                let a2 = self.ka.get(a2.cast::<usize>()).assume();
 
                 for i in 0..N {
                     acc[i] += a1[i] - s1[i] + a2[i] - s2[i];
@@ -110,52 +164,87 @@ impl Transformer {
         }
     }
 
-    /// Updates `dst` by adding and removing features from `src`.
+    /// Updates `acc` by adding and removing [`TIFeature`]s.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn accumulate(
+    pub fn accumulate_ti_in_place(
         &self,
-        src: &Aligned<[i16; N]>,
-        dst: &mut Aligned<[i16; N]>,
-        sub: [Option<Feature>; 2],
-        add: [Option<Feature>; 2],
+        acc: &mut Aligned<[i16; N]>,
+        sub: [Option<TIFeature>; 2],
+        add: [Option<TIFeature>; 2],
     ) {
         match (sub, add) {
-            ([None, None], [Some(a1), None]) => {
-                let a1 = self.weight.get(a1.cast::<usize>()).assume();
+            ([Some(s1), None], [None, None]) => {
+                let s1 = self.ti.get(s1.cast::<usize>()).assume();
 
                 for i in 0..N {
-                    dst[i] = src[i] + a1[i];
+                    acc[i] -= s1[i];
+                }
+            }
+
+            ([None, None], [Some(a1), None]) => {
+                let a1 = self.ti.get(a1.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    acc[i] += a1[i];
+                }
+            }
+
+            ([Some(s1), Some(s2)], [None, None]) => {
+                let s1 = self.ti.get(s1.cast::<usize>()).assume();
+                let s2 = self.ti.get(s2.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    acc[i] -= s1[i] + s2[i];
+                }
+            }
+
+            ([None, None], [Some(a1), Some(a2)]) => {
+                let a1 = self.ti.get(a1.cast::<usize>()).assume();
+                let a2 = self.ti.get(a2.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    acc[i] += a1[i] + a2[i];
                 }
             }
 
             ([Some(s1), None], [Some(a1), None]) => {
-                let s1 = self.weight.get(s1.cast::<usize>()).assume();
-                let a1 = self.weight.get(a1.cast::<usize>()).assume();
+                let s1 = self.ti.get(s1.cast::<usize>()).assume();
+                let a1 = self.ti.get(a1.cast::<usize>()).assume();
 
                 for i in 0..N {
-                    dst[i] = src[i] + a1[i] - s1[i];
+                    acc[i] += a1[i] - s1[i];
+                }
+            }
+
+            ([Some(s1), None], [Some(a1), Some(a2)]) => {
+                let s1 = self.ti.get(s1.cast::<usize>()).assume();
+                let a1 = self.ti.get(a1.cast::<usize>()).assume();
+                let a2 = self.ti.get(a2.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    acc[i] += a1[i] - s1[i] + a2[i];
                 }
             }
 
             ([Some(s1), Some(s2)], [Some(a1), None]) => {
-                let s1 = self.weight.get(s1.cast::<usize>()).assume();
-                let s2 = self.weight.get(s2.cast::<usize>()).assume();
-                let a1 = self.weight.get(a1.cast::<usize>()).assume();
+                let s1 = self.ti.get(s1.cast::<usize>()).assume();
+                let s2 = self.ti.get(s2.cast::<usize>()).assume();
+                let a1 = self.ti.get(a1.cast::<usize>()).assume();
 
                 for i in 0..N {
-                    dst[i] = src[i] + a1[i] - s1[i] - s2[i];
+                    acc[i] += a1[i] - s1[i] - s2[i];
                 }
             }
 
             ([Some(s1), Some(s2)], [Some(a1), Some(a2)]) => {
-                let s1 = self.weight.get(s1.cast::<usize>()).assume();
-                let s2 = self.weight.get(s2.cast::<usize>()).assume();
-                let a1 = self.weight.get(a1.cast::<usize>()).assume();
-                let a2 = self.weight.get(a2.cast::<usize>()).assume();
+                let s1 = self.ti.get(s1.cast::<usize>()).assume();
+                let s2 = self.ti.get(s2.cast::<usize>()).assume();
+                let a1 = self.ti.get(a1.cast::<usize>()).assume();
+                let a2 = self.ti.get(a2.cast::<usize>()).assume();
 
                 for i in 0..N {
-                    dst[i] = src[i] + a1[i] - s1[i] + a2[i] - s2[i];
+                    acc[i] += a1[i] - s1[i] + a2[i] - s2[i];
                 }
             }
 

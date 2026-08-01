@@ -1,9 +1,10 @@
 use crate::chess::{Bitboard, Color, Flip, Perspective, Rank, Role, Square};
+use crate::simd::*;
 use crate::util::{Assume, Binary, Bits, Int, Num};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::ops::{Index, IndexMut};
-use std::{hint::unreachable_unchecked, str::FromStr};
+use std::str::FromStr;
 
 /// A chess [piece][`Role`] of a certain [`Color`].
 #[derive(Debug, Copy, Hash)]
@@ -35,6 +36,40 @@ const unsafe impl Int for Piece {}
 
 const impl Piece {
     pub const LEN: usize = Self::MAX as usize + 1;
+
+    pub const ENCODER: u8x16 = const {
+        let mut encoded = [0u8; 16];
+        encoded[Piece::WhiteKing.cast::<usize>()] = 0b0001;
+        encoded[Piece::WhitePawn.cast::<usize>()] = 0b0010;
+        encoded[Piece::WhiteKnight.cast::<usize>()] = 0b0011;
+        encoded[Piece::WhiteBishop.cast::<usize>()] = 0b0101;
+        encoded[Piece::WhiteRook.cast::<usize>()] = 0b0110;
+        encoded[Piece::WhiteQueen.cast::<usize>()] = 0b0111;
+        encoded[Piece::BlackKing.cast::<usize>()] = 0b1001;
+        encoded[Piece::BlackPawn.cast::<usize>()] = 0b1010;
+        encoded[Piece::BlackKnight.cast::<usize>()] = 0b1011;
+        encoded[Piece::BlackBishop.cast::<usize>()] = 0b1101;
+        encoded[Piece::BlackRook.cast::<usize>()] = 0b1110;
+        encoded[Piece::BlackQueen.cast::<usize>()] = 0b1111;
+        u8x16::from_array(encoded)
+    };
+
+    pub const DECODER: u8x16 = const {
+        let mut encoded = [0u8; 16];
+        encoded[0b0001] = Piece::WhiteKing.get();
+        encoded[0b0010] = Piece::WhitePawn.get();
+        encoded[0b0011] = Piece::WhiteKnight.get();
+        encoded[0b0101] = Piece::WhiteBishop.get();
+        encoded[0b0110] = Piece::WhiteRook.get();
+        encoded[0b0111] = Piece::WhiteQueen.get();
+        encoded[0b1001] = Piece::BlackKing.get();
+        encoded[0b1010] = Piece::BlackPawn.get();
+        encoded[0b1011] = Piece::BlackKnight.get();
+        encoded[0b1101] = Piece::BlackBishop.get();
+        encoded[0b1110] = Piece::BlackRook.get();
+        encoded[0b1111] = Piece::BlackQueen.get();
+        u8x16::from_array(encoded)
+    };
 
     /// Constructs [`Piece`] from a pair of [`Color`] and [`Role`].
     #[inline(always)]
@@ -124,39 +159,14 @@ const impl Binary for Piece {
 
     #[inline(always)]
     fn encode(&self) -> Self::Bits {
-        match self {
-            Piece::WhitePawn => Bits::new(0b0010),
-            Piece::WhiteKnight => Bits::new(0b0011),
-            Piece::WhiteBishop => Bits::new(0b0101),
-            Piece::WhiteRook => Bits::new(0b0110),
-            Piece::WhiteQueen => Bits::new(0b0111),
-            Piece::WhiteKing => Bits::new(0b0001),
-            Piece::BlackPawn => Bits::new(0b1010),
-            Piece::BlackKnight => Bits::new(0b1011),
-            Piece::BlackBishop => Bits::new(0b1101),
-            Piece::BlackRook => Bits::new(0b1110),
-            Piece::BlackQueen => Bits::new(0b1111),
-            Piece::BlackKing => Bits::new(0b1001),
-        }
+        let encoded = Self::ENCODER.as_array()[self.cast::<usize>()];
+        encoded.convert().assume()
     }
 
     #[inline(always)]
     fn decode(bits: Self::Bits) -> Self {
-        match bits.get() {
-            0b0010 => Piece::WhitePawn,
-            0b0011 => Piece::WhiteKnight,
-            0b0101 => Piece::WhiteBishop,
-            0b0110 => Piece::WhiteRook,
-            0b0111 => Piece::WhiteQueen,
-            0b0001 => Piece::WhiteKing,
-            0b1010 => Piece::BlackPawn,
-            0b1011 => Piece::BlackKnight,
-            0b1101 => Piece::BlackBishop,
-            0b1110 => Piece::BlackRook,
-            0b1111 => Piece::BlackQueen,
-            0b1001 => Piece::BlackKing,
-            _ => unsafe { unreachable_unchecked() },
-        }
+        let decoded = Self::DECODER.as_array()[bits.cast::<usize>()];
+        decoded.convert().assume()
     }
 }
 

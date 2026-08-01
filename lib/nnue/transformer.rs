@@ -1,4 +1,4 @@
-use crate::nnue::{Accumulator, KAFeature, Layer, TIFeature};
+use crate::nnue::{Accumulator, KAFeature, Layer, PPFeature, TIFeature};
 use crate::simd::*;
 use crate::util::{Assume, Num};
 use bytemuck::Zeroable;
@@ -14,6 +14,7 @@ pub struct Transformer {
     pub bias: Aligned<[i16; N]>,
     pub ka: Aligned<[[i16; N]; KAFeature::LEN]>,
     pub ti: Aligned<[[i16; N]; TIFeature::LEN]>,
+    pub pp: Aligned<[[i16; N]; PPFeature::LEN]>,
 }
 
 impl Transformer {
@@ -242,6 +243,94 @@ impl Transformer {
                 let s2 = self.ti.get(s2.cast::<usize>()).assume();
                 let a1 = self.ti.get(a1.cast::<usize>()).assume();
                 let a2 = self.ti.get(a2.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    acc[i] += a1[i] - s1[i] + a2[i] - s2[i];
+                }
+            }
+
+            _ => unsafe { unreachable_unchecked() },
+        }
+    }
+
+    /// Updates `acc` by adding and removing [`PPFeature`]s.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn accumulate_pp_in_place(
+        &self,
+        acc: &mut Aligned<[i16; N]>,
+        sub: [Option<PPFeature>; 2],
+        add: [Option<PPFeature>; 2],
+    ) {
+        match (sub, add) {
+            ([Some(s1), None], [None, None]) => {
+                let s1 = self.pp.get(s1.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    acc[i] -= s1[i];
+                }
+            }
+
+            ([None, None], [Some(a1), None]) => {
+                let a1 = self.pp.get(a1.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    acc[i] += a1[i];
+                }
+            }
+
+            ([Some(s1), Some(s2)], [None, None]) => {
+                let s1 = self.pp.get(s1.cast::<usize>()).assume();
+                let s2 = self.pp.get(s2.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    acc[i] -= s1[i] + s2[i];
+                }
+            }
+
+            ([None, None], [Some(a1), Some(a2)]) => {
+                let a1 = self.pp.get(a1.cast::<usize>()).assume();
+                let a2 = self.pp.get(a2.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    acc[i] += a1[i] + a2[i];
+                }
+            }
+
+            ([Some(s1), None], [Some(a1), None]) => {
+                let s1 = self.pp.get(s1.cast::<usize>()).assume();
+                let a1 = self.pp.get(a1.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    acc[i] += a1[i] - s1[i];
+                }
+            }
+
+            ([Some(s1), None], [Some(a1), Some(a2)]) => {
+                let s1 = self.pp.get(s1.cast::<usize>()).assume();
+                let a1 = self.pp.get(a1.cast::<usize>()).assume();
+                let a2 = self.pp.get(a2.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    acc[i] += a1[i] - s1[i] + a2[i];
+                }
+            }
+
+            ([Some(s1), Some(s2)], [Some(a1), None]) => {
+                let s1 = self.pp.get(s1.cast::<usize>()).assume();
+                let s2 = self.pp.get(s2.cast::<usize>()).assume();
+                let a1 = self.pp.get(a1.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    acc[i] += a1[i] - s1[i] - s2[i];
+                }
+            }
+
+            ([Some(s1), Some(s2)], [Some(a1), Some(a2)]) => {
+                let s1 = self.pp.get(s1.cast::<usize>()).assume();
+                let s2 = self.pp.get(s2.cast::<usize>()).assume();
+                let a1 = self.pp.get(a1.cast::<usize>()).assume();
+                let a2 = self.pp.get(a2.cast::<usize>()).assume();
 
                 for i in 0..N {
                     acc[i] += a1[i] - s1[i] + a2[i] - s2[i];

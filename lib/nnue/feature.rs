@@ -1,9 +1,11 @@
-use crate::chess::{Color, File, Perspective, Piece, Role, Side, Square};
+use crate::chess::{Bitboard, Color, File, Perspective, Piece, Placement, Role, Side, Square};
+use crate::simd::*;
 use crate::util::{Assume, Int, Num, ones};
-use std::ops::{BitAnd, Index, IndexMut};
+use std::ops::{BitAnd, Index, IndexMut, Not};
+use std::{array, mem::transmute_copy};
 
-/// A PSQ feature with horizontal mirroring.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// A piece-square feature with horizontal mirroring.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct PSQFeature(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <PSQFeature as Num>::Repr);
@@ -16,22 +18,30 @@ const unsafe impl Num for PSQFeature {
 
 const unsafe impl Int for PSQFeature {}
 
-const impl PSQFeature {
-    /// The total number of different features.
-    pub const LEN: usize = 768;
+impl PSQFeature {
+    /// The total number of different piece-square features.
+    pub const LEN: usize = Square::LEN * Piece::LEN;
 
-    /// Constructs a [`PSQFeature`].
+    /// Constructs a lookup table for [`PSQFeature`].
     #[inline(always)]
-    pub fn new(side: Color, ksq: Square, piece: Piece, sq: Square) -> Self {
-        let chirality = Side::from(ksq.file() < File::E);
-        let psq = 64 * piece.perspective(side).cast::<u16>()
-            + sq.perspective(side).perspective(chirality).cast::<u16>();
+    pub fn lut(
+        side: Color,
+        ksq: Square,
+        placement: &Placement,
+    ) -> Simd<<Self as Num>::Repr, { Square::LEN }> {
+        const DECODER: u8x64 = unsafe { transmute_copy::<[u8x16; 4], u8x64>(&[Piece::DECODER; 4]) };
+        let pieces = DECODER.shuffle(placement.pieces() >> 4) ^ Simd::splat(side.get());
 
-        Num::new(psq)
+        let perspective = Square::A1.perspective(side);
+        let chirality = Square::A1.perspective(Side::from(ksq.file() < File::E));
+        let orient = Simd::splat(perspective.cast::<u8>() | chirality.cast::<u8>());
+        let squares = u8x64::from_array(array::from_fn(Num::cast)) ^ orient;
+
+        u16x64::splat(Square::LEN.cast()) * pieces.cast::<u16>() + squares.cast::<u16>()
     }
 }
 
-const impl<T> Index<PSQFeature> for [T; PSQFeature::LEN] {
+impl<T> Index<PSQFeature> for [T; PSQFeature::LEN] {
     type Output = T;
 
     #[inline(always)]
@@ -40,7 +50,7 @@ const impl<T> Index<PSQFeature> for [T; PSQFeature::LEN] {
     }
 }
 
-const impl<T> IndexMut<PSQFeature> for [T; PSQFeature::LEN] {
+impl<T> IndexMut<PSQFeature> for [T; PSQFeature::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, f: PSQFeature) -> &mut Self::Output {
         self.get_mut(f.cast::<usize>()).assume()
@@ -61,7 +71,7 @@ const unsafe impl Num for KingBucket {
 
 const unsafe impl Int for KingBucket {}
 
-const impl KingBucket {
+impl KingBucket {
     pub const LEN: usize = Self::MAX as usize + 1;
 
     #[inline(always)]
@@ -82,7 +92,7 @@ const impl KingBucket {
     }
 }
 
-const impl<T> Index<KingBucket> for [T; KingBucket::LEN] {
+impl<T> Index<KingBucket> for [T; KingBucket::LEN] {
     type Output = T;
 
     #[inline(always)]
@@ -91,7 +101,7 @@ const impl<T> Index<KingBucket> for [T; KingBucket::LEN] {
     }
 }
 
-const impl<T> IndexMut<KingBucket> for [T; KingBucket::LEN] {
+impl<T> IndexMut<KingBucket> for [T; KingBucket::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, b: KingBucket) -> &mut Self::Output {
         self.get_mut(b.cast::<usize>()).assume()
@@ -99,7 +109,7 @@ const impl<T> IndexMut<KingBucket> for [T; KingBucket::LEN] {
 }
 
 /// A king-bucketed PSQ feature with horizontal mirroring.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct KAFeature(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <KAFeature as Num>::Repr);
@@ -112,21 +122,24 @@ const unsafe impl Num for KAFeature {
 
 const unsafe impl Int for KAFeature {}
 
-const impl KAFeature {
-    /// The total number of different features.
+impl KAFeature {
+    /// The total number of different king-piece-square features.
     pub const LEN: usize = PSQFeature::LEN * KingBucket::LEN / 2;
 
-    /// Constructs a [`KAFeature`].
+    /// Constructs a lookup table for [`KAFeature`].
     #[inline(always)]
-    pub fn new(side: Color, ksq: Square, piece: Piece, sq: Square) -> Self {
+    pub fn lut(
+        side: Color,
+        ksq: Square,
+        placement: &Placement,
+    ) -> Simd<<Self as Num>::Repr, { Square::LEN }> {
         let chirality = Side::from(ksq.file() < File::E);
-        let psq = PSQFeature::new(side, ksq, piece, sq).get();
-        let bucket = KingBucket::new(side, ksq.perspective(chirality));
-        Num::new(psq + PSQFeature::LEN.cast::<u16>() * bucket.cast::<u16>())
+        let bucket = u16x64::splat(KingBucket::new(side, ksq.perspective(chirality)).cast());
+        u16x64::splat(PSQFeature::LEN.cast()) * bucket + PSQFeature::lut(side, ksq, placement)
     }
 }
 
-const impl<T> Index<KAFeature> for [T; KAFeature::LEN] {
+impl<T> Index<KAFeature> for [T; KAFeature::LEN] {
     type Output = T;
 
     #[inline(always)]
@@ -135,7 +148,7 @@ const impl<T> Index<KAFeature> for [T; KAFeature::LEN] {
     }
 }
 
-const impl<T> IndexMut<KAFeature> for [T; KAFeature::LEN] {
+impl<T> IndexMut<KAFeature> for [T; KAFeature::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, f: KAFeature) -> &mut Self::Output {
         self.get_mut(f.cast::<usize>()).assume()
@@ -143,7 +156,7 @@ const impl<T> IndexMut<KAFeature> for [T; KAFeature::LEN] {
 }
 
 /// A threat feature with horizontal mirroring.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct TIFeature(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <TIFeature as Num>::Repr);
@@ -176,13 +189,13 @@ impl TIFeature {
     const ROOK_INDICES: [u16; 65] = threat_index_for(Role::Rook);
     const QUEEN_INDICES: [u16; 65] = threat_index_for(Role::Queen);
 
-    const KNIGHT_OFFSET: u16 = 6 * Self::PAWN_INDEX;
+    const KNIGHT_OFFSET: u16 = 4 * Self::PAWN_INDEX;
     const BISHOP_OFFSET: u16 = Self::KNIGHT_OFFSET + 10 * Self::KNIGHT_INDICES[64];
     const ROOK_OFFSET: u16 = Self::BISHOP_OFFSET + 8 * Self::BISHOP_INDICES[64];
     const QUEEN_OFFSET: u16 = Self::ROOK_OFFSET + 8 * Self::ROOK_INDICES[64];
     const THREAT_FEATURES: u16 = Self::QUEEN_OFFSET + 10 * Self::QUEEN_INDICES[64];
 
-    /// The total number of different features.
+    /// The total number of different threat features.
     pub const LEN: usize = 2 * Self::THREAT_FEATURES as usize;
 
     /// Constructs a [`ThreatFeature`].
@@ -221,10 +234,6 @@ impl TIFeature {
 
     #[inline(always)]
     fn pawn_threat_idx(src: Piece, wc: Square, dst: Piece, wt: Square) -> Option<u16> {
-        if wt > wc && src.role() == dst.role() && src.color() != dst.color() {
-            return None;
-        }
-
         let stride = Self::stride(src, dst)?;
         let rank = wc.rank().cast::<u16>() - 1;
         let file = wc.file().cast::<u16>();
@@ -274,8 +283,8 @@ impl TIFeature {
     #[inline(always)]
     fn stride(src: Piece, dst: Piece) -> Option<u16> {
         const P: [[Option<u16>; 6]; 2] = [
-            [Some(0), Some(1), None, Some(2), None, None],
-            [Some(3), Some(4), None, Some(5), None, None],
+            [None, Some(0), None, Some(1), None, None],
+            [None, Some(2), None, Some(3), None, None],
         ];
 
         const KQ: [[Option<u16>; 6]; 2] = [
@@ -297,98 +306,111 @@ impl TIFeature {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::chess::{Flip, Mirror, Move, Position};
-    use proptest::{prop_assume, sample::Selector};
-    use test_strategy::proptest;
+/// A pawn feature with horizontal mirroring.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(test, derive(test_strategy::Arbitrary))]
+#[repr(transparent)]
+pub struct PFeature(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <PFeature as Num>::Repr);
 
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
-    fn ka_feature_is_unique_to_perspective(c: Color, ksq: Square, p: Piece, sq: Square) {
-        assert_ne!(
-            KAFeature::new(c, ksq, p, sq),
-            KAFeature::new(!c, ksq, p, sq)
-        );
+const unsafe impl Num for PFeature {
+    type Repr = u8;
+    const MIN: Self::Repr = 0;
+    const MAX: Self::Repr = Self::LEN as Self::Repr - 1;
+}
+
+const unsafe impl Int for PFeature {}
+
+impl PFeature {
+    const SQUARES: u8 = 48;
+
+    /// The total number of different pawn features.
+    pub const LEN: usize = 2 * Self::SQUARES.cast::<usize>();
+
+    /// Constructs a lookup table for [`PFeature`].
+    #[inline(always)]
+    pub fn lut(
+        side: Color,
+        ksq: Square,
+        placement: &Placement,
+    ) -> Simd<<Self as Num>::Repr, { Square::LEN }> {
+        let blacks = placement.by_color(Color::Black);
+        let colors = blacks.select(Simd::splat(side.not().get()), Simd::splat(side.get()));
+
+        let perspective = Square::A1.perspective(side);
+        let chirality = Square::A1.perspective(Side::from(ksq.file() < File::E));
+        let orient = Simd::splat(perspective.cast::<u8>() | chirality.cast::<u8>());
+        let squares = u8x64::from_array(array::from_fn(Num::cast)) ^ orient;
+        Simd::splat(Self::SQUARES) * colors + squares - Simd::splat(8)
     }
+}
 
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
-    fn threat_feature_is_unique_to_perspective(
-        #[filter(#pos.noisy().into_iter().any(|m| !#pos[m.whither()].is_empty()))] pos: Position,
-        #[map(|s: Selector| s.select(#pos.noisy().into_iter().filter(|m| !#pos[m.whither()].is_empty())))]
-        m: Move,
-    ) {
-        let c = pos.turn();
-        let ksq = pos.king(c);
-        let (wc, wt) = (m.whence(), m.whither());
-        let (src, dst) = (pos[wc].piece().unwrap(), pos[wt].piece().unwrap());
+impl<T> Index<PFeature> for [T; PFeature::LEN] {
+    type Output = T;
 
-        let feature = TIFeature::new(c, ksq, src, wc, dst, wt);
-        prop_assume!(feature.is_some());
-
-        assert_ne!(feature, TIFeature::new(!c, ksq, src, wc, dst, wt));
+    #[inline(always)]
+    fn index(&self, f: PFeature) -> &Self::Output {
+        self.get(f.cast::<usize>()).assume()
     }
+}
 
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
-    fn ka_feature_is_vertically_symmetric(c: Color, ksq: Square, p: Piece, sq: Square) {
-        assert_eq!(
-            KAFeature::new(c, ksq, p, sq),
-            KAFeature::new(c.flip(), ksq.flip(), p.flip(), sq.flip())
-        );
+impl<T> IndexMut<PFeature> for [T; PFeature::LEN] {
+    #[inline(always)]
+    fn index_mut(&mut self, f: PFeature) -> &mut Self::Output {
+        self.get_mut(f.cast::<usize>()).assume()
     }
+}
 
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
-    fn threat_feature_is_vertically_symmetric(
-        #[filter(#pos.noisy().into_iter().any(|m| !#pos[m.whither()].is_empty()))] pos: Position,
-        #[map(|s: Selector| s.select(#pos.noisy().into_iter().filter(|m| !#pos[m.whither()].is_empty())))]
-        m: Move,
-    ) {
-        let c = pos.turn();
-        let ksq = pos.king(c);
-        let (wc, wt) = (m.whence(), m.whither());
-        let (src, dst) = (pos[wc].piece().unwrap(), pos[wt].piece().unwrap());
+/// A pawn-pawn feature with horizontal mirroring.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(test, derive(test_strategy::Arbitrary))]
+#[repr(transparent)]
+pub struct PPFeature(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <PPFeature as Num>::Repr);
 
-        assert_eq!(
-            TIFeature::new(c, ksq, src, wc, dst, wt),
-            TIFeature::new(
-                c.flip(),
-                ksq.flip(),
-                src.flip(),
-                wc.flip(),
-                dst.flip(),
-                wt.flip()
-            )
-        );
+const unsafe impl Num for PPFeature {
+    type Repr = u16;
+    const MIN: Self::Repr = 0;
+    const MAX: Self::Repr = Self::LEN as Self::Repr - 1;
+}
+
+const unsafe impl Int for PPFeature {}
+
+impl PPFeature {
+    /// The total number of different pawn-pawn features.
+    pub const LEN: usize = PFeature::LEN * (PFeature::LEN - 1) / 2;
+
+    /// A mask for pawns visible from a [`File`].
+    pub const MASK: [Bitboard; 8] = [
+        File::A.bitboard() | File::B.bitboard(),
+        File::A.bitboard() | File::B.bitboard() | File::C.bitboard(),
+        File::B.bitboard() | File::C.bitboard() | File::D.bitboard(),
+        File::C.bitboard() | File::D.bitboard() | File::E.bitboard(),
+        File::D.bitboard() | File::E.bitboard() | File::F.bitboard(),
+        File::E.bitboard() | File::F.bitboard() | File::G.bitboard(),
+        File::F.bitboard() | File::G.bitboard() | File::H.bitboard(),
+        File::G.bitboard() | File::H.bitboard(),
+    ];
+
+    /// Constructs a [`PPFeature`].
+    #[inline(always)]
+    pub fn new(ft1: PFeature, ft2: PFeature) -> Self {
+        let hi = ft1.max(ft2).cast::<u16>();
+        let lo = ft1.min(ft2).cast::<u16>();
+        Num::new(lo + hi * (hi - 1) / 2)
     }
+}
 
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
-    fn ka_feature_is_horizontally_symmetric(c: Color, ksq: Square, p: Piece, sq: Square) {
-        assert_eq!(
-            KAFeature::new(c, ksq, p, sq),
-            KAFeature::new(c, ksq.mirror(), p, sq.mirror())
-        );
+impl<T> Index<PPFeature> for [T; PPFeature::LEN] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, f: PPFeature) -> &Self::Output {
+        self.get(f.cast::<usize>()).assume()
     }
+}
 
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
-    fn threat_feature_is_horizontally_symmetric(
-        #[filter(#pos.noisy().into_iter().any(|m| !#pos[m.whither()].is_empty()))] pos: Position,
-        #[map(|s: Selector| s.select(#pos.noisy().into_iter().filter(|m| !#pos[m.whither()].is_empty())))]
-        m: Move,
-    ) {
-        let c = pos.turn();
-        let ksq = pos.king(c);
-        let (wc, wt) = (m.whence(), m.whither());
-        let (src, dst) = (pos[wc].piece().unwrap(), pos[wt].piece().unwrap());
-
-        assert_eq!(
-            TIFeature::new(c, ksq, src, wc, dst, wt),
-            TIFeature::new(c, ksq.mirror(), src, wc.mirror(), dst, wt.mirror())
-        );
+impl<T> IndexMut<PPFeature> for [T; PPFeature::LEN] {
+    #[inline(always)]
+    fn index_mut(&mut self, f: PPFeature) -> &mut Self::Output {
+        self.get_mut(f.cast::<usize>()).assume()
     }
 }

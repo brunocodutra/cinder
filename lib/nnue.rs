@@ -100,6 +100,7 @@ const impl Nnue {
         let mut nnue: Self = zeroed();
         let mut cursor = 0;
 
+        cursor += unsafe { copy_bytes(&mut nnue.transformer.pp.0, &bytes[cursor..]) };
         cursor += unsafe { copy_bytes(&mut nnue.transformer.ti.0, &bytes[cursor..]) };
         cursor += unsafe { copy_bytes(&mut nnue.transformer.ka.0, &bytes[cursor..]) };
         cursor += unsafe { copy_bytes(&mut nnue.transformer.bias.0, &bytes[cursor..]) };
@@ -187,8 +188,9 @@ mod tests {
 
             let mut ka = Vec::from_iter(transformer.ka.iter().map(|a| a[i]));
             let mut ti = Vec::from_iter(transformer.ti.iter().map(|a| a[i]));
+            let mut pp = Vec::from_iter(transformer.ti.iter().map(|a| a[i]));
 
-            for (n, ws) in [(32, &mut ka), (90, &mut ti)] {
+            for (n, ws) in [(32, &mut ka), (64, &mut ti), (24, &mut pp)] {
                 let (small, _, _) = ws.select_nth_unstable(n);
                 small.iter().for_each(|&v| lower += v as i32);
 

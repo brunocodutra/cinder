@@ -14,10 +14,11 @@ impl<const M: usize, const N: usize> Nzs<N> for Aligned<[u16; M]> {
     fn nzs(&mut self, ns: &[[u32x16; 2]; N]) -> usize {
         const { assert!(M == N * 2 * W2) }
 
+        use crate::util::Num;
         use std::{arch::x86_64::*, array};
 
         let mut len = 0;
-        let mut iota = u16x32::from_array(array::from_fn(|i| i as u16));
+        let mut iota = u16x32::from_array(array::from_fn(Num::cast));
 
         for [n0, n1] in ns {
             let mask0 = n0.simd_gt(Simd::splat(0)).to_bitmask();

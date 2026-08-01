@@ -371,7 +371,7 @@ struct Orchestrator {
     batches_per_superbatch: usize,
 
     /// The target wdl fraction.
-    #[clap(long, default_value_t = 0.25)]
+    #[clap(long, default_value_t = 0.0)]
     wdl: f32,
 
     #[clap(flatten)]
@@ -443,7 +443,7 @@ impl Orchestrator {
                     final_superbatch: end_superbatch,
                 },
             },
-            save_rate: 10,
+            save_rate: 20,
         }
     }
 
@@ -533,8 +533,8 @@ impl Orchestrator {
         trainer.optimiser.set_params_for_weight(
             "ftw",
             AdamWParams {
-                min_weight: (i16::MIN as f32 - 128.0 * i8::MIN as f32) / (64.0 * FTQ as f32),
-                max_weight: (i16::MAX as f32 - 128.0 * i8::MAX as f32) / (64.0 * FTQ as f32),
+                min_weight: -1.0,
+                max_weight: 1.0,
                 ..params
             },
         );
@@ -582,7 +582,7 @@ impl Orchestrator {
 
         if stage < 2 || (stage == 2 && superbatch < SB2) {
             let start = if stage == 2 { superbatch + 1 } else { 1 };
-            let schedule = self.schedule("stage2", start..=SB2, 2e-5..=1e-6, self.wdl..=self.wdl);
+            let schedule = self.schedule("stage2", start..=SB2, 1e-5..=1e-6, self.wdl..=self.wdl);
             trainer.run(&schedule, &settings, &dataloader);
         }
 

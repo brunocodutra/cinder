@@ -1,6 +1,6 @@
 #![allow(long_running_const_eval)]
 
-use anyhow::{Context, Error as Failure};
+use anyhow::Error as Failure;
 use bullet::game::formats::bulletformat::ChessBoard;
 use bullet::game::formats::sfbinpack::TrainingDataEntry;
 use bullet::game::formats::sfbinpack::chess::{r#move::MoveType, piecetype::PieceType};
@@ -19,7 +19,7 @@ use cinder::nnue::*;
 use cinder::util::{Assume, Int, Num, StaticSeq};
 use clap::{Args, Parser, Subcommand};
 use rand::{prelude::*, rng};
-use std::ops::{Deref, Div, RangeInclusive};
+use std::ops::{Div, RangeInclusive};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{cell::Cell, fs::create_dir_all, num::NonZero, thread::available_parallelism};
 
@@ -378,8 +378,8 @@ struct Orchestrator {
     filter: TrainingDataFilter,
 
     /// The datasets to use for training.
-    #[clap(long, value_delimiter = ',')]
-    datasets: Vec<String>,
+    #[clap(long)]
+    dataset: String,
 
     /// Whether to start from scratch or resume from a checkpoint.
     #[clap(subcommand)]
@@ -566,27 +566,24 @@ impl Orchestrator {
             trainer.load_from_checkpoint(&checkpoint);
         }
 
-        let priming_dataset = self.datasets.first().context("expected dataset")?;
-        let training_datasets = Vec::from_iter(self.datasets[1..].iter().map(Deref::deref));
-        let training_dataloader = self.dataloader(&training_datasets);
+        let dataloader = self.dataloader(&[self.dataset.as_str()]);
 
         if stage == 0 && superbatch < SB0 {
             let start = if stage == 0 { superbatch + 1 } else { 1 };
             let schedule = self.schedule("stage0", start..=SB0, 2e-3..=1e-4, 0.0..=0.0);
-            let priming_dataloader = self.dataloader(&[priming_dataset]);
-            trainer.run(&schedule, &settings, &priming_dataloader);
+            trainer.run(&schedule, &settings, &dataloader);
         }
 
         if stage < 1 || (stage == 1 && superbatch < SB1) {
             let start = if stage == 1 { superbatch + 1 } else { 1 };
             let schedule = self.schedule("stage1", start..=SB1, 5e-4..=1e-5, 0.0..=self.wdl);
-            trainer.run(&schedule, &settings, &training_dataloader);
+            trainer.run(&schedule, &settings, &dataloader);
         }
 
         if stage < 2 || (stage == 2 && superbatch < SB2) {
             let start = if stage == 2 { superbatch + 1 } else { 1 };
             let schedule = self.schedule("stage2", start..=SB2, 2e-5..=1e-6, self.wdl..=self.wdl);
-            trainer.run(&schedule, &settings, &training_dataloader);
+            trainer.run(&schedule, &settings, &dataloader);
         }
 
         Ok(())

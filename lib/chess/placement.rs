@@ -528,6 +528,13 @@ impl Placement {
         Self(Aligned(places))
     }
 
+    /// The placement by [`Color`].
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn colors(&self) -> u8x64 {
+        self.to_simd() & Simd::splat(Place::COLOR_MASK)
+    }
+
     /// The placement by [`Role`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -876,7 +883,7 @@ impl FurledPlacement {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn attackers(&self) -> M8x64 {
         #[rustfmt::skip]
-        static BITS_TO_ROLE: u8x64 = u8x64::from_array([
+        static DECODER: u8x64 = u8x64::from_array([
             0, KING, BPAWN, KNIGHT, 0, BISHOP, ROOK, QUEEN,
             0, KING, WPAWN, KNIGHT, 0, BISHOP, ROOK, QUEEN,
             0, KING, BPAWN, KNIGHT, 0, BISHOP, ROOK, QUEEN,
@@ -888,7 +895,7 @@ impl FurledPlacement {
         ]);
 
         let pieces = self.to_simd() >> Simd::splat(4);
-        let pieces = ATTACKERS & BITS_TO_ROLE.shuffle(pieces);
+        let pieces = ATTACKERS & DECODER.shuffle(pieces);
         pieces.simd_ne(zeroed()).into()
     }
 

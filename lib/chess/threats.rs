@@ -95,7 +95,7 @@ impl Threats {
         let updates = pinners.to_idx_set();
 
         let attacks = furled_wt.attacks(dst.piece().assume()) & visible_wt;
-        let attacks = attacks.select(u8x64::splat(1), zeroed());
+        let attacks = attacks.select(Simd::splat(1), Simd::splat(0));
         let attacks = attacks.unfurl(rays_wt);
         let attacks = rays_wt.inv().valid().select(attacks, zeroed());
 
@@ -164,7 +164,7 @@ impl Threats {
         let updates_wt = pinners_wt.to_idx_set();
 
         let attacks = furled_wt.attacks(dst.piece().assume()) & visible_wt;
-        let attacks = attacks.select(u8x64::splat(1), zeroed());
+        let attacks = attacks.select(Simd::splat(1), Simd::splat(0));
         let attacks = attacks.unfurl(rays_wt);
         let attacks = rays_wt.inv().valid().select(attacks, zeroed());
 

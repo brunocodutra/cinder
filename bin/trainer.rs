@@ -1,4 +1,5 @@
 #![allow(long_running_const_eval)]
+#![feature(portable_simd)]
 
 use anyhow::Error as Failure;
 use bullet::game::formats::bulletformat::ChessBoard;
@@ -14,12 +15,12 @@ use bullet::value::{ValueTrainerBuilder, loader::SfBinpackLoader};
 use bullet::wdl::LinearWDL;
 use bullet_trainer::reader::DataReader;
 use bytemuck::zeroed;
-use cinder::chess::{Board, Color, Idx, Phase, Piece, Place, Position, Role, Square};
+use cinder::chess::{Bitboard, Board, Color, Idx, Phase, Piece, Place, Position, Role, Square};
 use cinder::nnue::*;
 use cinder::util::{Assume, Int, Num, StaticSeq};
 use clap::{Args, Parser, Subcommand};
 use rand::{prelude::*, rng};
-use std::ops::{Div, RangeInclusive};
+use std::ops::{BitAnd, Div, RangeInclusive};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{cell::Cell, fs::create_dir_all, num::NonZero, thread::available_parallelism};
 
@@ -47,8 +48,11 @@ const fn spline(p: f64, points: &[(f64, f64)]) -> f64 {
 struct Features;
 
 impl Features {
-    const LEN: usize = KAFeature::LEN + TIFeature::LEN;
+    const TI_OFFSET: usize = PPFeature::LEN;
+    const KA_OFFSET: usize = Self::TI_OFFSET + TIFeature::LEN;
+    const PSQ_OFFSET: usize = Self::KA_OFFSET + KAFeature::LEN;
     const BUCKETS: usize = KingBucket::LEN / 2;
+    const LEN: usize = Self::PSQ_OFFSET;
 }
 
 impl SparseInputType for Features {
@@ -59,7 +63,7 @@ impl SparseInputType for Features {
     }
 
     fn max_active(&self) -> usize {
-        32 + 32 + 128
+        256
     }
 
     fn map_features<F: FnMut(usize, usize)>(&self, pos: &Self::RequiredDataType, mut f: F) {
@@ -83,6 +87,22 @@ impl SparseInputType for Features {
         use Color::*;
         let pos = Position::from(board);
         let ksqs = [pos.king(White), pos.king(Black)];
+        let pawns = pos.by_piece(Piece::WhitePawn) | pos.by_piece(Piece::BlackPawn);
+        let pfts = [White, Black].map(|side| PFeature::lut(side, ksqs[side], &pos).to_array());
+
+        let mut remaining = Bitboard::from(pawns);
+        for s in remaining.iter() {
+            remaining &= !s.bitboard();
+            for t in PPFeature::MASK[s.file()].bitand(remaining).iter() {
+                let pft1 = pfts.map(|ft| Num::new(ft[s]));
+                let pft2 = pfts.map(|ft| Num::new(ft[t]));
+
+                f(
+                    PPFeature::new(pft1[White], pft2[White]).cast(),
+                    PPFeature::new(pft1[Black], pft2[Black]).cast(),
+                );
+            }
+        }
 
         let occupied = pos.occupied().cast();
         let attacks = pos.threats().map(|t| t.mask(occupied));
@@ -112,21 +132,28 @@ impl SparseInputType for Features {
 
         assert_eq!(stm_ti_features.len(), ntm_ti_features.len());
         for (stm, ntm) in stm_ti_features.into_iter().zip(ntm_ti_features) {
-            f(stm.cast(), ntm.cast());
+            f(
+                Self::TI_OFFSET + stm.cast::<usize>(),
+                Self::TI_OFFSET + ntm.cast::<usize>(),
+            );
         }
 
-        for sq in Square::iter() {
-            if let Some(p) = pos[sq].piece() {
-                f(
-                    TIFeature::LEN + KAFeature::new(White, ksqs[White], p, sq).cast::<usize>(),
-                    TIFeature::LEN + KAFeature::new(Black, ksqs[Black], p, sq).cast::<usize>(),
-                );
+        let kafts = [White, Black].map(|side| KAFeature::lut(side, ksqs[side], &pos).to_array());
+        let psqfts = [White, Black].map(|side| PSQFeature::lut(side, ksqs[side], &pos).to_array());
 
-                f(
-                    Self::LEN + PSQFeature::new(White, ksqs[White], p, sq).cast::<usize>(),
-                    Self::LEN + PSQFeature::new(Black, ksqs[Black], p, sq).cast::<usize>(),
-                );
-            }
+        for sq in Bitboard::from(pos.occupied()).iter() {
+            let kaft = kafts.map(|ft| <KAFeature as Num>::new(ft[sq]));
+            let psqft = psqfts.map(|ft| <PSQFeature as Num>::new(ft[sq]));
+
+            f(
+                Self::KA_OFFSET + kaft[White].cast::<usize>(),
+                Self::KA_OFFSET + kaft[Black].cast::<usize>(),
+            );
+
+            f(
+                Self::PSQ_OFFSET + psqft[White].cast::<usize>(),
+                Self::PSQ_OFFSET + psqft[Black].cast::<usize>(),
+            );
         }
     }
 
@@ -143,7 +170,7 @@ impl SparseInputType for Features {
     }
 
     fn merge_factoriser(&self, mut weights: Vec<f32>) -> Vec<f32> {
-        let unmerged = &mut weights[TIFeature::LEN * Accumulator::LEN..];
+        let unmerged = &mut weights[Self::KA_OFFSET * Accumulator::LEN..];
         let (ka, factorizers) = unmerged.split_at_mut(KAFeature::LEN * Accumulator::LEN);
         for (factorizer, ka) in factorizers.iter().cycle().zip(ka) {
             *ka += factorizer;
@@ -456,7 +483,7 @@ impl Orchestrator {
             .save_format(&[
                 SavedFormat::id("ftw")
                     .transform(|_, mut weights| {
-                        weights.truncate(TIFeature::LEN * Accumulator::LEN);
+                        weights.truncate(Features::KA_OFFSET * Accumulator::LEN);
                         weights
                     })
                     .round()
@@ -464,7 +491,7 @@ impl Orchestrator {
                 SavedFormat::id("ftw")
                     .transform(|_, weights| {
                         let mut merged = Features.merge_factoriser(weights);
-                        merged.copy_within(TIFeature::LEN * Accumulator::LEN.., 0);
+                        merged.copy_within(Features::KA_OFFSET * Accumulator::LEN.., 0);
                         merged.truncate(KAFeature::LEN * Accumulator::LEN);
                         merged
                     })

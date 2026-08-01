@@ -1,5 +1,6 @@
 use crate::chess::Color;
-use crate::util::{Int, Num};
+use crate::util::{Assume, Int, Num};
+use std::ops::{Index, IndexMut};
 
 /// Trait for types that can be seen from a different perspective.
 pub const trait Perspective<T>: Sized {
@@ -41,6 +42,10 @@ const unsafe impl Num for Side {
 
 const unsafe impl Int for Side {}
 
+const impl Side {
+    pub const LEN: usize = Self::MAX as usize + 1;
+}
+
 const impl From<bool> for Side {
     #[inline(always)]
     fn from(b: bool) -> Self {
@@ -52,6 +57,22 @@ const impl From<Side> for bool {
     #[inline(always)]
     fn from(s: Side) -> Self {
         s == Side::Right
+    }
+}
+
+const impl<T> Index<Side> for [T; Side::LEN] {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, s: Side) -> &Self::Output {
+        self.get(s.cast::<usize>()).assume()
+    }
+}
+
+const impl<T> IndexMut<Side> for [T; Side::LEN] {
+    #[inline(always)]
+    fn index_mut(&mut self, s: Side) -> &mut Self::Output {
+        self.get_mut(s.cast::<usize>()).assume()
     }
 }
 

@@ -24,13 +24,13 @@ pub struct GlobalControl {
     abort: AtomicBool,
     nodes: AtomicU64,
     timestamp: Instant,
-    time: Range<f32>,
+    time_limit: Range<f32>,
     limits: Limits,
 }
 
 impl GlobalControl {
     #[inline(always)]
-    fn time_to_search(pos: &Position, limits: &Limits) -> Range<f32> {
+    fn time_limit(pos: &Position, limits: &Limits) -> Range<f32> {
         let (clock, inc) = match limits.clock {
             Some((clock, inc)) => (clock.max(inc).as_secs_f32(), inc.as_secs_f32()),
             None => return f32::INFINITY..limits.max_time().as_secs_f32(),
@@ -54,7 +54,7 @@ impl GlobalControl {
             abort: AtomicBool::new(false),
             nodes: AtomicU64::new(0),
             timestamp: Instant::now(),
-            time: Self::time_to_search(pos, &limits),
+            time_limit: Self::time_limit(pos, &limits),
             limits,
         }
     }
@@ -91,6 +91,7 @@ pub struct Active<'a> {
     attention: Attention,
     peak_depth: Depth,
     peak_ply: Ply,
+    elapsed: f32,
     score_trend: f32,
     global_nodes: u64,
     nodes: u64,
@@ -104,6 +105,7 @@ impl<'a> Active<'a> {
             attention: Default::default(),
             peak_depth: Depth::lower(),
             peak_ply: Ply::lower(),
+            elapsed: 0.0,
             score_trend: f32::NAN,
             global_nodes: 0,
             nodes: 0,
@@ -117,57 +119,57 @@ impl<'a> Active<'a> {
 
     #[inline(always)]
     pub fn check(&mut self, depth: Depth, ply: Ply, pv: &Pv) -> ControlFlow {
-        let score = pv.cast::<f32>();
-        let Some(head) = pv.head() else {
-            return ControlFlow::Continue;
-        };
+        const LAP: u64 = 1024;
 
-        if self.abort.load(Ordering::Relaxed) {
-            return ControlFlow::Abort;
+        if self.nodes.is_multiple_of(LAP) || ply == 0 {
+            self.elapsed = self.elapsed().as_secs_f32();
         }
 
+        self.nodes += 1;
+        if self.nodes.is_multiple_of(LAP) {
+            self.global_nodes = self.global.nodes.fetch_add(LAP, Ordering::Relaxed) + LAP;
+        }
+
+        if ply > self.peak_ply {
+            self.peak_ply = ply;
+        }
+
+        let score = pv.cast::<f32>();
         if self.score_trend.is_nan() {
             self.score_trend = score;
         } else if ply == 0 && depth > self.peak_depth {
             self.score_trend = Params::score_trend_inertia(0).lerp(self.score_trend, score);
             self.peak_depth = depth;
-        } else if ply > self.peak_ply {
-            self.peak_ply = ply;
         }
 
-        if self.nodes.is_multiple_of(2048) || ply == 0 {
-            let time = self.elapsed().as_secs_f32();
-            if time >= self.time.end {
-                return ControlFlow::Abort;
-            } else if ply == 0 {
-                let gamma = *Params::score_trend_scale(0);
-                let delta = *Params::score_trend_scale(1);
-                let diff = self.score_trend - score;
-                let trend_scale = diff.abs().mul_add(gamma, delta).recip().mul_add(diff, 1.0);
+        let Some(head) = pv.head() else {
+            return ControlFlow::Continue;
+        };
 
-                let nodes = self.nodes.max(1000) as f32;
-                let attention = self.attention.nodes(head).cast::<f32>();
-                let focus_scale = Params::pv_focus_scale(0)
-                    .mul_add(attention / nodes, *Params::pv_focus_scale(1));
+        #[allow(clippy::if_same_then_else)]
+        if self.abort.load(Ordering::Relaxed) {
+            return ControlFlow::Abort;
+        } else if self.global_nodes + self.nodes % LAP >= self.limits.max_nodes() {
+            return ControlFlow::Abort;
+        } else if self.elapsed >= self.time_limit.end {
+            return ControlFlow::Abort;
+        } else if depth > self.limits.max_depth() {
+            return ControlFlow::Stop;
+        } else if ply == 0 {
+            let gamma = *Params::score_trend_scale(0);
+            let delta = *Params::score_trend_scale(1);
+            let diff = self.score_trend - score;
+            let trend_scale = diff.abs().mul_add(gamma, delta).recip().mul_add(diff, 1.0);
 
-                if time >= self.time.start * trend_scale * focus_scale {
-                    return ControlFlow::Stop;
-                }
+            let nodes = self.nodes.max(5000).cast::<f32>();
+            let focus_scale = Params::pv_focus_scale(0).mul_add(
+                self.attention.nodes(head).cast::<f32>() / nodes,
+                *Params::pv_focus_scale(1),
+            );
+
+            if self.elapsed >= self.time_limit.start * trend_scale * focus_scale {
+                return ControlFlow::Stop;
             }
-        }
-
-        if depth > self.limits.max_depth() {
-            return ControlFlow::Stop;
-        }
-
-        self.nodes += 1;
-        const LAP: u64 = 1024;
-        if self.nodes.is_multiple_of(LAP) {
-            self.global_nodes = self.global.nodes.fetch_add(LAP, Ordering::Relaxed) + LAP;
-        }
-
-        if self.global_nodes + self.nodes % LAP >= self.limits.max_nodes() {
-            return ControlFlow::Stop;
         }
 
         ControlFlow::Continue
@@ -208,21 +210,22 @@ impl<'a> Passive<'a> {
 
     #[inline(always)]
     pub fn check(&mut self, _: Depth, ply: Ply, _: &Pv) -> ControlFlow {
-        if self.abort.load(Ordering::Relaxed) {
-            return ControlFlow::Abort;
-        }
+        const LAP: u64 = 16384;
 
         self.nodes += 1;
-        if ply > self.peak_ply {
-            self.peak_ply = ply;
-        }
-
-        const LAP: u64 = 16384;
         if self.nodes.is_multiple_of(LAP) {
             self.global.nodes.fetch_add(LAP, Ordering::Relaxed);
         }
 
-        ControlFlow::Continue
+        if ply > self.peak_ply {
+            self.peak_ply = ply;
+        }
+
+        if self.abort.load(Ordering::Relaxed) {
+            ControlFlow::Abort
+        } else {
+            ControlFlow::Continue
+        }
     }
 }
 
@@ -373,7 +376,7 @@ mod tests {
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
         let mut global = GlobalControl::new(&pos, Limits::clock(Duration::MAX, Duration::ZERO));
-        global.time.start = 0.;
+        global.time_limit.start = 0.;
 
         let mut local = LocalControl::active(&global);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Stop);
@@ -389,7 +392,7 @@ mod tests {
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
         let mut global = GlobalControl::new(&pos, Limits::clock(Duration::MAX, Duration::ZERO));
-        global.time.start = 0.;
+        global.time_limit.start = 0.;
 
         let mut local = LocalControl::passive(&global);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);
@@ -427,16 +430,16 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn active_stops_if_node_count_is_reached(
+    fn active_aborts_if_node_count_is_reached(
         d: Depth,
         pos: Evaluator,
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
         let global = GlobalControl::new(&pos, Limits::nodes(0));
         let mut local = LocalControl::active(&global);
-        assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Stop);
-        assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Stop);
-        assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Stop);
+        assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Abort);
+        assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Abort);
+        assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Abort);
     }
 
     #[proptest]

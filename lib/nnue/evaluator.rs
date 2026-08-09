@@ -438,8 +438,8 @@ where
         let diff = new.attacks[c] ^ old.attacks[c] | moved | promoted | captured;
 
         let indices = old.attacks[c] & diff;
-        let nonzero = indices.to_simd().simd_ne(zeroed()).into();
-        let mut to_sub = Squares::new(nonzero).flat_map(|wt| {
+        let nonzero = Bitboard::from(indices.to_simd().simd_ne(zeroed()));
+        let mut to_sub = nonzero.iter().flat_map(|wt| {
             let dst = old[wt].piece().assume();
             indices[wt].iter().filter_map(move |idx| {
                 let wc = old.squares[c][idx].assume();
@@ -449,8 +449,8 @@ where
         });
 
         let indices = new.attacks[c] & diff;
-        let nonzero = indices.to_simd().simd_ne(zeroed()).into();
-        let mut to_add = Squares::new(nonzero).flat_map(|wt| {
+        let nonzero = Bitboard::from(indices.to_simd().simd_ne(zeroed()));
+        let mut to_add = nonzero.iter().flat_map(|wt| {
             let dst = new[wt].piece().assume();
             indices[wt].iter().filter_map(move |idx| {
                 let wc = new.squares[c][idx].assume();
@@ -488,7 +488,6 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    #[expect(clippy::float_cmp)]
     fn evaluator_updates_accumulator_lazily(
         #[filter(#pos.outcome().is_none())] mut pos: Evaluator,
     ) {
@@ -578,7 +577,6 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    #[expect(clippy::float_cmp)]
     fn see_estimates_quiescent_move_gain(
         #[strategy(select(SEE_SUITE))] entry: (&'static str, &'static str, f32),
     ) {

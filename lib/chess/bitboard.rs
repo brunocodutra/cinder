@@ -2,12 +2,12 @@ use crate::chess::{Butterfly, File, Flip, Rank, Square};
 use crate::simd::*;
 use crate::util::{Assume, Int, Num};
 use bytemuck::{Pod, Zeroable, zeroed};
-use derive_more::with_trait::{Constructor, Debug, From};
+use derive_more::with_trait::{Debug, From};
 use std::fmt::{self, Formatter, Write};
 use std::{iter::FusedIterator, ops::*};
 
 /// A set of squares on a chess board.
-#[derive(Copy, Hash, Zeroable, Pod, Constructor, From)]
+#[derive(Copy, Hash, Zeroable, Pod, From)]
 #[derive_const(Default, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
@@ -206,7 +206,7 @@ const impl Bitboard {
     /// An iterator over the [`Square`]s in this bitboard.
     #[inline(always)]
     pub fn iter(self) -> Squares {
-        Squares::new(self)
+        Squares(self)
     }
 }
 
@@ -525,12 +525,12 @@ const impl IntoIterator for Bitboard {
 
     #[inline(always)]
     fn into_iter(self) -> Self::IntoIter {
-        Squares::new(self)
+        Squares(self)
     }
 }
 
 /// An iterator over the [`Square`]s in a [`Bitboard`].
-#[derive(Debug, Constructor)]
+#[derive(Debug)]
 pub struct Squares(Bitboard);
 
 const impl Squares {

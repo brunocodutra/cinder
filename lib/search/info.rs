@@ -1,10 +1,9 @@
 use crate::search::{Depth, Pv, Score};
 use crate::util::Num;
-use derive_more::with_trait::Constructor;
 use std::time::Duration;
 
 /// Information about the search result.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Constructor)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Info {
     time: Duration,
@@ -16,6 +15,26 @@ pub struct Info {
 }
 
 impl Info {
+    /// The duration searched.
+    #[inline(always)]
+    pub fn new<const N: usize>(
+        time: Duration,
+        depth: Depth,
+        seldepth: u16,
+        nodes: u64,
+        tbhits: u64,
+        pv: Pv<N>,
+    ) -> Self {
+        Self {
+            time,
+            depth,
+            seldepth,
+            nodes,
+            tbhits,
+            pv: pv.truncate(),
+        }
+    }
+
     /// The duration searched.
     #[inline(always)]
     pub fn time(&self) -> Duration {

@@ -137,7 +137,6 @@ mod tests {
     const unsafe impl Float for Unit {}
 
     #[proptest]
-    #[expect(clippy::float_cmp)]
     fn float_can_be_cast_from_repr(#[strategy(Unit::MIN..Unit::MAX)] f: f64) {
         assert_eq!(Unit::new(f).get(), f);
     }
@@ -148,7 +147,6 @@ mod tests {
     }
 
     #[proptest]
-    #[expect(clippy::float_cmp)]
     fn float_can_be_cast_to_float(f: Unit) {
         assert_eq!(f.cast::<f32>(), f.get() as f32);
     }
@@ -159,7 +157,6 @@ mod tests {
     }
 
     #[proptest]
-    #[expect(clippy::float_cmp)]
     fn float_can_interpolate(#[filter(#f.get() >= 0.)] f: Unit, a: Unit, b: Unit) {
         assert_eq!(
             f.lerp(a, b).get(),
@@ -179,7 +176,6 @@ mod tests {
     }
 
     #[proptest]
-    #[expect(clippy::float_cmp)]
     fn primitive_can_be_cast(f: f64) {
         assert_eq!(f.cast::<u32>(), f as u32);
         assert_eq!(f.cast::<i32>(), f as i32);
@@ -211,7 +207,6 @@ mod tests {
     }
 
     #[proptest]
-    #[expect(clippy::float_cmp)]
     fn primitive_can_be_converted_with_saturation(f: f64) {
         assert_eq!(f.saturate::<u32>(), f as u32);
         assert_eq!(f.saturate::<i32>(), f as i32);

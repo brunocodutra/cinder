@@ -1,12 +1,9 @@
 use crate::syzygy::Wdl;
 use crate::util::{Bounded, Int, Num};
 use bytemuck::Zeroable;
-use derive_more::with_trait::Constructor;
 use std::ops::Neg;
 
-#[derive(
-    Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Constructor, Zeroable,
-)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
 pub struct DtzRepr(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <DtzRepr as Num>::Repr);

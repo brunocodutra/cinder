@@ -2,7 +2,7 @@ use crate::chess::{Color, Furl, Piece, Rays, Role, Square, Unfurl};
 use crate::simd::*;
 use crate::util::{Assume, Binary, Bits, Int, Num};
 use bytemuck::{NoUninit, Pod, Zeroable, zeroed};
-use derive_more::with_trait::{Constructor, Debug, Deref, DerefMut, Display, IntoIterator};
+use derive_more::with_trait::{Debug, Deref, DerefMut, Display, IntoIterator};
 use std::hash::{Hash, Hasher};
 use std::{iter::FusedIterator, mem::transmute_copy, ops::*};
 
@@ -103,7 +103,7 @@ const impl Binary for Place {
 }
 
 /// A numeric identifier for a piece on the board, or none.
-#[derive(Debug, Copy, Hash, Zeroable, NoUninit, Constructor)]
+#[derive(Debug, Copy, Hash, Zeroable, NoUninit)]
 #[derive_const(Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
@@ -160,7 +160,7 @@ const impl<T> IndexMut<Idx> for [T; Idx::LEN] {
 }
 
 /// A set of [`Idx`]s.
-#[derive(Debug, Display, Copy, Hash, Zeroable, Pod, Constructor)]
+#[derive(Debug, Display, Copy, Hash, Zeroable, Pod)]
 #[derive_const(Default, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[debug("IdxSet({self})")]
@@ -204,7 +204,7 @@ const impl IdxSet {
     /// An iterator over the [`Idx`]s in this set.
     #[inline(always)]
     pub fn iter(self) -> Indices {
-        Indices::new(self)
+        Indices(self)
     }
 }
 
@@ -439,12 +439,12 @@ const impl IntoIterator for IdxSet {
 
     #[inline(always)]
     fn into_iter(self) -> Self::IntoIter {
-        Indices::new(self)
+        Indices(self)
     }
 }
 
 /// An iterator over the [`Idx`]s in an [`IdxSet`].
-#[derive(Debug, Constructor)]
+#[derive(Debug)]
 pub struct Indices(IdxSet);
 
 const impl Indices {
@@ -1182,7 +1182,7 @@ impl BitXorAssign<u16x64> for Wordboard {
 /// Information by each piece on the board by [`Idx`].
 ///
 /// Requires `size_of::<T> == size_of::<u8>()`.
-#[derive(Debug, Default, Clone, Copy, Eq, Constructor, Deref, DerefMut, IntoIterator)]
+#[derive(Debug, Default, Clone, Copy, Eq, Deref, DerefMut, IntoIterator)]
 #[repr(transparent)]
 pub struct ByIdx<T: Copy>(#[into_iterator(owned, ref, ref_mut)] [T; Idx::LEN]);
 
@@ -1225,7 +1225,7 @@ impl<T: Copy + PartialEq> ByIdx<T> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn matching(&self, item: T) -> M8x16 {
-        let items = Self::new([item; _]).to_simd();
+        let items = Self([item; _]).to_simd();
         self.to_simd().simd_eq(items).into()
     }
 }

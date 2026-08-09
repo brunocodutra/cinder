@@ -1,8 +1,8 @@
-use crate::chess::{Move, Moves, Position, RatedMoves, Role, Zobrists};
+use crate::chess::{Move, Moves, RatedMoves, Role, Zobrists};
 use crate::search::{ControlFlow::*, *};
 use crate::{nnue::Evaluator, params::Params, simd::*, syzygy::Syzygy, util::*};
 use bytemuck::{Zeroable, fill_zeroes, zeroed};
-use derive_more::with_trait::{Constructor, Debug, Deref, DerefMut, Display, Error};
+use derive_more::with_trait::{Debug, Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
 use std::ops::{Add, Mul, Range};
@@ -138,19 +138,17 @@ impl Stack {
     }
 }
 
-#[derive(Debug, Constructor, Deref, DerefMut)]
-struct RecursionGuard<'e, 'a> {
-    searcher: &'e mut Searcher<'a>,
-}
+#[derive(Debug, Deref, DerefMut)]
+struct RecursionGuard<'e, 'a>(&'e mut Searcher<'a>);
 
 impl Drop for RecursionGuard<'_, '_> {
     #[inline(always)]
     fn drop(&mut self) {
-        self.searcher.stack.pos.pop();
+        self.stack.pos.pop();
     }
 }
 
-#[derive(Debug, Constructor)]
+#[derive(Debug)]
 struct Searcher<'a> {
     ctrl: LocalControl<'a>,
     shared: &'a SharedData,
@@ -159,6 +157,22 @@ struct Searcher<'a> {
 }
 
 impl<'a> Searcher<'a> {
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn new(
+        ctrl: LocalControl<'a>,
+        shared: &'a SharedData,
+        local: &'a mut LocalData,
+        stack: Stack,
+    ) -> Self {
+        Self {
+            ctrl,
+            shared,
+            local,
+            stack,
+        }
+    }
+
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn evaluate(&mut self) -> Value {
@@ -381,7 +395,7 @@ impl<'a> Searcher<'a> {
         self.shared.vt.prefetch(self.stack.pos.zobrists().hash);
         self.shared.tt.prefetch(self.stack.pos.zobrists().hash);
 
-        RecursionGuard::new(self)
+        RecursionGuard(self)
     }
 
     /// The alpha-beta search.
@@ -1148,7 +1162,7 @@ impl<'e, 'p> Search<'e, 'p> {
         };
 
         Moves::from_iter(self.pos.moves().into_iter().filter(|m| {
-            let mut next = Position::clone(self.pos);
+            let mut next = **self.pos;
             next.play(*m);
 
             if dtz > 0 && next.is_checkmate() {
@@ -1368,7 +1382,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess::Outcome;
+    use crate::chess::{Outcome, Position};
     use proptest::sample::Selector;
     use std::fmt::Debug;
     use std::{thread, time::Duration};

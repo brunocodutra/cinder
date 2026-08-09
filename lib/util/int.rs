@@ -416,7 +416,6 @@ mod tests {
     }
 
     #[proptest]
-    #[expect(clippy::float_cmp)]
     fn int_can_be_cast_to_float(d: Digit) {
         assert_eq!(d.cast::<f32>(), d.get() as f32);
     }
@@ -498,7 +497,6 @@ mod tests {
     }
 
     #[proptest]
-    #[expect(clippy::float_cmp)]
     fn primitive_can_be_cast(i: i16) {
         assert_eq!(i.cast::<u8>(), i as u8);
         assert_eq!(i.cast::<i8>(), i as i8);
@@ -529,7 +527,6 @@ mod tests {
     }
 
     #[proptest]
-    #[expect(clippy::float_cmp)]
     fn primitive_can_be_converted_with_saturation(i: u16) {
         assert_eq!(i.saturate::<i8>(), i.min(i8::MAX as u16) as i8);
         assert_eq!(i.saturate::<u32>(), u32::from(i));

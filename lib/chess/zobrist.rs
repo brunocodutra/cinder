@@ -1,5 +1,6 @@
 use crate::chess::{Castles, File, Piece, PieceTo, Square};
-use crate::{simd::*, util::Key};
+use crate::simd::*;
+use crate::util::{Key, Num};
 use bytemuck::{Pod, Zeroable, zeroed};
 
 /// A type representing a [`Position`]'s [zobrist hashes](`Zobrists`).

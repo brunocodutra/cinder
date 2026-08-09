@@ -1,13 +1,13 @@
 use crate::util::{Int, Num, Unsigned, ones};
 use bytemuck::{NoUninit, Zeroable, zeroed};
-use derive_more::with_trait::{Constructor, Debug, Display};
+use derive_more::with_trait::{Debug, Display};
 use std::{marker::Destruct, ops::*};
 
 #[cfg(test)]
 use proptest::prelude::*;
 
 /// A fixed width collection of bits.
-#[derive(Debug, Display, Copy, Hash, Zeroable, Constructor)]
+#[derive(Debug, Display, Copy, Hash, Zeroable)]
 #[derive_const(Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[cfg_attr(test, arbitrary(bound(T, Self: Debug, RangeInclusive<T>: Strategy<Value = T>)))]
@@ -79,7 +79,7 @@ const impl<T: [const] Unsigned, const W: u32> Bits<T, W> {
 const impl<T: Unsigned, const W: u32> Default for Bits<T, W> {
     #[inline(always)]
     fn default() -> Self {
-        Bits::new(zeroed())
+        zeroed()
     }
 }
 

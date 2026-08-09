@@ -1,11 +1,11 @@
 use crate::search::{Depth, Line, Score};
 use crate::{chess::Move, util::Num};
-use derive_more::with_trait::{Constructor, Deref};
+use derive_more::with_trait::Deref;
 use std::hash::{Hash, Hasher};
 use std::{cmp::Ordering, ops::Neg};
 
 /// The principal variation.
-#[derive(Debug, Clone, Copy, Constructor, Deref)]
+#[derive(Debug, Clone, Copy, Deref)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 pub struct Pv<const N: usize = { Depth::MAX as usize }> {
     #[deref]
@@ -14,6 +14,12 @@ pub struct Pv<const N: usize = { Depth::MAX as usize }> {
 }
 
 impl<const N: usize> Pv<N> {
+    /// Constructs a principal variation.
+    #[inline(always)]
+    pub fn new(score: Score, moves: Line<N>) -> Self {
+        Self { score, moves }
+    }
+
     /// An empty principal variation.
     #[inline(always)]
     pub fn empty(score: Score) -> Self {

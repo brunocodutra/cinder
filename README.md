@@ -1,24 +1,29 @@
 
 <div align="center">
-<img src="logo.svg" width="250px" alt="Cinder"/>
-<h1>• C I N D E R •</h1>
-<br>
+    <img src="logo.svg" width="250px" alt="Cinder"/>
+    <div>• C I N D E R •</div>
 </div>
 
 ## Overview
 
 Cinder is a hobby chess engine written in Rust.
 
+### Playing Strength
+
+| Version  | [CCRL Blitz] | [CCRL 40/15] | [CEGT 40/4] | [CEGT 40/20] |
+|----------|:------------:|:------------:|:-----------:|:------------:|
+| [v0.5.*] | 3739         | 3606         | -           | 3588         |
+| [v0.4.*] | 3686         | 3561         | -           | 3534         |
+| [v0.3.*] | 3658         | 3547         | -           | 3511         |
+| [v0.2.*] | 3634         | 3523         | -           | 3480         |
+| [v0.1.*] | -            | 3498         | 3478        | 3439         |
+
 ## Getting started
 
 ### Prebuilt binaries
 
 Prebuilt binaries for various popular platforms and CPU architectures are available on
-the [releases] page.
-
-#### Which binary to download?
-
-Use the tables below as a reference for which binary to pick.
+the [releases] page. Below is a reference for which binary to pick.
 The table is ordered from most compatible to most performant.
 You should prefer the most performant binary that runs on your machine.
 
@@ -27,31 +32,32 @@ You should prefer the most performant binary that runs on your machine.
 | `*-sse4`    | Compatible with most Intel and AMD CPUs                         |
 | `*-avx2`    | Compatible with Intel Haswell (2013+) and AMD Excavator (2015+) |
 | `*-avx512`  | Compatible with Intel Ice Lake (2019+) and AMD Zen 4 (2022+)    |
-| `*-neon`    | Compatible with ARMv8.2-A (2017+)                               |
+| `*-neon`    | Compatible with ARMv8.2-A (2017+), including Apple M1 and newer |
 
 ### Building from source
 
 Building Cinder from source currently requires a recent nightly Rust compiler.
-
-#### Installing the latest nightly Rust toolchain
+Follow the steps below to build a binary optimized for your CPU architecture.
+You'll find the binary under `target/bin/`.
 
 ```sh
 rustup toolchain install nightly
-```
-
-#### Building Cinder optimized for your CPU architecture
-
-```sh
 make
 ```
-
-You will find the compiled binary under `target/bin/`.
 
 ### Usage
 
 Cinder implements the UCI protocol and should be compatible with most chess graphical user
 interfaces (GUI). Users who are familiar with the UCI protocol may also interact with Cinder
 directly on a terminal via its command line interface (CLI).
+
+#### UCI options
+
+| Name            | Default   | Unit  | Description                                              |
+|-----------------|:---------:|-------|----------------------------------------------------------|
+| `Hash`          | 16        | MiB   | Memory allocated for the transposition table             |
+| `Threads`       | 1         | count | Number of search threads used to search                  |
+| `SyzygyPath`    | `<empty>` | -     | Path to a directory containing Syzygy tablebases         |
 
 ## Acknowledgement
 
@@ -84,3 +90,14 @@ Cinder is distributed under the terms of the GPL-3.0 license, see [LICENSE] for 
 [bullet]:                   https://github.com/jw1912/bullet
 [Leela Chess Zero]:         https://lczero.org/
 [Open Database License]:    https://opendatacommons.org/licenses/odbl/1-0/
+
+[v0.5.*]:                   https://github.com/brunocodutra/cinder/releases/tag/v0.5.2
+[v0.4.*]:                   https://github.com/brunocodutra/cinder/releases/tag/v0.4.1
+[v0.3.*]:                   https://github.com/brunocodutra/cinder/releases/tag/v0.3.1
+[v0.2.*]:                   https://github.com/brunocodutra/cinder/releases/tag/v0.2.0
+[v0.1.*]:                   https://github.com/brunocodutra/cinder/releases/tag/v0.1.4
+
+[CCRL 40/15]:               https://computerchess.org.uk/4040/cgi/compare_engines.cgi?class=Single-CPU+engines&print=Rating+list&cross_tables_for_best_versions_only=1
+[CCRL Blitz]:               https://computerchess.org.uk/404/cgi/compare_engines.cgi?class=Single-CPU+engines&print=Rating+list&cross_tables_for_best_versions_only=1
+[CEGT 40/4]:                http://www.cegt.net/40_4_Ratinglist/40_4_single/rangliste.html
+[CEGT 40/20]:               http://www.cegt.net/40_40%20Rating%20List/40_40%20All%20Versions/rangliste.html

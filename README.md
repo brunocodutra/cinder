@@ -57,6 +57,7 @@ directly on a terminal via its command line interface (CLI).
 |-----------------|:---------:|-------|----------------------------------------------------------|
 | `Hash`          | 16        | MiB   | Memory allocated for the transposition table             |
 | `Threads`       | 1         | count | Number of search threads used to search                  |
+| `MoveOverhead`  | 10        | ms    | Clock time assumed to be lost to system latency per move |
 | `SyzygyPath`    | `<empty>` | -     | Path to a directory containing Syzygy tablebases         |
 
 ## Acknowledgement

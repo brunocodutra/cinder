@@ -30,27 +30,30 @@ pub struct GlobalControl {
 
 impl GlobalControl {
     #[inline(always)]
-    fn time_limit(pos: &Position, limits: &Limits) -> Range<f32> {
+    fn time_limit(pos: &Position, limits: Limits, overhead: Duration) -> Range<f32> {
+        let overhead = overhead.as_secs_f32();
         let (clock, inc) = match limits.clock {
+            None => return f32::INFINITY..f32::INFINITY,
             Some((clock, inc)) => (clock.max(inc).as_secs_f32(), inc.as_secs_f32()),
-            None => return f32::INFINITY..limits.max_time().as_secs_f32(),
         };
 
         let gamma = *Params::moves_left(0);
         let delta = *Params::moves_left(1);
         let moves_left_recip = gamma.mul_add(pos.fullmoves().cast(), delta);
-        let time_per_move = moves_left_recip.min(1.0).lerp(inc, clock);
-        time_per_move * Params::time_limits(0)..clock * Params::time_limits(1)
+        let time_per_move = moves_left_recip.min(1.0).lerp(inc, clock - overhead);
+        time_per_move * Params::time_limits(0)..clock * Params::time_limits(1) - overhead
     }
 
     /// Sets up the controller for a new search.
     #[inline(always)]
-    pub fn new(pos: &Position, limits: Limits) -> GlobalControl {
+    pub fn new(pos: &Position, limits: Limits, overhead: Duration) -> GlobalControl {
+        let time_limit = Self::time_limit(pos, limits, overhead);
+
         GlobalControl {
             abort: AtomicBool::new(false),
             nodes: AtomicU64::new(0),
             timestamp: Instant::now(),
-            time_limit: Self::time_limit(pos, &limits),
+            time_limit,
             limits,
         }
     }
@@ -148,6 +151,8 @@ impl<'a> Active<'a> {
         } else if self.global_nodes + self.nodes % LAP >= self.limits.max_nodes() {
             return ControlFlow::Abort;
         } else if self.elapsed >= self.time_limit.end {
+            return ControlFlow::Abort;
+        } else if self.elapsed >= self.limits.max_time().as_secs_f32() {
             return ControlFlow::Abort;
         } else if depth > self.limits.max_depth() {
             return ControlFlow::Stop;
@@ -302,7 +307,7 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn global_measures_time_elapsed(pos: Evaluator, l: Limits) {
-        let ctrl = GlobalControl::new(&pos, l);
+        let ctrl = GlobalControl::new(&pos, l, Duration::ZERO);
         let duration = Duration::from_millis(1);
         thread::sleep(duration);
         assert!(ctrl.elapsed() >= duration);
@@ -313,9 +318,10 @@ mod tests {
     fn active_counts_nodes_visited(
         #[filter(#d < Depth::MAX)] d: Depth,
         pos: Evaluator,
+        o: Duration,
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
-        let global = GlobalControl::new(&pos, Limits::none());
+        let global = GlobalControl::new(&pos, Limits::none(), o);
         let mut active = Active::new(&global);
         assert_eq!(active.nodes, 0);
         assert_eq!(active.check(d, pos.ply(), &pv), ControlFlow::Continue);
@@ -327,9 +333,10 @@ mod tests {
     fn passive_counts_nodes_visited(
         #[filter(#d < Depth::MAX)] d: Depth,
         pos: Evaluator,
+        o: Duration,
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
-        let global = GlobalControl::new(&pos, Limits::none());
+        let global = GlobalControl::new(&pos, Limits::none(), o);
         let mut passive = Passive::new(&global);
         assert_eq!(passive.nodes, 0);
         assert_eq!(passive.check(d, pos.ply(), &pv), ControlFlow::Continue);
@@ -341,9 +348,10 @@ mod tests {
     fn active_aborts_if_time_is_up(
         pos: Evaluator,
         d: Depth,
+        o: Duration,
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
-        let global = GlobalControl::new(&pos, Limits::time(Duration::ZERO));
+        let global = GlobalControl::new(&pos, Limits::time(Duration::ZERO), o);
         let mut local = LocalControl::active(&global);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Abort);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Abort);
@@ -355,9 +363,10 @@ mod tests {
     fn passive_continues_if_time_is_up(
         d: Depth,
         pos: Evaluator,
+        o: Duration,
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
-        let global = GlobalControl::new(&pos, Limits::time(Duration::ZERO));
+        let global = GlobalControl::new(&pos, Limits::time(Duration::ZERO), o);
         let mut local = LocalControl::passive(&global);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);
@@ -369,10 +378,11 @@ mod tests {
     fn active_stops_if_searched_for_sufficient_time(
         d: Depth,
         #[filter(#pos.ply() == 0)] pos: Evaluator,
+        o: Duration,
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
-        let mut global = GlobalControl::new(&pos, Limits::clock(Duration::MAX, Duration::ZERO));
-        global.time_limit.start = 0.;
+        let mut global = GlobalControl::new(&pos, Limits::clock(o, Duration::ZERO), o);
+        global.time_limit.end = f32::MAX;
 
         let mut local = LocalControl::active(&global);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Stop);
@@ -385,10 +395,43 @@ mod tests {
     fn passive_continues_if_searched_for_sufficient_time(
         d: Depth,
         #[filter(#pos.ply() == 0)] pos: Evaluator,
+        o: Duration,
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
-        let mut global = GlobalControl::new(&pos, Limits::clock(Duration::MAX, Duration::ZERO));
-        global.time_limit.start = 0.;
+        let mut global = GlobalControl::new(&pos, Limits::clock(o, Duration::ZERO), o);
+        global.time_limit.end = f32::MAX;
+
+        let mut local = LocalControl::passive(&global);
+        assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);
+        assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);
+        assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn active_stops_if_searched_for_too_long(
+        d: Depth,
+        #[filter(#pos.ply() == 0)] pos: Evaluator,
+        o: Duration,
+        #[filter(#pv.head().is_some())] pv: Pv,
+    ) {
+        let global = GlobalControl::new(&pos, Limits::clock(o, Duration::ZERO), o);
+
+        let mut local = LocalControl::active(&global);
+        assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Abort);
+        assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Abort);
+        assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Abort);
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn passive_continues_if_searched_for_too_long(
+        d: Depth,
+        #[filter(#pos.ply() == 0)] pos: Evaluator,
+        o: Duration,
+        #[filter(#pv.head().is_some())] pv: Pv,
+    ) {
+        let global = GlobalControl::new(&pos, Limits::clock(o, Duration::ZERO), o);
 
         let mut local = LocalControl::passive(&global);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);
@@ -401,9 +444,10 @@ mod tests {
     fn active_stops_if_target_depth_is_reached(
         d: Depth,
         pos: Evaluator,
+        o: Duration,
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
-        let global = GlobalControl::new(&pos, Limits::depth(Depth::lower()));
+        let global = GlobalControl::new(&pos, Limits::depth(Depth::lower()), o);
         let mut local = LocalControl::active(&global);
         assert_eq!(local.check(d + 1, pos.ply(), &pv), ControlFlow::Stop);
         assert_eq!(local.check(d + 1, pos.ply(), &pv), ControlFlow::Stop);
@@ -415,9 +459,10 @@ mod tests {
     fn passive_continues_if_target_depth_is_reached(
         d: Depth,
         pos: Evaluator,
+        o: Duration,
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
-        let global = GlobalControl::new(&pos, Limits::depth(Depth::lower()));
+        let global = GlobalControl::new(&pos, Limits::depth(Depth::lower()), o);
         let mut local = LocalControl::passive(&global);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);
@@ -429,9 +474,10 @@ mod tests {
     fn active_aborts_if_node_count_is_reached(
         d: Depth,
         pos: Evaluator,
+        o: Duration,
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
-        let global = GlobalControl::new(&pos, Limits::nodes(0));
+        let global = GlobalControl::new(&pos, Limits::nodes(0), o);
         let mut local = LocalControl::active(&global);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Abort);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Abort);
@@ -443,9 +489,10 @@ mod tests {
     fn passive_continues_if_node_count_is_reached(
         d: Depth,
         pos: Evaluator,
+        o: Duration,
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
-        let global = GlobalControl::new(&pos, Limits::nodes(0));
+        let global = GlobalControl::new(&pos, Limits::nodes(0), o);
         let mut local = LocalControl::passive(&global);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);
@@ -457,9 +504,10 @@ mod tests {
     fn active_aborts_upon_request(
         d: Depth,
         pos: Evaluator,
+        o: Duration,
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
-        let global = GlobalControl::new(&pos, Limits::none());
+        let global = GlobalControl::new(&pos, Limits::none(), o);
         global.abort();
 
         let mut local = LocalControl::active(&global);
@@ -473,9 +521,10 @@ mod tests {
     fn passive_aborts_upon_request(
         d: Depth,
         pos: Evaluator,
+        o: Duration,
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
-        let global = GlobalControl::new(&pos, Limits::none());
+        let global = GlobalControl::new(&pos, Limits::none(), o);
         global.abort();
 
         let mut local = LocalControl::passive(&global);
@@ -486,26 +535,26 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn active_suspends_limits_while_empty_pv(d: Depth, pos: Evaluator, s: Score) {
+    fn active_suspends_limits_while_empty_pv(d: Depth, pos: Evaluator, o: Duration, s: Score) {
         let pv = Pv::empty(s);
 
-        let global = GlobalControl::new(&pos, Limits::time(Duration::ZERO));
+        let global = GlobalControl::new(&pos, Limits::time(Duration::ZERO), o);
         let mut local = LocalControl::active(&global);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);
 
-        let global = GlobalControl::new(&pos, Limits::clock(Duration::ZERO, Duration::ZERO));
+        let global = GlobalControl::new(&pos, Limits::clock(Duration::ZERO, Duration::ZERO), o);
         let mut local = LocalControl::active(&global);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);
 
-        let global = GlobalControl::new(&pos, Limits::depth(Depth::lower()));
+        let global = GlobalControl::new(&pos, Limits::depth(Depth::lower()), o);
         let mut local = LocalControl::active(&global);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);
 
-        let global = GlobalControl::new(&pos, Limits::nodes(0));
+        let global = GlobalControl::new(&pos, Limits::nodes(0), o);
         let mut local = LocalControl::active(&global);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);
 
-        let global = GlobalControl::new(&pos, Limits::nodes(0));
+        let global = GlobalControl::new(&pos, Limits::nodes(0), o);
         global.abort();
 
         let mut local = LocalControl::active(&global);

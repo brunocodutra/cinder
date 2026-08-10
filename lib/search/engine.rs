@@ -7,7 +7,7 @@ use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
 use std::ops::{Add, Mul, Range};
 use std::task::{Context, Poll};
-use std::{array, path::Path, pin::Pin, ptr::NonNull, slice};
+use std::{array, path::Path, pin::Pin, ptr::NonNull, slice, time::Duration};
 use std::{cell::SyncUnsafeCell, mem::MaybeUninit};
 
 #[cfg(test)]
@@ -37,9 +37,10 @@ struct Interrupted;
 
 #[derive(Debug)]
 struct SharedData {
-    syzygy: Syzygy,
     tt: TranspositionTable,
     vt: ValueTable,
+    syzygy: Syzygy,
+    overhead: Duration,
 }
 
 #[derive(Debug, Zeroable)]
@@ -1089,7 +1090,12 @@ impl<'a> Searcher<'a> {
                     let bounds = lower.saturate()..upper.saturate();
                     let aw_depth = depth.cast::<f32>() - Params::aw_fh_reduction(2).min(reduction);
                     let Ok(partial) = self.root(&mut moves, aw_depth, bounds) else {
-                        return;
+                        let time = self.ctrl.elapsed();
+                        let nodes = self.ctrl.visited();
+                        let seldepth = self.ctrl.seldepth();
+                        let tbhits = self.shared.syzygy.hits();
+                        let pv = self.stack.pv;
+                        return yield Info::new(time, depth - 1, seldepth, nodes, tbhits, pv);
                     };
 
                     match partial.score() {
@@ -1142,7 +1148,7 @@ pub struct Search<'e, 'p> {
 impl<'e, 'p> Search<'e, 'p> {
     #[inline(always)]
     fn new(engine: &'e mut Engine, pos: &'p Evaluator, limits: Limits) -> Self {
-        let ctrl = GlobalControl::new(pos, limits);
+        let ctrl = GlobalControl::new(pos, limits, engine.shared.overhead);
 
         Search {
             engine,
@@ -1321,9 +1327,10 @@ impl Engine {
             executor: Executor::new(options.threads),
             local: HugePages::zeroed(options.threads.cast()),
             shared: SharedData {
-                syzygy: Syzygy::new(&options.syzygy),
                 tt: TranspositionTable::new(options.hash),
                 vt: ValueTable::new(options.hash),
+                syzygy: Syzygy::new(&options.syzygy),
+                overhead: options.overhead.into(),
             },
         }
     }
@@ -1338,6 +1345,11 @@ impl Engine {
     pub fn set_threads(&mut self, threads: ThreadCount) {
         self.executor = Executor::new(threads);
         self.local.zeroed_in_place(threads.cast());
+    }
+
+    /// Resets the move overhead.
+    pub fn set_overhead(&mut self, overhead: MoveOverhead) {
+        self.shared.overhead = overhead.into();
     }
 
     /// Resets the Syzygy path.
@@ -1384,8 +1396,7 @@ mod tests {
     use super::*;
     use crate::chess::{Outcome, Position};
     use proptest::sample::Selector;
-    use std::fmt::Debug;
-    use std::{thread, time::Duration};
+    use std::{fmt::Debug, thread};
     use test_strategy::proptest;
 
     #[proptest]
@@ -1410,6 +1421,7 @@ mod tests {
         #[by_ref] mut e: Engine,
         #[filter(#pos.outcome().is_none() && !#pos.is_check())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves()))] m: Move,
+        o: Duration,
         #[filter(!#b.is_decisive())] b: Score,
         was_pv: bool,
         d: Depth,
@@ -1421,7 +1433,7 @@ mod tests {
         let tpos = Transposition::new(ScoreBound::Upper(s), d, Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);
 
-        let global = GlobalControl::new(&pos, Limits::none());
+        let global = GlobalControl::new(&pos, Limits::none(), o);
         let ctrl = LocalControl::active(&global);
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
@@ -1435,6 +1447,7 @@ mod tests {
         #[by_ref] mut e: Engine,
         #[filter(#pos.outcome().is_none() && !#pos.is_check())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves()))] m: Move,
+        o: Duration,
         #[filter(!#b.is_decisive())] b: Score,
         was_pv: bool,
         d: Depth,
@@ -1445,7 +1458,7 @@ mod tests {
         let tpos = Transposition::new(ScoreBound::Lower(s), d, Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);
 
-        let global = GlobalControl::new(&pos, Limits::none());
+        let global = GlobalControl::new(&pos, Limits::none(), o);
         let ctrl = LocalControl::active(&global);
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
@@ -1459,6 +1472,7 @@ mod tests {
         #[by_ref] mut e: Engine,
         #[filter(#pos.outcome().is_none() && !#pos.is_check())] pos: Evaluator,
         #[map(|s: Selector| s.select(#pos.moves()))] m: Move,
+        o: Duration,
         #[filter(!#b.is_decisive())] b: Score,
         was_pv: bool,
         d: Depth,
@@ -1469,7 +1483,7 @@ mod tests {
         let tpos = Transposition::new(ScoreBound::Exact(s), d, Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);
 
-        let global = GlobalControl::new(&pos, Limits::none());
+        let global = GlobalControl::new(&pos, Limits::none(), o);
         let ctrl = LocalControl::active(&global);
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
@@ -1480,15 +1494,16 @@ mod tests {
     #[proptest(cases = 1)]
     #[cfg_attr(miri, ignore)]
     fn ab_aborts_if_time_is_up(
-        mut e: Engine,
+        #[by_ref] mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         m: Move,
+        o: Duration,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         s: Score,
         is_cut: bool,
     ) {
-        let global = GlobalControl::new(&pos, Limits::time(Duration::ZERO));
+        let global = GlobalControl::new(&pos, Limits::time(Duration::ZERO), o);
         let ctrl = LocalControl::active(&global);
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
@@ -1507,12 +1522,13 @@ mod tests {
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Evaluator,
         m: Move,
+        o: Duration,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         s: Score,
         is_cut: bool,
     ) {
-        let global = GlobalControl::new(&pos, Limits::none());
+        let global = GlobalControl::new(&pos, Limits::none(), o);
         let ctrl = LocalControl::active(&global);
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
@@ -1531,12 +1547,13 @@ mod tests {
         mut e: Engine,
         #[filter(#pos.outcome().is_some_and(Outcome::is_draw))] pos: Evaluator,
         m: Move,
+        o: Duration,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         s: Score,
         is_cut: bool,
     ) {
-        let global = GlobalControl::new(&pos, Limits::none());
+        let global = GlobalControl::new(&pos, Limits::none(), o);
         let ctrl = LocalControl::active(&global);
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
@@ -1554,13 +1571,14 @@ mod tests {
         mut e: Engine,
         #[filter(#pos.is_checkmate())] pos: Evaluator,
         m: Move,
+        o: Duration,
         #[filter(!#b.is_empty())] b: Range<Score>,
         d: Depth,
         s: Score,
         is_cut: bool,
     ) {
         let ply = pos.ply();
-        let global = GlobalControl::new(&pos, Limits::none());
+        let global = GlobalControl::new(&pos, Limits::none(), o);
         let ctrl = LocalControl::active(&global);
         let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
@@ -1575,12 +1593,13 @@ mod tests {
     #[proptest(cases = 1)]
     #[cfg_attr(miri, ignore)]
     fn aw_extends_time_to_find_some_pv(
-        mut e: Engine,
+        #[by_ref] mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Position,
+        o: Duration,
         s: Score,
     ) {
         let pos = Evaluator::new(pos);
-        let global = GlobalControl::new(&pos, Limits::time(Duration::ZERO));
+        let global = GlobalControl::new(&pos, Limits::time(Duration::ZERO), o);
         let ctrl = LocalControl::active(&global);
         let stack = Stack::new(pos, Pv::empty(s));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
@@ -1593,10 +1612,11 @@ mod tests {
     fn aw_extends_depth_to_find_some_pv(
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Position,
+        o: Duration,
         s: Score,
     ) {
         let pos = Evaluator::new(pos);
-        let global = GlobalControl::new(&pos, Limits::depth(Depth::lower()));
+        let global = GlobalControl::new(&pos, Limits::depth(Depth::lower()), o);
         let ctrl = LocalControl::active(&global);
         let stack = Stack::new(pos, Pv::empty(s));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
@@ -1609,10 +1629,11 @@ mod tests {
     fn aw_extends_nodes_to_find_some_pv(
         mut e: Engine,
         #[filter(#pos.outcome().is_none())] pos: Position,
+        o: Duration,
         s: Score,
     ) {
         let pos = Evaluator::new(pos);
-        let global = GlobalControl::new(&pos, Limits::nodes(0));
+        let global = GlobalControl::new(&pos, Limits::nodes(0), o);
         let ctrl = LocalControl::active(&global);
         let stack = Stack::new(pos, Pv::empty(s));
         let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);

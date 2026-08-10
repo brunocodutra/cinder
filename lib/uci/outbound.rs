@@ -1,5 +1,5 @@
 use crate::chess::Move;
-use crate::search::{HashSize, Info, Mate, Pv, ThreadCount};
+use crate::search::{HashSize, Info, Mate, MoveOverhead, Pv, SyzygyPath, ThreadCount};
 use crate::util::Num;
 use std::fmt::{self, Display, Formatter};
 use std::time::Duration;
@@ -83,7 +83,8 @@ impl Display for Outbound {
 
                 writeln!(
                     f,
-                    "option name Hash type spin default {} min {} max {}",
+                    "option name {} type spin default {} min {} max {}",
+                    HashSize::NAME,
                     HashSize::default(),
                     HashSize::lower(),
                     HashSize::upper()
@@ -91,13 +92,27 @@ impl Display for Outbound {
 
                 writeln!(
                     f,
-                    "option name Threads type spin default {} min {} max {}",
+                    "option name {} type spin default {} min {} max {}",
+                    ThreadCount::NAME,
                     ThreadCount::default(),
                     ThreadCount::lower(),
                     ThreadCount::upper()
                 )?;
 
-                writeln!(f, "option name SyzygyPath type string default <empty>")?;
+                writeln!(
+                    f,
+                    "option name {} type spin default {} min {} max {}",
+                    MoveOverhead::NAME,
+                    MoveOverhead::default(),
+                    MoveOverhead::lower(),
+                    MoveOverhead::upper()
+                )?;
+
+                writeln!(
+                    f,
+                    "option name {} type string default <empty>",
+                    SyzygyPath::NAME
+                )?;
 
                 f.write_str("uciok")
             }

@@ -226,6 +226,7 @@ where
 
                 Inbound::SetOptionHash(hash) => self.engine.set_hash(hash),
                 Inbound::SetOptionThreads(threads) => self.engine.set_threads(threads),
+                Inbound::SetOptionMoveOverhead(overhead) => self.engine.set_overhead(overhead),
                 Inbound::SetOptionSyzygyPath(paths) => self.engine.set_syzygy(paths),
                 Inbound::IsReady => self.output.send(Outbound::ReadyOk).await?,
                 Inbound::Uci => self.output.send(Outbound::UciOk).await?,
@@ -241,11 +242,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::search::{HashSize, ThreadCount};
+    use crate::search::{HashSize, MoveOverhead, SyzygyPath, ThreadCount};
     use futures::executor::block_on;
-    use std::assert_matches;
-    use std::collections::{HashSet, VecDeque};
     use std::task::{Context, Poll};
+    use std::{assert_matches, collections::VecDeque};
     use test_strategy::proptest;
 
     #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -611,8 +611,17 @@ mod tests {
 
     #[proptest(cases = 1)]
     #[cfg_attr(miri, ignore)]
-    fn handles_option_syzygy_path(mut uci: MockUci, ps: HashSet<String>) {
-        uci.input = MockStream::new([Inbound::SetOptionSyzygyPath(ps)]);
+    fn handles_option_move_overhead(mut uci: MockUci, o: MoveOverhead) {
+        uci.input = MockStream::new([Inbound::SetOptionMoveOverhead(o)]);
+
+        block_on(uci.run()).expect("is ok");
+        assert_eq!(&*uci.output, &[]);
+    }
+
+    #[proptest(cases = 1)]
+    #[cfg_attr(miri, ignore)]
+    fn handles_option_syzygy_path(mut uci: MockUci, sp: SyzygyPath) {
+        uci.input = MockStream::new([Inbound::SetOptionSyzygyPath(sp)]);
 
         block_on(uci.run()).expect("is ok");
         assert_eq!(&*uci.output, &[]);

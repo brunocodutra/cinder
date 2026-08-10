@@ -2,9 +2,9 @@ use crate::chess::{Castles, Move, Moves, Piece, Position, Role};
 use crate::syzygy::{Dtz, DtzTable, Material, NormalizedMaterial, TableDescriptor, Wdl, WdlTable};
 use crate::util::{Int, Num};
 use bytemuck::zeroed;
-use derive_more::with_trait::Debug;
-use rustc_hash::FxHashMap;
-use std::{collections::hash_map::Entry, ffi::OsStr, io, iter::repeat_n, path::Path, str::FromStr};
+use rustc_hash::FxBuildHasher;
+use std::collections::{HashMap, hash_map::Entry};
+use std::{ffi::OsStr, io, iter::repeat_n, path::Path, str::FromStr};
 
 /// Syzygy tables are available for up to 7 pieces.
 pub const MAX_PIECES: usize = 7;
@@ -13,8 +13,8 @@ pub const MAX_PIECES: usize = 7;
 #[derive(Debug, Default)]
 pub struct Tablebase {
     max_pieces: usize,
-    wdl: FxHashMap<NormalizedMaterial, WdlTable>,
-    dtz: FxHashMap<NormalizedMaterial, DtzTable>,
+    wdl: HashMap<NormalizedMaterial, WdlTable, FxBuildHasher>,
+    dtz: HashMap<NormalizedMaterial, DtzTable, FxBuildHasher>,
 }
 
 impl Tablebase {
@@ -272,7 +272,7 @@ impl<'a> ProbeResult<'a> {
 mod test {
     use super::*;
     use crate::syzygy::tests::{KNVK_RTBW, KNVKN_RTBZ};
-    use std::{fmt::Debug, fs::File, io::Write};
+    use std::{fs::File, io::Write};
     use tempfile::TempDir;
     use test_strategy::proptest;
 

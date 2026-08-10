@@ -1,12 +1,12 @@
 use crate::chess::{Move, Position, Square};
 use crate::nnue::Evaluator;
-use crate::search::{Depth, HashSize, ThreadCount};
+use crate::search::{Depth, HashSize, MoveOverhead, SyzygyPath, ThreadCount};
 use crate::util::{Assume, parsers::*};
 use derive_more::with_trait::{Display, Error, From};
 use nom::error::Error as ParseError;
 use nom::{branch::*, bytes::complete::*, combinator::*, sequence::*, *};
 use std::str::{self, FromStr};
-use std::{collections::HashSet, io::Write, time::Duration};
+use std::{io::Write, time::Duration};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct UciMove([u8; 5]);
@@ -50,7 +50,8 @@ pub enum Inbound {
     Perft(u8),
     SetOptionHash(HashSize),
     SetOptionThreads(ThreadCount),
-    SetOptionSyzygyPath(HashSet<String>),
+    SetOptionMoveOverhead(MoveOverhead),
+    SetOptionSyzygyPath(SyzygyPath),
     IsReady,
     UciNewGame,
     Uci,
@@ -87,12 +88,6 @@ pub enum ParseUciError<'s> {
 pub struct UciParser;
 
 impl UciParser {
-    #[cfg(unix)]
-    const PATH_DELIMITER: &str = ":";
-
-    #[cfg(windows)]
-    const PATH_DELIMITER: &str = ";";
-
     #[inline(always)]
     pub fn parse<'s>(&mut self, s: &'s str) -> Result<Inbound, ParseUciError<'s>> {
         let mut cmd = t(alt((
@@ -175,13 +170,18 @@ impl UciParser {
 
                 use Inbound::*;
                 let options = alt((
-                    option("hash").map_res(str::parse).map(SetOptionHash),
-                    option("threads").map_res(str::parse).map(SetOptionThreads),
-                    option("syzygypath").map(|s| {
-                        SetOptionSyzygyPath(
-                            s.split(Self::PATH_DELIMITER).map(str::to_owned).collect(),
-                        )
-                    }),
+                    option(HashSize::NAME)
+                        .map_res(HashSize::from_str)
+                        .map(SetOptionHash),
+                    option(ThreadCount::NAME)
+                        .map_res(ThreadCount::from_str)
+                        .map(SetOptionThreads),
+                    option(MoveOverhead::NAME)
+                        .map_res(MoveOverhead::from_str)
+                        .map(SetOptionMoveOverhead),
+                    option(SyzygyPath::NAME)
+                        .map_res(SyzygyPath::from_str)
+                        .map(SetOptionSyzygyPath),
                 ));
 
                 let mut setoption = terminated(options, eof);
@@ -217,7 +217,7 @@ impl UciParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::{collection::hash_set, prelude::*, sample::Selector};
+    use proptest::{prelude::*, sample::Selector};
     use rand::seq::SliceRandom;
     use std::fmt::Write;
     use test_strategy::proptest;
@@ -514,7 +514,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn parsing_option_hash_succeeds(mut p: UciParser, h: HashSize) {
         assert_eq!(
-            p.parse(&format!("setoption name Hash value {h}")),
+            p.parse(&format!("setoption name {} value {h}", HashSize::NAME)),
             Ok(Inbound::SetOptionHash(h >> 20 << 20))
         );
     }
@@ -525,7 +525,7 @@ mod tests {
         mut p: UciParser,
         #[filter(#s.trim().parse::<HashSize>().is_err())] s: String,
     ) {
-        let input = format!("setoption name Hash value {s}");
+        let input = format!("setoption name {} value {s}", HashSize::NAME);
         p.parse(&input).expect_err("is err");
     }
 
@@ -533,7 +533,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn parsing_option_threads_succeeds(mut p: UciParser, t: ThreadCount) {
         assert_eq!(
-            p.parse(&format!("setoption name Threads value {t}")),
+            p.parse(&format!("setoption name {} value {t}", ThreadCount::NAME)),
             Ok(Inbound::SetOptionThreads(t))
         );
     }
@@ -544,21 +544,35 @@ mod tests {
         mut p: UciParser,
         #[filter(#s.trim().parse::<ThreadCount>().is_err())] s: String,
     ) {
-        let input = format!("setoption name Threads value {s}");
+        let input = format!("setoption name {} value {s}", ThreadCount::NAME);
         p.parse(&input).expect_err("is err");
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn parsing_option_syzygy_path_succeeds(
-        mut p: UciParser,
-        #[strategy(hash_set("[^[:ascii:]]{1,10}", 1..10))] syzygy: HashSet<String>,
-    ) {
-        let paths = Vec::from_iter(syzygy.clone()).join(UciParser::PATH_DELIMITER);
-
+    fn parsing_option_move_overhead_succeeds(mut p: UciParser, o: MoveOverhead) {
         assert_eq!(
-            p.parse(&format!("setoption name SyzygyPath value {paths}")),
-            Ok(Inbound::SetOptionSyzygyPath(syzygy))
+            p.parse(&format!("setoption name {} value {o}", MoveOverhead::NAME)),
+            Ok(Inbound::SetOptionMoveOverhead(o))
+        );
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn parsing_invalid_move_overhead_fails(
+        mut p: UciParser,
+        #[filter(#s.trim().parse::<MoveOverhead>().is_err())] s: String,
+    ) {
+        let input = format!("setoption name {} value {s}", MoveOverhead::NAME);
+        p.parse(&input).expect_err("is err");
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn parsing_option_syzygy_path_succeeds(mut p: UciParser, sp: SyzygyPath) {
+        assert_eq!(
+            p.parse(&format!("setoption name {} value {sp}", SyzygyPath::NAME)),
+            Ok(Inbound::SetOptionSyzygyPath(sp))
         );
     }
 

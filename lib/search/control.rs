@@ -36,15 +36,11 @@ impl GlobalControl {
             None => return f32::INFINITY..limits.max_time().as_secs_f32(),
         };
 
-        let min = *Params::moves_left_limits(0);
-        let max = *Params::moves_left_limits(1);
-        let moves = pos.fullmoves().cast::<f32>();
-        let moves_left = moves.powf(*Params::moves_left(0)) * Params::moves_left(1);
-        let time_per_move = moves_left.clamp(min, max).recip().lerp(inc, clock);
-
-        let soft_time_fraction = *Params::soft_time_fraction(0);
-        let hard_time_fraction = *Params::hard_time_fraction(0);
-        soft_time_fraction * time_per_move..clock * hard_time_fraction
+        let gamma = *Params::moves_left(0);
+        let delta = *Params::moves_left(1);
+        let moves_left_recip = gamma.mul_add(pos.fullmoves().cast(), delta);
+        let time_per_move = moves_left_recip.min(1.0).lerp(inc, clock);
+        time_per_move * Params::time_limits(0)..clock * Params::time_limits(1)
     }
 
     /// Sets up the controller for a new search.

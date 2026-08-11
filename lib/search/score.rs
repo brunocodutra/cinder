@@ -46,13 +46,13 @@ impl Score {
         Self::new(0)
     }
 
-    /// The tablebase loss score at `ply`.
+    /// The tablebase losing score at `ply`.
     #[inline(always)]
     pub fn losing(ply: Ply) -> Self {
         Self::mated(Ply::upper()).relative_to_ply(ply) + 1
     }
 
-    /// The maximum value.
+    /// The tablebase winning score at `ply`.
     #[inline(always)]
     pub fn winning(ply: Ply) -> Self {
         Self::mating(Ply::upper()).relative_to_ply(ply) - 1
@@ -73,9 +73,9 @@ impl Score {
     /// Returns number of plies to mate, if one is in the horizon.
     #[inline(always)]
     pub fn mate(self) -> Mate {
-        if self.is_loss() {
+        if self.is_mated() {
             Mate::Mated((self - Score::lower()).saturate())
-        } else if self.is_win() {
+        } else if self.is_mating() {
             Mate::Mating((Score::upper() - self).saturate())
         } else {
             Mate::None
@@ -126,20 +126,14 @@ impl Score {
 
     /// Returns true if the score represents a won position.
     #[inline(always)]
-    pub fn is_win(self) -> bool {
+    pub fn is_mating(self) -> bool {
         self > Self::winning(zeroed())
     }
 
     /// Returns true if the score represents a lost position.
     #[inline(always)]
-    pub fn is_loss(self) -> bool {
+    pub fn is_mated(self) -> bool {
         self < Self::losing(zeroed())
-    }
-
-    /// Returns true if the score represents a won or lost position.
-    #[inline(always)]
-    pub fn is_decided(self) -> bool {
-        self.is_win() || self.is_loss()
     }
 }
 
@@ -196,13 +190,13 @@ mod tests {
     }
 
     #[proptest]
-    fn mating_implies_is_win(p: Ply) {
-        assert!(Score::mating(p).is_win());
+    fn mating_implies_is_mating(p: Ply) {
+        assert!(Score::mating(p).is_mating());
     }
 
     #[proptest]
-    fn mated_implies_is_loss(p: Ply) {
-        assert!(Score::mated(p).is_loss());
+    fn mated_implies_is_mated(p: Ply) {
+        assert!(Score::mated(p).is_mated());
     }
 
     #[proptest]

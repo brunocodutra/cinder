@@ -636,7 +636,7 @@ impl<'a> Searcher<'a> {
         if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
             return Ok(Pv::empty(stand_pat).clip(lower, upper));
         } else if !IS_PV && !is_check {
-            if !alpha.is_winning() {
+            if alpha.get().abs() < 1000 && depth < *Params::razoring_depth_limit(0) {
                 let margin = convolve([
                     (1.0, Params::razoring_scalar(..)),
                     (depth, Params::razoring_depth(..)),
@@ -650,7 +650,7 @@ impl<'a> Searcher<'a> {
                 }
             }
 
-            if !beta.is_losing() {
+            if !beta.is_losing() && depth < *Params::rfp_depth_limit(0) {
                 let margin = convolve([
                     (1.0, Params::rfp_margin_scalar(..)),
                     (depth, Params::rfp_margin_depth(..)),

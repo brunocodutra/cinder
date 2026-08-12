@@ -1,5 +1,4 @@
-use std::ops::{Mul, Shl, Shr};
-use std::simd::prelude::*;
+use std::{ops::Shl, simd::prelude::*};
 
 /// Trait for [`Simd<i16, _>` ] types that implement `mul_high`.
 pub trait MulHigh: SimdInt<Scalar = i16> {
@@ -12,14 +11,14 @@ impl MulHigh for i16x32 {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_high<const B: usize>(self, x: Self) -> Self {
-        const { assert!(8 < B && B <= 16) };
+        const { assert!(7 <= B && B <= 15) };
 
-        debug_assert!(x.simd_lt(Simd::splat(256)).all());
+        debug_assert!(x.simd_lt(Simd::splat(128)).all());
         debug_assert!(x.simd_ge(Simd::splat(0)).all());
 
         unsafe {
             use std::arch::x86_64::*;
-            _mm512_mulhi_epi16(self.into(), x.shl(16 - B as i16).into()).into()
+            _mm512_mulhrs_epi16(self.into(), x.shl(15 - B as i16).into()).into()
         }
     }
 }
@@ -29,14 +28,14 @@ impl MulHigh for i16x16 {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_high<const B: usize>(self, x: Self) -> Self {
-        const { assert!(8 < B && B <= 16) };
+        const { assert!(7 <= B && B <= 15) };
 
-        debug_assert!(x.simd_lt(Simd::splat(256)).all());
+        debug_assert!(x.simd_lt(Simd::splat(128)).all());
         debug_assert!(x.simd_ge(Simd::splat(0)).all());
 
         unsafe {
             use std::arch::x86_64::*;
-            _mm256_mulhi_epi16(self.into(), x.shl(16 - B as i16).into()).into()
+            _mm256_mulhrs_epi16(self.into(), x.shl(15 - B as i16).into()).into()
         }
     }
 }
@@ -46,14 +45,14 @@ impl MulHigh for i16x8 {
     #[cfg(target_feature = "sse2")]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_high<const B: usize>(self, x: Self) -> Self {
-        const { assert!(8 < B && B <= 16) };
+        const { assert!(7 <= B && B <= 15) };
 
-        debug_assert!(x.simd_lt(Simd::splat(256)).all());
+        debug_assert!(x.simd_lt(Simd::splat(128)).all());
         debug_assert!(x.simd_ge(Simd::splat(0)).all());
 
         unsafe {
             use std::arch::x86_64::*;
-            _mm_mulhi_epi16(self.into(), x.shl(16 - B as i16).into()).into()
+            _mm_mulhrs_epi16(self.into(), x.shl(15 - B as i16).into()).into()
         }
     }
 
@@ -61,14 +60,14 @@ impl MulHigh for i16x8 {
     #[cfg(target_feature = "neon")]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn mul_high<const B: usize>(self, x: Self) -> Self {
-        const { assert!(8 < B && B <= 16) };
+        const { assert!(7 <= B && B <= 15) };
 
-        debug_assert!(x.simd_lt(Simd::splat(256)).all());
+        debug_assert!(x.simd_lt(Simd::splat(128)).all());
         debug_assert!(x.simd_ge(Simd::splat(0)).all());
 
         unsafe {
             use std::arch::aarch64::*;
-            vqdmulhq_s16(self.into(), x.shl(16 - 1 - B as i16).into()).into()
+            vqrdmulhq_s16(self.into(), x.shl(15 - B as i16).into()).into()
         }
     }
 
@@ -85,11 +84,12 @@ impl MulHigh for i16x8 {
 #[inline(always)]
 #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
 fn fallback<const B: usize>(a: i16x8, b: i16x8) -> i16x8 {
-    const { assert!(8 < B && B <= 16) };
-    debug_assert!(b.simd_lt(Simd::splat(256)).all());
+    const { assert!(7 <= B && B <= 15) };
+    debug_assert!(b.simd_lt(Simd::splat(128)).all());
     debug_assert!(b.simd_ge(Simd::splat(0)).all());
-    let b = b.shl(16 - B as i16).cast::<i32>();
-    a.cast::<i32>().mul(b).shr(16).cast::<i16>()
+    let c = b.shl(15 - B as i16).cast::<i32>();
+    let r = (a.cast::<i32>() * c + Simd::splat(16384)) >> 15;
+    r.cast::<i16>()
 }
 
 #[cfg(test)]
@@ -104,7 +104,7 @@ mod tests {
     fn for_i16x32(
         #[strategy(UniformArrayStrategy::new(-128i16..=127i16).prop_map(i16x32::from_array))]
         a: i16x32,
-        #[strategy(UniformArrayStrategy::new(0i16..=255i16).prop_map(i16x32::from_array))]
+        #[strategy(UniformArrayStrategy::new(0i16..=127i16).prop_map(i16x32::from_array))]
         b: i16x32,
     ) {
         use crate::simd::Halve;
@@ -123,7 +123,7 @@ mod tests {
     fn for_i16x16(
         #[strategy(UniformArrayStrategy::new(-128i16..=127i16).prop_map(i16x16::from_array))]
         a: i16x16,
-        #[strategy(UniformArrayStrategy::new(0i16..=255i16).prop_map(i16x16::from_array))]
+        #[strategy(UniformArrayStrategy::new(0i16..=127i16).prop_map(i16x16::from_array))]
         b: i16x16,
     ) {
         use crate::simd::Halve;
@@ -141,7 +141,7 @@ mod tests {
     fn for_i16x8(
         #[strategy(UniformArrayStrategy::new(-128i16..=127i16).prop_map(i16x8::from_array))]
         a: i16x8,
-        #[strategy(UniformArrayStrategy::new(0i16..=255i16).prop_map(i16x8::from_array))] b: i16x8,
+        #[strategy(UniformArrayStrategy::new(0i16..=127i16).prop_map(i16x8::from_array))] b: i16x8,
     ) {
         assert_eq!(a.mul_high::<9>(b), fallback::<9>(a, b));
     }

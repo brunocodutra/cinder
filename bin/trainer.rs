@@ -59,7 +59,7 @@ impl SparseInputType for Features {
     type RequiredDataType = ChessBoard;
 
     fn num_inputs(&self) -> usize {
-        Self::LEN + 768
+        Self::LEN + PSQFeature::LEN
     }
 
     fn max_active(&self) -> usize {
@@ -93,7 +93,7 @@ impl SparseInputType for Features {
         let mut remaining = Bitboard::from(pawns);
         for s in remaining.iter() {
             remaining &= !s.bitboard();
-            for t in PPFeature::MASK[s.file()].bitand(remaining).iter() {
+            for t in PPFeature::WINDOW[s.file()].bitand(remaining).iter() {
                 let pft1 = pfts.map(|ft| Num::new(ft[s]));
                 let pft2 = pfts.map(|ft| Num::new(ft[t]));
 
@@ -158,7 +158,7 @@ impl SparseInputType for Features {
     }
 
     fn shorthand(&self) -> String {
-        format!("768x{}ti", Self::BUCKETS)
+        format!("768x{}ti-pp", Self::BUCKETS)
     }
 
     fn description(&self) -> String {
@@ -487,7 +487,7 @@ impl Orchestrator {
                         weights
                     })
                     .round()
-                    .quantise::<i16>(FTQ),
+                    .quantise::<i8>(FTQ),
                 SavedFormat::id("ftw")
                     .transform(|_, weights| {
                         let mut merged = Features.merge_factoriser(weights);
@@ -550,19 +550,18 @@ impl Orchestrator {
                 (out, err * err + 0.15 * err_relu * err_relu + 0.005 * l1_reg)
             });
 
-        let params = AdamWParams {
+        trainer.optimiser.set_params(AdamWParams {
             min_weight: f32::MIN,
             max_weight: f32::MAX,
             ..AdamWParams::default()
-        };
+        });
 
-        trainer.optimiser.set_params(params);
         trainer.optimiser.set_params_for_weight(
             "ftw",
             AdamWParams {
-                min_weight: -1.0,
-                max_weight: 1.0,
-                ..params
+                min_weight: i8::MIN as f32 / FTQ as f32,
+                max_weight: i8::MAX as f32 / FTQ as f32,
+                ..AdamWParams::default()
             },
         );
 
@@ -571,7 +570,7 @@ impl Orchestrator {
             AdamWParams {
                 min_weight: i8::MIN as f32 / HLQ as f32,
                 max_weight: i8::MAX as f32 / HLQ as f32,
-                ..params
+                ..AdamWParams::default()
             },
         );
 

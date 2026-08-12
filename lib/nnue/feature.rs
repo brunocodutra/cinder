@@ -379,7 +379,7 @@ impl PPFeature {
     pub const LEN: usize = PFeature::LEN * (PFeature::LEN - 1) / 2;
 
     /// A mask for pawns visible from a [`File`].
-    pub const MASK: [Bitboard; 8] = [
+    pub const WINDOW: [Bitboard; 8] = [
         File::A.bitboard() | File::B.bitboard(),
         File::A.bitboard() | File::B.bitboard() | File::C.bitboard(),
         File::B.bitboard() | File::C.bitboard() | File::D.bitboard(),

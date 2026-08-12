@@ -3,7 +3,7 @@ use crate::{chess::*, nnue::*, params::Params, search::Ply, simd::*};
 use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Deref};
 use std::hash::{Hash, Hasher};
-use std::ops::{Index, Range};
+use std::ops::{BitAnd, Index, Range};
 use std::{array, mem::replace, str::FromStr};
 
 #[cfg(test)]
@@ -341,17 +341,13 @@ impl Evaluator {
         let bucket = KingBucket::new(side, ksq);
         let cache = &mut self.cache[side][bucket];
 
-        let diff = accumulate_ka(side, ksq, &cache.attacks, new, |sub, add| {
-            Nnue::transformer().accumulate_ka_in_place(&mut cache.accumulator, sub, add);
-        });
-
-        if !diff.is_empty() {
+        if accumulate_ka_in_place(side, ksq, &cache.attacks, new, &mut cache.accumulator).any() {
             let old = replace(&mut cache.attacks, Attacks::new(new));
-            accumulate_ti(side, ksq, &old, &cache.attacks, |sub, add| {
+            accumulate_ti_in_place(side, ksq, &old, &cache.attacks, |sub, add| {
                 Nnue::transformer().accumulate_ti_in_place(&mut cache.accumulator, sub, add);
             });
 
-            accumulate_pp(side, ksq, &old, &cache.attacks, |sub, add| {
+            accumulate_pp_in_place(side, ksq, &old, &cache.attacks, |sub, add| {
                 Nnue::transformer().accumulate_pp_in_place(&mut cache.accumulator, sub, add);
             });
         }
@@ -367,22 +363,17 @@ impl Evaluator {
         (ply > 0).assume();
         let new = &self.positions[ply];
         let old = &self.positions[ply - 1];
-        let ksq = new.king(side);
         let (left, right) = self.accumulator[side].split_at_mut(ply.cast());
         let (src, dst) = (&left[left.len() - 1], &mut right[0]);
-        let diff = accumulate_ka(side, ksq, old, new, |sub, add| {
-            Nnue::transformer().accumulate_ka(src, dst, sub, add);
-        });
 
-        if diff.is_empty() {
-            *dst = *src;
-        } else {
+        let ksq = new.king(side);
+        if accumulate_ka(side, ksq, old, new, src, dst).any() {
             let (old, new) = (Attacks::new(old), Attacks::new(new));
-            accumulate_ti(side, ksq, &old, &new, |sub, add| {
+            accumulate_ti_in_place(side, ksq, &old, &new, |sub, add| {
                 Nnue::transformer().accumulate_ti_in_place(dst, sub, add);
             });
 
-            accumulate_pp(side, ksq, &old, &new, |sub, add| {
+            accumulate_pp_in_place(side, ksq, &old, &new, |sub, add| {
                 Nnue::transformer().accumulate_pp_in_place(dst, sub, add);
             });
         }
@@ -391,44 +382,75 @@ impl Evaluator {
 
 #[inline(always)]
 #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-fn accumulate_ka<F>(
+fn accumulate_ka(
     side: Color,
     ksq: Square,
     old: &Placement,
     new: &Placement,
-    mut acc: F,
-) -> Bitboard
-where
-    F: FnMut([Option<KAFeature>; 2], [Option<KAFeature>; 2]),
-{
+    src: &Accumulator,
+    dst: &mut Accumulator,
+) -> M8x64 {
     let diff: M8x64 = old.pieces().simd_ne(new.pieces()).into();
 
-    let kafts = KAFeature::lut(side, ksq, old).to_array();
-    let to_sub = Bitboard::from(diff & old.occupied());
-    let mut to_sub = to_sub.iter().map(|sq| Num::new(kafts[sq]));
+    if !diff.any() {
+        *dst = *src;
+    } else {
+        let kafts_to_sub = KAFeature::lut(side, ksq, old).to_array();
+        let mut to_sub = Bitboard::from(diff & old.occupied()).iter();
+        (1..=2).contains(&to_sub.len()).assume();
 
-    let kafts = KAFeature::lut(side, ksq, new).to_array();
-    let to_add = Bitboard::from(diff & new.occupied());
-    let mut to_add = to_add.iter().map(|sq| Num::new(kafts[sq]));
+        let kafts_to_add = KAFeature::lut(side, ksq, new).to_array();
+        let mut to_add = Bitboard::from(diff & new.occupied()).iter();
+        (1..=2).contains(&to_add.len()).assume();
 
-    loop {
-        let sub = array::from_fn(|_| to_sub.next());
-        let add = array::from_fn(|_| to_add.next());
-        if sub != [None; 2] || add != [None; 2] {
-            acc(sub, add);
-        } else {
-            break;
-        }
+        let sub = array::from_fn(|_| Some(Num::new(kafts_to_sub[to_sub.next()?])));
+        let add = array::from_fn(|_| Some(Num::new(kafts_to_add[to_add.next()?])));
+
+        Nnue::transformer().accumulate_ka(src, dst, sub, add);
     }
 
-    diff.into()
+    diff
 }
 
 #[inline(always)]
 #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-fn accumulate_ti<F>(side: Color, ksq: Square, old: &Attacks, new: &Attacks, mut acc: F)
+fn accumulate_ka_in_place(
+    side: Color,
+    ksq: Square,
+    old: &Placement,
+    new: &Placement,
+    dst: &mut Accumulator,
+) -> M8x64 {
+    let diff: M8x64 = old.pieces().simd_ne(new.pieces()).into();
+
+    if diff.any() {
+        let kafts_to_sub = KAFeature::lut(side, ksq, old).to_array();
+        let to_sub = Bitboard::from(diff & old.occupied());
+
+        let kafts_to_add = KAFeature::lut(side, ksq, new).to_array();
+        let to_add = Bitboard::from(diff & new.occupied());
+
+        let mut to_sub = to_sub.iter().map(|sq| Num::new(kafts_to_sub[sq]));
+        let mut to_add = to_add.iter().map(|sq| Num::new(kafts_to_add[sq]));
+
+        loop {
+            let (sub, add) = (to_sub.next(), to_add.next());
+            if sub.is_some() || add.is_some() {
+                Nnue::transformer().accumulate_ka_in_place(dst, sub, add);
+            } else {
+                break;
+            }
+        }
+    }
+
+    diff
+}
+
+#[inline(always)]
+#[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+fn accumulate_ti_in_place<F>(side: Color, ksq: Square, old: &Attacks, new: &Attacks, mut acc: F)
 where
-    F: FnMut([Option<TIFeature>; 2], [Option<TIFeature>; 2]),
+    F: FnMut(Option<TIFeature>, Option<TIFeature>),
 {
     let captured = old.occupied() & new.occupied() & old.pieces().simd_ne(new.pieces());
 
@@ -465,9 +487,8 @@ where
         });
 
         loop {
-            let sub = array::from_fn(|_| to_sub.next());
-            let add = array::from_fn(|_| to_add.next());
-            if sub != [None; 2] || add != [None; 2] {
+            let (sub, add) = (to_sub.next(), to_add.next());
+            if sub.is_some() || add.is_some() {
                 acc(sub, add);
             } else {
                 break;
@@ -478,25 +499,22 @@ where
 
 #[inline(always)]
 #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-fn accumulate_pp<F>(side: Color, ksq: Square, old: &Placement, new: &Placement, mut acc: F)
+fn accumulate_pp_in_place<F>(side: Color, ksq: Square, old: &Placement, new: &Placement, mut acc: F)
 where
-    F: FnMut([Option<PPFeature>; 2], [Option<PPFeature>; 2]),
+    F: FnMut(Option<PPFeature>, Option<PPFeature>),
 {
     let old_white_pawns = old.by_piece(Piece::WhitePawn);
     let old_black_pawns = old.by_piece(Piece::BlackPawn);
     let new_white_pawns = new.by_piece(Piece::WhitePawn);
-    let new_black_pawns: M<i8, 64> = new.by_piece(Piece::BlackPawn);
-
-    let old_pawns = old_white_pawns | old_black_pawns;
-    let new_pawns = new_white_pawns | new_black_pawns;
+    let new_black_pawns = new.by_piece(Piece::BlackPawn);
     let diff = (old_white_pawns ^ new_white_pawns) | (old_black_pawns ^ new_black_pawns);
 
     let pfts = PFeature::lut(side, ksq, old).to_array();
-    let mut remaining = Bitboard::from(old_pawns);
-    let mut to_sub = Bitboard::from(diff & old_pawns).iter().flat_map(|s| {
+    let mut remaining = Bitboard::from(old_white_pawns | old_black_pawns);
+    let mut to_sub = remaining.bitand(diff).iter().flat_map(|s| {
         remaining &= !s.bitboard();
         let pft1 = Num::new(pfts[s]);
-        let visible = PPFeature::MASK[s.file()] & remaining;
+        let visible = PPFeature::WINDOW[s.file()] & remaining;
         visible.iter().map(move |t| {
             let pft2 = Num::new(pfts[t]);
             PPFeature::new(pft1, pft2)
@@ -504,11 +522,11 @@ where
     });
 
     let pfts = PFeature::lut(side, ksq, new).to_array();
-    let mut remaining = Bitboard::from(new_pawns);
-    let mut to_add = Bitboard::from(diff & new_pawns).iter().flat_map(|s| {
+    let mut remaining = Bitboard::from(new_white_pawns | new_black_pawns);
+    let mut to_add = remaining.bitand(diff).iter().flat_map(|s| {
         remaining &= !s.bitboard();
         let pft1 = Num::new(pfts[s]);
-        let visible = PPFeature::MASK[s.file()] & remaining;
+        let visible = PPFeature::WINDOW[s.file()] & remaining;
         visible.iter().map(move |t| {
             let pft2 = Num::new(pfts[t]);
             PPFeature::new(pft1, pft2)
@@ -516,9 +534,8 @@ where
     });
 
     loop {
-        let sub = array::from_fn(|_| to_sub.next());
-        let add = array::from_fn(|_| to_add.next());
-        if sub != [None; 2] || add != [None; 2] {
+        let (sub, add) = (to_sub.next(), to_add.next());
+        if sub.is_some() || add.is_some() {
             acc(sub, add);
         } else {
             break;

@@ -1,12 +1,10 @@
-use crate::nnue::{FTQ, HLQ, Layer, Li, Ln, Synapse};
+use crate::nnue::{F2V, FTQ, I2F, Layer, Li, Ln, Synapse};
 use crate::{simd::*, util::Assume};
 use bytemuck::Zeroable;
-use std::{array, ops::Mul};
+use std::array;
 
 const I: usize = Li::LEN;
 const O: usize = Ln::LEN / 2;
-
-const I2F: f32 = (1 << 9) as f32 / (FTQ as f32 * FTQ as f32 * HLQ as f32);
 
 /// The input connection.
 #[derive(Debug, Zeroable)]
@@ -35,16 +33,16 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Lin<S
             let xh00 = us[1][2 * i].simd_clamp(Simd::splat(0), Simd::splat(FTQ));
             let xh01 = us[1][2 * i + 1].simd_clamp(Simd::splat(0), Simd::splat(FTQ));
 
-            let x00 = xl00.mul_high::<9>(xh00);
-            let x01 = xl01.mul_high::<9>(xh01);
+            let x00 = xl00.mul_high::<7>(xh00);
+            let x01 = xl01.mul_high::<7>(xh01);
 
             let xl10 = them[0][2 * i].simd_min(Simd::splat(FTQ));
             let xl11 = them[0][2 * i + 1].simd_min(Simd::splat(FTQ));
             let xh10 = them[1][2 * i].simd_clamp(Simd::splat(0), Simd::splat(FTQ));
             let xh11 = them[1][2 * i + 1].simd_clamp(Simd::splat(0), Simd::splat(FTQ));
 
-            let x10 = xl10.mul_high::<9>(xh10);
-            let x11 = xl11.mul_high::<9>(xh11);
+            let x10 = xl10.mul_high::<7>(xh10);
+            let x11 = xl11.mul_high::<7>(xh11);
 
             [Pack::pack(x00, x10), Pack::pack(x01, x11)]
         }));
@@ -121,7 +119,6 @@ impl<S: for<'a> Synapse<Input<'a> = Ln<'a>, Output = V2<f32>>> Synapse for Lin<S
             output.map(|i| i.simd_min(Simd::splat(0.)).powi::<2>()),
         ]);
 
-        let result = self.next.forward(active.cast_ref()).reduce_sum();
-        result.mul(HLQ as f32)
+        F2V * self.next.forward(active.cast_ref()).reduce_sum()
     }
 }

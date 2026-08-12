@@ -25,10 +25,16 @@ pub use synapse::*;
 pub use transformer::*;
 
 /// Quantization scale for the feature transformer.
-pub const FTQ: i16 = 255;
+pub const FTQ: i16 = 127;
 
 /// Quantization scale for the hidden layers.
-pub const HLQ: i16 = 64;
+pub const HLQ: i16 = 75;
+
+/// Conversion factor from quantized to floating point.
+pub const I2F: f32 = (1 << 7) as f32 / (FTQ as f32 * FTQ as f32 * HLQ as f32);
+
+/// Eval scale.
+pub const F2V: f32 = 75.0;
 
 const unsafe fn copy_bytes<T>(dst: &mut T, src: &[u8]) -> usize {
     let len = size_of_val(dst);
@@ -187,8 +193,8 @@ mod tests {
             let (mut lower, mut upper) = (bias, bias);
 
             let mut ka = Vec::from_iter(transformer.ka.iter().map(|a| a[i]));
-            let mut ti = Vec::from_iter(transformer.ti.iter().map(|a| a[i]));
-            let mut pp = Vec::from_iter(transformer.ti.iter().map(|a| a[i]));
+            let mut ti = Vec::from_iter(transformer.ti.iter().map(|a| a[i] as i16));
+            let mut pp = Vec::from_iter(transformer.ti.iter().map(|a| a[i] as i16));
 
             for (n, ws) in [(32, &mut ka), (64, &mut ti), (24, &mut pp)] {
                 let (small, _, _) = ws.select_nth_unstable(n);

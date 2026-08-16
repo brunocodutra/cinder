@@ -194,9 +194,9 @@ mod tests {
 
             let mut ka = Vec::from_iter(transformer.ka.iter().map(|a| a[i]));
             let mut ti = Vec::from_iter(transformer.ti.iter().map(|a| a[i] as i16));
-            let mut pp = Vec::from_iter(transformer.ti.iter().map(|a| a[i] as i16));
+            let mut pp = Vec::from_iter(transformer.pp.iter().map(|a| a[i] as i16));
 
-            for (n, ws) in [(32, &mut ka), (64, &mut ti), (24, &mut pp)] {
+            for (n, ws) in [(32, &mut ka), (128, &mut ti), (240, &mut pp)] {
                 let (small, _, _) = ws.select_nth_unstable(n);
                 small.iter().for_each(|&v| lower += v as i32);
 

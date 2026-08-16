@@ -35,16 +35,15 @@ impl Pins {
             };
         }
 
-        let piece_mask = board.squares()[turn].to_simd().find(
+        let pins = furled.mask(pinned).extend().mask(beyond).unfurl(rays);
+        let pinned = board.squares()[turn].to_simd().find(
             rays.compress(pinned.to_bitmask()).extract::<0, 16>(),
             pinned.count().cast(),
         );
 
-        let pinned = furled.mask(pinned).extend().mask(beyond).unfurl(rays);
-
         Pins {
-            attacks: threats[turn] & (u16x64::splat(!piece_mask) | pinned.to_idx_set()),
-            unpinned: !pinned.occupied(),
+            attacks: threats[turn] & (u16x64::splat(!pinned) | pins.to_idx_set()),
+            unpinned: !pins.occupied(),
         }
     }
 

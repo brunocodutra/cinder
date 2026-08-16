@@ -93,7 +93,7 @@ Cinder is distributed under the terms of the GPL-3.0 license, see [LICENSE] for 
 [Leela Chess Zero]:         https://lczero.org/
 [Open Database License]:    https://opendatacommons.org/licenses/odbl/1-0/
 
-[v0.6.*]:                   https://github.com/brunocodutra/cinder/releases/tag/v0.6.0
+[v0.6.*]:                   https://github.com/brunocodutra/cinder/releases/tag/v0.6.1
 [v0.5.*]:                   https://github.com/brunocodutra/cinder/releases/tag/v0.5.2
 [v0.4.*]:                   https://github.com/brunocodutra/cinder/releases/tag/v0.4.1
 [v0.3.*]:                   https://github.com/brunocodutra/cinder/releases/tag/v0.3.1

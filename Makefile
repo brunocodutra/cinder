@@ -1,4 +1,4 @@
-CRATE_VERSION := 0.5.2
+CRATE_VERSION := 0.6.0
 TARGET_DIR := $(CURDIR)/target
 BIN_DIR := $(TARGET_DIR)/bin
 

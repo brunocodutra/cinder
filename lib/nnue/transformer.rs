@@ -79,6 +79,15 @@ impl Transformer {
         add: Option<KAFeature>,
     ) {
         match (sub, add) {
+            (Some(s1), Some(a1)) => {
+                let s1 = self.ka.get(s1.cast::<usize>()).assume();
+                let a1 = self.ka.get(a1.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    acc[i] += a1[i] - s1[i];
+                }
+            }
+
             (Some(s1), None) => {
                 let s1 = self.ka.get(s1.cast::<usize>()).assume();
 
@@ -92,15 +101,6 @@ impl Transformer {
 
                 for i in 0..N {
                     acc[i] += a1[i];
-                }
-            }
-
-            (Some(s1), Some(a1)) => {
-                let s1 = self.ka.get(s1.cast::<usize>()).assume();
-                let a1 = self.ka.get(a1.cast::<usize>()).assume();
-
-                for i in 0..N {
-                    acc[i] += a1[i] - s1[i];
                 }
             }
 
@@ -118,6 +118,15 @@ impl Transformer {
         add: Option<TIFeature>,
     ) {
         match (sub, add) {
+            (Some(s1), Some(a1)) => {
+                let s1 = self.ti.get(s1.cast::<usize>()).assume();
+                let a1 = self.ti.get(a1.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    acc[i] += a1[i] as i16 - s1[i] as i16;
+                }
+            }
+
             (Some(s1), None) => {
                 let s1 = self.ti.get(s1.cast::<usize>()).assume();
 
@@ -131,15 +140,6 @@ impl Transformer {
 
                 for i in 0..N {
                     acc[i] += a1[i] as i16;
-                }
-            }
-
-            (Some(s1), Some(a1)) => {
-                let s1 = self.ti.get(s1.cast::<usize>()).assume();
-                let a1 = self.ti.get(a1.cast::<usize>()).assume();
-
-                for i in 0..N {
-                    acc[i] += a1[i] as i16 - s1[i] as i16;
                 }
             }
 
@@ -157,6 +157,15 @@ impl Transformer {
         add: Option<PPFeature>,
     ) {
         match (sub, add) {
+            (Some(s1), Some(a1)) => {
+                let s1 = self.pp.get(s1.cast::<usize>()).assume();
+                let a1 = self.pp.get(a1.cast::<usize>()).assume();
+
+                for i in 0..N {
+                    acc[i] += a1[i] as i16 - s1[i] as i16;
+                }
+            }
+
             (Some(s1), None) => {
                 let s1 = self.pp.get(s1.cast::<usize>()).assume();
 
@@ -170,15 +179,6 @@ impl Transformer {
 
                 for i in 0..N {
                     acc[i] += a1[i] as i16;
-                }
-            }
-
-            (Some(s1), Some(a1)) => {
-                let s1 = self.pp.get(s1.cast::<usize>()).assume();
-                let a1 = self.pp.get(a1.cast::<usize>()).assume();
-
-                for i in 0..N {
-                    acc[i] += a1[i] as i16 - s1[i] as i16;
                 }
             }
 

@@ -245,7 +245,6 @@ impl Board {
     pub fn direct_checks(&self) -> [Bitboard; 4] {
         let them = !self.turn;
         let rays = self.king(them).assume().rays();
-        let valid = rays.inv().valid();
         let furled = self.furl(rays);
         let mask = furled.visible();
 
@@ -265,7 +264,7 @@ impl Board {
             | bishop_attacks.select(bishop, zeroed())
             | rook_attacks.select(rook, zeroed());
 
-        let unfurled = valid.select(packed.unfurl(rays), zeroed());
+        let unfurled = packed.unfurl(rays);
 
         [
             unfurled.bitand(pawn).simd_ne(zeroed()).into(),

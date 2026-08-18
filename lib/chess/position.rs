@@ -105,10 +105,8 @@ impl<const CHECKS: usize> MovesGenerator<CHECKS> {
                 placement.set(wc, zeroed());
                 placement.set(Square::new(wt.file(), wc.rank()), zeroed());
 
-                let rays = ksq.rays();
-                let furled = placement.furl(rays);
-                let theirs = furled.by_color(!turn);
-                if !(theirs & furled.visible() & furled.attackers() & rays.valid()).any() {
+                let furled = placement.furl(ksq.rays());
+                if !(furled.by_color(!turn) & furled.visible() & furled.attackers()).any() {
                     collector.collect_one(Move::capture(wc, wt, None))?;
                 }
             }
@@ -679,7 +677,7 @@ impl Position {
             let mut placement = *self.placement();
             placement.set(wt, self[wc]);
             placement.set(wc, zeroed());
-            if placement[wt].is_empty() && m.is_capture() {
+            if self[wt].is_empty() && m.is_capture() {
                 placement.set(Square::new(wt.file(), wc.rank()), zeroed());
             }
 
@@ -688,7 +686,7 @@ impl Position {
 
                 let rays = wt.rays();
                 let furled = placement.furl(rays);
-                let attackers = furled.visible() & furled.attackers() & rays.valid();
+                let attackers = furled.visible() & furled.attackers();
                 let candidates = furled.by_color(turn) & attackers;
                 if !candidates.any() {
                     return;
@@ -699,7 +697,7 @@ impl Position {
                     let furled = placement.furl(rays);
                     let theirs = furled.by_color(!turn);
                     let visible = furled.visible();
-                    let attackers = theirs & visible & furled.attackers() & rays.valid();
+                    let attackers = theirs & visible & furled.attackers();
                     let line = Bitboard::line(kings[turn], wt).with(wt);
                     if cfg!(target_feature = "avx512f") || attackers.any() {
                         if !line & attackers.unfurl(rays) != zeroed() {
@@ -707,10 +705,8 @@ impl Position {
                         }
                     }
 
-                    let pins = rays.pins();
-                    let ours = furled.by_color(turn);
-                    let nearest = ours & visible & pins;
-                    let beyond = furled.blend(nearest, zeroed()).visible() & pins;
+                    let nearest = furled.by_color(turn) & visible & Rays::pins();
+                    let beyond = furled.blend(nearest, zeroed()).visible() & Rays::pins();
                     let pinners = beyond & furled.pinners() & theirs;
                     let pinned = nearest & pinners.flood_ranks();
 
@@ -721,7 +717,7 @@ impl Position {
                     }
                 };
 
-                let candidates = unpinned & (candidates.unfurl(rays) & rays.inv().valid());
+                let candidates = unpinned & candidates.unfurl(rays);
                 if candidates.is_empty() {
                     return;
                 }
@@ -797,8 +793,7 @@ impl Position {
 
             let rays = ksq.rays();
             let furled = placement.furl(rays);
-            let theirs = furled.by_color(!turn);
-            let attackers = theirs & furled.visible() & furled.attackers() & rays.valid();
+            let attackers = furled.by_color(!turn) & furled.visible() & furled.attackers();
             return !attackers.any() && self.threats()[turn][wt].contains(self[wc].idx().assume());
         }
 

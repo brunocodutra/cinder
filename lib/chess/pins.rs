@@ -1,4 +1,4 @@
-use crate::chess::{Board, Furl, Threats, Unfurl, Wordboard};
+use crate::chess::{Board, Furl, Rays, Threats, Unfurl, Wordboard};
 use crate::util::Num;
 use crate::{simd::*, util::Assume};
 use bytemuck::zeroed;
@@ -19,13 +19,10 @@ impl Pins {
         let turn = board.turn;
         let ksq = board.king(turn).assume();
         let rays = ksq.rays();
-        let pins = rays.pins();
         let furled = board.furl(rays);
-        let ours = furled.by_color(turn);
-        let theirs = furled.by_color(!turn);
-        let nearest = ours & furled.visible() & pins;
-        let beyond = furled.blend(nearest, zeroed()).visible() & pins;
-        let pinners = beyond & furled.pinners() & theirs;
+        let nearest = furled.by_color(turn) & furled.visible() & Rays::pins();
+        let beyond = furled.blend(nearest, zeroed()).visible() & Rays::pins();
+        let pinners = beyond & furled.pinners() & furled.by_color(!turn);
         let pinned = nearest & pinners.flood_ranks();
 
         if !pinned.any() {

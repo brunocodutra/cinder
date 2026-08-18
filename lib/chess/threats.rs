@@ -18,7 +18,7 @@ impl Threats {
         for sq in Square::iter() {
             let rays = sq.rays();
             let furled = board.furl(rays);
-            let attackers = furled.visible() & furled.attackers() & rays.valid();
+            let attackers = furled.visible() & furled.attackers();
             let attackers_b = attackers & furled.by_color(Black);
             let attackers_w = attackers & furled.by_color(White);
 
@@ -42,7 +42,7 @@ impl Threats {
     pub fn outplace(&mut self, board: &Board, victim: Place, wt: Square) {
         let rays = wt.rays();
         let furled = board.furl(rays);
-        let pins = furled.visible() & rays.pins();
+        let pins = furled.visible() & Rays::pins();
         let pinners = furled.mask(pins & furled.pinners());
         let pinners = pinners.extend().mask(pins.rotate_left::<32>());
         let pinners = pinners.unfurl_flip(rays);
@@ -87,7 +87,7 @@ impl Threats {
         let visible_wc = furled_wc.visible();
         let visible_wt = furled_wt.visible();
 
-        let pins = visible_wc & rays_wc.pins();
+        let pins = visible_wc & Rays::pins();
         let pinners = furled_wc.mask(pins & furled_wc.pinners());
         let pinners = pinners.extend().mask(pins.rotate_left::<32>());
         let pinners = pinners.unfurl_flip(rays_wc);
@@ -97,7 +97,6 @@ impl Threats {
         let attacks = furled_wt.attacks(dst.piece().assume()) & visible_wt;
         let attacks = attacks.select(Simd::splat(1), Simd::splat(0));
         let attacks = attacks.unfurl(rays_wt);
-        let attacks = rays_wt.inv().valid().select(attacks, zeroed());
 
         let idx = src.idx().assume();
         let color = src.color().assume();
@@ -139,8 +138,8 @@ impl Threats {
         let visible_wc = furled_wc.visible();
         let visible_wt = furled_wt.visible();
 
-        let pins_wc = visible_wc & rays_wc.pins();
-        let pins_wt = visible_wt & rays_wt.pins();
+        let pins_wc = visible_wc & Rays::pins();
+        let pins_wt = visible_wt & Rays::pins();
 
         let pinners_wc = furled_wc.pinners();
         let pinners_wt = furled_wt.pinners();
@@ -166,7 +165,6 @@ impl Threats {
         let attacks = furled_wt.attacks(dst.piece().assume()) & visible_wt;
         let attacks = attacks.select(Simd::splat(1), Simd::splat(0));
         let attacks = attacks.unfurl(rays_wt);
-        let attacks = rays_wt.inv().valid().select(attacks, zeroed());
 
         let idx = src.idx().assume();
         let color = src.color().assume();

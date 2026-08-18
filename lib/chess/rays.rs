@@ -1,6 +1,7 @@
 use crate::chess::Square;
 use crate::simd::*;
 use crate::util::{Int, Num};
+use bytemuck::zeroed;
 use derive_more::with_trait::{Debug, Deref};
 
 const RAYS: [Aligned<[u8; 64]>; Square::LEN] = const {
@@ -50,6 +51,12 @@ const RAYS: [Aligned<[u8; 64]>; Square::LEN] = const {
 pub struct Rays(Square);
 
 impl Rays {
+    /// Returns a mask for the sliding places in this ray.
+    #[inline(always)]
+    pub fn pins() -> M8x64 {
+        M8x64::from_bitmask(0xFEFEFEFEFEFEFEFE)
+    }
+
     /// Returns the corresponding [`InvRays`].
     #[inline(always)]
     pub fn inv(self) -> InvRays {
@@ -58,14 +65,8 @@ impl Rays {
 
     /// Returns a bitboard for the places in this ray.
     #[inline(always)]
-    pub fn valid(self) -> M8x64 {
+    fn valid(self) -> M8x64 {
         self.simd_ne(Simd::splat(0x88)).into()
-    }
-
-    /// Returns a bitboard for the sliding places in this ray.
-    #[inline(always)]
-    pub fn pins(self) -> M8x64 {
-        self.valid() & M8x64::from_bitmask(0xFEFEFEFEFEFEFEFE)
     }
 }
 
@@ -121,7 +122,7 @@ impl InvRays {
 
     /// Returns a bitboard for the elements in this ray.
     #[inline(always)]
-    pub fn valid(self) -> M8x64 {
+    fn valid(self) -> M8x64 {
         self.simd_ne(Simd::splat(0x88)).into()
     }
 }
@@ -172,7 +173,7 @@ impl FlippedInvRays {
 
     /// Returns a bitboard for the elements in this ray.
     #[inline(always)]
-    pub fn valid(self) -> M8x64 {
+    fn valid(self) -> M8x64 {
         self.simd_ne(Simd::splat(0x88)).into()
     }
 }
@@ -207,7 +208,7 @@ impl Furl for u8x64 {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn furl(&self, rays: Rays) -> Self::Furled {
-        self.permute(*rays)
+        rays.valid().select(self.permute(*rays), zeroed())
     }
 }
 
@@ -239,13 +240,15 @@ impl Unfurl for u8x64 {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn unfurl(&self, rays: Rays) -> Self::Unfurled {
-        self.permute(*rays.inv())
+        let valid = rays.inv().valid();
+        valid.select(self.permute(*rays.inv()), zeroed())
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn unfurl_flip(&self, rays: Rays) -> Self::Unfurled {
-        self.permute(*rays.inv().flip())
+        let valid = rays.inv().flip().valid();
+        valid.select(self.permute(*rays.inv().flip()), zeroed())
     }
 }
 

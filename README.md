@@ -10,14 +10,14 @@ Cinder is a hobby chess engine written in Rust.
 
 ### Playing Strength
 
-| Version  | [CCRL Blitz] | [CCRL 40/15] | [CEGT 40/4] | [CEGT 40/20] |
-|----------|:------------:|:------------:|:-----------:|:------------:|
-| [v0.6.*] | -            | -            | -           | -            |
-| [v0.5.*] | 3739         | 3606         | -           | 3588         |
-| [v0.4.*] | 3686         | 3561         | -           | 3534         |
-| [v0.3.*] | 3658         | 3547         | -           | 3511         |
-| [v0.2.*] | 3634         | 3523         | -           | 3480         |
-| [v0.1.*] | -            | 3498         | 3478        | 3439         |
+| Version  | [SPCC] | [Ipmanchess] | [CCRL Blitz] | [CCRL 40/15] | [CEGT 40/4] | [CEGT 40/20] |
+|----------|:------:|:------------:|:------------:|:------------:|:-----------:|:------------:|
+| [v0.6.*] | 3777   | 3576         | -            | -            | -           | -            |
+| [v0.5.*] | -      | 3557         | 3739         | 3606         | -           | 3588         |
+| [v0.4.*] | -      | -            | 3686         | 3561         | -           | 3534         |
+| [v0.3.*] | -      | -            | 3658         | 3547         | -           | 3511         |
+| [v0.2.*] | -      | -            | 3634         | 3523         | -           | 3480         |
+| [v0.1.*] | -      | -            | -            | 3498         | 3478        | 3439         |
 
 ## Getting started
 
@@ -100,7 +100,9 @@ Cinder is distributed under the terms of the GPL-3.0 license, see [LICENSE] for 
 [v0.2.*]:                   https://github.com/brunocodutra/cinder/releases/tag/v0.2.0
 [v0.1.*]:                   https://github.com/brunocodutra/cinder/releases/tag/v0.1.4
 
-[CCRL 40/15]:               https://computerchess.org.uk/4040/cgi/compare_engines.cgi?class=Single-CPU+engines&print=Rating+list&cross_tables_for_best_versions_only=1
+[SPCC]:                     https://www.sp-cc.de/
+[Ipmanchess]:               https://ipmanchess.yolasite.com/r9-7945hx.php
 [CCRL Blitz]:               https://computerchess.org.uk/404/cgi/compare_engines.cgi?class=Single-CPU+engines&print=Rating+list&cross_tables_for_best_versions_only=1
+[CCRL 40/15]:               https://computerchess.org.uk/4040/cgi/compare_engines.cgi?class=Single-CPU+engines&print=Rating+list&cross_tables_for_best_versions_only=1
 [CEGT 40/4]:                http://www.cegt.net/40_4_Ratinglist/40_4_single/rangliste.html
 [CEGT 40/20]:               http://www.cegt.net/40_40%20Rating%20List/40_40%20All%20Versions/rangliste.html

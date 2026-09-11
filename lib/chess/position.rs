@@ -82,6 +82,7 @@ trait MoveGen<C: MoveCollector> {
     fn noisy(pos: &Position, wt: Bitboard, collector: &mut C) -> Result<(), C::Error>;
 }
 
+#[expect(clippy::empty_enums)]
 enum MovesGenerator<const CHECKS: usize> {}
 
 impl<const CHECKS: usize> MovesGenerator<CHECKS> {

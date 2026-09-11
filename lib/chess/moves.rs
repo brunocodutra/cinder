@@ -294,7 +294,7 @@ impl Iterator for SortedRatedMovesIter<'_> {
 
         self.cursor += 1;
         self.inner.unsorted = self.inner.unsorted.max(self.cursor);
-        Some(self.inner.moves[cursor])
+        Some(*self.inner.moves.get(cursor).assume())
     }
 
     #[inline(always)]

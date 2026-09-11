@@ -6,7 +6,6 @@ edition = "2024"
 description = "A hobby chess engine"
 repository = "https://github.com/brunocodutra/cinder.git"
 license = "GPL-3.0"
-readme = "README.md"
 keywords = ["chess"]
 default-run = "cinder"
 

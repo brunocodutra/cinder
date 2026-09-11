@@ -1,5 +1,6 @@
 #![allow(
     long_running_const_eval,
+    unstable_name_collisions,
     clippy::collapsible_if,
     clippy::needless_range_loop
 )]

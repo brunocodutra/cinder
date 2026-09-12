@@ -1,8 +1,8 @@
-use crate::chess::{Bitboard, Color, File, Perspective, Piece, Placement, Role, Side, Square};
-use crate::simd::*;
 use crate::util::{Assume, Int, Num, ones};
+use crate::{chess::*, simd::*};
+use bytemuck::zeroed;
+use std::array;
 use std::ops::{BitAnd, Index, IndexMut, Not};
-use std::{array, mem::transmute_copy};
 
 /// A piece-square feature with horizontal mirroring.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -24,18 +24,18 @@ impl PSQFeature {
 
     /// Constructs a lookup table for [`PSQFeature`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn lut(
         side: Color,
         ksq: Square,
         placement: &Placement,
     ) -> Simd<<Self as Num>::Repr, { Square::LEN }> {
-        const DECODER: u8x64 = unsafe { transmute_copy::<[u8x16; 4], u8x64>(&[Piece::DECODER; 4]) };
-        let pieces = DECODER.shuffle(placement.pieces() >> 4) ^ Simd::splat(side.get());
+        let pieces = Piece::DECODER.shuffle(placement.pieces()) ^ Simd::splat(side.get());
 
         let perspective = Square::A1.perspective(side);
         let chirality = Square::A1.perspective(Side::from(ksq.file() < File::E));
-        let orient = Simd::splat(perspective.cast::<u8>() | chirality.cast::<u8>());
-        let squares = u8x64::from_array(array::from_fn(Num::cast)) ^ orient;
+        let orientation = Simd::splat(perspective.cast::<u8>() | chirality.cast::<u8>());
+        let squares = u8x64::from_array(array::from_fn(Num::cast)) ^ orientation;
 
         u16x64::splat(Square::LEN.cast()) * pieces.cast::<u16>() + squares.cast::<u16>()
     }
@@ -128,6 +128,7 @@ impl KAFeature {
 
     /// Constructs a lookup table for [`KAFeature`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn lut(
         side: Color,
         ksq: Square,
@@ -200,6 +201,7 @@ impl TIFeature {
 
     /// Constructs a [`ThreatFeature`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn new(
         side: Color,
         ksq: Square,
@@ -208,10 +210,6 @@ impl TIFeature {
         dst: Piece,
         wt: Square,
     ) -> Option<Self> {
-        if src.role() == Role::King || dst.role() == Role::King {
-            return None;
-        }
-
         let chirality = Side::from(ksq.file() < File::E);
         let wc = wc.perspective(side).perspective(chirality);
         let wt = wt.perspective(side).perspective(chirality);
@@ -233,6 +231,7 @@ impl TIFeature {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn pawn_threat_idx(src: Piece, wc: Square, dst: Piece, wt: Square) -> Option<u16> {
         let stride = Self::stride(src, dst)?;
         let rank = wc.rank().cast::<u16>() - 1;
@@ -243,33 +242,38 @@ impl TIFeature {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn knight_threat_idx(src: Piece, wc: Square, dst: Piece, wt: Square) -> Option<u16> {
-        Self::piece_threat_idx(src, wc, dst, wt, Self::KNIGHT_INDICES, Self::KNIGHT_OFFSET)
+        Self::piece_threat_idx(src, wc, dst, wt, Self::KNIGHT_OFFSET, &Self::KNIGHT_INDICES)
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn bishop_threat_idx(src: Piece, wc: Square, dst: Piece, wt: Square) -> Option<u16> {
-        Self::piece_threat_idx(src, wc, dst, wt, Self::BISHOP_INDICES, Self::BISHOP_OFFSET)
+        Self::piece_threat_idx(src, wc, dst, wt, Self::BISHOP_OFFSET, &Self::BISHOP_INDICES)
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn rook_threat_idx(src: Piece, wc: Square, dst: Piece, wt: Square) -> Option<u16> {
-        Self::piece_threat_idx(src, wc, dst, wt, Self::ROOK_INDICES, Self::ROOK_OFFSET)
+        Self::piece_threat_idx(src, wc, dst, wt, Self::ROOK_OFFSET, &Self::ROOK_INDICES)
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn queen_threat_idx(src: Piece, wc: Square, dst: Piece, wt: Square) -> Option<u16> {
-        Self::piece_threat_idx(src, wc, dst, wt, Self::QUEEN_INDICES, Self::QUEEN_OFFSET)
+        Self::piece_threat_idx(src, wc, dst, wt, Self::QUEEN_OFFSET, &Self::QUEEN_INDICES)
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn piece_threat_idx(
         src: Piece,
         wc: Square,
         dst: Piece,
         wt: Square,
-        indices: [u16; 65],
         offset: u16,
+        indices: &[u16; 65],
     ) -> Option<u16> {
         if wt > wc && src.role() == dst.role() {
             return None;
@@ -281,6 +285,7 @@ impl TIFeature {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn stride(src: Piece, dst: Piece) -> Option<u16> {
         const P: [[Option<u16>; 6]; 2] = [
             [None, Some(0), None, Some(1), None, None],
@@ -328,6 +333,7 @@ impl PFeature {
 
     /// Constructs a lookup table for [`PFeature`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn lut(
         side: Color,
         ksq: Square,
@@ -392,10 +398,38 @@ impl PPFeature {
 
     /// Constructs a [`PPFeature`].
     #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn new(ft1: PFeature, ft2: PFeature) -> Self {
         let hi = ft1.max(ft2).cast::<u16>();
         let lo = ft1.min(ft2).cast::<u16>();
         Num::new(lo + hi * (hi - 1) / 2)
+    }
+
+    /// Constructs a lookup table for [`PPFeature`].
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn lut(pfts: u8x64, s: Square) -> Simd<<Self as Num>::Repr, 32> {
+        const INDICES: [u8x64; 8] = const {
+            let mut indices: [u8x64; 8] = zeroed();
+            for f in File::iter() {
+                let mut i = 0;
+
+                #[allow(clippy::explicit_counter_loop)]
+                for sq in PPFeature::WINDOW[f].transpose() {
+                    assert!(i < 32);
+                    indices[f].as_mut_array()[i] = sq.transpose().cast();
+                    i += 1;
+                }
+            }
+
+            indices
+        };
+
+        let pft1 = u8x32::splat(pfts.as_array()[s]);
+        let pft2 = pfts.permute(INDICES[s.file()]).extract::<0, 32>();
+        let hi = pft1.simd_max(pft2).cast::<<Self as Num>::Repr>();
+        let lo = pft1.simd_min(pft2).cast::<<Self as Num>::Repr>();
+        lo + ((hi * (hi - Simd::splat(1))) >> 1)
     }
 }
 

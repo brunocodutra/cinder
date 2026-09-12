@@ -3,7 +3,7 @@ use crate::util::{Assume, Bits, Int, Num};
 use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter};
-use std::{ascii::Char, ops::*, slice::Iter, str::FromStr};
+use std::{ops::*, str::FromStr};
 
 /// The castling rights in a chess [`Position`][`crate::chess::Position`].
 #[derive(Debug, Copy, Hash, Zeroable)]
@@ -133,22 +133,6 @@ const impl From<Square> for Castles {
     }
 }
 
-impl Display for Castles {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for side in Color::iter() {
-            if self.has(Square::G1.perspective(side)) {
-                Display::fmt(&Piece::new(Role::King, side), f)?;
-            }
-
-            if self.has(Square::C1.perspective(side)) {
-                Display::fmt(&Piece::new(Role::Queen, side), f)?;
-            }
-        }
-
-        Ok(())
-    }
-}
-
 const impl<T> Index<Castles> for [T; Castles::LEN] {
     type Output = T;
 
@@ -165,20 +149,31 @@ const impl<T> IndexMut<Castles> for [T; Castles::LEN] {
     }
 }
 
+impl Display for Castles {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for side in Color::iter() {
+            if self.has(Square::G1.perspective(side)) {
+                Display::fmt(&Piece::new(Role::King, side), f)?;
+            }
+
+            if self.has(Square::C1.perspective(side)) {
+                Display::fmt(&Piece::new(Role::Queen, side), f)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// The reason why parsing [`Castles`] failed.
 #[derive(Debug, Display, Copy, Error)]
 #[derive_const(Default, Clone, PartialEq, Eq)]
 #[display("failed to parse castling rights")]
 pub struct ParseCastlesError;
 
-const impl FromStr for Castles
-where
-    for<'a> &'a [Char]: [const] IntoIterator<IntoIter = Iter<'a, Char>>,
-    for<'a> Iter<'a, Char>: [const] Iterator<Item = &'a Char>,
-{
+impl FromStr for Castles {
     type Err = ParseCastlesError;
 
-    #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut castles = Castles::none();
 

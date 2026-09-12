@@ -189,6 +189,7 @@ impl<T, M: Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
     {
         const { assert!(align_of::<T>() >= align_of::<E>()) }
         const { assert!(size_of::<T>() == size_of::<E>()) }
+        (self.capacity() >= self.len() + N).assume();
 
         let end = self.len();
         let ptr = self.as_mut_ptr().wrapping_add(end).cast();

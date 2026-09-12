@@ -87,10 +87,9 @@ impl SparseInputType for Features {
         use Color::*;
         let pos = Position::from(board);
         let ksqs = [pos.king(White), pos.king(Black)];
-        let pawns = pos.by_piece(Piece::WhitePawn) | pos.by_piece(Piece::BlackPawn);
         let pfts = [White, Black].map(|side| PFeature::lut(side, ksqs[side], &pos).to_array());
 
-        let mut remaining = Bitboard::from(pawns);
+        let mut remaining = Bitboard::from(pos.by_role(Role::Pawn));
         for s in remaining.iter() {
             remaining &= !s.bitboard();
             for t in PPFeature::WINDOW[s.file()].bitand(remaining).iter() {
@@ -104,7 +103,7 @@ impl SparseInputType for Features {
             }
         }
 
-        let occupied = pos.occupied().cast();
+        let occupied = pos.occupied();
         let attacks = pos.threats().map(|t| t.mask(occupied));
 
         let mut stm_ti_features = StaticSeq::<TIFeature, 128>::new();
@@ -296,7 +295,7 @@ impl TrainingDataFilter {
 
     /// Whether we consider this ply too early.
     fn early_ply_rejection(&self, entry: &TrainingDataEntry) -> f64 {
-        const EARLY_PLY_ACCEPTANCE: [f64; 31] = {
+        const EARLY_PLY_ACCEPTANCE: [f64; 31] = const {
             let mut table = [0.0f64; 31];
 
             let points = [(12.0, 0.0), (16.0, 0.4), (18.0, 0.65), (20.0, 1.0)];

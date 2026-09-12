@@ -1,8 +1,8 @@
-use crate::util::Assume;
+use crate::util::{Assume, Niched};
 use bytemuck::{Pod, Zeroable};
 use std::{marker::Destruct, mem::transmute_copy};
 
-/// Trait for types that represent numeric types.
+/// Trait for types that represent numbers.
 ///
 /// # Safety
 ///
@@ -72,6 +72,12 @@ pub const unsafe trait Num: 'static + Send + Sync + Copy {
     fn saturate<N: [const] Num<Repr: [const] NumRepr>>(self) -> N {
         self.get().saturate()
     }
+}
+
+const unsafe impl<T: [const] Num + [const] Niched> Num for Option<T> {
+    type Repr = T::Repr;
+    const MIN: Self::Repr = T::Repr::MIN;
+    const MAX: Self::Repr = T::Repr::MAX;
 }
 
 /// Marker trait for primitive numeric types.

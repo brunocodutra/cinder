@@ -39,8 +39,8 @@ impl Pins {
         );
 
         Pins {
-            attacks: threats[turn] & (u16x64::splat(!pinned) | pins.to_idx_set()),
-            unpinned: !pins.occupied(),
+            attacks: threats[turn] & (pins.to_idx_set() | u16x64::splat(!pinned)),
+            unpinned: pins.vacant(),
         }
     }
 

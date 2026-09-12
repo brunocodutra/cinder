@@ -1,5 +1,5 @@
 use crate::search::{Ply, Score};
-use crate::util::Num;
+use crate::util::{Niched, Num};
 use crate::{syzygy::Dtz, util::Int};
 use bytemuck::Zeroable;
 use std::ops::Neg;
@@ -30,7 +30,12 @@ const unsafe impl Num for Wdl {
 
 const unsafe impl Int for Wdl {}
 
+const unsafe impl Niched for Wdl {}
+
 impl Wdl {
+    #[expect(dead_code)]
+    const REQUIRES: () = const { assert!(size_of::<Self>() == size_of::<Option<Self>>()) };
+
     /// Convert to [`Score`].
     #[inline(always)]
     pub fn to_score(self, ply: Ply) -> Score {

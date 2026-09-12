@@ -1,8 +1,9 @@
-use crate::util::{Assume, Binary, Bits, Int, Num};
+use crate::simd::*;
+use crate::util::{Assume, Binary, Bits, Int, Niched, Num};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::ops::{Index, IndexMut};
-use std::{hint::unreachable_unchecked, str::FromStr};
+use std::str::FromStr;
 
 /// The type of a chess [`Piece`][`crate::chess::Piece`].
 #[derive(Debug, Copy, Hash)]
@@ -26,8 +27,41 @@ const unsafe impl Num for Role {
 
 const unsafe impl Int for Role {}
 
+const unsafe impl Niched for Role {}
+
 const impl Role {
+    #[expect(dead_code)]
+    const REQUIRES: () = const { assert!(size_of::<Self>() == size_of::<Option<Self>>()) };
+
     pub const LEN: usize = Self::MAX as usize + 1;
+
+    pub const ENCODER: u8x64 = const {
+        let mut encoder = [0xFFu8; 16];
+        encoder[Role::Pawn as usize] = 0b0010;
+        encoder[Role::Knight as usize] = 0b0011;
+        encoder[Role::Bishop as usize] = 0b0101;
+        encoder[Role::Rook as usize] = 0b0110;
+        encoder[Role::Queen as usize] = 0b0111;
+        encoder[Role::King as usize] = 0b0001;
+        Aligned([encoder; 4]).cast()
+    };
+
+    pub const DECODER: u8x64 = const {
+        let mut decoder = [0xFFu8; 16];
+        decoder[Role::ENCODER.as_array()[Role::Pawn as usize] as usize] = Role::Pawn.get();
+        decoder[Role::ENCODER.as_array()[Role::Knight as usize] as usize] = Role::Knight.get();
+        decoder[Role::ENCODER.as_array()[Role::Bishop as usize] as usize] = Role::Bishop.get();
+        decoder[Role::ENCODER.as_array()[Role::Rook as usize] as usize] = Role::Rook.get();
+        decoder[Role::ENCODER.as_array()[Role::Queen as usize] as usize] = Role::Queen.get();
+        decoder[Role::ENCODER.as_array()[Role::King as usize] as usize] = Role::King.get();
+        Aligned([decoder; 4]).cast()
+    };
+
+    /// This role's representation in ASCII.
+    #[inline(always)]
+    pub fn to_ascii(self) -> u8 {
+        b"pnbrqk"[self]
+    }
 }
 
 const impl Binary for Role {
@@ -35,63 +69,14 @@ const impl Binary for Role {
 
     #[inline(always)]
     fn encode(&self) -> Self::Bits {
-        match self {
-            Role::Pawn => Bits::new(0b010),
-            Role::Knight => Bits::new(0b011),
-            Role::Bishop => Bits::new(0b101),
-            Role::Rook => Bits::new(0b110),
-            Role::Queen => Bits::new(0b111),
-            Role::King => Bits::new(0b001),
-        }
+        let encoded = Self::ENCODER.as_array()[self.cast::<usize>()];
+        encoded.convert().assume()
     }
 
     #[inline(always)]
     fn decode(bits: Self::Bits) -> Self {
-        match bits.get() {
-            0b010 => Role::Pawn,
-            0b011 => Role::Knight,
-            0b101 => Role::Bishop,
-            0b110 => Role::Rook,
-            0b111 => Role::Queen,
-            0b001 => Role::King,
-            _ => unsafe { unreachable_unchecked() },
-        }
-    }
-}
-
-impl Display for Role {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Role::Pawn => f.write_char('p'),
-            Role::Knight => f.write_char('n'),
-            Role::Bishop => f.write_char('b'),
-            Role::Rook => f.write_char('r'),
-            Role::Queen => f.write_char('q'),
-            Role::King => f.write_char('k'),
-        }
-    }
-}
-
-/// The reason why parsing the piece.
-#[derive(Debug, Display, Copy, Error)]
-#[derive_const(Default, Clone, PartialEq, Eq)]
-#[display("failed to parse piece")]
-pub struct ParseRoleError;
-
-const impl FromStr for Role {
-    type Err = ParseRoleError;
-
-    #[inline(always)]
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "p" => Ok(Role::Pawn),
-            "n" => Ok(Role::Knight),
-            "b" => Ok(Role::Bishop),
-            "r" => Ok(Role::Rook),
-            "q" => Ok(Role::Queen),
-            "k" => Ok(Role::King),
-            _ => Err(ParseRoleError),
-        }
+        let decoded = Self::DECODER.as_array()[bits.cast::<usize>()];
+        decoded.convert().assume()
     }
 }
 
@@ -111,16 +96,36 @@ const impl<T> IndexMut<Role> for [T; Role::LEN] {
     }
 }
 
+impl Display for Role {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_char(self.to_ascii() as char)
+    }
+}
+
+/// The reason why parsing [`Role`] failed.
+#[derive(Debug, Display, Copy, Error)]
+#[derive_const(Default, Clone, PartialEq, Eq)]
+#[display("failed to parse role")]
+pub struct ParseRoleError;
+
+impl FromStr for Role {
+    type Err = ParseRoleError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let &[b] = s.as_bytes() else {
+            return Err(ParseRoleError);
+        };
+
+        Self::iter()
+            .find(|r| r.to_ascii() == b)
+            .ok_or(ParseRoleError)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use test_strategy::proptest;
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn role_guarantees_zero_value_optimization() {
-        assert_eq!(size_of::<Option<Role>>(), size_of::<Role>());
-    }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]

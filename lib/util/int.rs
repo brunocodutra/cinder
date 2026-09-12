@@ -3,7 +3,7 @@ use bytemuck::zeroed;
 use std::{cmp::Ordering, hint::unreachable_unchecked, iter::FusedIterator, mem::transmute_copy};
 use std::{num::*, ops::*};
 
-/// Trait for types that can be represented by a int range of primitive integers.
+/// Trait for types that represent a contiguous range of integers.
 ///
 /// # Safety
 ///
@@ -204,11 +204,17 @@ macro_rules! impl_int_for_non_zero {
 }
 
 impl_int_for_non_zero!(NonZeroU8, u8);
+impl_int_for_non_zero!(NonZeroI8, i8);
 impl_int_for_non_zero!(NonZeroU16, u16);
+impl_int_for_non_zero!(NonZeroI16, i16);
 impl_int_for_non_zero!(NonZeroU32, u32);
+impl_int_for_non_zero!(NonZeroI32, i32);
 impl_int_for_non_zero!(NonZeroU64, u64);
+impl_int_for_non_zero!(NonZeroI64, i64);
 impl_int_for_non_zero!(NonZeroU128, u128);
+impl_int_for_non_zero!(NonZeroI128, i128);
 impl_int_for_non_zero!(NonZeroUsize, usize);
+impl_int_for_non_zero!(NonZeroIsize, isize);
 
 macro_rules! impl_num_for {
     ($i: ty) => {

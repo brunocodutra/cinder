@@ -434,7 +434,7 @@ fn parse_pieces(raf: &RandomAccessFile, ptr: usize, count: usize, side: Color) -
     let mut pieces = Pieces::default();
     for p in raf.read(ptr..ptr + count) {
         pieces.push(nibble_to_piece(match side {
-            Color::White => *p & 0xf,
+            Color::White => *p & 0xF,
             Color::Black => *p >> 4,
         }));
     }
@@ -580,7 +580,7 @@ impl Symbol {
     }
 
     fn left(&self) -> u16 {
-        (u16::from(self.lr[1] & 0xf) << 8) | u16::from(self.lr[0])
+        (u16::from(self.lr[1] & 0xF) << 8) | u16::from(self.lr[0])
     }
 
     fn right(&self) -> u16 {
@@ -760,7 +760,7 @@ fn read_symbols(
     let data = raf.read(offset..offset + symbol.lr.len());
     symbol.lr.copy_from_slice(data);
 
-    if symbol.right() == 0xfff {
+    if symbol.right() == 0xFFF {
         symbol.len = 0;
     } else {
         let depth = depth - 1;
@@ -879,12 +879,12 @@ impl<T: TableDescriptor> Table<T> {
         let files: StaticSeq<_, 4> = io::Result::from_iter((0..num_files).map(|file| {
             let order = [
                 [
-                    *raf.read(ptr) & 0xf,
-                    if pp { *raf.read(ptr + 1) & 0xf } else { 0xf },
+                    *raf.read(ptr) & 0xF,
+                    if pp { *raf.read(ptr + 1) & 0xF } else { 0xF },
                 ],
                 [
                     *raf.read(ptr) >> 4,
-                    if pp { *raf.read(ptr + 1) >> 4 } else { 0xf },
+                    if pp { *raf.read(ptr + 1) >> 4 } else { 0xF },
                 ],
             ];
 

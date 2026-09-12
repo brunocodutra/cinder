@@ -1,12 +1,13 @@
 use bytemuck::Zeroable;
+use derive_more::with_trait::IntoIterator;
 use std::mem::{transmute, transmute_copy};
 use std::ops::{Deref, DerefMut};
 
-#[derive(Debug, Copy, Hash, Zeroable)]
+#[derive(Debug, Copy, Hash, Zeroable, IntoIterator)]
 #[derive_const(Default, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(align(64))]
-pub struct Aligned<T>(pub T);
+pub struct Aligned<T>(#[into_iterator(owned, ref, ref_mut)] pub T);
 
 const impl<T> Aligned<T> {
     /// Transmutes `&self` to `&U`.

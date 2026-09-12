@@ -37,10 +37,8 @@ impl Zobrists {
             zobrists.hash ^= ZobristNumbers::en_passant(ep.file());
         }
 
-        for p in Piece::iter() {
-            for sq in Bitboard::from(board.by_piece(p)) {
-                zobrists.xor(sq, p);
-            }
+        for sq in Bitboard::from(board.occupied()) {
+            zobrists.xor(sq, board[sq].piece().assume());
         }
 
         zobrists
@@ -140,7 +138,7 @@ impl PartialEq for Board {
             && self.en_passant == other.en_passant
             && self.halfmoves == other.halfmoves
             && self.fullmoves == other.fullmoves
-            && self.placement.pieces() == other.placement.pieces()
+            && self.pieces() == other.pieces()
     }
 }
 
@@ -195,41 +193,6 @@ impl Board {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn roles(&self) -> &RoleByIdx {
         &self.roles
-    }
-
-    /// [`Square`]s occupied.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn occupied(&self) -> M8x64 {
-        self.placement.occupied()
-    }
-
-    /// [`Square`]s vacant.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn vacant(&self) -> M8x64 {
-        self.placement.vacant()
-    }
-
-    /// [`Square`]s occupied by [`Piece`]s of a [`Color`].
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn by_color(&self, c: Color) -> M8x64 {
-        self.placement.by_color(c)
-    }
-
-    /// [`Square`]s occupied by [`Piece`]s of a [`Role`].
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn by_role(&self, r: Role) -> M8x64 {
-        self.placement.by_role(r)
-    }
-
-    /// [`Square`]s occupied by a [`Piece`].
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn by_piece(&self, p: Piece) -> M8x64 {
-        self.placement.by_piece(p)
     }
 
     /// [`Square`] occupied by a the king of a [`Color`].
@@ -299,13 +262,13 @@ impl Board {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn outplace(&mut self, sq: Square) {
-        debug_assert_ne!(self.placement[sq], Place::empty());
+        debug_assert_ne!(self[sq], Place::empty());
 
-        let idx = self.placement[sq].idx().assume();
-        let color = self.placement[sq].color().assume();
+        let idx = self[sq].idx().assume();
+        let color = self[sq].color().assume();
 
-        self.roles[color][idx] = None;
-        self.squares[color][idx] = None;
+        self.roles[color].set(idx, None);
+        self.squares[color].set(idx, None);
         self.placement.set(sq, zeroed());
     }
 
@@ -313,13 +276,13 @@ impl Board {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn emplace(&mut self, sq: Square, p: Place) {
-        debug_assert_eq!(self.placement[sq], Place::empty());
+        debug_assert_eq!(self[sq], Place::empty());
 
         let idx = p.idx().assume();
         let color = p.color().assume();
 
-        self.roles[color][idx] = p.role();
-        self.squares[color][idx] = Some(sq);
+        self.roles[color].set(idx, p.role());
+        self.squares[color].set(idx, Some(sq));
         self.placement.set(sq, p);
     }
 
@@ -327,14 +290,14 @@ impl Board {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn displace(&mut self, wc: Square, wt: Square, p: Place) {
-        debug_assert_ne!(self.placement[wc], Place::empty());
-        debug_assert_eq!(self.placement[wt], Place::empty());
+        debug_assert_ne!(self[wc], Place::empty());
+        debug_assert_eq!(self[wt], Place::empty());
 
         let idx = p.idx().assume();
         let color = p.color().assume();
 
-        self.roles[color][idx] = p.role();
-        self.squares[color][idx] = Some(wt);
+        self.roles[color].set(idx, p.role());
+        self.squares[color].set(idx, Some(wt));
         self.placement.set(wc, zeroed());
         self.placement.set(wt, p);
     }
@@ -350,7 +313,7 @@ impl Display for Board {
                 buffer[0] = if sq.rank() == Rank::First { b' ' } else { b'/' };
             }
 
-            match self.placement[sq].piece() {
+            match self[sq].piece() {
                 None => skip += 1,
                 Some(p) => {
                     buffer[1] = buffer[0];
@@ -413,7 +376,6 @@ pub enum ParseFenError {
 impl FromStr for Board {
     type Err = ParseFenError;
 
-    #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut board = Board {
             turn: Color::White,
@@ -443,7 +405,7 @@ impl FromStr for Board {
                 }
 
                 let mut buffer = [0; 4];
-                let sq = Square::new(File::new(file as i8), Rank::new(rank as i8));
+                let sq = Square::new(File::new(file.cast()), Rank::new(rank.cast()));
                 let Ok(p) = Piece::from_str(c.encode_utf8(&mut buffer)) else {
                     return Err(ParseFenError::InvalidPlacement);
                 };
@@ -509,12 +471,6 @@ mod tests {
     use super::*;
     use std::{fmt::Debug, hash::DefaultHasher};
     use test_strategy::proptest;
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn board_guarantees_zero_value_optimization() {
-        assert_eq!(size_of::<Option<Board>>(), size_of::<Board>());
-    }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]

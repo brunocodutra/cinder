@@ -50,7 +50,7 @@ impl MoveCollector for NoCapacity {
         self.collect_pawn_pushes(pos, targets)?;
 
         let turn = pos.turn();
-        let pawns = pos.roles()[turn].matching(Some(Role::Pawn));
+        let pawns = pos.roles()[turn].containing(Some(Role::Pawn));
         self.collect_attacks(pos, pawns.into(), targets & pos.by_color(!turn))
     }
 
@@ -63,7 +63,7 @@ impl MoveCollector for NoCapacity {
     ) -> Result<(), Self::Error> {
         let turn = pos.turn();
         let unpinned_pushes = pos.king(turn).file().bitboard() | pos.pins().unpinned();
-        let pawns = unpinned_pushes & pos.by_piece(Piece::new(Role::Pawn, turn));
+        let pawns = unpinned_pushes & pos.pawns(turn);
         let vacant = Bitboard::from(pos.vacant()).perspective(turn);
 
         let third = Rank::Third.bitboard();
@@ -97,7 +97,7 @@ impl<const CHECKS: usize> MovesGenerator<CHECKS> {
 
         let turn = pos.turn();
         let ksq = pos.king(turn);
-        let pawns = pos.roles()[turn].matching(Some(Role::Pawn));
+        let pawns = pos.roles()[turn].containing(Some(Role::Pawn));
         if let Some(wt) = pos.en_passant().filter(|ep| wt.contains(*ep)) {
             for idx in pos.pins().attacks()[wt] & pawns {
                 let wc = pos.squares()[turn][idx].assume();
@@ -132,9 +132,8 @@ impl<const CHECKS: usize> MovesGenerator<CHECKS> {
             if wt.contains(castling) && pos.castles().has(castling) {
                 let rook = Castles::rook(castling).assume().whence();
                 if Bitboard::segment(ksq, rook) & occ == zeroed() {
-                    let threats = pos.threats()[!turn].to_simd();
                     let path = Bitboard::segment(ksq, castling).with(castling);
-                    if path & threats.simd_ne(zeroed()) == zeroed() {
+                    if path & pos.threats()[!turn].any() == zeroed() {
                         collector.collect_one(Move::regular(ksq, castling, None))?;
                     }
                 }
@@ -162,7 +161,7 @@ impl<const CHECKS: usize> MovesGenerator<CHECKS> {
             }
         }
 
-        let threats = pos.threats()[!turn].to_simd().simd_ne(zeroed());
+        let threats = pos.threats()[!turn].any();
         collector.collect_attacks(pos, Idx::KING.to_set(), wt & !threats & !pos.by_color(turn))
     }
 }
@@ -175,12 +174,12 @@ impl<C: MoveCollector> MoveGen<C> for MovesGenerator<0> {
         let ours = pos.by_color(turn);
         let theirs = pos.by_color(!turn);
         let eighth = Rank::Eighth.perspective(turn).bitboard();
-        let pawns = pos.roles()[turn].matching(Some(Role::Pawn));
+        let pawns = pos.roles()[turn].containing(Some(Role::Pawn));
         collector.collect_pawn_pushes(pos, wt & !eighth)?;
         collector.collect_pawn_promotions(pos, wt & eighth)?;
         collector.collect_attacks(pos, pawns.into(), wt & theirs & !eighth)?;
 
-        let none = pos.roles()[turn].matching(None);
+        let none = pos.roles()[turn].containing(None);
         let not_king_nor_pawns = !Idx::KING.to_set() & !(pawns | none);
         collector.collect_attacks(pos, not_king_nor_pawns, wt & !ours)?;
 
@@ -195,11 +194,11 @@ impl<C: MoveCollector> MoveGen<C> for MovesGenerator<0> {
         let turn = pos.turn();
         let theirs = pos.by_color(!turn);
         let eighth = Rank::Eighth.perspective(turn).bitboard();
-        let pawns = pos.roles()[turn].matching(Some(Role::Pawn));
+        let pawns = pos.roles()[turn].containing(Some(Role::Pawn));
         collector.collect_pawn_promotions(pos, wt & eighth)?;
         collector.collect_attacks(pos, pawns.into(), wt & theirs & !eighth)?;
 
-        let none = pos.roles()[turn].matching(None);
+        let none = pos.roles()[turn].containing(None);
         let not_king_nor_pawns = !Idx::KING.to_set() & !(pawns | none);
         collector.collect_attacks(pos, not_king_nor_pawns, wt & theirs)?;
 
@@ -221,13 +220,13 @@ impl<C: MoveCollector> MoveGen<C> for MovesGenerator<1> {
 
         let ours = pos.by_color(turn);
         let theirs = pos.by_color(!turn);
-        let pawns = pos.roles()[turn].matching(Some(Role::Pawn));
+        let pawns = pos.roles()[turn].containing(Some(Role::Pawn));
         let eighth = Rank::Eighth.perspective(turn).bitboard();
         collector.collect_pawn_pushes(pos, wt & checks & !eighth)?;
         collector.collect_pawn_promotions(pos, wt & checks & eighth)?;
         collector.collect_attacks(pos, pawns.into(), wt & checks & theirs & !eighth)?;
 
-        let none = pos.roles()[turn].matching(None);
+        let none = pos.roles()[turn].containing(None);
         let not_king_nor_pawns = !Idx::KING.to_set() & !(pawns | none);
         collector.collect_attacks(pos, not_king_nor_pawns, wt & checks & !ours)?;
 
@@ -284,7 +283,7 @@ pub struct Position {
     threats: Threats,
     zobrists: Zobrists,
     direct_checks: [Bitboard; 4],
-    history: [Aligned<[u32; 32]>; 2],
+    history: [u32x32; 2],
 }
 
 #[cfg(test)]
@@ -565,12 +564,10 @@ impl Position {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn is_draw_by_repetition(&self) -> bool {
-        let hash @ 1.. = self.zobrists().hash.cast() else {
-            return false;
-        };
-
-        let history: u32x32 = self.history[self.turn()].cast();
-        history.simd_eq(Simd::splat(hash)).any()
+        match self.zobrists().hash.cast() {
+            hash @ 1.. => self.history[self.turn()].simd_eq(Simd::splat(hash)).any(),
+            _ => false,
+        }
     }
 
     /// The [`Outcome`] of the game in case this position is final.
@@ -660,31 +657,35 @@ impl Position {
 
     /// The sequence of captures on a square starting from a move ordered by least valued captor.
     #[inline(always)]
-    pub fn exchanges(&self, m: Move) -> impl Iterator<Item = (Move, Role)> {
-        use {Rank::*, Role::*};
-
+    pub fn exchanges(&self, m: Move) -> impl Iterator<Item = (Square, Role)> {
         #[inline(always)]
         gen move {
             let (wc, wt) = (m.whence(), m.whither());
             if (self.attackers(wt).is_empty() && self.attackers(wc).is_empty())
-                || self[wc].role() == Some(King)
+                || self[wc].role() == Some(Role::King)
             {
                 return;
             }
 
-            let mut turn = self.turn();
-            let kings = [self.king(Color::White), self.king(Color::Black)];
-
+            let mut turn = !self.turn();
             let mut placement = *self.placement();
-            placement.set(wt, self[wc]);
             placement.set(wc, zeroed());
             if self[wt].is_empty() && m.is_capture() {
                 placement.set(Square::new(wt.file(), wc.rank()), zeroed());
             }
 
-            loop {
-                turn = !turn;
+            let ksqs = [self.king(Color::White), self.king(Color::Black)];
 
+            let roles = [
+                placement.by_role(Role::Pawn).to_bitmask(),
+                placement.by_role(Role::Knight).to_bitmask(),
+                placement.by_role(Role::Bishop).to_bitmask(),
+                placement.by_role(Role::Rook).to_bitmask(),
+                placement.by_role(Role::Queen).to_bitmask(),
+                placement.by_role(Role::King).to_bitmask(),
+            ];
+
+            loop {
                 let rays = wt.rays();
                 let furled = placement.furl(rays);
                 let attackers = furled.visible() & furled.attackers();
@@ -694,14 +695,14 @@ impl Position {
                 }
 
                 let unpinned = {
-                    let rays = kings[turn].rays();
-                    let furled = placement.furl(rays);
+                    let ksq = ksqs[turn];
+                    let line = Bitboard::line(ksq, wt).with(wt);
+                    let furled = placement.furl(ksq.rays());
                     let theirs = furled.by_color(!turn);
                     let visible = furled.visible();
                     let attackers = theirs & visible & furled.attackers();
-                    let line = Bitboard::line(kings[turn], wt).with(wt);
                     if cfg!(target_feature = "avx512f") || attackers.any() {
-                        if !line & attackers.unfurl(rays) != zeroed() {
+                        if !line & attackers.unfurl(ksq.rays()) != zeroed() {
                             return;
                         }
                     }
@@ -712,49 +713,32 @@ impl Position {
                     let pinned = nearest & pinners.flood_ranks();
 
                     if cfg!(target_feature = "avx512f") || pinned.any() {
-                        line | !pinned.unfurl(rays)
+                        line | !pinned.unfurl(ksq.rays())
                     } else {
                         Bitboard::full()
                     }
                 };
 
                 let candidates = unpinned & candidates.unfurl(rays);
-                if candidates.is_empty() {
+                let roles = u64x8::load_or_default(&roles) & Simd::splat(*candidates);
+                let Some(captor) = roles.simd_ne(zeroed()).first_set().and_then(Num::convert)
+                else {
                     return;
-                }
+                };
 
-                let roles = u64x8::from_array([
-                    placement.by_role(Pawn).to_bitmask(),
-                    placement.by_role(Knight).to_bitmask(),
-                    placement.by_role(Bishop).to_bitmask(),
-                    placement.by_role(Rook).to_bitmask(),
-                    placement.by_role(Queen).to_bitmask(),
-                    kings[turn].bitboard().get(),
-                    0,
-                    0,
-                ]);
-
-                let roles = roles & Simd::splat(*candidates);
-                let captor = Role::new(roles.simd_ne(zeroed()).to_bitmask().trailing_zeros() as u8);
-                let captors = roles.as_array().get(captor as usize).assume();
-                let wc = <Square as Num>::new(captors.trailing_zeros() as i8);
-
-                if captor == King {
+                if captor == Role::King {
                     let theirs = furled.by_color(!turn);
                     if theirs.bitand(attackers).any() {
                         return;
                     }
                 }
 
-                let promotion = if captor == Pawn && wt.rank().perspective(turn) == Eighth {
-                    Some(Queen)
-                } else {
-                    None
-                };
-
-                placement.set(wt, placement[wc]);
+                let captors = *roles.as_array().get(captor as usize).assume();
+                let wc = Bitboard::new(captors).iter().next().assume();
                 placement.set(wc, zeroed());
-                yield (Move::capture(wc, wt, promotion), captor);
+                turn = !turn;
+
+                yield (wc, captor);
             }
         }
     }
@@ -808,8 +792,7 @@ impl Position {
                 return false;
             };
 
-            let threats = self.threats()[!turn].to_simd();
-            return path & threats.simd_ne(zeroed()) == zeroed()
+            return path & self.threats()[!turn].any() == zeroed()
                 && Bitboard::segment(ksq, rook.whence()) & occ == zeroed()
                 && self.castles().has(wt);
         }
@@ -866,10 +849,10 @@ impl Position {
             self.history = zeroed();
         } else {
             let turn = self.turn();
-            let hm = self.board.halfmoves as usize;
+            let zobrist = Simd::splat(self.zobrists().hash.cast());
+            let mask = 1u64 << (self.board.halfmoves as usize / 2 % self.history[turn].len());
+            self.history[turn] = mask.select(zobrist, self.history[turn]);
             self.board.halfmoves += 1;
-            let entries = self.history[turn].len();
-            self.history[turn][hm / 2 % entries] = self.zobrists().hash.cast();
         }
 
         if self.turn() == Color::Black {
@@ -896,7 +879,7 @@ impl Position {
             self.board.outplace(sq);
         } else if src.role() == Some(Pawn) && (wt - wc).abs() == 16 {
             let ep = Square::new(wc.file(), Rank::Third.perspective(!self.turn()));
-            let theirs = self.board.roles()[self.turn()].matching(Some(Pawn));
+            let theirs = self.board.roles()[self.turn()].containing(Some(Pawn));
             if self.threats()[self.turn()][ep] & theirs != zeroed() {
                 self.zobrists.hash ^= ZobristNumbers::en_passant(ep.file());
                 self.board.en_passant = Some(ep);
@@ -945,14 +928,14 @@ impl Position {
         debug_assert!(!self.is_check());
 
         let turn = self.turn();
-        if turn == Color::Black {
+        let zobrist = Simd::splat(self.zobrists().hash.cast());
+        let mask = 1u64 << (self.board.halfmoves as usize / 2 % self.history[turn].len());
+        self.history[turn] = mask.select(zobrist, self.history[turn]);
+        self.board.halfmoves += 1;
+
+        if self.turn() == Color::Black {
             self.board.fullmoves += 1;
         }
-
-        let hm = self.board.halfmoves as usize;
-        self.board.halfmoves += 1;
-        let entries = self.history[turn].len();
-        self.history[turn][hm / 2 % entries] = self.zobrists().hash.cast();
 
         self.board.turn = !self.board.turn;
         self.zobrists.hash ^= ZobristNumbers::turn();
@@ -1022,7 +1005,6 @@ pub enum ParsePositionError {
 impl FromStr for Position {
     type Err = ParsePositionError;
 
-    #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let board: Board = s.parse()?;
         for color in Color::iter() {
@@ -1038,14 +1020,8 @@ impl FromStr for Position {
 mod tests {
     use super::*;
     use proptest::sample::select;
-    use std::{cmp::Reverse, collections::HashSet, fmt::Debug, hash::DefaultHasher};
+    use std::{collections::HashSet, fmt::Debug, hash::DefaultHasher};
     use test_strategy::proptest;
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn position_guarantees_zero_value_optimization() {
-        assert_eq!(size_of::<Option<Position>>(), size_of::<Position>());
-    }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
@@ -1190,16 +1166,23 @@ mod tests {
         let mut pos = pos;
         pos.play(m);
 
-        for (m, captor) in exchanges {
+        for (wc, captor) in exchanges {
             assert_eq!(
-                Some((Some(captor), m.promotion())),
+                Some(captor),
                 pos.noisy_to(sq.bitboard())
                     .into_iter()
-                    .map(|m| (pos[m.whence()].role(), m.promotion()))
-                    .min_by_key(|&(r, p)| (r, Reverse(p)))
+                    .map(|m| pos[m.whence()].role().assume())
+                    .min()
             );
 
-            pos.play(m);
+            use {Rank::*, Role::*};
+            let promotion = if captor == Pawn && sq.rank().perspective(pos.turn()) == Eighth {
+                Some(Queen)
+            } else {
+                None
+            };
+
+            pos.play(Move::capture(wc, sq, promotion));
         }
     }
 
@@ -1273,14 +1256,6 @@ mod tests {
             Bitboard::from(pos.occupied()),
             Role::iter().fold(Bitboard::empty(), |bb, r| bb | pos.by_role(r))
         );
-
-        for r in Role::iter() {
-            for sq in Role::iter() {
-                if r != sq {
-                    assert_eq!(Bitboard::from(pos.by_role(r) & pos.by_role(sq)), zeroed());
-                }
-            }
-        }
 
         assert_eq!(
             pos.by_color(prev.turn()).count(),

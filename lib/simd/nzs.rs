@@ -41,7 +41,7 @@ impl<const M: usize, const N: usize> Nzs<N> for Aligned<[u16; M]> {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn nzs(&mut self, ns: &[[V2<u32>; 2]; N]) -> usize {
         const { assert!(M == N * 2 * W2) }
-        const NNZ_OFFSETS: Aligned<[u16x8; 256]> = {
+        const NNZ_OFFSETS: Aligned<[u16x8; 256]> = const {
             let mut offsets = Aligned([u16x8::splat(0); 256]);
             let table: &mut [[u16; 8]; 256] = offsets.cast_mut();
 

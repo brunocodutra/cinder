@@ -15,22 +15,28 @@ use proptest::{collection::vec, prelude::*};
 #[repr(transparent)]
 pub struct Move(NonZeroU16);
 
+unsafe impl Niched for Move {}
+
 unsafe impl ZeroableInOption for Move {}
 
 const impl Move {
+    #[expect(dead_code)]
+    const REQUIRES: () = const { assert!(size_of::<Self>() == size_of::<Option<Self>>()) };
+
     /// Constructs a regular move.
     #[inline(always)]
     pub fn regular(whence: Square, whither: Square, promotion: Option<Role>) -> Self {
+        const PROMOTIONS: [Bits<u8, 4>; Role::LEN] = const {
+            let mut promotions = [Bits::new(0b0000); Role::LEN];
+            promotions[Role::Knight] = Bits::new(0b0100);
+            promotions[Role::Bishop] = Bits::new(0b0101);
+            promotions[Role::Rook] = Bits::new(0b0110);
+            promotions[Role::Queen] = Bits::new(0b0111);
+            promotions
+        };
+
         let mut bits = Bits::<u16, 16>::default();
-
-        match promotion {
-            None => bits.push(Bits::<u8, 4>::new(0b0000)),
-            Some(r) => {
-                bits.push(Bits::<u8, 2>::new(0b01));
-                bits.push(Bits::<u8, 2>::new(r.get() - 1));
-            }
-        }
-
+        bits.push(PROMOTIONS[promotion.unwrap_or(Role::King)]);
         bits.push(whither.encode());
         bits.push(whence.encode());
         Move(bits.convert().assume())
@@ -92,7 +98,6 @@ const impl Move {
 }
 
 impl Debug for Move {
-    #[coverage(off)]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Display::fmt(self, f)?;
 
@@ -362,17 +367,17 @@ impl MoveCollector for Moves {
         let turn = pos.turn();
         let theirs = pos.by_color(!turn);
         let squares = pos.squares()[turn].to_simd().cast::<u16>();
-        let attacks = pos.pins().attacks().to_simd() & u16x64::splat(*indices);
-        let targets = targets & attacks.simd_ne(zeroed());
+        let attacks = *pos.pins().attacks() & u16x64::splat(*indices);
+        let targets = targets & attacks.any();
 
         for wt in targets & theirs {
             let moves = squares | u16x16::splat(((wt as u16) << 6) | 0b1000000000000000);
-            self.0.extend_from_simd(moves, attacks.as_array()[wt]);
+            self.0.extend_from_simd(moves, attacks[wt].cast());
         }
 
         for wt in targets & !theirs {
             let moves = squares | u16x16::splat((wt as u16) << 6);
-            self.0.extend_from_simd(moves, attacks.as_array()[wt]);
+            self.0.extend_from_simd(moves, attacks[wt].cast());
         }
 
         Ok(())
@@ -386,7 +391,7 @@ impl MoveCollector for Moves {
         targets: Bitboard,
     ) -> Result<(), Self::Error> {
         const PUSH_SHIFT: [u32; Color::LEN] = [48, 8];
-        const PUSHES: [Aligned<[Option<Move>; 32]>; Color::LEN] = {
+        const PUSHES: [Aligned<[Option<Move>; 32]>; Color::LEN] = const {
             let mut table = [Aligned([None; 32]); Color::LEN];
 
             let mut i = 8;
@@ -412,7 +417,7 @@ impl MoveCollector for Moves {
 
         let turn = pos.turn();
         let wt = targets & pos.vacant();
-        let pawns = pos.by_piece(Piece::new(Role::Pawn, turn)) & pos.pins().unpinned();
+        let pawns = pos.pawns(turn) & pos.pins().unpinned();
 
         let pushes = match turn {
             Color::White => (wt >> 8) & pawns,
@@ -439,10 +444,10 @@ impl MoveCollector for Moves {
         }
 
         let theirs = pos.by_color(!turn);
-        let indices = IdxSet::from(pos.roles()[turn].matching(Some(Role::Pawn)));
-        let attacks = pos.pins().attacks().to_simd() & u16x64::splat(*indices);
-        for wt in targets & theirs & attacks.simd_ne(zeroed()) {
-            for idx in indices & attacks.as_array()[wt] {
+        let indices = IdxSet::from(pos.roles()[turn].containing(Some(Role::Pawn)));
+        let attacks = *pos.pins().attacks() & u16x64::splat(*indices);
+        for wt in targets & theirs & attacks.any() {
+            for idx in indices & attacks[wt] {
                 let wc = pos.squares()[turn][idx].assume();
                 self.collect_one(Move::capture(wc, wt, Some(Role::Knight)));
                 self.collect_one(Move::capture(wc, wt, Some(Role::Bishop)));
@@ -462,7 +467,7 @@ impl MoveCollector for Moves {
         targets: Bitboard,
     ) -> Result<(), Self::Error> {
         const SINGLE_SHIFT: u32 = 16;
-        const SINGLE: [Aligned<[Option<Move>; 32]>; Color::LEN] = {
+        const SINGLE: [Aligned<[Option<Move>; 32]>; Color::LEN] = const {
             let mut table = [Aligned([None; 32]); Color::LEN];
 
             let mut i = 32;
@@ -477,7 +482,7 @@ impl MoveCollector for Moves {
         };
 
         const DOUBLE_SHIFT: [u32; Color::LEN] = [8, 48];
-        const DOUBLE: [Aligned<[Option<Move>; 16]>; Color::LEN] = {
+        const DOUBLE: [Aligned<[Option<Move>; 16]>; Color::LEN] = const {
             let mut table = [Aligned([None; 16]); Color::LEN];
 
             let mut i = 8;
@@ -501,7 +506,7 @@ impl MoveCollector for Moves {
         let wt = targets & vacant;
 
         let unpinned_pushes = pos.king(turn).file().bitboard() | pos.pins().unpinned();
-        let pawns = unpinned_pushes & pos.by_piece(Piece::new(Role::Pawn, turn));
+        let pawns = unpinned_pushes & pos.pawns(turn);
 
         let single = match turn {
             Color::White => pawns & (wt >> 8),
@@ -537,12 +542,6 @@ mod tests {
     use super::*;
     use proptest::sample::select;
     use test_strategy::proptest;
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn move_guarantees_zero_value_optimization() {
-        assert_eq!(size_of::<Option<Move>>(), size_of::<Move>());
-    }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]

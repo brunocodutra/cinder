@@ -1,5 +1,5 @@
 use crate::chess::{Bitboard, Mirror, Rank, Transpose};
-use crate::util::{Assume, Int, Num};
+use crate::util::{Assume, Int, Niched, Num};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::ops::{Index, IndexMut};
@@ -29,7 +29,12 @@ const unsafe impl Num for File {
 
 const unsafe impl Int for File {}
 
+const unsafe impl Niched for File {}
+
 const impl File {
+    #[expect(dead_code)]
+    const REQUIRES: () = const { assert!(size_of::<Self>() == size_of::<Option<Self>>()) };
+
     pub const LEN: usize = Self::MAX as usize + 1;
 
     /// Returns a [`Bitboard`] that only contains this file.
@@ -66,33 +71,6 @@ const impl Sub for File {
     }
 }
 
-impl Display for File {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_char((b'a' + self.cast::<u8>()).into())
-    }
-}
-
-/// The reason why parsing [`File`] failed.
-#[derive(Debug, Display, Copy, Error)]
-#[derive_const(Default, Clone, PartialEq, Eq)]
-#[display("failed to parse file")]
-pub struct ParseFileError;
-
-const impl FromStr for File {
-    type Err = ParseFileError;
-
-    #[inline(always)]
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let [c] = s.as_bytes() else {
-            return Err(ParseFileError);
-        };
-
-        c.checked_sub(b'a')
-            .and_then(Num::convert)
-            .ok_or(ParseFileError)
-    }
-}
-
 const impl<T> Index<File> for [T; File::LEN] {
     type Output = T;
 
@@ -109,17 +87,37 @@ const impl<T> IndexMut<File> for [T; File::LEN] {
     }
 }
 
+impl Display for File {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_char((b'a' + self.cast::<u8>()).into())
+    }
+}
+
+/// The reason why parsing [`File`] failed.
+#[derive(Debug, Display, Copy, Error)]
+#[derive_const(Default, Clone, PartialEq, Eq)]
+#[display("failed to parse file")]
+pub struct ParseFileError;
+
+impl FromStr for File {
+    type Err = ParseFileError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let [b] = s.as_bytes() else {
+            return Err(ParseFileError);
+        };
+
+        b.checked_sub(b'a')
+            .and_then(Num::convert)
+            .ok_or(ParseFileError)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::chess::Square;
     use test_strategy::proptest;
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn file_guarantees_zero_value_optimization() {
-        assert_eq!(size_of::<Option<File>>(), size_of::<File>());
-    }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]

@@ -1,3 +1,4 @@
+use crate::simd::Permute;
 use std::simd::prelude::*;
 
 /// Trait for [`Simd<_, _>` ] types that can shuffle within lanes.
@@ -52,31 +53,9 @@ impl Shuffle for u8x32 {
 
 impl Shuffle for u8x16 {
     #[inline(always)]
-    #[cfg(target_feature = "ssse3")]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn shuffle(self, indices: Self) -> Self {
-        unsafe {
-            use std::arch::x86_64::*;
-            _mm_shuffle_epi8(self.into(), indices.into()).into()
-        }
-    }
-
-    #[inline(always)]
-    #[cfg(target_feature = "neon")]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn shuffle(self, indices: Self) -> Self {
-        unsafe {
-            use std::arch::aarch64::*;
-            vqtbl1q_u8(self.into(), indices.into()).into()
-        }
-    }
-
-    #[inline(always)]
-    #[cfg(not(target_feature = "ssse3"))]
-    #[cfg(not(target_feature = "neon"))]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn shuffle(self, indices: Self) -> Self {
-        self.swizzle_dyn(indices)
+        self.permute(indices)
     }
 }
 

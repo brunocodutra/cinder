@@ -1,4 +1,4 @@
-use crate::chess::{Butterfly, File, Flip, Rank, Square};
+use crate::chess::{Butterfly, File, Flip, Rank, Square, Transpose};
 use crate::simd::*;
 use crate::util::{Assume, Int, Num};
 use bytemuck::{Pod, Zeroable, zeroed};
@@ -211,7 +211,6 @@ const impl Bitboard {
 }
 
 impl Debug for Bitboard {
-    #[coverage(off)]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_char('\n')?;
         for rank in Rank::iter().rev() {
@@ -476,6 +475,25 @@ const impl Flip for Bitboard {
     }
 }
 
+const impl Transpose for Bitboard {
+    type Transposition = Self;
+
+    /// Diagonally flips the squares in this set.
+    #[inline(always)]
+    fn transpose(mut self) -> Self::Transposition {
+        let t = 0x0F0F0F0F00000000 & (self.0 ^ (self.0 << 28));
+        self.0 ^= t ^ (t >> 28);
+
+        let t = 0x3333000033330000 & (self.0 ^ (self.0 << 14));
+        self.0 ^= t ^ (t >> 14);
+
+        let t = 0x5500550055005500 & (self.0 ^ (self.0 << 7));
+        self.0 ^= t ^ (t >> 7);
+
+        self
+    }
+}
+
 const impl From<File> for Bitboard {
     #[inline(always)]
     fn from(f: File) -> Self {
@@ -515,7 +533,7 @@ impl<T: MaskElement> From<Mask<T, 64>> for Bitboard {
 impl<T: MaskElement> From<Bitboard> for M<T, 64> {
     #[inline(always)]
     fn from(bb: Bitboard) -> Self {
-        M::from_bitmask(bb.0)
+        M::from_bitmask(bb.cast())
     }
 }
 

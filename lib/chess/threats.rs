@@ -52,14 +52,14 @@ impl Threats {
         match victim.color().assume() {
             Color::White => {
                 self[Color::White] &= !u16x64::splat(victim.idx().assume().to_set().cast());
-                self[Color::White] ^= occ.select(zeroed(), updates);
-                self[Color::Black] ^= occ.select(updates, zeroed());
+                self[Color::White] ^= updates.blend(occ, zeroed());
+                self[Color::Black] ^= updates.mask(occ);
             }
 
             Color::Black => {
                 self[Color::Black] &= !u16x64::splat(victim.idx().assume().to_set().cast());
-                self[Color::Black] ^= occ.select(updates, zeroed());
-                self[Color::White] ^= occ.select(zeroed(), updates);
+                self[Color::Black] ^= updates.mask(occ);
+                self[Color::White] ^= updates.blend(occ, zeroed());
             }
         }
     }
@@ -108,16 +108,16 @@ impl Threats {
             Color::White => {
                 self[Color::White] &= !u16x64::splat(idx.to_set().cast());
                 self[Color::White] |= attacks.cast::<u16>() << u16x64::splat(idx.cast());
-                self[Color::White] ^= occ.select(zeroed(), updates);
-                self[Color::Black] ^= occ.select(updates, zeroed());
+                self[Color::White] ^= updates.blend(occ, zeroed());
+                self[Color::Black] ^= updates.mask(occ);
                 self[Color::Black] &= !u16x64::splat(victim.idx().assume().to_set().cast());
             }
 
             Color::Black => {
                 self[Color::Black] &= !u16x64::splat(idx.to_set().cast());
                 self[Color::Black] |= attacks.cast::<u16>() << u16x64::splat(idx.cast());
-                self[Color::Black] ^= occ.select(updates, zeroed());
-                self[Color::White] ^= occ.select(zeroed(), updates);
+                self[Color::Black] ^= updates.mask(occ);
+                self[Color::White] ^= updates.blend(occ, zeroed());
                 self[Color::White] &= !u16x64::splat(victim.idx().assume().to_set().cast());
             }
         }
@@ -175,19 +175,19 @@ impl Threats {
             Color::White => {
                 self[Color::White] &= !u16x64::splat(idx.to_set().cast());
                 self[Color::White] |= attacks.cast::<u16>() << u16x64::splat(idx.cast());
-                self[Color::White] ^= occ_wc.select(zeroed(), updates_wc);
-                self[Color::White] ^= occ_wt.select(zeroed(), updates_wt);
-                self[Color::Black] ^= occ_wc.select(updates_wc, zeroed());
-                self[Color::Black] ^= occ_wt.select(updates_wt, zeroed());
+                self[Color::White] ^= updates_wc.blend(occ_wc, zeroed());
+                self[Color::White] ^= updates_wt.blend(occ_wt, zeroed());
+                self[Color::Black] ^= updates_wc.mask(occ_wc);
+                self[Color::Black] ^= updates_wt.mask(occ_wt);
             }
 
             Color::Black => {
                 self[Color::Black] &= !u16x64::splat(idx.to_set().cast());
                 self[Color::Black] |= attacks.cast::<u16>() << u16x64::splat(idx.cast());
-                self[Color::Black] ^= occ_wc.select(updates_wc, zeroed());
-                self[Color::Black] ^= occ_wt.select(updates_wt, zeroed());
-                self[Color::White] ^= occ_wc.select(zeroed(), updates_wc);
-                self[Color::White] ^= occ_wt.select(zeroed(), updates_wt);
+                self[Color::Black] ^= updates_wc.mask(occ_wc);
+                self[Color::Black] ^= updates_wt.mask(occ_wt);
+                self[Color::White] ^= updates_wc.blend(occ_wc, zeroed());
+                self[Color::White] ^= updates_wt.blend(occ_wt, zeroed());
             }
         }
     }

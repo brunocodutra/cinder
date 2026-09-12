@@ -1,5 +1,5 @@
 use crate::chess::Flip;
-use crate::util::{Assume, Binary, Bits, Int, Num};
+use crate::util::{Assume, Binary, Bits, Int, Niched, Num};
 use derive_more::with_trait::Display;
 use std::ops::{Index, IndexMut, Not};
 
@@ -23,7 +23,12 @@ const unsafe impl Num for Color {
 
 const unsafe impl Int for Color {}
 
+const unsafe impl Niched for Color {}
+
 const impl Color {
+    #[expect(dead_code)]
+    const REQUIRES: () = const { assert!(size_of::<Self>() == size_of::<Option<Self>>()) };
+
     pub const LEN: usize = Self::MAX as usize + 1;
 }
 
@@ -94,12 +99,6 @@ const impl<T> IndexMut<Color> for [T; Color::LEN] {
 mod tests {
     use super::*;
     use test_strategy::proptest;
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn color_guarantees_zero_value_optimization() {
-        assert_eq!(size_of::<Option<Color>>(), size_of::<Color>());
-    }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]

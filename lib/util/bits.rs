@@ -32,7 +32,7 @@ const unsafe impl<T: [const] Unsigned + 'static, const W: u32> Int for Bits<T, W
 
 const impl<T: [const] Unsigned, const W: u32> Bits<T, W> {
     #[expect(dead_code)]
-    const ASSERT: () = const { assert!(size_of::<T>() * 8 >= W as usize) };
+    const REQUIRES: () = const { assert!(size_of::<T>() * 8 >= W as usize) };
 
     /// The bit width.
     pub const BITS: u32 = W;

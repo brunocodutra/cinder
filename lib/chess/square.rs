@@ -1,5 +1,5 @@
 use crate::chess::*;
-use crate::util::{Assume, Binary, Bits, Int, Num};
+use crate::util::{Assume, Binary, Bits, Int, Niched, Num};
 use derive_more::with_trait::{Display, Error, From};
 use std::fmt::{self, Formatter};
 use std::ops::{Add, AddAssign, Index, IndexMut, Sub, SubAssign};
@@ -30,7 +30,12 @@ const unsafe impl Num for Square {
 
 const unsafe impl Int for Square {}
 
+const unsafe impl Niched for Square {}
+
 const impl Square {
+    #[expect(dead_code)]
+    const REQUIRES: () = const { assert!(size_of::<Self>() == size_of::<Option<Self>>()) };
+
     pub const LEN: usize = Self::MAX as usize + 1;
 
     /// Constructs [`Square`] from a pair of [`File`] and [`Rank`].
@@ -86,7 +91,7 @@ const impl Transpose for Square {
     /// Diagonally flips this square.
     #[inline(always)]
     fn transpose(self) -> Self::Transposition {
-        Num::new((self.cast::<u32>().wrapping_mul(0x2080_0000) >> 26) as i8)
+        Num::new((self.cast::<u32>().wrapping_mul(0x20800000) >> 26).cast())
     }
 }
 
@@ -145,14 +150,6 @@ const impl AddAssign<i8> for Square {
     }
 }
 
-impl Display for Square {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Display::fmt(&self.file(), f)?;
-        Display::fmt(&self.rank(), f)?;
-        Ok(())
-    }
-}
-
 const impl<T> Index<Square> for [T; Square::LEN] {
     type Output = T;
 
@@ -166,6 +163,14 @@ const impl<T> IndexMut<Square> for [T; Square::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, sq: Square) -> &mut Self::Output {
         self.get_mut(sq.cast::<usize>()).assume()
+    }
+}
+
+impl Display for Square {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self.file(), f)?;
+        Display::fmt(&self.rank(), f)?;
+        Ok(())
     }
 }
 
@@ -193,7 +198,7 @@ const impl From<ParseRankError> for ParseSquareError {
     }
 }
 
-const impl FromStr for Square {
+impl FromStr for Square {
     type Err = ParseSquareError;
 
     #[inline(always)]
@@ -212,12 +217,6 @@ const impl FromStr for Square {
 mod tests {
     use super::*;
     use test_strategy::proptest;
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn square_guarantees_zero_value_optimization() {
-        assert_eq!(size_of::<Option<Square>>(), size_of::<Square>());
-    }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]

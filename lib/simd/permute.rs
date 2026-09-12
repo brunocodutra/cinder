@@ -1,4 +1,3 @@
-use crate::simd::Shuffle;
 use std::simd::prelude::*;
 
 /// Trait for [`Simd<_, _>` ] types that can permute across lanes.
@@ -24,7 +23,7 @@ impl Permute for u8x64 {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn permute(self, indices: Self) -> Self {
         unsafe {
-            use crate::simd::Halve;
+            use crate::simd::{Halve, Shuffle};
             use std::arch::x86_64::*;
 
             let [x0, x1] = self.halve();
@@ -36,15 +35,14 @@ impl Permute for u8x64 {
             let x1h: u8x32 = _mm256_permute2x128_si256::<0x11>(x1.into(), x1.into()).into();
 
             let (m0, m1) = (i0 << 3, i1 << 3);
-            let (j0, j1) = (!u8x32::splat(32) & i0, !u8x32::splat(32) & i1);
-            let x00 = _mm256_blendv_epi8(x0l.shuffle(j0).into(), x0h.shuffle(j0).into(), m0.into());
-            let x01 = _mm256_blendv_epi8(x0l.shuffle(j1).into(), x0h.shuffle(j1).into(), m1.into());
-            let x10 = _mm256_blendv_epi8(x1l.shuffle(j0).into(), x1h.shuffle(j0).into(), m0.into());
-            let x11 = _mm256_blendv_epi8(x1l.shuffle(j1).into(), x1h.shuffle(j1).into(), m1.into());
+            let x00 = _mm256_blendv_epi8(x0l.shuffle(i0).into(), x0h.shuffle(i0).into(), m0.into());
+            let x01 = _mm256_blendv_epi8(x0l.shuffle(i1).into(), x0h.shuffle(i1).into(), m1.into());
+            let x10 = _mm256_blendv_epi8(x1l.shuffle(i0).into(), x1h.shuffle(i0).into(), m0.into());
+            let x11 = _mm256_blendv_epi8(x1l.shuffle(i1).into(), x1h.shuffle(i1).into(), m1.into());
 
             let (m0, m1) = (i0 << 2, i1 << 2);
-            let y0 = _mm256_blendv_epi8(x00.into(), x10.into(), m0.into());
-            let y1 = _mm256_blendv_epi8(x01.into(), x11.into(), m1.into());
+            let y0 = _mm256_blendv_epi8(x00, x10, m0.into());
+            let y1 = _mm256_blendv_epi8(x01, x11, m1.into());
 
             Halve::merge([y0.into(), y1.into()])
         }
@@ -114,6 +112,7 @@ impl Permute for u8x32 {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn permute(self, indices: Self) -> Self {
         unsafe {
+            use crate::simd::Shuffle;
             use std::arch::x86_64::*;
 
             let x0: Self = _mm256_permute2x128_si256::<0x00>(self.into(), self.into()).into();
@@ -198,9 +197,31 @@ impl Permute for u8x32 {
 
 impl Permute for u8x16 {
     #[inline(always)]
+    #[cfg(target_feature = "ssse3")]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn permute(self, indices: Self) -> Self {
-        self.shuffle(indices)
+        unsafe {
+            use std::arch::x86_64::*;
+            _mm_shuffle_epi8(self.into(), indices.into()).into()
+        }
+    }
+
+    #[inline(always)]
+    #[cfg(target_feature = "neon")]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn permute(self, indices: Self) -> Self {
+        unsafe {
+            use std::arch::aarch64::*;
+            vqtbl1q_u8(self.into(), indices.into()).into()
+        }
+    }
+
+    #[inline(always)]
+    #[cfg(not(target_feature = "ssse3"))]
+    #[cfg(not(target_feature = "neon"))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn permute(self, indices: Self) -> Self {
+        self.swizzle_dyn(indices)
     }
 }
 

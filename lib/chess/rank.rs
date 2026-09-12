@@ -1,5 +1,5 @@
 use crate::chess::{Bitboard, File, Flip, Transpose};
-use crate::util::{Assume, Int, Num};
+use crate::util::{Assume, Int, Niched, Num};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::ops::{Index, IndexMut};
@@ -29,7 +29,12 @@ const unsafe impl Num for Rank {
 
 const unsafe impl Int for Rank {}
 
+const unsafe impl Niched for Rank {}
+
 const impl Rank {
+    #[expect(dead_code)]
+    const REQUIRES: () = const { assert!(size_of::<Self>() == size_of::<Option<Self>>()) };
+
     pub const LEN: usize = Self::MAX as usize + 1;
 
     /// Returns a [`Bitboard`] that only contains this rank.
@@ -66,33 +71,6 @@ const impl Sub for Rank {
     }
 }
 
-impl Display for Rank {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_char((b'1' + self.cast::<u8>()).into())
-    }
-}
-
-/// The reason why parsing [`Rank`] failed.
-#[derive(Debug, Display, Copy, Error)]
-#[derive_const(Default, Clone, PartialEq, Eq)]
-#[display("failed to parse rank")]
-pub struct ParseRankError;
-
-const impl FromStr for Rank {
-    type Err = ParseRankError;
-
-    #[inline(always)]
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let [c] = s.as_bytes() else {
-            return Err(ParseRankError);
-        };
-
-        c.checked_sub(b'1')
-            .and_then(Num::convert)
-            .ok_or(ParseRankError)
-    }
-}
-
 const impl<T> Index<Rank> for [T; Rank::LEN] {
     type Output = T;
 
@@ -109,17 +87,37 @@ const impl<T> IndexMut<Rank> for [T; Rank::LEN] {
     }
 }
 
+impl Display for Rank {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_char((b'1' + self.cast::<u8>()).into())
+    }
+}
+
+/// The reason why parsing [`Rank`] failed.
+#[derive(Debug, Display, Copy, Error)]
+#[derive_const(Default, Clone, PartialEq, Eq)]
+#[display("failed to parse rank")]
+pub struct ParseRankError;
+
+impl FromStr for Rank {
+    type Err = ParseRankError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let [b] = s.as_bytes() else {
+            return Err(ParseRankError);
+        };
+
+        b.checked_sub(b'1')
+            .and_then(Num::convert)
+            .ok_or(ParseRankError)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::chess::Square;
     use test_strategy::proptest;
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn rank_guarantees_zero_value_optimization() {
-        assert_eq!(size_of::<Option<Rank>>(), size_of::<Rank>());
-    }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]

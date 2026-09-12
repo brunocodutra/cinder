@@ -1,6 +1,6 @@
 use crate::chess::{Bitboard, Color, Flip, Perspective, Rank, Role, Square};
 use crate::simd::*;
-use crate::util::{Assume, Binary, Bits, Int, Num};
+use crate::util::{Assume, Binary, Bits, Int, Niched, Num};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::ops::{Index, IndexMut};
@@ -34,41 +34,50 @@ const unsafe impl Num for Piece {
 
 const unsafe impl Int for Piece {}
 
+const unsafe impl Niched for Piece {}
+
 const impl Piece {
+    #[expect(dead_code)]
+    const REQUIRES: () = const { assert!(size_of::<Self>() == size_of::<Option<Self>>()) };
+
     pub const LEN: usize = Self::MAX as usize + 1;
 
-    pub const ENCODER: u8x16 = const {
-        let mut encoded = [0u8; 16];
-        encoded[Piece::WhiteKing.cast::<usize>()] = 0b0001;
-        encoded[Piece::WhitePawn.cast::<usize>()] = 0b0010;
-        encoded[Piece::WhiteKnight.cast::<usize>()] = 0b0011;
-        encoded[Piece::WhiteBishop.cast::<usize>()] = 0b0101;
-        encoded[Piece::WhiteRook.cast::<usize>()] = 0b0110;
-        encoded[Piece::WhiteQueen.cast::<usize>()] = 0b0111;
-        encoded[Piece::BlackKing.cast::<usize>()] = 0b1001;
-        encoded[Piece::BlackPawn.cast::<usize>()] = 0b1010;
-        encoded[Piece::BlackKnight.cast::<usize>()] = 0b1011;
-        encoded[Piece::BlackBishop.cast::<usize>()] = 0b1101;
-        encoded[Piece::BlackRook.cast::<usize>()] = 0b1110;
-        encoded[Piece::BlackQueen.cast::<usize>()] = 0b1111;
-        u8x16::from_array(encoded)
+    pub const ENCODER: u8x64 = const {
+        let mut encoder = [0xFF; 16];
+
+        use Piece::*;
+        encoder[WhitePawn as usize] = Role::ENCODER.as_array()[Role::Pawn as usize];
+        encoder[WhiteKnight as usize] = Role::ENCODER.as_array()[Role::Knight as usize];
+        encoder[WhiteBishop as usize] = Role::ENCODER.as_array()[Role::Bishop as usize];
+        encoder[WhiteRook as usize] = Role::ENCODER.as_array()[Role::Rook as usize];
+        encoder[WhiteQueen as usize] = Role::ENCODER.as_array()[Role::Queen as usize];
+        encoder[WhiteKing as usize] = Role::ENCODER.as_array()[Role::King as usize];
+        encoder[BlackPawn as usize] = Role::ENCODER.as_array()[Role::Pawn as usize] | 0b1000;
+        encoder[BlackKnight as usize] = Role::ENCODER.as_array()[Role::Knight as usize] | 0b1000;
+        encoder[BlackBishop as usize] = Role::ENCODER.as_array()[Role::Bishop as usize] | 0b1000;
+        encoder[BlackRook as usize] = Role::ENCODER.as_array()[Role::Rook as usize] | 0b1000;
+        encoder[BlackQueen as usize] = Role::ENCODER.as_array()[Role::Queen as usize] | 0b1000;
+        encoder[BlackKing as usize] = Role::ENCODER.as_array()[Role::King as usize] | 0b1000;
+        Aligned([encoder; 4]).cast()
     };
 
-    pub const DECODER: u8x16 = const {
-        let mut encoded = [0u8; 16];
-        encoded[0b0001] = Piece::WhiteKing.get();
-        encoded[0b0010] = Piece::WhitePawn.get();
-        encoded[0b0011] = Piece::WhiteKnight.get();
-        encoded[0b0101] = Piece::WhiteBishop.get();
-        encoded[0b0110] = Piece::WhiteRook.get();
-        encoded[0b0111] = Piece::WhiteQueen.get();
-        encoded[0b1001] = Piece::BlackKing.get();
-        encoded[0b1010] = Piece::BlackPawn.get();
-        encoded[0b1011] = Piece::BlackKnight.get();
-        encoded[0b1101] = Piece::BlackBishop.get();
-        encoded[0b1110] = Piece::BlackRook.get();
-        encoded[0b1111] = Piece::BlackQueen.get();
-        u8x16::from_array(encoded)
+    pub const DECODER: u8x64 = const {
+        let mut decoder = [0xFF; 16];
+
+        use Piece::*;
+        decoder[Piece::ENCODER.as_array()[WhitePawn as usize] as usize] = WhitePawn.get();
+        decoder[Piece::ENCODER.as_array()[WhiteKnight as usize] as usize] = WhiteKnight.get();
+        decoder[Piece::ENCODER.as_array()[WhiteBishop as usize] as usize] = WhiteBishop.get();
+        decoder[Piece::ENCODER.as_array()[WhiteRook as usize] as usize] = WhiteRook.get();
+        decoder[Piece::ENCODER.as_array()[WhiteQueen as usize] as usize] = WhiteQueen.get();
+        decoder[Piece::ENCODER.as_array()[WhiteKing as usize] as usize] = WhiteKing.get();
+        decoder[Piece::ENCODER.as_array()[BlackPawn as usize] as usize] = BlackPawn.get();
+        decoder[Piece::ENCODER.as_array()[BlackKnight as usize] as usize] = BlackKnight.get();
+        decoder[Piece::ENCODER.as_array()[BlackBishop as usize] as usize] = BlackBishop.get();
+        decoder[Piece::ENCODER.as_array()[BlackRook as usize] as usize] = BlackRook.get();
+        decoder[Piece::ENCODER.as_array()[BlackQueen as usize] as usize] = BlackQueen.get();
+        decoder[Piece::ENCODER.as_array()[BlackKing as usize] as usize] = BlackKing.get();
+        Aligned([decoder; 4]).cast()
     };
 
     /// Constructs [`Piece`] from a pair of [`Color`] and [`Role`].
@@ -89,18 +98,27 @@ const impl Piece {
         Num::new(self.get() & 0b1)
     }
 
+    /// This piece's representation in ASCII.
+    #[inline(always)]
+    pub fn to_ascii(self) -> u8 {
+        match self.color() {
+            Color::White => self.role().to_ascii().to_ascii_uppercase(),
+            Color::Black => self.role().to_ascii(),
+        }
+    }
+
     /// A [`Bitboard`] for this piece's attack pattern from a [`Square`].
     #[inline(always)]
     pub fn attacks(self, sq: Square) -> Bitboard {
-        const ATTACKS: [[Bitboard; Square::MAX as usize + 1]; 7] = const {
-            let mut table = [[Bitboard::empty(); 64]; 7];
+        const ATTACKS: [[Bitboard; Square::LEN]; 7] = const {
+            let mut table = [[Bitboard::empty(); Square::LEN]; 7];
 
             for color in Color::iter() {
                 for wc in Square::iter() {
                     if (Rank::Second..=Rank::Seventh).contains(&wc.rank()) {
                         let steps = [(-1, 1), (1, 1)];
                         let moves = Bitboard::fill(wc.perspective(color), &steps, Bitboard::full());
-                        table[color as usize][wc as usize] |= moves.perspective(color).without(wc);
+                        table[color as usize][wc] |= moves.perspective(color).without(wc);
                     }
                 }
             }
@@ -109,30 +127,30 @@ const impl Piece {
                 #[rustfmt::skip]
                 let steps = [(1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)];
                 let moves = Bitboard::fill(wc, &steps, Bitboard::full()).without(wc);
-                table[Role::Knight as usize + 1][wc as usize] |= moves;
+                table[Role::Knight as usize + 1][wc] |= moves;
             }
 
             for wc in Square::iter() {
                 #[rustfmt::skip]
                 let steps = [(1, 1), (1, -1), (-1, -1), (-1, 1)];
                 let moves = Bitboard::fill(wc, &steps, Bitboard::empty()).without(wc);
-                table[Role::Bishop as usize + 1][wc as usize] |= moves;
-                table[Role::Queen as usize + 1][wc as usize] |= moves;
+                table[Role::Bishop as usize + 1][wc] |= moves;
+                table[Role::Queen as usize + 1][wc] |= moves;
             }
 
             for wc in Square::iter() {
                 #[rustfmt::skip]
                 let steps = [(0, 1), (1, 0), (0, -1), (-1, 0)];
                 let moves = Bitboard::fill(wc, &steps, Bitboard::empty()).without(wc);
-                table[Role::Rook as usize + 1][wc as usize] |= moves;
-                table[Role::Queen as usize + 1][wc as usize] |= moves;
+                table[Role::Rook as usize + 1][wc] |= moves;
+                table[Role::Queen as usize + 1][wc] |= moves;
             }
 
             for wc in Square::iter() {
                 #[rustfmt::skip]
                 let steps = [(0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)];
                 let moves = Bitboard::fill(wc, &steps, Bitboard::full()).without(wc);
-                table[Role::King as usize + 1][wc as usize] |= moves;
+                table[Role::King as usize + 1][wc] |= moves;
             }
 
             table
@@ -170,54 +188,6 @@ const impl Binary for Piece {
     }
 }
 
-impl Display for Piece {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Piece::WhitePawn => f.write_char('P'),
-            Piece::BlackPawn => f.write_char('p'),
-            Piece::WhiteKnight => f.write_char('N'),
-            Piece::BlackKnight => f.write_char('n'),
-            Piece::WhiteBishop => f.write_char('B'),
-            Piece::BlackBishop => f.write_char('b'),
-            Piece::WhiteRook => f.write_char('R'),
-            Piece::BlackRook => f.write_char('r'),
-            Piece::WhiteQueen => f.write_char('Q'),
-            Piece::BlackQueen => f.write_char('q'),
-            Piece::WhiteKing => f.write_char('K'),
-            Piece::BlackKing => f.write_char('k'),
-        }
-    }
-}
-
-/// The reason why parsing [`Piece`] failed.
-#[derive(Debug, Display, Copy, Error)]
-#[derive_const(Default, Clone, PartialEq, Eq)]
-#[display("failed to parse piece")]
-pub struct ParsePieceError;
-
-const impl FromStr for Piece {
-    type Err = ParsePieceError;
-
-    #[inline(always)]
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "P" => Ok(Piece::WhitePawn),
-            "p" => Ok(Piece::BlackPawn),
-            "N" => Ok(Piece::WhiteKnight),
-            "n" => Ok(Piece::BlackKnight),
-            "B" => Ok(Piece::WhiteBishop),
-            "b" => Ok(Piece::BlackBishop),
-            "R" => Ok(Piece::WhiteRook),
-            "r" => Ok(Piece::BlackRook),
-            "Q" => Ok(Piece::WhiteQueen),
-            "q" => Ok(Piece::BlackQueen),
-            "K" => Ok(Piece::WhiteKing),
-            "k" => Ok(Piece::BlackKing),
-            _ => Err(ParsePieceError),
-        }
-    }
-}
-
 const impl<T> Index<Piece> for [T; Piece::LEN] {
     type Output = T;
 
@@ -234,16 +204,39 @@ const impl<T> IndexMut<Piece> for [T; Piece::LEN] {
     }
 }
 
+impl Display for Piece {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_char(self.to_ascii() as char)
+    }
+}
+
+/// The reason why parsing [`Piece`] failed.
+#[derive(Debug, Display, Copy, Error)]
+#[derive_const(Default, Clone, PartialEq, Eq)]
+#[display("failed to parse piece")]
+pub struct ParsePieceError;
+
+impl FromStr for Piece {
+    type Err = ParsePieceError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let &[b] = s.as_bytes() else {
+            return Err(ParsePieceError);
+        };
+
+        let s = [b.to_ascii_lowercase()];
+        let Ok(r) = str::from_utf8(&s).assume().parse::<Role>() else {
+            return Err(ParsePieceError);
+        };
+
+        Ok(Piece::new(r, Color::from(b.is_ascii_lowercase())))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use test_strategy::proptest;
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn piece_guarantees_zero_value_optimization() {
-        assert_eq!(size_of::<Option<Piece>>(), size_of::<Piece>());
-    }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]

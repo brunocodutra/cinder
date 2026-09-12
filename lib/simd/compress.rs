@@ -13,6 +13,36 @@ pub trait Compress: SimdUint {
     fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]);
 }
 
+impl Compress for u16x64 {
+    type Bitmask = u64;
+
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress(self, indices: Self::Bitmask) -> Self {
+        fallback_compress(self, indices)
+    }
+
+    #[inline(always)]
+    #[cfg(target_feature = "avx512vbmi2")]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
+        use crate::{simd::Halve, util::Assume};
+        (slice.len() >= Self::LEN).assume();
+        let [x0, x1] = self.halve();
+        let i0 = indices as u32;
+        let i1 = (indices >> 32) as u32;
+        x0.compress_store(i0, slice);
+        x1.compress_store(i1, &mut slice[i0.count_ones() as usize..]);
+    }
+
+    #[inline(always)]
+    #[cfg(not(target_feature = "avx512vbmi2"))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
+        fallback_compress_store(self, indices, slice);
+    }
+}
+
 impl Compress for u8x64 {
     type Bitmask = u64;
 
@@ -124,63 +154,27 @@ impl Compress for u16x16 {
     }
 }
 
-impl Compress for u16x8 {
-    type Bitmask = u8;
-
-    #[inline(always)]
-    #[cfg(target_feature = "avx512vbmi2")]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn compress(self, indices: Self::Bitmask) -> Self {
-        unsafe {
-            use std::arch::x86_64::*;
-            _mm_maskz_compress_epi16(indices, self.into()).into()
-        }
-    }
-
-    #[inline(always)]
-    #[cfg(not(target_feature = "avx512vbmi2"))]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn compress(self, indices: Self::Bitmask) -> Self {
-        fallback_compress(self, indices)
-    }
-
-    #[inline(always)]
-    #[cfg(target_feature = "avx512vbmi2")]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
-        use crate::util::Assume;
-        (slice.len() >= Self::LEN).assume();
-        self.compress(indices).copy_to_slice(slice);
-    }
-
-    #[inline(always)]
-    #[cfg(not(target_feature = "avx512vbmi2"))]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
-        fallback_compress_store(self, indices, slice);
-    }
-}
-
 #[allow(unused)]
 #[inline(always)]
 #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-fn fallback_compress<T: SimdElement + Zeroable, U: Unsigned, const N: usize>(
-    w: Simd<T, N>,
-    indices: U,
-) -> Simd<T, N> {
+fn fallback_compress<T, U, const N: usize>(w: Simd<T, N>, indices: U) -> Simd<T, N>
+where
+    T: SimdElement + Zeroable,
+    Simd<T, N>: SimdUint<Scalar = T> + Compress<Bitmask = U>,
+{
     let mut compressed: [T; N] = zeroed();
-    fallback_compress_store(w, indices, &mut compressed);
+    w.compress_store(indices, &mut compressed);
     Simd::from_array(compressed)
 }
 
 #[allow(unused)]
 #[inline(always)]
 #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-fn fallback_compress_store<T: SimdElement, U: Unsigned, const N: usize>(
-    w: Simd<T, N>,
-    mut indices: U,
-    slice: &mut [T],
-) {
+fn fallback_compress_store<T, U, const N: usize>(w: Simd<T, N>, mut indices: U, slice: &mut [T])
+where
+    T: SimdElement,
+    U: Unsigned,
+{
     let src = w.to_array();
     let dst = slice.as_mut_ptr();
 
@@ -198,6 +192,23 @@ mod tests {
     use super::*;
     use proptest::{array::UniformArrayStrategy, prelude::Strategy};
     use test_strategy::proptest;
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn for_u16x64(
+        #[strategy(UniformArrayStrategy::new(0u16..).prop_map(u16x64::from_array))] w: u16x64,
+        m: u64,
+    ) {
+        assert_eq!(w.compress(m), fallback_compress(w, m));
+
+        let mut a = [0; 64];
+        w.compress_store(m, &mut a);
+
+        let mut b = [0; 64];
+        fallback_compress_store(w, m, &mut b);
+
+        assert_eq!(a, b);
+    }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
@@ -245,23 +256,6 @@ mod tests {
         w.compress_store(m, &mut a);
 
         let mut b = [0; 16];
-        fallback_compress_store(w, m, &mut b);
-
-        assert_eq!(a, b);
-    }
-
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
-    fn for_u16x8(
-        #[strategy(UniformArrayStrategy::new(0u16..).prop_map(u16x8::from_array))] w: u16x8,
-        m: u8,
-    ) {
-        assert_eq!(w.compress(m), fallback_compress(w, m));
-
-        let mut a = [0; 8];
-        w.compress_store(m, &mut a);
-
-        let mut b = [0; 8];
         fallback_compress_store(w, m, &mut b);
 
         assert_eq!(a, b);

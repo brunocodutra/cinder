@@ -1,5 +1,5 @@
 use crate::chess::{Color, Flip, Perspective, Piece, Role};
-use crate::util::Int;
+use crate::util::{Int, Num};
 use derive_more::with_trait::{Debug, Deref, Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::{iter::repeat_n, str::FromStr};
@@ -60,10 +60,7 @@ impl Material {
 
     #[inline(always)]
     pub fn iter(self) -> impl Iterator<Item = Piece> {
-        Color::iter().zip(self.0).flat_map(|(c, s)| {
-            let pieces = move |(r, n)| repeat_n(Piece::new(r, c), n as usize);
-            Role::iter().zip(s).flat_map(pieces)
-        })
+        Piece::iter().flat_map(move |p| repeat_n(p, self.0[p.color()][p.role()].cast()))
     }
 }
 
@@ -112,7 +109,6 @@ pub struct ParseMaterialError;
 impl FromStr for Material {
     type Err = ParseMaterialError;
 
-    #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut material = Material::default();
         let (left, right) = s.split_once('v').ok_or(ParseMaterialError)?;

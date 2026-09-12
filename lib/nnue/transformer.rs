@@ -31,11 +31,11 @@ impl Transformer {
         &self,
         src: &Aligned<[i16; N]>,
         dst: &mut Aligned<[i16; N]>,
-        sub: [Option<KAFeature>; 2],
-        add: [Option<KAFeature>; 2],
+        sub: &[KAFeature],
+        add: &[KAFeature],
     ) {
         match (sub, add) {
-            ([Some(s1), None], [Some(a1), None]) => {
+            ([s1], [a1]) => {
                 let s1 = self.ka.get(s1.cast::<usize>()).assume();
                 let a1 = self.ka.get(a1.cast::<usize>()).assume();
 
@@ -44,7 +44,7 @@ impl Transformer {
                 }
             }
 
-            ([Some(s1), Some(s2)], [Some(a1), None]) => {
+            ([s1, s2], [a1]) => {
                 let s1 = self.ka.get(s1.cast::<usize>()).assume();
                 let s2 = self.ka.get(s2.cast::<usize>()).assume();
                 let a1 = self.ka.get(a1.cast::<usize>()).assume();
@@ -54,7 +54,7 @@ impl Transformer {
                 }
             }
 
-            ([Some(s1), Some(s2)], [Some(a1), Some(a2)]) => {
+            ([s1, s2], [a1, a2]) => {
                 let s1 = self.ka.get(s1.cast::<usize>()).assume();
                 let s2 = self.ka.get(s2.cast::<usize>()).assume();
                 let a1 = self.ka.get(a1.cast::<usize>()).assume();

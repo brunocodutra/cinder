@@ -82,7 +82,6 @@ pub struct ParseHashSizeError;
 impl FromStr for HashSize {
     type Err = ParseHashSizeError;
 
-    #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<<Self as Num>::Repr>()
             .ok()
@@ -151,7 +150,6 @@ pub struct ParseThreadCountError;
 impl FromStr for ThreadCount {
     type Err = ParseThreadCountError;
 
-    #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<<Self as Num>::Repr>()
             .ok()
@@ -219,7 +217,6 @@ pub struct ParseMoveOverheadError;
 impl FromStr for MoveOverhead {
     type Err = ParseMoveOverheadError;
 
-    #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<<Self as Num>::Repr>()
             .ok()
@@ -261,7 +258,6 @@ pub struct ParseSyzygyPathError;
 impl FromStr for SyzygyPath {
     type Err = ParseSyzygyPathError;
 
-    #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(SyzygyPath(HashSet::from_iter(
             s.split(Self::PATH_DELIMITER).filter_map(|s| {

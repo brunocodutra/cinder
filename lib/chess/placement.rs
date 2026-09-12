@@ -1,10 +1,10 @@
-use crate::chess::{Color, Furl, Piece, Rays, Role, Square, Unfurl};
+use crate::chess::{Color, Furl, Idx, IdxSet, Piece, Rays, Role, Square, Unfurl};
 use crate::simd::*;
 use crate::util::{Assume, Binary, Bits, Int, Num};
-use bytemuck::{NoUninit, Pod, Zeroable, zeroed};
-use derive_more::with_trait::{Debug, Deref, DerefMut, Display, IntoIterator};
+use bytemuck::{NoUninit, Zeroable, zeroed};
+use derive_more::with_trait::{Debug, Deref, DerefMut, IntoIterator};
 use std::hash::{Hash, Hasher};
-use std::{iter::FusedIterator, mem::transmute_copy, ops::*};
+use std::{mem::transmute_copy, ops::*};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -25,6 +25,12 @@ impl Arbitrary for Place {
             .prop_map(|(p, idx)| Place::new(p, idx))
             .boxed()
     }
+}
+
+const unsafe impl Num for Place {
+    type Repr = u8;
+    const MIN: Self::Repr = u8::MIN;
+    const MAX: Self::Repr = u8::MAX;
 }
 
 const impl Place {
@@ -102,399 +108,13 @@ const impl Binary for Place {
     }
 }
 
-/// A numeric identifier for a piece on the board, or none.
-#[derive(Debug, Copy, Hash, Zeroable, NoUninit)]
-#[derive_const(Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(test, derive(test_strategy::Arbitrary))]
-#[repr(transparent)]
-pub struct Idx(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Idx as Num>::Repr);
-
-const unsafe impl Num for Idx {
-    type Repr = u8;
-    const MIN: Self::Repr = 0;
-    const MAX: Self::Repr = 15;
-}
-
-const unsafe impl Int for Idx {}
-
-const impl Idx {
-    pub const LEN: usize = Self::MAX as usize + 1;
-
-    pub const KING: Self = zeroed();
-
-    /// This index's [`IdxSet`].
-    #[inline(always)]
-    pub fn to_set(self) -> IdxSet {
-        IdxSet::new(1 << self.0)
-    }
-}
-
-const impl Binary for Idx {
-    type Bits = Bits<u8, 4>;
-
-    #[inline(always)]
-    fn encode(&self) -> Self::Bits {
-        self.convert().assume()
-    }
-
-    #[inline(always)]
-    fn decode(bits: Self::Bits) -> Self {
-        bits.convert().assume()
-    }
-}
-
-const impl<T> Index<Idx> for [T; Idx::LEN] {
-    type Output = T;
-
-    #[inline(always)]
-    fn index(&self, idx: Idx) -> &Self::Output {
-        self.get(idx.cast::<usize>()).assume()
-    }
-}
-
-const impl<T> IndexMut<Idx> for [T; Idx::LEN] {
-    #[inline(always)]
-    fn index_mut(&mut self, idx: Idx) -> &mut Self::Output {
-        self.get_mut(idx.cast::<usize>()).assume()
-    }
-}
-
-/// A set of [`Idx`]s.
-#[derive(Debug, Display, Copy, Hash, Zeroable, Pod)]
-#[derive_const(Default, Clone, PartialEq, Eq)]
-#[cfg_attr(test, derive(test_strategy::Arbitrary))]
-#[debug("IdxSet({self})")]
-#[display("{_0:016b}")]
-#[repr(transparent)]
-pub struct IdxSet(pub <IdxSet as Num>::Repr);
-
-const unsafe impl Num for IdxSet {
-    type Repr = u16;
-    const MIN: Self::Repr = u16::MIN;
-    const MAX: Self::Repr = u16::MAX;
-}
-
-const unsafe impl Int for IdxSet {}
-
-const impl IdxSet {
-    /// An empty set of [`Place`]s.
-    #[inline(always)]
-    pub fn empty() -> Self {
-        zeroed()
-    }
-
-    /// The number of [`Place`]s in the set.
-    #[inline(always)]
-    pub fn len(self) -> usize {
-        self.0.count_ones().cast::<usize>()
-    }
-
-    /// Whether the set is empty.
-    #[inline(always)]
-    pub fn is_empty(self) -> bool {
-        self == Self::empty()
-    }
-
-    /// Whether this [`Idx`] is in the set.
-    #[inline(always)]
-    pub fn contains(self, idx: Idx) -> bool {
-        self & idx.to_set() != zeroed()
-    }
-
-    /// An iterator over the [`Idx`]s in this set.
-    #[inline(always)]
-    pub fn iter(self) -> Indices {
-        Indices(self)
-    }
-}
-
-const impl Deref for IdxSet {
-    type Target = u16;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-const impl Not for IdxSet {
-    type Output = Self;
-
-    #[inline(always)]
-    fn not(self) -> Self::Output {
-        Self(self.0.not())
-    }
-}
-
-const impl BitAnd for IdxSet {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitand(self, rhs: Self) -> Self::Output {
-        self.bitand(rhs.0)
-    }
-}
-
-const impl BitAnd<u16> for IdxSet {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitand(self, rhs: u16) -> Self::Output {
-        Self(self.0.bitand(rhs))
-    }
-}
-
-impl<T: MaskElement> BitAnd<M<T, 16>> for IdxSet {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitand(self, rhs: M<T, 16>) -> Self::Output {
-        Self(self.0.bitand(rhs.to_bitmask() as u16))
-    }
-}
-
-impl<T: MaskElement> BitAnd<Mask<T, 16>> for IdxSet {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitand(self, rhs: Mask<T, 16>) -> Self::Output {
-        Self(self.0.bitand(rhs.to_bitmask() as u16))
-    }
-}
-
-const impl BitAndAssign for IdxSet {
-    #[inline(always)]
-    fn bitand_assign(&mut self, rhs: Self) {
-        self.bitand_assign(rhs.0);
-    }
-}
-
-const impl BitAndAssign<u16> for IdxSet {
-    #[inline(always)]
-    fn bitand_assign(&mut self, rhs: u16) {
-        self.0.bitand_assign(rhs);
-    }
-}
-
-impl<T: MaskElement> BitAndAssign<M<T, 16>> for IdxSet {
-    #[inline(always)]
-    fn bitand_assign(&mut self, rhs: M<T, 16>) {
-        self.0.bitand_assign(rhs.to_bitmask() as u16);
-    }
-}
-
-impl<T: MaskElement> BitAndAssign<Mask<T, 16>> for IdxSet {
-    #[inline(always)]
-    fn bitand_assign(&mut self, rhs: Mask<T, 16>) {
-        self.0.bitand_assign(rhs.to_bitmask() as u16);
-    }
-}
-
-const impl BitOr for IdxSet {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitor(self, rhs: Self) -> Self::Output {
-        self.bitor(rhs.0)
-    }
-}
-
-const impl BitOr<u16> for IdxSet {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitor(self, rhs: u16) -> Self::Output {
-        Self(self.0.bitor(rhs))
-    }
-}
-
-impl<T: MaskElement> BitOr<M<T, 16>> for IdxSet {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitor(self, rhs: M<T, 16>) -> Self::Output {
-        Self(self.0.bitor(rhs.to_bitmask() as u16))
-    }
-}
-
-impl<T: MaskElement> BitOr<Mask<T, 16>> for IdxSet {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitor(self, rhs: Mask<T, 16>) -> Self::Output {
-        Self(self.0.bitor(rhs.to_bitmask() as u16))
-    }
-}
-
-const impl BitOrAssign for IdxSet {
-    #[inline(always)]
-    fn bitor_assign(&mut self, rhs: Self) {
-        self.bitor_assign(rhs.0);
-    }
-}
-
-const impl BitOrAssign<u16> for IdxSet {
-    #[inline(always)]
-    fn bitor_assign(&mut self, rhs: u16) {
-        self.0.bitor_assign(rhs);
-    }
-}
-
-impl<T: MaskElement> BitOrAssign<M<T, 16>> for IdxSet {
-    #[inline(always)]
-    fn bitor_assign(&mut self, rhs: M<T, 16>) {
-        self.0.bitor_assign(rhs.to_bitmask() as u16);
-    }
-}
-
-impl<T: MaskElement> BitOrAssign<Mask<T, 16>> for IdxSet {
-    #[inline(always)]
-    fn bitor_assign(&mut self, rhs: Mask<T, 16>) {
-        self.0.bitor_assign(rhs.to_bitmask() as u16);
-    }
-}
-
-const impl BitXor for IdxSet {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitxor(self, rhs: Self) -> Self::Output {
-        self.bitxor(rhs.0)
-    }
-}
-
-const impl BitXor<u16> for IdxSet {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitxor(self, rhs: u16) -> Self::Output {
-        Self(self.0.bitxor(rhs))
-    }
-}
-
-impl<T: MaskElement> BitXor<M<T, 16>> for IdxSet {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitxor(self, rhs: M<T, 16>) -> Self::Output {
-        Self(self.0.bitxor(rhs.to_bitmask() as u16))
-    }
-}
-
-impl<T: MaskElement> BitXor<Mask<T, 16>> for IdxSet {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitxor(self, rhs: Mask<T, 16>) -> Self::Output {
-        Self(self.0.bitxor(rhs.to_bitmask() as u16))
-    }
-}
-
-const impl BitXorAssign for IdxSet {
-    #[inline(always)]
-    fn bitxor_assign(&mut self, rhs: Self) {
-        self.bitxor_assign(rhs.0);
-    }
-}
-
-const impl BitXorAssign<u16> for IdxSet {
-    #[inline(always)]
-    fn bitxor_assign(&mut self, rhs: u16) {
-        self.0.bitxor_assign(rhs);
-    }
-}
-
-impl<T: MaskElement> BitXorAssign<M<T, 16>> for IdxSet {
-    #[inline(always)]
-    fn bitxor_assign(&mut self, rhs: M<T, 16>) {
-        self.0.bitxor_assign(rhs.to_bitmask() as u16);
-    }
-}
-
-impl<T: MaskElement> BitXorAssign<Mask<T, 16>> for IdxSet {
-    #[inline(always)]
-    fn bitxor_assign(&mut self, rhs: Mask<T, 16>) {
-        self.0.bitxor_assign(rhs.to_bitmask() as u16);
-    }
-}
-
-impl<T: MaskElement> From<M<T, 16>> for IdxSet {
-    #[inline(always)]
-    fn from(mask: M<T, 16>) -> Self {
-        IdxSet(mask.to_bitmask() as u16)
-    }
-}
-
-#[cfg(target_feature = "avx512f")]
-impl<T: MaskElement> From<IdxSet> for M<T, 16> {
-    #[inline(always)]
-    fn from(indices: IdxSet) -> Self {
-        M::from_bitmask(indices.0 as u64)
-    }
-}
-
-const impl IntoIterator for IdxSet {
-    type Item = Idx;
-    type IntoIter = Indices;
-
-    #[inline(always)]
-    fn into_iter(self) -> Self::IntoIter {
-        Indices(self)
-    }
-}
-
-/// An iterator over the [`Idx`]s in an [`IdxSet`].
-#[derive(Debug)]
-pub struct Indices(IdxSet);
-
-const impl Indices {
-    #[inline(always)]
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-const impl Iterator for Indices {
-    type Item = Idx;
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.0.is_empty() {
-            None
-        } else {
-            let idx: Idx = self.0.trailing_zeros().convert().assume();
-            self.0 ^= idx.to_set();
-            Some(idx)
-        }
-    }
-
-    #[inline(always)]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.len();
-        (len, Some(len))
-    }
-}
-
-impl ExactSizeIterator for Indices {
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.len()
-    }
-}
-
-impl FusedIterator for Indices {}
-
 /// The arrangement of [`Places`]s on the [`Board`].
-#[derive(Debug, Clone, Copy, Eq, Zeroable, Deref, DerefMut)]
+#[derive(Debug, Clone, Copy, Eq, Zeroable, Deref, DerefMut, IntoIterator)]
 #[repr(transparent)]
 pub struct Placement(
     #[deref(forward)]
     #[deref_mut(forward)]
+    #[into_iterator(owned, ref, ref_mut)]
     Aligned<[Place; Square::LEN]>,
 );
 
@@ -528,25 +148,18 @@ impl Placement {
         Self(Aligned(places))
     }
 
-    /// The placement by [`Color`].
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn colors(&self) -> u8x64 {
-        self.to_simd() & Simd::splat(Place::COLOR_MASK)
-    }
-
     /// The placement by [`Role`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn roles(&self) -> u8x64 {
-        self.to_simd() & Simd::splat(Place::ROLE_MASK)
+        (self.to_simd() & Simd::splat(Place::ROLE_MASK)) >> Place::ROLE_MASK.trailing_zeros() as u8
     }
 
     /// The placement by [`Piece`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn pieces(&self) -> u8x64 {
-        self.to_simd() & Simd::splat(Place::PIECE_MASK)
+        self.to_simd() >> Place::PIECE_MASK.trailing_zeros() as u8
     }
 
     /// The placement by [`Idx`].
@@ -567,7 +180,7 @@ impl Placement {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn vacant(&self) -> M8x64 {
-        !self.occupied()
+        self.to_simd().simd_eq(zeroed()).into()
     }
 
     /// [`Place`]s occupied by [`Piece`]s of a [`Color`].
@@ -586,29 +199,27 @@ impl Placement {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn by_role(&self, r: Role) -> M8x64 {
-        let target = Simd::splat(r.encode().get() << Place::ROLE_MASK.trailing_zeros());
-        self.roles().simd_eq(target).into()
+        self.roles().simd_eq(Simd::splat(r.encode().get())).into()
     }
 
     /// [`Place`]s occupied by a [`Piece`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn by_piece(&self, p: Piece) -> M8x64 {
-        let target = Simd::splat(p.encode().get() << Place::PIECE_MASK.trailing_zeros());
-        self.pieces().simd_eq(target).into()
+        self.pieces().simd_eq(Simd::splat(p.encode().get())).into()
     }
 
     /// Masks this placement.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn mask(&self, mask: M8x64) -> Self {
+    pub fn mask<I: MaskElement>(&self, mask: M<I, 64>) -> Self {
         Self::from_simd(mask.select(self.to_simd(), zeroed()))
     }
 
     /// Blends a value into this placement.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn blend(&self, mask: M8x64, place: Place) -> Self {
+    pub fn blend<I: MaskElement>(&self, mask: M<I, 64>, place: Place) -> Self {
         Self::from_simd(mask.select(Simd::splat(place.get()), self.to_simd()))
     }
 
@@ -618,7 +229,7 @@ impl Placement {
     pub fn set(&mut self, sq: Square, place: Place) {
         #[cfg(target_feature = "avx512f")]
         {
-            *self = self.blend(sq.bitboard().into(), place);
+            *self = self.blend(M8x64::from(sq.bitboard()), place);
         }
 
         #[cfg(not(target_feature = "avx512f"))]
@@ -630,13 +241,13 @@ impl Placement {
     /// Convert places to their corresponding [`IdxSet`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn to_idx_set(&self) -> u16x64 {
+    pub fn to_idx_set(&self) -> Wordboard {
         let indices = self.indices();
 
         #[cfg(target_feature = "avx512f")]
         {
             let ones = self.occupied().select(Simd::splat(1), Simd::splat(0));
-            ones.shlv(indices.cast::<u16>())
+            Wordboard::from_simd(ones.shlv(indices.cast::<u16>()))
         }
 
         #[cfg(not(target_feature = "avx512f"))]
@@ -667,7 +278,7 @@ impl Placement {
 
             let (left, right) = S0.shuffle(indices).interleave(S1.shuffle(indices));
             let indices = transmute_copy::<[u8x64; 2], u16x64>(&[left, right]);
-            self.occupied().select(indices, zeroed())
+            Wordboard::from_simd(indices).mask(self.occupied())
         }
     }
 
@@ -675,7 +286,7 @@ impl Placement {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn to_simd(&self) -> u8x64 {
-        self.0.cast()
+        unsafe { transmute_copy::<Self, u8x64>(self) }
     }
 
     /// Converts from the equivalent simd type.
@@ -683,70 +294,6 @@ impl Placement {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn from_simd(simd: u8x64) -> Self {
         unsafe { transmute_copy::<u8x64, Self>(&simd) }
-    }
-}
-
-impl BitAnd for Placement {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitand(self, rhs: Self) -> Self::Output {
-        self.bitand(rhs.to_simd())
-    }
-}
-
-impl BitAnd<u8x64> for Placement {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitand(self, rhs: u8x64) -> Self::Output {
-        Self::from_simd(self.to_simd().bitand(rhs))
-    }
-}
-
-impl BitAndAssign for Placement {
-    #[inline(always)]
-    fn bitand_assign(&mut self, rhs: Self) {
-        self.bitand_assign(rhs.to_simd());
-    }
-}
-
-impl BitAndAssign<u8x64> for Placement {
-    #[inline(always)]
-    fn bitand_assign(&mut self, rhs: u8x64) {
-        *self = self.bitand(rhs);
-    }
-}
-
-impl BitOr for Placement {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitor(self, rhs: Self) -> Self::Output {
-        self.bitor(rhs.to_simd())
-    }
-}
-
-impl BitOr<u8x64> for Placement {
-    type Output = Self;
-
-    #[inline(always)]
-    fn bitor(self, rhs: u8x64) -> Self::Output {
-        Self::from_simd(self.to_simd().bitor(rhs))
-    }
-}
-
-impl BitOrAssign for Placement {
-    #[inline(always)]
-    fn bitor_assign(&mut self, rhs: Self) {
-        self.bitor_assign(rhs.to_simd());
-    }
-}
-
-impl BitOrAssign<u8x64> for Placement {
-    #[inline(always)]
-    fn bitor_assign(&mut self, rhs: u8x64) {
-        *self = self.bitor(rhs);
     }
 }
 
@@ -761,20 +308,13 @@ impl Furl for Placement {
 }
 
 /// The arrangement of [`Places`]s on the [`Board`] furled in along [`Rays`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Zeroable, Deref, DerefMut)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Zeroable, Deref, DerefMut)]
 #[repr(transparent)]
 pub struct FurledPlacement(
     #[deref]
     #[deref_mut]
     Placement,
 );
-
-impl Default for FurledPlacement {
-    #[inline(always)]
-    fn default() -> Self {
-        zeroed()
-    }
-}
 
 const KING: u8 = 0b0000001;
 const WPAWN: u8 = 0b0000010;
@@ -803,34 +343,6 @@ static ATTACKERS: u8x64 = u8x64::from_array([
 ]);
 
 impl FurledPlacement {
-    /// [`Place`]s along [`Rays`] occupied.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn occupied(&self) -> M8x64 {
-        self.0.occupied()
-    }
-
-    /// [`Place`]s along [`Rays`] occupied by [`Piece`]s of a [`Color`].
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn by_color(&self, c: Color) -> M8x64 {
-        self.0.by_color(c)
-    }
-
-    /// [`Place`]s along [`Rays`] occupied by [`Piece`]s of a [`Role`].
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn by_role(&self, r: Role) -> M8x64 {
-        self.0.by_role(r)
-    }
-
-    /// [`Place`]s occupied by a [`Piece`].
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn by_piece(&self, p: Piece) -> M8x64 {
-        self.0.by_piece(p)
-    }
-
     /// Extends attacks along [`Rays`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -841,22 +353,15 @@ impl FurledPlacement {
     /// Masks [`Place`]s along [`Rays`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn mask(&self, mask: M8x64) -> Self {
-        FurledPlacement(self.0.mask(mask))
+    pub fn mask<I: MaskElement>(&self, mask: M<I, 64>) -> Self {
+        Self(self.0.mask(mask))
     }
 
     /// Splices [`Place`]s along [`Rays`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn blend(&self, mask: M8x64, place: Place) -> Self {
-        FurledPlacement(self.0.blend(mask, place))
-    }
-
-    /// Sets a place.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn set(&mut self, sq: Square, place: Place) {
-        self.0.set(sq, place);
+    pub fn blend<I: MaskElement>(&self, mask: M<I, 64>, place: Place) -> Self {
+        Self(self.0.blend(mask, place))
     }
 
     /// Visible [`Place`]s along [`Rays`].
@@ -984,13 +489,6 @@ impl FurledPlacement {
         }
     }
 
-    /// Converts to the equivalent simd type by copy.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn to_simd(&self) -> u8x64 {
-        self.0.to_simd()
-    }
-
     /// Converts from the equivalent simd type.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -1044,26 +542,46 @@ impl Hash for Wordboard {
 }
 
 impl Wordboard {
+    /// [`Squares`]s that contain any [`Idx`].
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn any(&self) -> M16x64 {
+        self.to_simd().simd_ne(zeroed()).into()
+    }
+
     /// [`Squares`] that contain `mask`.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn matching(&self, mask: IdxSet) -> M16x64 {
-        let masked = self.to_simd().bitand(Simd::splat(*mask));
-        masked.simd_ne(zeroed()).into()
+    pub fn matching(&self, indices: IdxSet) -> M16x64 {
+        self.bitand(Simd::splat(*indices)).any()
     }
 
     /// Masks this vector.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn mask(&self, mask: M16x64) -> Self {
+    pub fn mask<I: MaskElement>(&self, mask: M<I, 64>) -> Self {
         Self::from_simd(mask.select(self.to_simd(), zeroed()))
     }
 
     /// Blends a value into this vector.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn blend(&self, mask: M16x64, indices: IdxSet) -> Self {
+    pub fn blend<I: MaskElement>(&self, mask: M<I, 64>, indices: IdxSet) -> Self {
         Self::from_simd(mask.select(Simd::splat(indices.get()), self.to_simd()))
+    }
+
+    /// Union of all [`IdxSet`].
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn reduce_or(&self) -> IdxSet {
+        IdxSet::new(self.to_simd().reduce_or())
+    }
+
+    /// Intersection of all [`IdxSet`].
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn reduce_and(&self) -> IdxSet {
+        IdxSet::new(self.to_simd().reduce_and())
     }
 
     /// Converts to the equivalent simd type by copy.
@@ -1186,14 +704,12 @@ impl BitXorAssign<u16x64> for Wordboard {
     }
 }
 
-/// Information by each piece on the board by [`Idx`].
-///
-/// Requires `size_of::<T> == size_of::<u8>()`.
+/// An arrangement of items by [`Idx`].
 #[derive(Debug, Default, Clone, Copy, Eq, Deref, DerefMut, IntoIterator)]
 #[repr(transparent)]
-pub struct ByIdx<T: Copy>(#[into_iterator(owned, ref, ref_mut)] [T; Idx::LEN]);
+pub struct ByIdx<T: Num>(#[into_iterator(owned, ref, ref_mut)] [T; Idx::LEN]);
 
-impl<T: Copy + PartialEq> PartialEq for ByIdx<T> {
+impl<T: Num + PartialEq> PartialEq for ByIdx<T> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn eq(&self, other: &Self) -> bool {
@@ -1201,7 +717,7 @@ impl<T: Copy + PartialEq> PartialEq for ByIdx<T> {
     }
 }
 
-impl<T: Copy + Hash> Hash for ByIdx<T> {
+impl<T: Num + Hash> Hash for ByIdx<T> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -1209,12 +725,36 @@ impl<T: Copy + Hash> Hash for ByIdx<T> {
     }
 }
 
-impl<T: Copy> ByIdx<T> {
+impl<T: Num> ByIdx<T> {
+    #[expect(dead_code)]
+    const REQUIRES: () = const { assert!(size_of::<T>() == size_of::<u8>()) };
+
+    /// Blends a value into this arrangement.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn blend<I: MaskElement>(&self, mask: M<I, 16>, item: T) -> Self {
+        Self::from_simd(mask.select(Self([item; _]).to_simd(), self.to_simd()))
+    }
+
+    /// Sets an item.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn set(&mut self, idx: Idx, item: T) {
+        #[cfg(target_feature = "avx512f")]
+        {
+            *self = self.blend(M8x16::from(idx.to_set()), item);
+        }
+
+        #[cfg(not(target_feature = "avx512f"))]
+        {
+            self[idx] = item;
+        }
+    }
+
     /// Converts to the equivalent simd type by copy.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn to_simd(&self) -> u8x16 {
-        const { assert!(size_of::<T>() == size_of::<u8>()) }
         unsafe { transmute_copy::<Self, u8x16>(self) }
     }
 
@@ -1222,18 +762,16 @@ impl<T: Copy> ByIdx<T> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn from_simd(simd: u8x16) -> Self {
-        const { assert!(size_of::<T>() == size_of::<u8>()) }
         unsafe { transmute_copy::<u8x16, Self>(&simd) }
     }
 }
 
-impl<T: Copy + PartialEq> ByIdx<T> {
-    /// Bitmask matching `items`.
+impl<T: Num + PartialEq> ByIdx<T> {
+    /// Bitmask containing `items`.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn matching(&self, item: T) -> M8x16 {
-        let items = Self([item; _]).to_simd();
-        self.to_simd().simd_eq(items).into()
+    pub fn containing(&self, item: T) -> M8x16 {
+        self.to_simd().simd_eq(Self([item; _]).to_simd()).into()
     }
 }
 
@@ -1243,6 +781,9 @@ impl<T: Copy + PartialEq> ByIdx<T> {
 pub struct SquareByIdx(#[into_iterator(owned, ref, ref_mut)] [ByIdx<Option<Square>>; Color::LEN]);
 
 impl SquareByIdx {
+    #[expect(dead_code)]
+    const REQUIRES: () = ByIdx::<Option<Role>>::REQUIRES;
+
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn new(p: &Placement) -> Self {
@@ -1266,6 +807,9 @@ impl SquareByIdx {
 pub struct RoleByIdx(#[into_iterator(owned, ref, ref_mut)] [ByIdx<Option<Role>>; Color::LEN]);
 
 impl RoleByIdx {
+    #[expect(dead_code)]
+    const REQUIRES: () = ByIdx::<Option<Role>>::REQUIRES;
+
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn new(p: &Placement) -> Self {

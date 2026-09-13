@@ -184,7 +184,7 @@ impl<'a> Searcher<'a> {
             value
         });
 
-        let piece_values = f32x8::load_or_default(Params::piece_values(..));
+        let piece_values = f32x8::load_or_default(Params::piece_values_scaling(..));
         let starting_material: f32 = f32x8::from_array([16.0, 4.0, 4.0, 4.0, 2.0, 2.0, 0.0, 0.0])
             .mul(piece_values)
             .reduce_sum();

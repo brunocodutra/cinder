@@ -806,28 +806,26 @@ impl<'a> Searcher<'a> {
                         }
                     }
 
-                    if se_score >= se_beta {
-                        extension = convolve([
-                            (1.0, Params::singular_reduction_scalar(..)),
-                            (is_cut.cast(), Params::singular_reduction_is_cut(..)),
-                            (is_fh.cast(), Params::singular_reduction_is_fh(..)),
-                        ]);
-                    } else {
-                        let gamma = *Params::singular_extension_score(0);
-                        let delta = *Params::singular_extension_score(1);
-                        let diff = se_beta.cast::<f32>() - se_score.cast::<f32>();
-                        extension = diff.powf(delta).mul(gamma).min(convolve([
+                    let gamma = *Params::singular_dominance_model(0);
+                    let delta = *Params::singular_dominance_model(1);
+                    let diff = se_beta.cast::<f32>() - se_score.cast::<f32>();
+                    let dominance = (1.0 + diff.mul_add(gamma, delta).exp()).recip();
+
+                    extension = if se_score < se_beta {
+                        convolve([
                             (1.0, Params::singular_extension_scalar(..)),
                             (is_cut.cast(), Params::singular_extension_is_cut(..)),
                             (is_fh.cast(), Params::singular_extension_is_fh(..)),
                             (is_quiet.cast(), Params::singular_extension_is_quiet(..)),
-                        ]));
-                    }
-
-                    extension = extension.clip(
-                        *Params::singular_extension_limit(0),
-                        *Params::singular_extension_limit(1),
-                    );
+                            (dominance, Params::singular_extension_dominance(..)),
+                        ])
+                    } else {
+                        convolve([
+                            (1.0, Params::singular_reduction_scalar(..)),
+                            (is_cut.cast(), Params::singular_reduction_is_cut(..)),
+                            (is_fh.cast(), Params::singular_reduction_is_fh(..)),
+                        ])
+                    };
                 }
             }
 

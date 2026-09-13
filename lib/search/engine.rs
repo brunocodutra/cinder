@@ -782,15 +782,15 @@ impl<'a> Searcher<'a> {
             let mut extension = 0f32;
             if let Some(t) = transposition {
                 let is_quiet = head.is_quiet();
-                let max_depth = t.depth.cast::<f32>() + Params::singular_depth_bounds(1);
-                let depth_bounds = *Params::singular_depth_bounds(0)..max_depth;
+                let max_depth = t.depth.cast::<f32>() + Params::sext_depth_bounds(1);
+                let depth_bounds = *Params::sext_depth_bounds(0)..max_depth;
                 if !was_all && depth_bounds.contains(&depth) {
-                    let gamma = *Params::singular_depth(0);
-                    let delta = *Params::singular_depth(1);
+                    let gamma = *Params::sext_depth(0);
+                    let delta = *Params::sext_depth(1);
                     let se_depth = gamma.mul_add(depth, delta);
 
-                    let gamma = *Params::singular_margin_depth(0);
-                    let delta = *Params::singular_margin_depth(1);
+                    let gamma = *Params::sext_margin_depth(0);
+                    let delta = *Params::sext_margin_depth(1);
                     let margin = gamma.mul_add(depth, delta);
                     let se_beta = t.score.bound(ply) - margin.cast::<i16>();
 
@@ -806,26 +806,25 @@ impl<'a> Searcher<'a> {
                         }
                     }
 
-                    let gamma = *Params::singular_dominance_model(0);
-                    let delta = *Params::singular_dominance_model(1);
+                    let is_singular = se_score < se_beta;
+                    let is_singular_cut = is_singular && is_cut;
+                    let is_singular_fh = is_singular && is_fh;
+
+                    let gamma = *Params::sext_dominance_model(0);
+                    let delta = *Params::sext_dominance_model(1);
                     let diff = se_beta.cast::<f32>() - se_score.cast::<f32>();
                     let dominance = (1.0 + diff.mul_add(gamma, delta).exp()).recip();
 
-                    extension = if se_score < se_beta {
-                        convolve([
-                            (1.0, Params::singular_extension_scalar(..)),
-                            (is_cut.cast(), Params::singular_extension_is_cut(..)),
-                            (is_fh.cast(), Params::singular_extension_is_fh(..)),
-                            (is_quiet.cast(), Params::singular_extension_is_quiet(..)),
-                            (dominance, Params::singular_extension_dominance(..)),
-                        ])
-                    } else {
-                        convolve([
-                            (1.0, Params::singular_reduction_scalar(..)),
-                            (is_cut.cast(), Params::singular_reduction_is_cut(..)),
-                            (is_fh.cast(), Params::singular_reduction_is_fh(..)),
-                        ])
-                    };
+                    extension = convolve([
+                        (1.0, Params::sext_scalar(..)),
+                        (is_quiet.cast(), Params::sext_is_quiet(..)),
+                        (is_cut.cast(), Params::sext_is_cut(..)),
+                        (is_fh.cast(), Params::sext_is_fh(..)),
+                        (is_singular.cast(), Params::sext_is_singular(..)),
+                        (is_singular_cut.cast(), Params::sext_is_singular_cut(..)),
+                        (is_singular_fh.cast(), Params::sext_is_singular_fh(..)),
+                        (dominance, Params::sext_dominance(..)),
+                    ]);
                 }
             }
 

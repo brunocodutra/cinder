@@ -348,23 +348,6 @@ impl<'a> Searcher<'a> {
         ])
     }
 
-    /// Computes the SEE pruning margin.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn see_pruning(depth: f32, m: Move) -> f32 {
-        if m.is_quiet() {
-            convolve([
-                (depth, Params::see_margin_quiet_depth(..)),
-                (1.0, Params::see_margin_quiet_scalar(..)),
-            ])
-        } else {
-            convolve([
-                (depth, Params::see_margin_noisy_depth(..)),
-                (1.0, Params::see_margin_noisy_scalar(..)),
-            ])
-        }
-    }
-
     /// Computes the late move reduction.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -868,7 +851,15 @@ impl<'a> Searcher<'a> {
             }
 
             if !tail.is_losing() {
-                let margin = Self::see_pruning(lmr_depth, m);
+                let is_quiet = m.is_quiet().cast();
+
+                let margin = convolve([
+                    (1.0, Params::see_margin_scalar(..)),
+                    (lmr_depth, Params::see_margin_depth(..)),
+                    (is_quiet, Params::see_margin_is_quiet(..)),
+                    (is_quiet * lmr_depth, Params::see_margin_is_quiet_depth(..)),
+                ]);
+
                 if !pos.gaining(m, margin) {
                     continue;
                 }

@@ -16,19 +16,19 @@ use proptest::prelude::*;
 #[inline(always)]
 #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
 fn convolve<const N: usize>(data: [(f32, &[f32]); N]) -> f32 {
-    const K: usize = 4;
-    let mut acc = [0.0; K];
-    let mut idx = 0;
+    let mut acc = 0.0;
 
     for i in 0..N {
         for j in i..N {
-            let param = *data[i].1.get(j - i).assume();
-            acc[idx % K] = data[i].0.mul_add(param * data[j].0, acc[idx % K]);
-            idx += 1;
+            let param = data[i].1.get(j - i).assume();
+            acc = param
+                .algebraic_mul(data[i].0)
+                .algebraic_mul(data[j].0)
+                .algebraic_add(acc);
         }
     }
 
-    Simd::<f32, K>::from_array(acc).reduce_sum()
+    acc
 }
 
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Error)]

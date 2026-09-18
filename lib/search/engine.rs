@@ -481,7 +481,13 @@ impl<'a> Searcher<'a> {
 
         let is_check = self.stack.pos.is_check();
         let was_pv = transposition.is_some_and(|t| t.was_pv);
-        let mut moves = self.stack.pos.noisy().rate(|m| {
+        let mut unrated_moves = self.stack.pos.noisy();
+        if is_check && unrated_moves.is_empty() {
+            unrated_moves = self.stack.pos.moves();
+        }
+
+        let killer = self.stack.killers[ply];
+        let mut moves = unrated_moves.rate(|m| {
             if Some(m) == transposition.and_then(|t| t.best) {
                 return Bounded::upper();
             }
@@ -497,15 +503,23 @@ impl<'a> Searcher<'a> {
 
             let gives_check = pos.gives_direct_check(m);
             rating = Params::move_rating_gives_check(0).mul_add(gives_check.cast(), rating);
+            rating = Params::move_rating_is_killer(0).mul_add(killer.contains(m).cast(), rating);
 
-            let gamma = *Params::move_rating_see(0);
-            let delta = *Params::move_rating_see(1);
-            let margin = *Params::move_rating_see(2);
-            let see = pos.see(m, -delta / gamma..margin);
+            if m.is_quiet() {
+                for i in 0..Params::move_rating_continuation(..).len().min(ply.cast()) {
+                    let history = self.stack.continuation(i + 1).get(pos, m);
+                    rating = Params::move_rating_continuation(i).mul_add(history, rating);
+                }
+            } else {
+                let gamma = *Params::move_rating_see(0);
+                let delta = *Params::move_rating_see(1);
+                let margin = *Params::move_rating_see(2);
+                let see = pos.see(m, -delta / gamma..margin);
 
-            rating += see.mul_add(gamma, delta);
-            if see > -delta / gamma {
-                rating += pos.gain(m);
+                rating += see.mul_add(gamma, delta);
+                if see > -delta / gamma {
+                    rating += pos.gain(m);
+                }
             }
 
             rating.saturate()

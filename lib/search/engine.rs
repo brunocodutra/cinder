@@ -1,4 +1,4 @@
-use crate::chess::{Move, Moves, RatedMoves, Role, Zobrists};
+use crate::chess::{Move, Moves, Outcome, RatedMoves, Role, Zobrists};
 use crate::search::{ControlFlow::*, *};
 use crate::{nnue::Evaluator, params::Params, simd::*, syzygy::Syzygy, util::*};
 use bytemuck::{Zeroable, fill_zeroes, zeroed};
@@ -449,8 +449,8 @@ impl<'a> Searcher<'a> {
 
         let (alpha, beta) = match self.stack.pos.outcome() {
             None => self.mdp(&bounds),
-            Some(o) if o.is_draw() => return Ok(Pv::empty(Score::drawn())),
-            Some(_) => return Ok(Pv::empty(Score::mated(ply))),
+            Some(Outcome::Checkmate) => return Ok(Pv::empty(Score::mated(ply))),
+            Some(_) => return Ok(Pv::empty(Score::drawn())),
         };
 
         if alpha >= beta {
@@ -596,8 +596,8 @@ impl<'a> Searcher<'a> {
         let is_check = self.stack.pos.is_check();
         let (alpha, beta) = match self.stack.pos.outcome() {
             None => self.mdp(&bounds),
-            Some(o) if o.is_draw() => return Ok(Pv::empty(Score::drawn())),
-            Some(_) => return Ok(Pv::empty(Score::mated(ply))),
+            Some(Outcome::Checkmate) => return Ok(Pv::empty(Score::mated(ply))),
+            Some(_) => return Ok(Pv::empty(Score::drawn())),
         };
 
         if alpha >= beta {
@@ -1408,7 +1408,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess::{Outcome, Position};
+    use crate::chess::Position;
     use proptest::sample::Selector;
     use std::{fmt::Debug, thread};
     use test_strategy::proptest;

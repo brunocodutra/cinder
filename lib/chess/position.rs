@@ -512,28 +512,6 @@ impl Position {
         self.halfmoves() >= 100
     }
 
-    /// Whether this position has insufficient material.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn is_material_insufficient(&self) -> bool {
-        use {Piece::*, Role::*};
-        match self.occupied().count() {
-            2 => true,
-            3 => (self.by_role(Bishop) | self.by_role(Knight)).any(),
-            4 => {
-                let wb = self.by_piece(WhiteBishop);
-                let bb = self.by_piece(BlackBishop);
-
-                let dark = Bitboard::dark();
-                let light = Bitboard::light();
-
-                !(light.bitand(wb).is_empty() || light.bitand(bb).is_empty())
-                    || !(dark.bitand(wb).is_empty() || dark.bitand(bb).is_empty())
-            }
-            _ => false,
-        }
-    }
-
     /// Whether this position is a check.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -575,15 +553,13 @@ impl Position {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn outcome(&self) -> Option<Outcome> {
         if self.is_checkmate() {
-            Some(Outcome::Checkmate(!self.turn()))
+            Some(Outcome::Checkmate)
         } else if self.is_stalemate() {
             Some(Outcome::Stalemate)
         } else if self.is_draw_by_50_move_rule() {
             Some(Outcome::DrawBy50MoveRule)
         } else if self.is_draw_by_repetition() {
             Some(Outcome::DrawByThreefoldRepetition)
-        } else if self.is_material_insufficient() {
-            Some(Outcome::DrawByInsufficientMaterial)
         } else {
             None
         }
@@ -1072,7 +1048,7 @@ mod tests {
     #[proptest]
     #[cfg_attr(miri, ignore)]
     fn checkmate_implies_outcome(pos: Position) {
-        assert!(!pos.is_checkmate() || pos.outcome() == Some(Outcome::Checkmate(!pos.turn())));
+        assert!(!pos.is_checkmate() || pos.outcome() == Some(Outcome::Checkmate));
     }
 
     #[proptest]

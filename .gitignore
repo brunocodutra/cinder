@@ -1,12 +1,57 @@
-/target
-/engines
-/checkpoints
-/data
-/proptest-regressions
-*.proptest-regressions
+# OS specific
+.DS_Store
+
+# Editors
+*.swp
+*~
 .vscode
+
+# Build artifacts
+/target
+
+# Test artifacts
+**/proptest-regressions
+*.proptest-regressions
+
+# Profiling artifacts
+*.profdata
+*.profraw
+callgrind.out.*
 cobertura.xml
+flamegraph.svg
+heaptrack.*
 lcov.info
+massif.out.*
 perf.data
 perf.data.old
-flamegraph.svg
+
+# Runtime data
+/checkpoints
+/data
+/engines
+
+# Agentic tools
+AGENTS*.md
+.agents/
+
+.aider*/
+
+CLAUDE*.md
+.claude/
+.mcp.json
+
+.codex/
+
+.copilot/
+.github/copilot-instructions.md
+.github/instructions/
+
+.cursor/
+.cursorignore
+
+GEMINI*.md
+.gemini/
+
+.opencode/
+opencode.json
+opencode.jsonc

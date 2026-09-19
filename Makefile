@@ -40,8 +40,8 @@ help:
 	@echo "  mac-aarch64-neon      macOS on aarch64 with NEON"
 	@echo ""
 	@echo "Variables:"
-	@echo "  profile               Cargo build profile, defaults to dist"
-	@echo "  extra-rustflags       Extra flags passed to rustc, e.g. \"-Cforce-frame-pointers=yes\""
+	@echo "  profile               Cargo build profile, e.g. stage (default: dist)"
+	@echo "  extra-rustflags       Extra flags passed to rustc, e.g. \"-Cforce-frame-pointers=yes\" (default: <empty>)"
 
 spsa:
 	$(call build,spsa,$(shell rustc --print host-tuple),$(native-rustflags),--features spsa)

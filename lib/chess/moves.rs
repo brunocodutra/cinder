@@ -172,20 +172,6 @@ impl Moves {
     pub fn iter_mut(&mut self) -> <&mut Self as IntoIterator>::IntoIter {
         self.into_iter()
     }
-
-    /// Rates all [`Move`]s in this collection.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn rate<F: FnMut(Move) -> Rating>(self, f: F) -> RatedMoves {
-        let mut moves = RatedMoves {
-            moves: self,
-            ratings: zeroed(),
-            unsorted: zeroed(),
-        };
-
-        moves.rate(f);
-        moves
-    }
 }
 
 impl FromIterator<Move> for Moves {
@@ -247,6 +233,18 @@ impl RatedMoves {
         self.unsorted = 0;
         for (m, rating) in self.moves.iter().zip(&mut self.ratings) {
             *rating = f(*m);
+        }
+    }
+}
+
+impl From<Moves> for RatedMoves {
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn from(moves: Moves) -> Self {
+        RatedMoves {
+            moves,
+            ratings: zeroed(),
+            unsorted: zeroed(),
         }
     }
 }

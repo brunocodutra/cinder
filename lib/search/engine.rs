@@ -1,14 +1,15 @@
-use crate::chess::{Move, Moves, RatedMoves, Role, Zobrists};
+use crate::chess::{Move, Moves, RatedMoves, Role, SortedRatedMovesIter, Zobrists};
 use crate::search::{ControlFlow::*, *};
 use crate::{nnue::Evaluator, params::Params, simd::*, syzygy::Syzygy, util::*};
 use bytemuck::{Zeroable, fill_zeroes, zeroed};
 use derive_more::with_trait::{Debug, Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::{FusedStream, Stream, StreamExt};
+use std::debug_assert_matches;
 use std::ops::{Add, Mul, Range};
 use std::task::{Context, Poll};
 use std::{array, path::Path, pin::Pin, ptr::NonNull, slice, time::Duration};
-use std::{cell::SyncUnsafeCell, mem::MaybeUninit};
+use std::{cell::SyncUnsafeCell, hint::unreachable_unchecked, mem::MaybeUninit};
 
 #[cfg(test)]
 use proptest::prelude::*;
@@ -155,6 +156,118 @@ struct Searcher<'a> {
     shared: &'a SharedData,
     local: &'a mut LocalData,
     stack: Stack,
+}
+
+#[derive(Debug)]
+#[expect(clippy::large_enum_variant)]
+enum MovePicker {
+    PendingAll,
+    PendingQuiescent,
+    Rated(RatedMoves),
+}
+
+impl MovePicker {
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn new(moves: Moves) -> Self {
+        MovePicker::Rated(moves.into())
+    }
+
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn rate(&mut self, searcher: &Searcher<'_>, head: Option<Move>) {
+        let pos = &searcher.stack.pos;
+        let killer = searcher.stack.killers[pos.ply()];
+
+        self.assume().rate(|m| {
+            if Some(m) == head {
+                return Bounded::upper();
+            }
+
+            let mut rating = 0.0;
+            let history = searcher.local.histories.attacker.get(pos, m);
+            rating = Params::move_rating_history(0).mul_add(history, rating);
+            let history = searcher.local.histories.defender.get(pos, m);
+            rating = Params::move_rating_history(1).mul_add(history, rating);
+            let history = searcher.local.histories.butterfly.get(pos, m);
+            rating = Params::move_rating_history(2).mul_add(history, rating);
+
+            let gives_check = pos.gives_direct_check(m);
+            rating = Params::move_rating_gives_check(0).mul_add(gives_check.cast(), rating);
+            rating = Params::move_rating_is_killer(0).mul_add(killer.contains(m).cast(), rating);
+
+            if m.is_quiet() {
+                let ply = pos.ply().cast();
+                for i in 0..Params::move_rating_continuation(..).len().min(ply) {
+                    let history = searcher.stack.continuation(i + 1).get(pos, m);
+                    rating = Params::move_rating_continuation(i).mul_add(history, rating);
+                }
+            } else {
+                let gamma = *Params::move_rating_see(0);
+                let delta = *Params::move_rating_see(1);
+                let margin = *Params::move_rating_see(2);
+                let see = pos.see(m, -delta / gamma..margin);
+
+                rating += see.mul_add(gamma, delta);
+                if see > -delta / gamma {
+                    rating += pos.gain(m);
+                }
+            }
+
+            rating.saturate()
+        });
+    }
+
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn sorted(&mut self, searcher: &Searcher<'_>, head: Option<Move>) -> SortedRatedMovesIter<'_> {
+        #[inline(never)]
+        #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+        fn bootstrap<'a>(
+            picker: &'a mut MovePicker,
+            searcher: &Searcher<'_>,
+            head: Option<Move>,
+            all: bool,
+        ) -> SortedRatedMovesIter<'a> {
+            let pos = &searcher.stack.pos;
+            let moves = if all {
+                pos.moves().into()
+            } else {
+                let noisy = pos.noisy();
+                if pos.is_check() && noisy.is_empty() {
+                    pos.moves().into()
+                } else {
+                    noisy.into()
+                }
+            };
+
+            *picker = MovePicker::Rated(moves);
+            picker.rate(searcher, head);
+            picker.assume().sorted()
+        }
+
+        match self {
+            MovePicker::Rated(moves) => moves.sorted(),
+            MovePicker::PendingAll => bootstrap(self, searcher, head, true),
+            MovePicker::PendingQuiescent => bootstrap(self, searcher, head, false),
+        }
+    }
+}
+
+impl<'a> Assume for &'a mut MovePicker {
+    type Assumed = &'a mut RatedMoves;
+
+    #[track_caller]
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn assume(self) -> Self::Assumed {
+        debug_assert_matches!(self, MovePicker::Rated(_));
+
+        match self {
+            MovePicker::Rated(moves) => moves,
+            _ => unsafe { unreachable_unchecked() },
+        }
+    }
 }
 
 impl<'a> Searcher<'a> {
@@ -488,53 +601,11 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(stand_pat));
         }
 
+        let tt_move = transposition.and_then(|t| t.best.filter(|m| m.is_noisy()));
         let was_pv = transposition.is_some_and(|t| t.was_pv);
-        let mut unrated_moves = self.stack.pos.noisy();
-        if is_check && unrated_moves.is_empty() {
-            unrated_moves = self.stack.pos.moves();
-        }
 
-        let killer = self.stack.killers[ply];
-        let mut moves = unrated_moves.rate(|m| {
-            if Some(m) == transposition.and_then(|t| t.best) {
-                return Bounded::upper();
-            }
-
-            let mut rating = 0.0;
-            let pos = &self.stack.pos;
-            let history = self.local.histories.attacker.get(pos, m);
-            rating = Params::move_rating_history(0).mul_add(history, rating);
-            let history = self.local.histories.defender.get(pos, m);
-            rating = Params::move_rating_history(1).mul_add(history, rating);
-            let history = self.local.histories.butterfly.get(pos, m);
-            rating = Params::move_rating_history(2).mul_add(history, rating);
-
-            let gives_check = pos.gives_direct_check(m);
-            rating = Params::move_rating_gives_check(0).mul_add(gives_check.cast(), rating);
-            rating = Params::move_rating_is_killer(0).mul_add(killer.contains(m).cast(), rating);
-
-            if m.is_quiet() {
-                for i in 0..Params::move_rating_continuation(..).len().min(ply.cast()) {
-                    let history = self.stack.continuation(i + 1).get(pos, m);
-                    rating = Params::move_rating_continuation(i).mul_add(history, rating);
-                }
-            } else {
-                let gamma = *Params::move_rating_see(0);
-                let delta = *Params::move_rating_see(1);
-                let margin = *Params::move_rating_see(2);
-                let see = pos.see(m, -delta / gamma..margin);
-
-                rating += see.mul_add(gamma, delta);
-                if see > -delta / gamma {
-                    rating += pos.gain(m);
-                }
-            }
-
-            rating.saturate()
-        });
-
-        let mut sorted_moves = moves.sorted();
-        let (mut head, mut tail) = match sorted_moves.next() {
+        let mut moves = MovePicker::PendingQuiescent;
+        let (mut head, mut tail) = match tt_move.or_else(|| moves.sorted(self, None).next()) {
             None if is_check => return Ok(Pv::empty(Score::mated(ply))),
             None => return Ok(Pv::empty(stand_pat)),
             Some(m) => {
@@ -544,7 +615,7 @@ impl<'a> Searcher<'a> {
             }
         };
 
-        for m in sorted_moves {
+        for m in moves.sorted(self, Some(head)).skip(1) {
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
@@ -726,51 +797,14 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        let tt_move = transposition.and_then(|t| t.best);
         let is_fl = transposition.is_some_and(|t| t.score.upper(ply) <= alpha);
         let is_fh = transposition.is_some_and(|t| t.score.lower(ply) >= beta);
         let was_all = transposition.is_some_and(|t| matches!(t.score, ScoreBound::Upper(_)));
         let was_cut = transposition.is_some_and(|t| matches!(t.score, ScoreBound::Lower(_)));
-        let was_quiet = transposition.is_none_or(|t| t.best.is_none_or(Move::is_quiet));
+        let was_quiet = tt_move.is_none_or(Move::is_quiet);
 
-        let killer = self.stack.killers[ply];
-        let mut moves = self.stack.pos.moves().rate(|m| {
-            if Some(m) == transposition.and_then(|t| t.best) {
-                return Bounded::upper();
-            }
-
-            let mut rating = 0.0;
-            let pos = &self.stack.pos;
-            let history = self.local.histories.attacker.get(pos, m);
-            rating = Params::move_rating_history(0).mul_add(history, rating);
-            let history = self.local.histories.defender.get(pos, m);
-            rating = Params::move_rating_history(1).mul_add(history, rating);
-            let history = self.local.histories.butterfly.get(pos, m);
-            rating = Params::move_rating_history(2).mul_add(history, rating);
-
-            let gives_check = pos.gives_direct_check(m);
-            rating = Params::move_rating_gives_check(0).mul_add(gives_check.cast(), rating);
-            rating = Params::move_rating_is_killer(0).mul_add(killer.contains(m).cast(), rating);
-
-            if m.is_quiet() {
-                for i in 0..Params::move_rating_continuation(..).len().min(ply.cast()) {
-                    let history = self.stack.continuation(i + 1).get(pos, m);
-                    rating = Params::move_rating_continuation(i).mul_add(history, rating);
-                }
-            } else {
-                let gamma = *Params::move_rating_see(0);
-                let delta = *Params::move_rating_see(1);
-                let margin = *Params::move_rating_see(2);
-                let see = pos.see(m, -delta / gamma..margin);
-
-                rating += see.mul_add(gamma, delta);
-                if see > -delta / gamma {
-                    rating += pos.gain(m);
-                }
-            }
-
-            rating.saturate()
-        });
-
+        let mut moves = MovePicker::PendingAll;
         if let Some(t) = transposition {
             let gamma = *Params::probcut_depth(0);
             let delta = *Params::probcut_depth(1);
@@ -785,7 +819,7 @@ impl<'a> Searcher<'a> {
             let max_depth = t.depth.cast::<f32>() + Params::probcut_depth_bounds(1);
             let depth_bounds = *Params::probcut_depth_bounds(0)..max_depth;
             if is_fh && was_cut && !was_quiet && depth_bounds.contains(&depth) {
-                for m in moves.sorted() {
+                for m in moves.sorted(self, tt_move) {
                     let margin = pc_beta - value;
                     if m.is_quiet() || !self.stack.pos.gaining(m, margin.cast()) {
                         continue;
@@ -810,7 +844,7 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let (mut head, mut tail) = match moves.sorted().next() {
+        let (mut head, mut tail) = match tt_move.or_else(|| moves.sorted(self, None).next()) {
             None if is_check => return Ok(Pv::empty(Score::mated(ply))),
             None => return Ok(Pv::empty(Score::drawn())),
             Some(m) => {
@@ -830,7 +864,7 @@ impl<'a> Searcher<'a> {
                         let se_beta = t.score.bound(ply) - margin.cast::<i16>();
 
                         let mut se_score = Score::lower();
-                        for m in moves.sorted().skip(1) {
+                        for m in moves.sorted(self, Some(m)).skip(1) {
                             let mut next = self.next(Some(m));
                             let pv = -next.nw(se_depth - 1.0, -se_beta + 1, !is_cut)?;
                             se_score = pv.score().max(se_score);
@@ -877,7 +911,7 @@ impl<'a> Searcher<'a> {
             }
         };
 
-        for (index, m) in moves.sorted().skip(1).enumerate() {
+        for (index, m) in moves.sorted(self, Some(head)).skip(1).enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
@@ -975,7 +1009,7 @@ impl<'a> Searcher<'a> {
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
 
         if matches!(score, ScoreBound::Lower(_)) {
-            self.update_history(depth, head, &moves);
+            self.update_history(depth, head, moves.assume());
             if head.is_quiet() {
                 self.stack.killers[ply].insert(head);
             }
@@ -992,7 +1026,7 @@ impl<'a> Searcher<'a> {
     #[inline(always)]
     fn root(
         &mut self,
-        moves: &mut RatedMoves,
+        moves: &mut MovePicker,
         depth: f32,
         bounds: Range<Score>,
     ) -> Result<Pv, Interrupted> {
@@ -1001,53 +1035,24 @@ impl<'a> Searcher<'a> {
             return Err(Interrupted);
         }
 
-        let killer = self.stack.killers[0];
+        let pv_move = self.stack.pv.head();
         let is_check = self.stack.pos.is_check();
-        let was_quiet = self.stack.pv.head().is_none_or(Move::is_quiet);
+        let was_quiet = pv_move.is_none_or(Move::is_quiet);
+
+        let mut head = match pv_move {
+            Some(m) if moves.assume().contains(&m) => m,
+            _ => moves.sorted(self, None).next().assume(),
+        };
+
         self.stack.values[0] = self.evaluate();
-
-        moves.rate(|m| {
-            if Some(m) == self.stack.pv.head() {
-                return Bounded::upper();
-            }
-
-            let mut rating = 0.0;
-            let pos = &self.stack.pos;
-            let history = self.local.histories.attacker.get(pos, m);
-            rating = Params::move_rating_history(0).mul_add(history, rating);
-            let history = self.local.histories.defender.get(pos, m);
-            rating = Params::move_rating_history(1).mul_add(history, rating);
-            let history = self.local.histories.butterfly.get(pos, m);
-            rating = Params::move_rating_history(2).mul_add(history, rating);
-
-            let gives_check = pos.gives_direct_check(m);
-            rating = Params::move_rating_gives_check(0).mul_add(gives_check.cast(), rating);
-            rating = Params::move_rating_is_killer(0).mul_add(killer.contains(m).cast(), rating);
-
-            if m.is_noisy() {
-                let gamma = *Params::move_rating_see(0);
-                let delta = *Params::move_rating_see(1);
-                let margin = *Params::move_rating_see(2);
-                let see = pos.see(m, -delta / gamma..margin);
-
-                rating += see.mul_add(gamma, delta);
-                if see > -delta / gamma {
-                    rating += pos.gain(m);
-                }
-            }
-
-            rating.saturate()
-        });
-
-        let mut sorted_moves = moves.sorted();
-        let mut head = sorted_moves.next().assume();
         self.stack.attention = self.ctrl.attention(head);
 
         let mut next = self.next(Some(head));
         let mut tail = -next.ab::<true, _>(depth - 1.0, -beta..-alpha, false)?;
         drop(next);
 
-        for (index, m) in sorted_moves.enumerate() {
+        moves.rate(self, Some(head));
+        for (index, m) in moves.sorted(self, Some(head)).skip(1).enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
@@ -1096,7 +1101,7 @@ impl<'a> Searcher<'a> {
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
 
         if matches!(score, ScoreBound::Lower(_)) {
-            self.update_history(depth, head, moves);
+            self.update_history(depth, head, moves.assume());
             if head.is_quiet() {
                 self.stack.killers[0].insert(head);
             }
@@ -1115,7 +1120,9 @@ impl<'a> Searcher<'a> {
     fn aw(&mut self, moves: &Moves) -> impl Iterator<Item = Info> {
         #[inline(always)]
         gen move {
-            let mut moves = moves.clone().rate(|_| zeroed());
+            let mut moves = MovePicker::new(moves.clone());
+            moves.rate(self, self.stack.pv.head());
+
             for depth in Depth::iter() {
                 let mut reduction = 0.0;
                 let mut window = if self.stack.pv.head().is_some() {

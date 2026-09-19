@@ -38,13 +38,9 @@ You should prefer the most performant binary that runs on your machine.
 ### Building from source
 
 Building Cinder from source currently requires a recent nightly Rust compiler.
-Follow the steps below to build a binary optimized for your CPU architecture.
-You'll find the binary under `target/bin/`.
-
-```sh
-rustup toolchain install nightly
-make
-```
+Run `make` to build a binary optimized for your CPU architecture.
+Run `make help` to view all available build targets.
+You'll find the binaries under `target/bin/`.
 
 ### Usage
 

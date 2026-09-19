@@ -16,6 +16,7 @@ else
 	endif
 endif
 
+profile ?= dist
 native-rustflags := "-Ctarget-cpu=native"
 sse4-rustflags := "-Ctarget-cpu=x86-64-v2"
 avx2-rustflags := "-Ctarget-cpu=x86-64-v3","-Ztune-cpu=znver3"
@@ -39,6 +40,7 @@ help:
 	@echo "  mac-aarch64-neon      macOS on aarch64 with NEON"
 	@echo ""
 	@echo "Variables:"
+	@echo "  profile               Cargo build profile, defaults to dist"
 	@echo "  extra-rustflags       Extra flags passed to rustc, e.g. \"-Cforce-frame-pointers=yes\""
 
 spsa:
@@ -84,10 +86,10 @@ mac-aarch64-neon:
 define build
 	@echo "Building target $1"
 	rustup target add $2
-	cargo build --profile=dist --bin=cinder \
+	cargo build --profile=$(profile) --bin=cinder \
 		--config='target.$2.rustflags=["-Zlocation-detail=none",$3,$(extra-rustflags)]' \
 		--target-dir=$(TARGET_DIR)/$1/ --target=$2 $4
 
 	@mkdir -p $(BIN_DIR)
-	@cp $(TARGET_DIR)/$1/$2/dist/cinder$(POSTFIX) $(BIN_DIR)/cinder-v$(CRATE_VERSION)-$(PLATFORM)-$1$(POSTFIX)
+	@cp $(TARGET_DIR)/$1/$2/$(profile)/cinder$(POSTFIX) $(BIN_DIR)/cinder-v$(CRATE_VERSION)-$(PLATFORM)-$1$(POSTFIX)
 endef

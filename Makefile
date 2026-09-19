@@ -37,6 +37,9 @@ help:
 	@echo "  windows-x86-64-avx2   Windows on x86-64 with AVX2"
 	@echo "  windows-x86-64-avx512 Windows on x86-64 with AVX512"
 	@echo "  mac-aarch64-neon      macOS on aarch64 with NEON"
+	@echo ""
+	@echo "Variables:"
+	@echo "  extra-rustflags       Extra flags passed to rustc, e.g. \"-Cforce-frame-pointers=yes\""
 
 spsa:
 	$(call build,spsa,$(shell rustc --print host-tuple),$(native-rustflags),--features spsa)
@@ -82,7 +85,7 @@ define build
 	@echo "Building target $1"
 	rustup target add $2
 	cargo build --profile=dist --bin=cinder \
-		--config='target.$2.rustflags=["-Zlocation-detail=none",$3]' \
+		--config='target.$2.rustflags=["-Zlocation-detail=none",$3,$(extra-rustflags)]' \
 		--target-dir=$(TARGET_DIR)/$1/ --target=$2 $4
 
 	@mkdir -p $(BIN_DIR)

@@ -509,7 +509,7 @@ impl Position {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn is_draw_by_50_move_rule(&self) -> bool {
-        self.halfmoves() >= 100
+        self.halfmoves() >= 100 && !self.is_checkmate()
     }
 
     /// Whether this position is a check.

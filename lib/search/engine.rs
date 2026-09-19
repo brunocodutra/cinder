@@ -1,4 +1,4 @@
-use crate::chess::{Move, Moves, Outcome, RatedMoves, Role, Zobrists};
+use crate::chess::{Move, Moves, RatedMoves, Role, Zobrists};
 use crate::search::{ControlFlow::*, *};
 use crate::{nnue::Evaluator, params::Params, simd::*, syzygy::Syzygy, util::*};
 use bytemuck::{Zeroable, fill_zeroes, zeroed};
@@ -447,12 +447,11 @@ impl<'a> Searcher<'a> {
             return Err(Interrupted);
         }
 
-        let (alpha, beta) = match self.stack.pos.outcome() {
-            None => self.mdp(&bounds),
-            Some(Outcome::Checkmate) => return Ok(Pv::empty(Score::mated(ply))),
-            Some(_) => return Ok(Pv::empty(Score::drawn())),
-        };
+        if self.stack.pos.is_draw_by_50_move_rule() || self.stack.pos.is_draw_by_repetition() {
+            return Ok(Pv::empty(Score::drawn()));
+        }
 
+        let (alpha, beta) = self.mdp(&bounds);
         if alpha >= beta {
             return Ok(Pv::empty(alpha));
         }
@@ -468,18 +467,27 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        let is_check = self.stack.pos.is_check();
         let value = self.stack.value(0).assume();
         let stand_pat = match transposition {
+            _ if is_check => Score::lower(),
             Some(t) if !t.score.range(ply).contains(&value) => t.score.bound(ply),
             _ => value,
         };
 
+        if ply >= Ply::MAX {
+            return if is_check {
+                Ok(Pv::empty(Score::drawn()))
+            } else {
+                Ok(Pv::empty(stand_pat))
+            };
+        }
+
         let alpha = alpha.max(stand_pat);
-        if alpha >= beta || ply >= Ply::MAX {
+        if alpha >= beta {
             return Ok(Pv::empty(stand_pat));
         }
 
-        let is_check = self.stack.pos.is_check();
         let was_pv = transposition.is_some_and(|t| t.was_pv);
         let mut unrated_moves = self.stack.pos.noisy();
         if is_check && unrated_moves.is_empty() {
@@ -526,16 +534,16 @@ impl<'a> Searcher<'a> {
         });
 
         let mut sorted_moves = moves.sorted();
-        let (mut head, tail) = match sorted_moves.next() {
+        let (mut head, mut tail) = match sorted_moves.next() {
+            None if is_check => return Ok(Pv::empty(Score::mated(ply))),
             None => return Ok(Pv::empty(stand_pat)),
             Some(m) => {
                 let mut next = self.next(Some(m));
                 let pv = -next.ab::<IS_PV, _>(zeroed(), -beta..-alpha, !IS_PV && !is_cut)?;
-                (m, pv)
+                (m, pv.raise(stand_pat))
             }
         };
 
-        let mut tail = tail.raise(stand_pat);
         for m in sorted_moves {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -592,14 +600,11 @@ impl<'a> Searcher<'a> {
             return Err(Interrupted);
         }
 
-        let is_all = !IS_PV && !is_cut;
-        let is_check = self.stack.pos.is_check();
-        let (alpha, beta) = match self.stack.pos.outcome() {
-            None => self.mdp(&bounds),
-            Some(Outcome::Checkmate) => return Ok(Pv::empty(Score::mated(ply))),
-            Some(_) => return Ok(Pv::empty(Score::drawn())),
-        };
+        if self.stack.pos.is_draw_by_50_move_rule() || self.stack.pos.is_draw_by_repetition() {
+            return Ok(Pv::empty(Score::drawn()));
+        }
 
+        let (alpha, beta) = self.mdp(&bounds);
         if alpha >= beta {
             return Ok(Pv::empty(alpha));
         }
@@ -615,6 +620,23 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        let is_check = self.stack.pos.is_check();
+        let value = self.stack.value(0).assume();
+        let stand_pat = match transposition {
+            _ if is_check => Score::lower(),
+            Some(t) => t.score.bound(ply),
+            _ => value,
+        };
+
+        if ply >= Ply::MAX {
+            return if is_check {
+                Ok(Pv::empty(Score::drawn()))
+            } else {
+                Ok(Pv::empty(stand_pat))
+            };
+        }
+
+        let is_all = !IS_PV && !is_cut;
         let was_pv = transposition.is_some_and(|t| t.was_pv);
         let (lower, upper) = match self.shared.syzygy.wdl_after_zeroing(&self.stack.pos) {
             None => (Score::lower(), Score::upper()),
@@ -644,10 +666,8 @@ impl<'a> Searcher<'a> {
 
         let depth = depth.max(1.0);
         let alpha = alpha.max(lower);
-        let value = self.stack.value(0).assume();
         let is_improving = self.stack.improvement() > 0;
-        let stand_pat = transposition.map_or(value, |t| t.score.bound(ply));
-        if alpha >= beta || upper <= alpha || lower >= beta || ply >= Ply::MAX {
+        if alpha >= beta || upper <= alpha || lower >= beta {
             return Ok(Pv::empty(stand_pat).clip(lower, upper));
         } else if !IS_PV && !is_check {
             if alpha.get().abs() < 1000 && depth < *Params::razoring_depth_limit(0) {
@@ -790,66 +810,73 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let mut head = moves.sorted().next().assume();
+        let (mut head, mut tail) = match moves.sorted().next() {
+            None if is_check => return Ok(Pv::empty(Score::mated(ply))),
+            None => return Ok(Pv::empty(Score::drawn())),
+            Some(m) => {
+                let mut extension = 0f32;
+                if let Some(t) = transposition {
+                    let is_quiet = m.is_quiet();
+                    let max_depth = t.depth.cast::<f32>() + Params::singular_depth_bounds(1);
+                    let depth_bounds = *Params::singular_depth_bounds(0)..max_depth;
+                    if !was_all && depth_bounds.contains(&depth) {
+                        let gamma = *Params::singular_depth(0);
+                        let delta = *Params::singular_depth(1);
+                        let se_depth = gamma.mul_add(depth, delta);
 
-        let tail = {
-            let mut extension = 0f32;
-            if let Some(t) = transposition {
-                let is_quiet = head.is_quiet();
-                let max_depth = t.depth.cast::<f32>() + Params::singular_depth_bounds(1);
-                let depth_bounds = *Params::singular_depth_bounds(0)..max_depth;
-                if !was_all && depth_bounds.contains(&depth) {
-                    let gamma = *Params::singular_depth(0);
-                    let delta = *Params::singular_depth(1);
-                    let se_depth = gamma.mul_add(depth, delta);
+                        let gamma = *Params::singular_margin_depth(0);
+                        let delta = *Params::singular_margin_depth(1);
+                        let margin = gamma.mul_add(depth, delta);
+                        let se_beta = t.score.bound(ply) - margin.cast::<i16>();
 
-                    let gamma = *Params::singular_margin_depth(0);
-                    let delta = *Params::singular_margin_depth(1);
-                    let margin = gamma.mul_add(depth, delta);
-                    let se_beta = t.score.bound(ply) - margin.cast::<i16>();
-
-                    let mut se_score = Score::lower();
-                    for m in moves.sorted().skip(1) {
-                        let mut next = self.next(Some(m));
-                        let pv = -next.nw(se_depth - 1.0, -se_beta + 1, !is_cut)?;
-                        se_score = pv.score().max(se_score);
-                        if se_score.min(se_beta) >= beta {
-                            return Ok(pv.clip(lower, upper).truncate().transpose(m));
-                        } else if se_score >= se_beta {
-                            break;
+                        let mut se_score = Score::lower();
+                        for m in moves.sorted().skip(1) {
+                            let mut next = self.next(Some(m));
+                            let pv = -next.nw(se_depth - 1.0, -se_beta + 1, !is_cut)?;
+                            se_score = pv.score().max(se_score);
+                            if se_score.min(se_beta) >= beta {
+                                return Ok(pv.clip(lower, upper).truncate().transpose(m));
+                            } else if se_score >= se_beta {
+                                break;
+                            }
                         }
-                    }
 
-                    if se_score >= se_beta {
-                        extension = convolve([
-                            (1.0, Params::singular_reduction_scalar(..)),
-                            (is_cut.cast(), Params::singular_reduction_is_cut(..)),
-                            (is_fh.cast(), Params::singular_reduction_is_fh(..)),
-                        ]);
-                    } else {
-                        let gamma = *Params::singular_extension_score(0);
-                        let delta = *Params::singular_extension_score(1);
-                        let diff = se_beta.cast::<f32>() - se_score.cast::<f32>();
-                        extension = diff.powf(delta).mul(gamma).min(convolve([
-                            (1.0, Params::singular_extension_scalar(..)),
-                            (is_cut.cast(), Params::singular_extension_is_cut(..)),
-                            (is_fh.cast(), Params::singular_extension_is_fh(..)),
-                            (is_quiet.cast(), Params::singular_extension_is_quiet(..)),
-                        ]));
-                    }
+                        if se_score >= se_beta {
+                            extension = convolve([
+                                (1.0, Params::singular_reduction_scalar(..)),
+                                (is_cut.cast(), Params::singular_reduction_is_cut(..)),
+                                (is_fh.cast(), Params::singular_reduction_is_fh(..)),
+                            ]);
+                        } else {
+                            let gamma = *Params::singular_extension_score(0);
+                            let delta = *Params::singular_extension_score(1);
+                            let diff = se_beta.cast::<f32>() - se_score.cast::<f32>();
+                            extension = diff.powf(delta).mul(gamma).min(convolve([
+                                (1.0, Params::singular_extension_scalar(..)),
+                                (is_cut.cast(), Params::singular_extension_is_cut(..)),
+                                (is_fh.cast(), Params::singular_extension_is_fh(..)),
+                                (is_quiet.cast(), Params::singular_extension_is_quiet(..)),
+                            ]));
+                        }
 
-                    extension = extension.clip(
-                        *Params::singular_extension_limit(0),
-                        *Params::singular_extension_limit(1),
-                    );
+                        extension = extension.clip(
+                            *Params::singular_extension_limit(0),
+                            *Params::singular_extension_limit(1),
+                        );
+                    }
                 }
-            }
 
-            let mut next = self.next(Some(head));
-            -next.ab::<IS_PV, _>(depth + extension - 1.0, -beta..-alpha, !IS_PV && !is_cut)?
+                let mut next = self.next(Some(m));
+                let pv = -next.ab::<IS_PV, _>(
+                    depth + extension - 1.0,
+                    -beta..-alpha,
+                    !IS_PV && !is_cut,
+                )?;
+
+                (m, pv.raise(lower))
+            }
         };
 
-        let mut tail = tail.raise(lower);
         for (index, m) in moves.sorted().skip(1).enumerate() {
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -1408,7 +1435,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess::Position;
+    use crate::chess::{Outcome, Position};
     use proptest::sample::Selector;
     use std::{fmt::Debug, thread};
     use test_strategy::proptest;

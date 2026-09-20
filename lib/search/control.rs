@@ -39,7 +39,7 @@ impl GlobalControl {
 
         let gamma = *Params::moves_left(0);
         let delta = *Params::moves_left(1);
-        let moves_left_recip = gamma.mul_add(pos.fullmoves().cast(), delta);
+        let moves_left_recip = gamma.mul_add(pos.fullmove().cast(), delta);
         let time_per_move = moves_left_recip.min(1.0).lerp(inc, clock - overhead);
         time_per_move * Params::time_limits(0)..clock * Params::time_limits(1) - overhead
     }

@@ -63,7 +63,7 @@ impl Syzygy {
     /// This [`Position`]'s [`Wdl`] if immediately following a zeroing move.
     #[inline(always)]
     pub fn wdl_after_zeroing(&self, pos: &Position) -> Option<Wdl> {
-        if pos.halfmoves() == 0 {
+        if pos.halfmove() == 0 {
             self.wdl(pos)
         } else {
             None

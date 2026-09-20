@@ -5,8 +5,7 @@
 pub enum Outcome {
     Checkmate,
     Stalemate,
-    DrawBy50MoveRule,
-    DrawByThreefoldRepetition,
+    Draw,
 }
 
 const impl Outcome {

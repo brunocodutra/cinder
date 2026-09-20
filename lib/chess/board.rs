@@ -76,8 +76,8 @@ pub struct Board {
     pub turn: Color,
     pub castles: Castles,
     pub en_passant: Option<Square>,
-    pub halfmoves: u8,
-    pub fullmoves: u32,
+    pub halfmove: Halfmove,
+    pub fullmove: Fullmove,
 
     #[deref]
     placement: Placement,
@@ -120,8 +120,8 @@ impl Default for Board {
             turn: Color::White,
             castles: Castles::all(),
             en_passant: None,
-            halfmoves: 0,
-            fullmoves: 1,
+            halfmove: Halfmove::default(),
+            fullmove: Fullmove::default(),
             placement,
             squares,
             roles,
@@ -136,8 +136,8 @@ impl PartialEq for Board {
         self.turn == other.turn
             && self.castles == other.castles
             && self.en_passant == other.en_passant
-            && self.halfmoves == other.halfmoves
-            && self.fullmoves == other.fullmoves
+            && self.halfmove == other.halfmove
+            && self.fullmove == other.fullmove
             && self.pieces() == other.pieces()
     }
 }
@@ -159,8 +159,8 @@ impl Board {
             turn: Color::White,
             castles: Castles::none(),
             en_passant: None,
-            halfmoves: 0,
-            fullmoves: 1,
+            halfmove: Halfmove::default(),
+            fullmove: Fullmove::default(),
             placement: Default::default(),
             squares: Default::default(),
             roles: Default::default(),
@@ -348,7 +348,7 @@ impl Display for Board {
             f.write_str("- ")?;
         }
 
-        write!(f, "{} {}", self.halfmoves, self.fullmoves)?;
+        write!(f, "{} {}", self.halfmove, self.fullmove)?;
 
         Ok(())
     }
@@ -381,8 +381,8 @@ impl FromStr for Board {
             turn: Color::White,
             castles: Default::default(),
             en_passant: Default::default(),
-            halfmoves: Default::default(),
-            fullmoves: Default::default(),
+            halfmove: Default::default(),
+            fullmove: Default::default(),
             placement: Default::default(),
             squares: Default::default(),
             roles: Default::default(),
@@ -448,13 +448,13 @@ impl FromStr for Board {
             },
         };
 
-        match tokens.next().map(u8::from_str) {
-            Some(Ok(halfmoves)) => board.halfmoves = halfmoves,
+        match tokens.next().map(u32::from_str) {
+            Some(Ok(hm)) => board.halfmove = hm.saturate(),
             _ => return Err(ParseFenError::InvalidHalfmoveClock),
         }
 
         match tokens.next().map(u32::from_str) {
-            Some(Ok(fullmoves)) => board.fullmoves = fullmoves,
+            Some(Ok(fm)) => board.fullmove = fm.saturate(),
             _ => return Err(ParseFenError::InvalidFullmoveNumber),
         }
 

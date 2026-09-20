@@ -1,4 +1,4 @@
-use crate::chess::{Move, Moves, RatedMoves, Role, SortedRatedMovesIter, Zobrists};
+use crate::chess::{Halfmove, Move, Moves, RatedMoves, Role, SortedRatedMovesIter, Zobrists};
 use crate::search::{ControlFlow::*, *};
 use crate::{nnue::Evaluator, params::Params, simd::*, syzygy::Syzygy, util::*};
 use bytemuck::{Zeroable, fill_zeroes, zeroed};
@@ -310,7 +310,7 @@ impl<'a> Searcher<'a> {
 
         let material = piece_counts.mul(piece_values).reduce_sum() / starting_material;
 
-        let halfmoves = pos.halfmoves() as f32 / 100.0;
+        let halfmoves = pos.halfmove().cast::<f32>() / Halfmove::MAX.cast::<f32>();
         let mut scale = halfmoves.lerp(*Params::halfmove_scaling(0), *Params::halfmove_scaling(1));
         scale *= material.lerp(*Params::material_scaling(0), *Params::material_scaling(1));
         scale.mul_add(value.cast(), self.correction()).saturate()
@@ -571,7 +571,7 @@ impl<'a> Searcher<'a> {
 
         self.stack.values[ply] = self.evaluate();
         let transposition = self.transposition();
-        if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0) {
+        if !IS_PV && self.stack.pos.halfmove().cast::<f32>() <= *Params::tt_cutoff_hm_limit(0) {
             if let Some(t) = transposition {
                 let (lower, upper) = t.score.range(ply).into_inner();
                 if upper <= alpha || lower >= beta {
@@ -682,7 +682,7 @@ impl<'a> Searcher<'a> {
 
         self.stack.values[ply] = self.evaluate();
         let transposition = self.transposition();
-        if !IS_PV && self.stack.pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0) {
+        if !IS_PV && self.stack.pos.halfmove().cast::<f32>() <= *Params::tt_cutoff_hm_limit(0) {
             if let Some(t) = transposition.filter(|t| t.depth.cast::<f32>() >= depth) {
                 let (lower, upper) = t.score.range(ply).into_inner();
                 if upper <= alpha || (is_cut && lower >= beta) {
@@ -1476,7 +1476,7 @@ mod tests {
         #[filter(!#s.is_losing() && #s < #b)] s: Score,
         is_cut: bool,
     ) {
-        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0));
+        prop_assume!(pos.halfmove().cast::<f32>() <= *Params::tt_cutoff_hm_limit(0));
 
         let tpos = Transposition::new(ScoreBound::Upper(s), d, Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);
@@ -1501,7 +1501,7 @@ mod tests {
         d: Depth,
         #[filter(!#s.is_winning() && #s >= #b)] s: Score,
     ) {
-        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0));
+        prop_assume!(pos.halfmove().cast::<f32>() <= *Params::tt_cutoff_hm_limit(0));
 
         let tpos = Transposition::new(ScoreBound::Lower(s), d, Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);
@@ -1526,7 +1526,7 @@ mod tests {
         d: Depth,
         #[filter(!#s.is_decisive())] s: Score,
     ) {
-        prop_assume!(pos.halfmoves() as f32 <= *Params::tt_cutoff_hm_limit(0));
+        prop_assume!(pos.halfmove().cast::<f32>() <= *Params::tt_cutoff_hm_limit(0));
 
         let tpos = Transposition::new(ScoreBound::Exact(s), d, Some(m), was_pv);
         e.shared.tt.store(pos.zobrists().hash, tpos);

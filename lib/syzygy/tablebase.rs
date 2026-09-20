@@ -213,9 +213,9 @@ impl<'a> ProbeResult<'a> {
 
     /// The true [`Wdl`] of the [`Position`].
     pub fn wdl(self) -> Option<Wdl> {
-        match self.pos.halfmoves() {
+        match self.pos.halfmove().get() {
             n @ 1.. => Some(self.dtz()?.stretch(n as u16).into()),
-            0 => Some(self.wdl),
+            _ => Some(self.wdl),
         }
     }
 

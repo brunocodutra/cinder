@@ -5,7 +5,7 @@ use derive_more::with_trait::{Debug, Deref, Display, Error, From, IntoIterator};
 use std::fmt::{self, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{BitAnd, Shl, Sub};
-use std::{num::NonZeroU32, str::FromStr};
+use std::str::FromStr;
 
 #[cfg(test)]
 use proptest::{prelude::*, sample::Selector};
@@ -283,7 +283,6 @@ pub struct Position {
     threats: Threats,
     zobrists: Zobrists,
     direct_checks: [Bitboard; 4],
-    history: [u32x32; 2],
 }
 
 #[cfg(test)]
@@ -322,7 +321,6 @@ impl Default for Position {
             threats,
             zobrists: board.zobrists(),
             direct_checks: zeroed(),
-            history: zeroed(),
             board,
         }
     }
@@ -357,8 +355,8 @@ impl Position {
     /// It resets to 0 whenever a piece is captured or a pawn is moved.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn halfmoves(&self) -> u8 {
-        self.board.halfmoves
+    pub fn halfmove(&self) -> Halfmove {
+        self.board.halfmove
     }
 
     /// The current move number since the start of the game.
@@ -366,8 +364,8 @@ impl Position {
     /// It starts at 1, and is incremented after every move by black.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn fullmoves(&self) -> NonZeroU32 {
-        self.board.fullmoves.convert().assume()
+    pub fn fullmove(&self) -> Fullmove {
+        self.board.fullmove
     }
 
     /// The en passant square.
@@ -509,7 +507,7 @@ impl Position {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn is_draw_by_50_move_rule(&self) -> bool {
-        self.halfmoves() >= 100 && !self.is_checkmate()
+        self.halfmove() >= Halfmove::MAX && !self.is_checkmate()
     }
 
     /// Whether this position is a check.
@@ -538,16 +536,6 @@ impl Position {
             && MovesGenerator::<0>::moves(self, Bitboard::full(), &mut NoCapacity).is_ok()
     }
 
-    /// Whether the game is a draw by repetition.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn is_draw_by_repetition(&self) -> bool {
-        match self.zobrists().hash.cast() {
-            hash @ 1.. => self.history[self.turn()].simd_eq(Simd::splat(hash)).any(),
-            _ => false,
-        }
-    }
-
     /// The [`Outcome`] of the game in case this position is final.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -557,9 +545,7 @@ impl Position {
         } else if self.is_stalemate() {
             Some(Outcome::Stalemate)
         } else if self.is_draw_by_50_move_rule() {
-            Some(Outcome::DrawBy50MoveRule)
-        } else if self.is_draw_by_repetition() {
-            Some(Outcome::DrawByThreefoldRepetition)
+            Some(Outcome::Draw)
         } else {
             None
         }
@@ -821,18 +807,13 @@ impl Position {
         let src = self[wc];
 
         if src.role() == Some(Pawn) || m.is_noisy() {
-            self.board.halfmoves = 0;
-            self.history = zeroed();
+            self.board.halfmove = zeroed();
         } else {
-            let turn = self.turn();
-            let zobrist = Simd::splat(self.zobrists().hash.cast());
-            let mask = 1u64 << (self.board.halfmoves as usize / 2 % self.history[turn].len());
-            self.history[turn] = mask.select(zobrist, self.history[turn]);
-            self.board.halfmoves += 1;
+            self.board.halfmove += 1;
         }
 
         if self.turn() == Color::Black {
-            self.board.fullmoves += 1;
+            self.board.fullmove += 1;
         }
 
         self.board.turn = !self.board.turn;
@@ -903,16 +884,6 @@ impl Position {
     pub fn pass(&mut self) {
         debug_assert!(!self.is_check());
 
-        let turn = self.turn();
-        let zobrist = Simd::splat(self.zobrists().hash.cast());
-        let mask = 1u64 << (self.board.halfmoves as usize / 2 % self.history[turn].len());
-        self.history[turn] = mask.select(zobrist, self.history[turn]);
-        self.board.halfmoves += 1;
-
-        if self.turn() == Color::Black {
-            self.board.fullmoves += 1;
-        }
-
         self.board.turn = !self.board.turn;
         self.zobrists.hash ^= ZobristNumbers::turn();
         if let Some(ep) = self.board.en_passant.take() {
@@ -957,7 +928,6 @@ impl From<Board> for Position {
             threats,
             zobrists: board.zobrists(),
             direct_checks: board.direct_checks(),
-            history: zeroed(),
             board,
         }
     }
@@ -1279,18 +1249,6 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn pass_panics_if_in_check(#[filter(#pos.is_check())] mut pos: Position) {
         pos.pass();
-    }
-
-    #[proptest]
-    #[cfg_attr(miri, ignore)]
-    fn threefold_repetition_implies_draw(#[filter(#pos.outcome().is_none() )] mut pos: Position) {
-        let zobrist = pos.zobrists().hash.cast();
-        prop_assume!(zobrist != zeroed());
-
-        let turn = pos.turn();
-        pos.history[turn][..2].clone_from_slice(&[zobrist, zobrist]);
-        assert!(pos.is_draw_by_repetition());
-        assert_eq!(pos.outcome(), Some(Outcome::DrawByThreefoldRepetition));
     }
 
     #[proptest]

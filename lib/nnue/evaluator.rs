@@ -168,7 +168,7 @@ impl Evaluator {
             history: zeroed(),
             accumulator: zeroed(),
             pending: zeroed(),
-            cache: Default::default(),
+            cache: [[Default::default(); _]; _],
         };
 
         *evaluator.history.get_mut(Halfmove::MAX as usize).assume() = pos.zobrists().hash;
@@ -409,9 +409,7 @@ impl Evaluator {
                 let turn = self.turn();
                 self.positions[self.ply].play(m);
                 if self[m.whither()].role() == Some(Role::King) {
-                    if KingBucket::new(turn, m.whence()) != KingBucket::new(turn, m.whither()) {
-                        self.pending[turn][self.ply] = Pending::Refresh;
-                    }
+                    self.pending[turn][self.ply] = Pending::Refresh;
                 }
             }
         }

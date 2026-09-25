@@ -70,7 +70,7 @@ pub struct KingBucket(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <KingBu
 const unsafe impl Num for KingBucket {
     type Repr = u8;
     const MIN: Self::Repr = 0;
-    const MAX: Self::Repr = 31;
+    const MAX: Self::Repr = 63;
 }
 
 const unsafe impl Int for KingBucket {}
@@ -82,14 +82,14 @@ impl KingBucket {
     pub fn new(side: Color, ksq: Square) -> Self {
         #[rustfmt::skip]
         const BUCKETS: [u8; 64] = [
-            16, 17, 18, 19,  3,  2,  1,  0,
-            20, 21, 22, 23,  7,  6,  5,  4,
-            24, 25, 26, 27, 11, 10,  9,  8,
-            24, 25, 26, 27, 11, 10,  9,  8,
-            28, 29, 30, 31, 15, 14, 13, 12,
-            28, 29, 30, 31, 15, 14, 13, 12,
-            28, 29, 30, 31, 15, 14, 13, 12,
-            28, 29, 30, 31, 15, 14, 13, 12,
+            32, 33, 34, 35,  3,  2,  1,  0,
+            36, 37, 38, 39,  7,  6,  5,  4,
+            40, 41, 42, 43, 11, 10,  9,  8,
+            44, 45, 46, 47, 15, 14, 13, 12,
+            48, 49, 50, 51, 19, 18, 17, 16,
+            52, 53, 54, 55, 23, 22, 21, 20,
+            56, 57, 58, 59, 27, 26, 25, 24,
+            60, 61, 62, 63, 31, 30, 29, 28,
         ];
 
         Num::new(BUCKETS[ksq.perspective(side)])

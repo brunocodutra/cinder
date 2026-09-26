@@ -933,6 +933,17 @@ impl From<Board> for Position {
     }
 }
 
+#[cfg(feature = "trainer")]
+use bullet::game::formats::bulletformat::ChessBoard;
+
+#[cfg(feature = "trainer")]
+impl From<ChessBoard> for Position {
+    #[inline(always)]
+    fn from(pos: ChessBoard) -> Self {
+        Self::from(Board::from(pos))
+    }
+}
+
 impl Display for Position {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Display::fmt(&self.board, f)

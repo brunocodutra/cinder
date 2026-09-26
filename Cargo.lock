@@ -97,12 +97,12 @@ dependencies = [
 [[package]]
 name = "bullet-compiler"
 version = "0.1.0"
-source = "git+https://github.com/jw1912/bullet#cebc78a093d92cbc87e56cfef049184c225270b0"
+source = "git+https://github.com/jw1912/bullet#b24b38d53905273bf78548990da816d11510ca9f"
 
 [[package]]
 name = "bullet-gpu"
 version = "0.1.0"
-source = "git+https://github.com/jw1912/bullet#cebc78a093d92cbc87e56cfef049184c225270b0"
+source = "git+https://github.com/jw1912/bullet#b24b38d53905273bf78548990da816d11510ca9f"
 dependencies = [
  "bullet-compiler",
 ]
@@ -110,7 +110,7 @@ dependencies = [
 [[package]]
 name = "bullet-trainer"
 version = "0.1.0"
-source = "git+https://github.com/jw1912/bullet#cebc78a093d92cbc87e56cfef049184c225270b0"
+source = "git+https://github.com/jw1912/bullet#b24b38d53905273bf78548990da816d11510ca9f"
 dependencies = [
  "bullet-compiler",
  "bullet-gpu",
@@ -121,13 +121,15 @@ dependencies = [
 [[package]]
 name = "bullet_lib"
 version = "1.0.0"
-source = "git+https://github.com/jw1912/bullet#cebc78a093d92cbc87e56cfef049184c225270b0"
+source = "git+https://github.com/jw1912/bullet#b24b38d53905273bf78548990da816d11510ca9f"
 dependencies = [
  "bullet-compiler",
  "bullet-gpu",
  "bullet-trainer",
  "bulletformat",
  "montyformat",
+ "oorandom",
+ "rand 0.9.4",
  "sfbinpack",
  "viriformat",
 ]
@@ -1013,6 +1015,12 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "oorandom"
+version = "11.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "openssl-probe"

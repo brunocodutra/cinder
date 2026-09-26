@@ -631,7 +631,7 @@ where
 #[inline(always)]
 #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
 fn ppfts(pfts: u8x64, remaining: M8x64, diff: M8x64) -> impl Iterator<Item = PPFeature> {
-    let mut ppfts = StaticSeq::<u16, 128>::new();
+    let mut ppfts = StaticSeq::<u16, { PPFeature::MAX_ACTIVE + 32 }>::new();
     let mut remaining = Bitboard::from(remaining);
     for s in remaining & diff {
         remaining &= !s.bitboard();
@@ -686,6 +686,17 @@ impl FromStr for Evaluator {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self::new(s.parse()?))
+    }
+}
+
+#[cfg(feature = "trainer")]
+use bullet::game::formats::bulletformat::ChessBoard;
+
+#[cfg(feature = "trainer")]
+impl From<ChessBoard> for Evaluator {
+    #[inline(always)]
+    fn from(pos: ChessBoard) -> Self {
+        Self::new(Position::from(pos))
     }
 }
 

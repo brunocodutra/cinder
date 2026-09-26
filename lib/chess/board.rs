@@ -466,6 +466,33 @@ impl FromStr for Board {
     }
 }
 
+#[cfg(feature = "trainer")]
+use bullet::game::formats::bulletformat::ChessBoard;
+
+#[cfg(feature = "trainer")]
+impl From<ChessBoard> for Board {
+    #[inline(always)]
+    fn from(pos: ChessBoard) -> Self {
+        let mut board = Board::empty();
+
+        let mut idx = [0u8; 2];
+        for (p, sq) in pos {
+            let p = Piece::new(Role::new(p & 7), Color::new((p & 8) >> 3));
+            let idx = if p.role() == Role::King {
+                Idx::new(0)
+            } else {
+                idx[p.color()] += 1;
+                Idx::new(idx[p.color()])
+            };
+
+            let sq = sq.convert().assume();
+            board.emplace(sq, Place::new(p, idx));
+        }
+
+        board
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

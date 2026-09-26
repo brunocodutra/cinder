@@ -230,15 +230,10 @@ impl MovePicker {
             all: bool,
         ) -> SortedRatedMovesIter<'a> {
             let pos = &searcher.stack.pos;
-            let moves = if all {
+            let moves = if all || pos.is_check() {
                 pos.moves().into()
             } else {
-                let noisy = pos.noisy();
-                if pos.is_check() && noisy.is_empty() {
-                    pos.moves().into()
-                } else {
-                    noisy.into()
-                }
+                pos.noisy().into()
             };
 
             *picker = MovePicker::Rated(moves);
@@ -610,12 +605,13 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(stand_pat));
         }
 
-        let tt_move = transposition.and_then(|t| t.best.filter(|m| m.is_noisy()));
+        let tt_move = transposition.and_then(|t| t.best.filter(|m| is_check || m.is_noisy()));
         let was_pv = transposition.is_some_and(|t| t.was_pv);
 
         let mut moves = MovePicker::PendingQuiescent;
         let (mut head, mut tail) = match tt_move.or_else(|| moves.sorted(self, None).next()) {
             None if is_check => return Ok(Pv::empty(Score::mated(ply))),
+            None if self.stack.pos.is_stalemate() => return Ok(Pv::empty(Score::drawn())),
             None => return Ok(Pv::empty(stand_pat)),
             Some(m) => {
                 let mut next = self.next(Some(m));
@@ -640,7 +636,7 @@ impl<'a> Searcher<'a> {
                 }
             }
 
-            if !tail.is_losing() {
+            if !is_check && !tail.is_losing() {
                 let margin = *Params::see_margin_quiescence(0);
                 if !pos.gaining(m, margin) {
                     continue;

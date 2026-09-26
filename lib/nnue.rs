@@ -192,7 +192,7 @@ mod tests {
             let bias = transformer.bias[i] as i32;
             let (mut lower, mut upper) = (bias, bias);
 
-            let mut ka = Vec::from_iter(transformer.ka.iter().map(|a| a[i]));
+            let mut ka = Vec::from_iter(transformer.ka.iter().map(|a| a[i] as i16));
             let mut ti = Vec::from_iter(transformer.ti.iter().map(|a| a[i] as i16));
             let mut pp = Vec::from_iter(transformer.pp.iter().map(|a| a[i] as i16));
 

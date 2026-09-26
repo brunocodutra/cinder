@@ -12,7 +12,7 @@ const N: usize = Accumulator::LEN;
 #[debug("Transformer<{N}>")]
 pub struct Transformer {
     pub bias: Aligned<[i16; N]>,
-    pub ka: Aligned<[[i16; N]; KAFeature::LEN]>,
+    pub ka: Aligned<[[i8; N]; KAFeature::LEN]>,
     pub ti: Aligned<[[i8; N]; TIFeature::LEN]>,
     pub pp: Aligned<[[i8; N]; PPFeature::LEN]>,
 }
@@ -40,7 +40,7 @@ impl Transformer {
                 let a1 = self.ka.get(a1.cast::<usize>()).assume();
 
                 for i in 0..N {
-                    dst[i] = src[i] + a1[i] - s1[i];
+                    dst[i] = src[i] + a1[i] as i16 - s1[i] as i16;
                 }
             }
 
@@ -50,7 +50,7 @@ impl Transformer {
                 let a1 = self.ka.get(a1.cast::<usize>()).assume();
 
                 for i in 0..N {
-                    dst[i] = src[i] + a1[i] - s1[i] - s2[i];
+                    dst[i] = src[i] + a1[i] as i16 - s1[i] as i16 - s2[i] as i16;
                 }
             }
 
@@ -61,7 +61,7 @@ impl Transformer {
                 let a2 = self.ka.get(a2.cast::<usize>()).assume();
 
                 for i in 0..N {
-                    dst[i] = src[i] + a1[i] - s1[i] + a2[i] - s2[i];
+                    dst[i] = src[i] + a1[i] as i16 - s1[i] as i16 + a2[i] as i16 - s2[i] as i16;
                 }
             }
 
@@ -84,7 +84,7 @@ impl Transformer {
                 let a1 = self.ka.get(a1.cast::<usize>()).assume();
 
                 for i in 0..N {
-                    acc[i] += a1[i] - s1[i];
+                    acc[i] += a1[i] as i16 - s1[i] as i16;
                 }
             }
 
@@ -92,7 +92,7 @@ impl Transformer {
                 let s1 = self.ka.get(s1.cast::<usize>()).assume();
 
                 for i in 0..N {
-                    acc[i] -= s1[i];
+                    acc[i] -= s1[i] as i16;
                 }
             }
 
@@ -100,7 +100,7 @@ impl Transformer {
                 let a1 = self.ka.get(a1.cast::<usize>()).assume();
 
                 for i in 0..N {
-                    acc[i] += a1[i];
+                    acc[i] += a1[i] as i16;
                 }
             }
 

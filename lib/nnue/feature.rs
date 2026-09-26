@@ -4,7 +4,7 @@ use bytemuck::zeroed;
 use std::array;
 use std::ops::{BitAnd, Index, IndexMut, Not};
 
-/// A piece-square feature with horizontal mirroring.
+/// A piece-square feature with merged kings and horizontal mirroring.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
@@ -20,7 +20,7 @@ const unsafe impl Int for PSQFeature {}
 
 impl PSQFeature {
     /// The total number of different piece-square features.
-    pub const LEN: usize = Square::LEN * Piece::LEN;
+    pub const LEN: usize = Square::LEN * (Piece::LEN - 1);
 
     /// Constructs a lookup table for [`PSQFeature`].
     #[inline(always)]
@@ -30,13 +30,17 @@ impl PSQFeature {
         ksq: Square,
         placement: &Placement,
     ) -> Simd<<Self as Num>::Repr, { Square::LEN }> {
-        let pieces = Piece::DECODER.shuffle(placement.pieces()) ^ Simd::splat(side.get());
-
         let perspective = Square::A1.perspective(side);
         let chirality = Square::A1.perspective(Side::from(ksq.file() < File::E));
         let orientation = Simd::splat(perspective.cast::<u8>() | chirality.cast::<u8>());
         let squares = u8x64::from_array(array::from_fn(Num::cast)) ^ orientation;
 
+        let pieces = Piece::DECODER.shuffle(placement.pieces()) ^ Simd::splat(side.get());
+        let kings = pieces.simd_eq(Simd::splat(Piece::WhiteKing.cast()))
+            | pieces.simd_eq(Simd::splat(Piece::BlackKing.cast()));
+
+        // Merge kings
+        let pieces = kings.select(Simd::splat(Piece::WhiteKing.cast()), pieces);
         u16x64::splat(Square::LEN.cast()) * pieces.cast::<u16>() + squares.cast::<u16>()
     }
 }
@@ -108,7 +112,7 @@ impl<T> IndexMut<KingBucket> for [T; KingBucket::LEN] {
     }
 }
 
-/// A king-bucketed PSQ feature with horizontal mirroring.
+/// A king-bucketed PSQ feature with merged kings and horizontal mirroring..
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
 #[repr(transparent)]
@@ -125,6 +129,9 @@ const unsafe impl Int for KAFeature {}
 impl KAFeature {
     /// The total number of different king-piece-square features.
     pub const LEN: usize = PSQFeature::LEN * KingBucket::LEN / 2;
+
+    /// The maximum number of active king-piece-square features per perspective.
+    pub const MAX_ACTIVE: usize = 32;
 
     /// Constructs a lookup table for [`KAFeature`].
     #[inline(always)]
@@ -198,6 +205,9 @@ impl TIFeature {
 
     /// The total number of different threat features.
     pub const LEN: usize = 2 * Self::THREAT_FEATURES as usize;
+
+    /// The maximum number of active threat features per perspective.
+    pub const MAX_ACTIVE: usize = 128;
 
     /// Constructs a [`ThreatFeature`].
     #[inline(always)]
@@ -383,6 +393,9 @@ const unsafe impl Int for PPFeature {}
 impl PPFeature {
     /// The total number of different pawn-pawn features.
     pub const LEN: usize = PFeature::LEN * (PFeature::LEN - 1) / 2;
+
+    /// The maximum number of active pawn-pawn features per perspective.
+    pub const MAX_ACTIVE: usize = 96;
 
     /// A mask for pawns visible from a [`File`].
     pub const WINDOW: [Bitboard; 8] = [

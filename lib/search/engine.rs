@@ -658,10 +658,12 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let score = if has_upcoming_repetition && !is_check {
+        let score = if tail >= beta {
             ScoreBound::lower_bound(tail.score(), ply)
+        } else if has_upcoming_repetition && !is_check {
+            ScoreBound::lower_bound(Score::drawn(), ply)
         } else {
-            ScoreBound::new(bounds, tail.score(), ply)
+            ScoreBound::upper_bound(tail.score(), ply)
         };
 
         let best = (tail.score() > stand_pat).then_some(head);

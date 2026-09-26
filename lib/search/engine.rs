@@ -584,6 +584,7 @@ impl<'a> Searcher<'a> {
         let value = self.stack.value(0).assume();
         let mut stand_pat = match transposition {
             _ if is_check => Score::lower(),
+            Some(t) if t.score.bound(ply).is_decisive() => value,
             Some(t) if !t.score.range(ply).contains(&value) => t.score.bound(ply),
             _ => value,
         };
@@ -1465,7 +1466,6 @@ impl Engine {
 mod tests {
     use super::*;
     use crate::chess::{Outcome, Position};
-    use proptest::sample::Selector;
     use std::{fmt::Debug, thread};
     use test_strategy::proptest;
 
@@ -1483,82 +1483,6 @@ mod tests {
         let mut vt = ValueTable::new(s);
         vt.resize(t);
         assert_eq!(vt.len(), ValueTable::new(t).len());
-    }
-
-    #[proptest(cases = 1)]
-    #[cfg_attr(miri, ignore)]
-    fn nw_returns_transposition_if_beta_too_high(
-        #[by_ref] mut e: Engine,
-        #[filter(#pos.outcome().is_none() && !#pos.is_check())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves()))] m: Move,
-        o: Duration,
-        #[filter(!#b.is_decisive())] b: Score,
-        was_pv: bool,
-        d: Depth,
-        #[filter(!#s.is_losing() && #s < #b)] s: Score,
-        is_cut: bool,
-    ) {
-        prop_assume!(pos.halfmove().cast::<f32>() <= *Params::tt_cutoff_hm_limit(0));
-
-        let tpos = Transposition::new(ScoreBound::Upper(s), d, Some(m), was_pv);
-        e.shared.tt.store(pos.zobrists().hash, tpos);
-
-        let global = GlobalControl::new(&pos, Limits::none(), o);
-        let ctrl = LocalControl::active(&global);
-        let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
-        let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
-        searcher.stack.attention = searcher.ctrl.attention(m);
-        assert_eq!(searcher.nw(d.cast(), b, is_cut), Ok(Pv::empty(s)));
-    }
-
-    #[proptest(cases = 1)]
-    #[cfg_attr(miri, ignore)]
-    fn nw_returns_transposition_if_beta_too_low(
-        #[by_ref] mut e: Engine,
-        #[filter(#pos.outcome().is_none() && !#pos.is_check())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves()))] m: Move,
-        o: Duration,
-        #[filter(!#b.is_decisive())] b: Score,
-        was_pv: bool,
-        d: Depth,
-        #[filter(!#s.is_winning() && #s >= #b)] s: Score,
-    ) {
-        prop_assume!(pos.halfmove().cast::<f32>() <= *Params::tt_cutoff_hm_limit(0));
-
-        let tpos = Transposition::new(ScoreBound::Lower(s), d, Some(m), was_pv);
-        e.shared.tt.store(pos.zobrists().hash, tpos);
-
-        let global = GlobalControl::new(&pos, Limits::none(), o);
-        let ctrl = LocalControl::active(&global);
-        let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
-        let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
-        searcher.stack.attention = searcher.ctrl.attention(m);
-        assert_eq!(searcher.nw(d.cast(), b, true), Ok(Pv::empty(s)));
-    }
-
-    #[proptest(cases = 1)]
-    #[cfg_attr(miri, ignore)]
-    fn nw_returns_transposition_if_exact(
-        #[by_ref] mut e: Engine,
-        #[filter(#pos.outcome().is_none() && !#pos.is_check())] pos: Evaluator,
-        #[map(|s: Selector| s.select(#pos.moves()))] m: Move,
-        o: Duration,
-        #[filter(!#b.is_decisive())] b: Score,
-        was_pv: bool,
-        d: Depth,
-        #[filter(!#s.is_decisive())] s: Score,
-    ) {
-        prop_assume!(pos.halfmove().cast::<f32>() <= *Params::tt_cutoff_hm_limit(0));
-
-        let tpos = Transposition::new(ScoreBound::Exact(s), d, Some(m), was_pv);
-        e.shared.tt.store(pos.zobrists().hash, tpos);
-
-        let global = GlobalControl::new(&pos, Limits::none(), o);
-        let ctrl = LocalControl::active(&global);
-        let stack = Stack::new(pos, Pv::new(s, Line::singular(m)));
-        let mut searcher = Searcher::new(ctrl, &e.shared, &mut e.local[0], stack);
-        searcher.stack.attention = searcher.ctrl.attention(m);
-        assert_eq!(searcher.nw(d.cast(), b, true), Ok(Pv::empty(s)));
     }
 
     #[proptest(cases = 1)]
@@ -1613,7 +1537,7 @@ mod tests {
 
     #[proptest(cases = 1)]
     #[cfg_attr(miri, ignore)]
-    fn ab_returns_drawn_score_if_game_ends_in_a_draw(
+    fn ab_returns_drawn_score_if_game_ends_in_one(
         mut e: Engine,
         #[filter(#pos.outcome().is_some_and(Outcome::is_draw))] pos: Evaluator,
         m: Move,

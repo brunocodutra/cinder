@@ -59,6 +59,13 @@ impl ScoreBound {
         }
     }
 
+    // Constructs a proven lower [`ScoreBound`] normalized to [`Ply`].
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn lower_bound(score: Score, ply: Ply) -> Self {
+        ScoreBound::Lower(score.relative_to_root(ply))
+    }
+
     // The score bound.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]

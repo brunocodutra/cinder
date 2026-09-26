@@ -140,6 +140,22 @@ const impl<T: [const] Unsigned, const W: u32> BitXorAssign for Bits<T, W> {
     }
 }
 
+const impl<T: [const] Unsigned, U: [const] Unsigned, const W: u32> Shr<U> for Bits<T, W> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn shr(self, rhs: U) -> Self::Output {
+        Self(self.0.shr(rhs.saturate()))
+    }
+}
+
+const impl<T: [const] Unsigned, U: [const] Unsigned, const W: u32> ShrAssign<U> for Bits<T, W> {
+    #[inline(always)]
+    fn shr_assign(&mut self, rhs: U) {
+        self.0.shr_assign(rhs.saturate());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

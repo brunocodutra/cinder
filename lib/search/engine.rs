@@ -664,7 +664,8 @@ impl<'a> Searcher<'a> {
             ScoreBound::new(bounds, tail.score(), ply)
         };
 
-        let tpos = Transposition::new(score, zeroed(), Some(head), IS_PV || was_pv);
+        let best = (tail.score() > stand_pat).then_some(head);
+        let tpos = Transposition::new(score, zeroed(), best, IS_PV || was_pv);
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
         Ok(tail.transpose(head))
     }

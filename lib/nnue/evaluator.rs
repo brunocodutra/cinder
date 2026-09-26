@@ -183,6 +183,24 @@ impl Evaluator {
         self.ply
     }
 
+    /// Whether `m` is reversible.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn is_reverting(&self, m: Move) -> bool {
+        let (wc, wt) = (m.whence(), m.whither());
+        if Bitboard::segment(wc, wt) & self.occupied() != zeroed() {
+            return false;
+        }
+
+        let sq = match (self[wc].is_empty(), self[wt].is_empty()) {
+            (false, true) => wc,
+            (true, false) => wt,
+            _ => return false,
+        };
+
+        self[sq].color() == Some(self.turn())
+    }
+
     /// Zobrist hashes within the repetition horizon.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -194,6 +212,56 @@ impl Evaluator {
         let end = Halfmove::MAX.cast::<usize>() + ply + 1;
         let len = hm.min(plies_since_pass).min(game_ply) + 1;
         self.history.get(end - len..end).assume()
+    }
+
+    /// Whether a reverting move reaches a repeated position next ply.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn has_upcoming_repetition(&self) -> bool {
+        #[inline(never)]
+        fn repeats(window: &[Zobrist], dist: usize) -> bool {
+            let end = window.len() - 1;
+            let ancestor = *window.get(end - dist).assume();
+
+            let mut d = 1;
+            while d <= end {
+                if d != dist && *window.get(end - d).assume() == ancestor {
+                    return true;
+                } else {
+                    d += 2;
+                }
+            }
+
+            false
+        }
+
+        let ply = self.ply.cast::<usize>();
+        let window = self.repetition_window();
+        let end = window.len() - 1;
+        if end < 3 {
+            return false;
+        }
+
+        let current = *window.last().assume();
+        let mut other = current ^ *window.get(end - 1).assume() ^ ZobristNumbers::turn();
+
+        let mut dist = 3;
+        while dist <= end {
+            let ancestor = *window.get(end - dist).assume();
+            let successor = *window.get(end - dist + 1).assume();
+            other ^= successor ^ ancestor ^ ZobristNumbers::turn();
+
+            let diff = current ^ ancestor;
+            if other == zeroed() && Cuckoo::find(diff).is_some_and(|m| self.is_reverting(m)) {
+                if dist < ply || repeats(window, dist) {
+                    return true;
+                }
+            }
+
+            dist += 2;
+        }
+
+        false
     }
 
     /// Whether the game is a draw by repetition.

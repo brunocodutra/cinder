@@ -564,7 +564,12 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(Score::drawn()));
         }
 
-        let (alpha, beta) = self.mdp(&bounds);
+        let (mut alpha, beta) = self.mdp(&bounds);
+        let has_upcoming_repetition = self.stack.pos.has_upcoming_repetition();
+        if has_upcoming_repetition {
+            alpha = alpha.max(Score::drawn());
+        }
+
         if alpha >= beta {
             return Ok(Pv::empty(alpha));
         }
@@ -582,11 +587,15 @@ impl<'a> Searcher<'a> {
 
         let is_check = self.stack.pos.is_check();
         let value = self.stack.value(0).assume();
-        let stand_pat = match transposition {
+        let mut stand_pat = match transposition {
             _ if is_check => Score::lower(),
             Some(t) if !t.score.range(ply).contains(&value) => t.score.bound(ply),
             _ => value,
         };
+
+        if has_upcoming_repetition && !is_check {
+            stand_pat = stand_pat.max(Score::drawn());
+        }
 
         if ply >= Ply::MAX {
             return if is_check {
@@ -649,7 +658,12 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let score = ScoreBound::new(bounds, tail.score(), ply);
+        let score = if has_upcoming_repetition && !is_check {
+            ScoreBound::lower_bound(tail.score(), ply)
+        } else {
+            ScoreBound::new(bounds, tail.score(), ply)
+        };
+
         let tpos = Transposition::new(score, zeroed(), Some(head), IS_PV || was_pv);
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
         Ok(tail.transpose(head))
@@ -675,7 +689,12 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(Score::drawn()));
         }
 
-        let (alpha, beta) = self.mdp(&bounds);
+        let (mut alpha, beta) = self.mdp(&bounds);
+        let has_upcoming_repetition = self.stack.pos.has_upcoming_repetition();
+        if has_upcoming_repetition {
+            alpha = alpha.max(Score::drawn());
+        }
+
         if alpha >= beta {
             return Ok(Pv::empty(alpha));
         }
@@ -693,11 +712,15 @@ impl<'a> Searcher<'a> {
 
         let is_check = self.stack.pos.is_check();
         let value = self.stack.value(0).assume();
-        let stand_pat = match transposition {
+        let mut stand_pat = match transposition {
             _ if is_check => Score::lower(),
             Some(t) => t.score.bound(ply),
             _ => value,
         };
+
+        if has_upcoming_repetition && !is_check {
+            stand_pat = stand_pat.max(Score::drawn());
+        }
 
         if ply >= Ply::MAX {
             return if is_check {

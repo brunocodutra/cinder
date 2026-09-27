@@ -47,6 +47,7 @@ impl TranspositionTable {
         };
 
         if new.age != old.age || new.depth >= old.depth - 4 {
+            new.best = new.best.or(old.best);
             slot.store(Vault::close(zobrist, new), Ordering::Relaxed);
         }
     }
@@ -246,6 +247,7 @@ mod tests {
         tt.age();
         tt.store(k, v);
         v.age = *tt.age.get_mut();
+        v.best = v.best.or(u.best);
         assert_eq!(tt.load(k), Some(v));
     }
 
@@ -261,6 +263,7 @@ mod tests {
         tt.store(k, u);
         tt.store(k, v);
         v.age = *tt.age.get_mut();
+        v.best = v.best.or(u.best);
         assert_eq!(tt.load(k), Some(v));
     }
 

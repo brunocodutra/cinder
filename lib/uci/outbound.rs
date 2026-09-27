@@ -1,8 +1,8 @@
 use crate::chess::Move;
-use crate::search::{HashSize, Info, Mate, MoveOverhead, Pv, SyzygyPath, ThreadCount};
+use crate::search::{Depth, HashSize, Info, Mate, MoveOverhead, Pv, SyzygyPath, ThreadCount};
 use crate::util::Num;
 use std::fmt::{self, Display, Formatter};
-use std::time::Duration;
+use std::{ops::Mul, time::Duration};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
@@ -11,11 +11,12 @@ pub enum Outbound {
     BestMove(Option<Move>),
     ReadyOk,
     Info {
-        time: Duration,
-        depth: u8,
+        depth: Depth,
         seldepth: u16,
+        time: Duration,
         nodes: u64,
         tbhits: u64,
+        hashfull: u16,
         pv: Option<Pv>,
     },
     UciOk,
@@ -30,11 +31,12 @@ impl From<Option<Move>> for Outbound {
 impl From<Info> for Outbound {
     fn from(info: Info) -> Self {
         Outbound::Info {
-            time: info.time(),
-            depth: info.depth().cast(),
+            depth: info.depth(),
             seldepth: info.seldepth(),
+            time: info.time(),
             nodes: info.nodes(),
             tbhits: info.tbhits(),
+            hashfull: info.hashfull().mul(1000.0).saturate(),
             pv: Some(info.pv()),
         }
     }
@@ -47,17 +49,19 @@ impl Display for Outbound {
             Outbound::BestMove(Some(best)) => write!(f, "bestmove {best}"),
             Outbound::ReadyOk => f.write_str("readyok"),
             Outbound::Info {
-                time,
                 depth,
                 seldepth,
+                time,
                 nodes,
                 tbhits,
+                hashfull,
                 pv,
             } => {
                 let ms = time.as_millis();
                 let nps = *nodes as u128 * 1000 / ms.max(1);
-                write!(f, "info depth {depth} seldepth {seldepth} time {ms}")?;
-                write!(f, " nodes {nodes} nps {nps} tbhits {tbhits}")?;
+                write!(f, "info depth {depth} seldepth {seldepth}")?;
+                write!(f, " time {ms} nodes {nodes} nps {nps}")?;
+                write!(f, " tbhits {tbhits} hashfull {hashfull}")?;
 
                 if let Some(pv) = pv {
                     const NORMALIZE_TO_PAWN_VALUE: i32 = 78;
@@ -147,6 +151,7 @@ mod tests {
             field("nodes", int::<u64>),
             field("nps", int::<u64>),
             field("tbhits", int::<u64>),
+            field("hashfull", int::<u64>),
             opt((score, opt(pv))),
         );
 

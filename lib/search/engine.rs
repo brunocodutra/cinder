@@ -1158,12 +1158,15 @@ impl<'a> Searcher<'a> {
                     let bounds = lower.saturate()..upper.saturate();
                     let aw_depth = depth.cast::<f32>() - Params::aw_fh_reduction(2).min(reduction);
                     let Ok(partial) = self.root(&mut moves, aw_depth, bounds) else {
-                        let time = self.ctrl.elapsed();
-                        let nodes = self.ctrl.visited();
-                        let seldepth = self.ctrl.seldepth();
-                        let tbhits = self.shared.syzygy.hits();
-                        let pv = self.stack.pv;
-                        return yield Info::new(time, depth - 1, seldepth, nodes, tbhits, pv);
+                        return yield Info::new(
+                            depth - 1,
+                            self.ctrl.seldepth(),
+                            self.ctrl.elapsed(),
+                            self.ctrl.visited(),
+                            self.shared.syzygy.hits(),
+                            self.shared.tt.hashfull(),
+                            self.stack.pv,
+                        );
                     };
 
                     match partial.score() {
@@ -1178,22 +1181,29 @@ impl<'a> Searcher<'a> {
                             window *= Params::aw_width(2);
                             upper = score.cast::<f32>() + window;
                             reduction += Params::aw_fh_reduction(0);
-
                             self.stack.pv = partial;
-                            let time = self.ctrl.elapsed();
-                            let nodes = self.ctrl.visited();
-                            let seldepth = self.ctrl.seldepth();
-                            let tbhits = self.shared.syzygy.hits();
-                            yield Info::new(time, depth - 1, seldepth, nodes, tbhits, partial);
+                            yield Info::new(
+                                depth - 1,
+                                self.ctrl.seldepth(),
+                                self.ctrl.elapsed(),
+                                self.ctrl.visited(),
+                                self.shared.syzygy.hits(),
+                                self.shared.tt.hashfull(),
+                                partial,
+                            );
                         }
 
                         _ => {
                             self.stack.pv = partial;
-                            let time = self.ctrl.elapsed();
-                            let nodes = self.ctrl.visited();
-                            let seldepth = self.ctrl.seldepth();
-                            let tbhits = self.shared.syzygy.hits();
-                            break yield Info::new(time, depth, seldepth, nodes, tbhits, partial);
+                            break yield Info::new(
+                                depth,
+                                self.ctrl.seldepth(),
+                                self.ctrl.elapsed(),
+                                self.ctrl.visited(),
+                                self.shared.syzygy.hits(),
+                                self.shared.tt.hashfull(),
+                                partial,
+                            );
                         }
                     }
                 }

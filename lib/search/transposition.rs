@@ -20,6 +20,16 @@ const unsafe impl Num for Age {
 
 const unsafe impl Int for Age {}
 
+impl Age {
+    /// How many generations elapse from `self` to `other`.
+    #[inline(always)]
+    pub fn distance(self, other: Self) -> Self {
+        let cycle = Age::MAX.cast::<i16>() + 1;
+        let (a, b) = (self.cast::<i16>(), other.cast::<i16>());
+        (cycle + b - a).rem_euclid(cycle).saturate()
+    }
+}
+
 impl Binary for Age {
     type Bits = Bits<u8, 4>;
 
@@ -42,7 +52,6 @@ pub struct Quality(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Quality a
 
 const unsafe impl Num for Quality {
     type Repr = i16;
-
     const MIN: Self::Repr = Self::Repr::MIN;
     const MAX: Self::Repr = Self::Repr::MAX;
 }
@@ -63,6 +72,18 @@ impl PartialOrd for Quality {
             None
         }
     }
+}
+
+/// How much a transposition is worth to the current search.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, NoUninit)]
+#[cfg_attr(test, derive(test_strategy::Arbitrary))]
+#[repr(transparent)]
+pub struct Relevance(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Relevance as Num>::Repr);
+
+const unsafe impl Num for Relevance {
+    type Repr = i16;
+    const MIN: Self::Repr = Self::Repr::MIN;
+    const MAX: Self::Repr = Self::Repr::MAX;
 }
 
 /// Whether the transposed score is exact or a bound.
@@ -227,6 +248,14 @@ impl Transposition {
     #[inline(always)]
     pub fn quality(self) -> Quality {
         self.depth.saturate()
+    }
+
+    /// How much this entry is worth to the search at a given `age`.
+    #[inline(always)]
+    pub fn relevance(self, age: Age) -> Relevance {
+        let depth = self.depth.cast::<i16>();
+        let age = self.age.distance(age).cast::<i16>();
+        (depth - age).saturate()
     }
 }
 

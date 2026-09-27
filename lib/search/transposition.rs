@@ -185,6 +185,12 @@ impl Transposition {
             self.best.map_or_else(Line::empty, Line::singular),
         )
     }
+
+    /// Whether this entry was written during the given `age`.
+    #[inline(always)]
+    pub fn is_live(self, age: Age) -> bool {
+        self.age == age
+    }
 }
 
 impl Binary for Transposition {

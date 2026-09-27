@@ -52,11 +52,13 @@ where
     U: [const] Unsigned,
     R: [const] Unsigned,
 {
+    // Whether the vault is empty.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.bits == zeroed()
     }
 
+    // Constructs an empty vault.
     #[inline(always)]
     pub fn empty() -> Self {
         Vault {
@@ -65,6 +67,7 @@ where
         }
     }
 
+    /// Locks `value` in the vault with `key`.
     #[inline(always)]
     #[expect(clippy::needless_pass_by_value)]
     pub fn close(mut key: Key, value: T) -> Self {
@@ -78,18 +81,24 @@ where
         }
     }
 
+    /// Returns the value stored in the vault if `key` matches.
     #[inline(always)]
     pub fn open(self, key: Key) -> Option<T> {
         const { assert!(B <= U::BITS && U::BITS <= <Key as Num>::Repr::BITS) }
+        if self.matches(key) { self.peek() } else { None }
+    }
 
-        if self.matches(key) {
-            Some(Binary::decode(self.bits.convert::<Key>().assume().pop()))
-        } else {
+    /// Returns the value stored in the vault, or `None` when it is empty.
+    #[inline(always)]
+    pub fn peek(self) -> Option<T> {
+        if self.is_empty() {
             None
+        } else {
+            Some(Binary::decode(self.bits.convert::<Key>().assume().pop()))
         }
     }
 
-    /// Whether this key matches the lock.
+    /// Whether `key` can open this vault.
     #[inline(always)]
     pub fn matches(&self, key: Key) -> bool {
         !self.is_empty() && (self.bits >> B.cast()) == key.slice(..(U::BITS - B)).cast()

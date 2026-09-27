@@ -8,7 +8,7 @@ use crate::search::{Depth, Engine, Limits};
 use crate::{chess::Color, nnue::Evaluator, util::Num, warn};
 use futures::{prelude::*, select_biased as select, stream::FusedStream};
 use std::time::{Duration, Instant};
-use std::{fmt::Debug, pin::Pin, str::FromStr};
+use std::{fmt::Debug, ops::Mul, pin::Pin, str::FromStr};
 
 #[cfg(test)]
 use proptest::{prelude::*, strategy::LazyJust};
@@ -117,11 +117,12 @@ where
                     let time = timer.elapsed();
 
                     let info = Outbound::Info {
+                        depth: plies.saturate(),
+                        seldepth: plies.saturate(),
                         time,
-                        depth: plies,
-                        seldepth: plies.cast(),
                         nodes,
                         tbhits: 0,
+                        hashfull: 0,
                         pv: None,
                     };
 
@@ -189,6 +190,7 @@ where
                     let depth = depth.unwrap_or_else(Depth::upper);
 
                     let mut time = Duration::ZERO;
+                    let mut hashfull = 0.0;
                     let mut seldepth = 0;
                     let mut tbhits = 0;
                     let mut nodes = 0;
@@ -210,14 +212,16 @@ where
                         nodes += info.map_or(0, |i| i.nodes());
                         tbhits += info.map_or(0, |i| i.tbhits());
                         seldepth = info.map_or(0, |i| i.seldepth()).max(seldepth);
+                        hashfull += info.map_or(0.0, |i| i.hashfull() / FENS.len().cast::<f32>());
                     }
 
                     let info = Outbound::Info {
-                        time,
-                        depth: depth.cast(),
+                        depth,
                         seldepth,
+                        time,
                         nodes,
                         tbhits,
+                        hashfull: hashfull.mul(1000.0).saturate(),
                         pv: None,
                     };
 

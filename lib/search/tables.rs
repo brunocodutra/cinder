@@ -63,6 +63,19 @@ impl TranspositionTable {
         ptr::from_ref(&self.entries[zobrist]).prefetch();
     }
 
+    /// The fraction of slots holding an entry written during the current search.
+    #[inline(always)]
+    pub fn hashfull(&self) -> f32 {
+        let age = self.age.load(Ordering::Relaxed);
+        let len = self.entries.len().min(1000);
+        let live = self.entries.iter().take(len).filter(|slot| {
+            let transposition = slot.load(Ordering::Relaxed).peek();
+            transposition.is_some_and(|t| t.is_live(age))
+        });
+
+        live.count().cast::<f32>() / len.max(1).cast::<f32>()
+    }
+
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn age(&mut self) {

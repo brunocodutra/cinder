@@ -42,8 +42,8 @@ struct Layout(Bits<u8, 8>);
 
 const unsafe impl Num for Layout {
     type Repr = u8;
-    const MIN: Self::Repr = u8::MIN;
-    const MAX: Self::Repr = u8::MAX;
+    const MIN: Self::Repr = Self::Repr::MIN;
+    const MAX: Self::Repr = Self::Repr::MAX;
 }
 
 impl Layout {

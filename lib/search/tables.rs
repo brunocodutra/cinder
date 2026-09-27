@@ -3,7 +3,8 @@ use crate::search::{Age, HashSize, Transposition, Value};
 use crate::util::{Atomic, HugePages, Memory, Num, Prefetch, Vault};
 use bytemuck::zeroed;
 use derive_more::with_trait::{Debug, Deref, DerefMut};
-use std::{cell::UnsafeCell, mem::MaybeUninit, ops::Shr, ptr, slice, sync::atomic::Ordering};
+use std::sync::atomic::Ordering::Relaxed;
+use std::{cell::UnsafeCell, cmp::Ordering::Less, mem::MaybeUninit, ops::Shr, ptr, slice};
 
 #[inline(always)]
 const fn tt_size(size: HashSize) -> usize {
@@ -39,23 +40,23 @@ impl TranspositionTable {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn store(&self, zobrist: Zobrist, mut new: Transposition) {
-        new.age = self.age.load(Ordering::Relaxed);
+        new.age = self.age.load(Relaxed);
 
         let slot = &self.entries[zobrist];
-        let Some(old) = slot.load(Ordering::Relaxed).open(zobrist) else {
-            return slot.store(Vault::close(zobrist, new), Ordering::Relaxed);
+        let Some(old) = slot.load(Relaxed).open(zobrist) else {
+            return slot.store(Vault::close(zobrist, new), Relaxed);
         };
 
-        if new.age != old.age || new.depth >= old.depth - 4 {
+        if new.age != old.age || new.quality().partial_cmp(&old.quality()) != Some(Less) {
             new.best = new.best.or(old.best);
-            slot.store(Vault::close(zobrist, new), Ordering::Relaxed);
+            slot.store(Vault::close(zobrist, new), Relaxed);
         }
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn load(&self, zobrist: Zobrist) -> Option<Transposition> {
-        self.entries[zobrist].load(Ordering::Relaxed).open(zobrist)
+        self.entries[zobrist].load(Relaxed).open(zobrist)
     }
 
     #[inline(always)]
@@ -67,10 +68,10 @@ impl TranspositionTable {
     /// The fraction of slots holding an entry written during the current search.
     #[inline(always)]
     pub fn hashfull(&self) -> f32 {
-        let age = self.age.load(Ordering::Relaxed);
+        let age = self.age.load(Relaxed);
         let len = self.entries.len().min(1000);
         let live = self.entries.iter().take(len).filter(|slot| {
-            let transposition = slot.load(Ordering::Relaxed).peek();
+            let transposition = slot.load(Relaxed).peek();
             transposition.is_some_and(|t| t.is_live(age))
         });
 
@@ -125,13 +126,13 @@ impl ValueTable {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn store(&self, key: Zobrist, value: Value) {
-        self.entries[key].store(Vault::close(key, value), Ordering::Relaxed);
+        self.entries[key].store(Vault::close(key, value), Relaxed);
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn load(&self, key: Zobrist) -> Option<Value> {
-        self.entries[key].load(Ordering::Relaxed).open(key)
+        self.entries[key].load(Relaxed).open(key)
     }
 
     #[inline(always)]
@@ -253,11 +254,11 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn tt_store_replaces_value_if_deeper(
+    fn tt_store_replaces_value_by_quality(
         s: HashSize,
         k: Zobrist,
         u: Transposition,
-        #[filter(#v.depth >= #u.depth)] mut v: Transposition,
+        #[filter(#v.quality().partial_cmp(&#u.quality()) != Some(Less))] mut v: Transposition,
     ) {
         let mut tt = TranspositionTable::new(s);
         tt.store(k, u);

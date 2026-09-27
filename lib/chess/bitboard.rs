@@ -15,8 +15,8 @@ pub struct Bitboard(<Bitboard as Num>::Repr);
 
 const unsafe impl Num for Bitboard {
     type Repr = u64;
-    const MIN: Self::Repr = u64::MIN;
-    const MAX: Self::Repr = u64::MAX;
+    const MIN: Self::Repr = Self::Repr::MIN;
+    const MAX: Self::Repr = Self::Repr::MAX;
 }
 
 const unsafe impl Int for Bitboard {}

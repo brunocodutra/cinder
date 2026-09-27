@@ -3,8 +3,8 @@ use crate::search::{Depth, Line, Ply, Pv, Score};
 use crate::util::{Assume, Binary, Bits, Int, Num};
 use bytemuck::{NoUninit, Zeroable, zeroed};
 use derive_more::with_trait::Debug;
-use std::hint::unreachable_unchecked;
 use std::ops::{Range, RangeInclusive};
+use std::{cmp::Ordering, hint::unreachable_unchecked};
 
 /// The transposition age.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, NoUninit)]
@@ -31,6 +31,37 @@ impl Binary for Age {
     #[inline(always)]
     fn decode(bits: Self::Bits) -> Self {
         bits.convert().assume()
+    }
+}
+
+/// How good a [`Transposition`] is.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Zeroable, NoUninit)]
+#[cfg_attr(test, derive(test_strategy::Arbitrary))]
+#[repr(transparent)]
+pub struct Quality(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Quality as Num>::Repr);
+
+const unsafe impl Num for Quality {
+    type Repr = i16;
+
+    const MIN: Self::Repr = Self::Repr::MIN;
+    const MAX: Self::Repr = Self::Repr::MAX;
+}
+
+/// Semi-order that requires overwhelming superiority.
+impl PartialOrd for Quality {
+    #[inline(always)]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        const MARGIN: i16 = 4;
+
+        if self.0 == other.0 {
+            Some(Ordering::Equal)
+        } else if self.0 > other.0.saturating_add(MARGIN) {
+            Some(Ordering::Greater)
+        } else if self.0.saturating_add(MARGIN) < other.0 {
+            Some(Ordering::Less)
+        } else {
+            None
+        }
     }
 }
 
@@ -190,6 +221,12 @@ impl Transposition {
     #[inline(always)]
     pub fn is_live(self, age: Age) -> bool {
         self.age == age
+    }
+
+    /// How good this entry is.
+    #[inline(always)]
+    pub fn quality(self) -> Quality {
+        self.depth.saturate()
     }
 }
 

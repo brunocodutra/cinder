@@ -1,6 +1,6 @@
 use crate::chess::Zobrist;
 use crate::search::{Age, HashSize, Transposition, Value};
-use crate::util::{Atomic, HugePages, Memory, Num, Prefetch, Vault};
+use crate::util::{Assume, Atomic, HugePages, Memory, Num, Prefetch, Vault};
 use bytemuck::zeroed;
 use derive_more::with_trait::{Debug, Deref, DerefMut};
 use std::sync::atomic::Ordering::Relaxed;
@@ -24,6 +24,8 @@ pub struct TranspositionTable {
 }
 
 impl TranspositionTable {
+    const BUCKETS: usize = 3;
+
     #[inline(always)]
     pub fn new(size: HashSize) -> Self {
         Self {
@@ -42,27 +44,71 @@ impl TranspositionTable {
     pub fn store(&self, zobrist: Zobrist, mut new: Transposition) {
         new.age = self.age.load(Relaxed);
 
-        let slot = &self.entries[zobrist];
-        let Some(old) = slot.load(Relaxed).open(zobrist) else {
-            return slot.store(Vault::close(zobrist, new), Relaxed);
-        };
+        let mut idx = 0;
+        let mut empty = None;
+        let mut worst = None;
+        let bucket = self.bucket(zobrist);
+        for (i, slot) in bucket.iter().enumerate() {
+            let vault = slot.load(Relaxed);
 
-        if new.age != old.age || new.quality().partial_cmp(&old.quality()) != Some(Less) {
-            new.best = new.best.or(old.best);
-            slot.store(Vault::close(zobrist, new), Relaxed);
+            if let Some(old) = vault.open(zobrist) {
+                if new.age != old.age || new.quality().partial_cmp(&old.quality()) != Some(Less) {
+                    new.best = new.best.or(old.best);
+                    slot.store(Vault::close(zobrist, new), Relaxed);
+                }
+
+                return;
+            }
+
+            if empty.is_none() {
+                match vault.peek() {
+                    None => empty = Some(i),
+                    Some(transposition) => {
+                        let relevance = transposition.relevance(new.age);
+                        if worst.is_none_or(|r| r > relevance) {
+                            worst = Some(relevance);
+                            idx = i;
+                        }
+                    }
+                }
+            }
         }
+
+        let slot = bucket.get(empty.unwrap_or(idx)).assume();
+        slot.store(Vault::close(zobrist, new), Relaxed);
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn load(&self, zobrist: Zobrist) -> Option<Transposition> {
-        self.entries[zobrist].load(Relaxed).open(zobrist)
+        self.bucket(zobrist).iter().find_map(|slot| {
+            let vault = slot.load(Relaxed);
+            vault.open(zobrist)
+        })
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn prefetch(&self, zobrist: Zobrist) {
-        ptr::from_ref(&self.entries[zobrist]).prefetch();
+        ptr::from_ref(self.bucket(zobrist)).prefetch();
+    }
+
+    /// The bucket for `key`.
+    #[inline(always)]
+    pub fn bucket(&self, key: Zobrist) -> &[Atomic<Vault<Transposition, u64>>; Self::BUCKETS] {
+        let (buckets, _) = self.entries.as_chunks::<{ Self::BUCKETS }>();
+        &buckets[key]
+    }
+
+    /// The mutable bucket for `key`.
+    #[inline(always)]
+    #[cfg(test)]
+    fn bucket_mut(
+        &mut self,
+        key: Zobrist,
+    ) -> &mut [Atomic<Vault<Transposition, u64>>; Self::BUCKETS] {
+        let (buckets, _) = self.entries.as_chunks_mut::<{ Self::BUCKETS }>();
+        &mut buckets[key]
     }
 
     /// The fraction of slots holding an entry written during the current search.
@@ -190,7 +236,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn tt_load_returns_none_if_slot_is_empty(s: HashSize, k: Zobrist) {
         let mut tt = TranspositionTable::new(s);
-        tt.entries[k] = zeroed();
+        tt.bucket_mut(k)[0] = zeroed();
         assert_eq!(tt.load(k), None);
     }
 
@@ -198,7 +244,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn tt_load_returns_none_if_key_does_not_match(s: HashSize, k: Zobrist, v: Transposition) {
         let mut tt = TranspositionTable::new(s);
-        *tt.entries[k].get_mut() = Vault::close(!k, v);
+        *tt.bucket_mut(k)[0].get_mut() = Vault::close(!k, v);
         assert_eq!(tt.load(k), None);
     }
 
@@ -206,7 +252,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn tt_load_returns_some_if_key_matches(s: HashSize, k: Zobrist, v: Transposition) {
         let mut tt = TranspositionTable::new(s);
-        *tt.entries[k].get_mut() = Vault::close(k, v);
+        *tt.bucket_mut(k)[0].get_mut() = Vault::close(k, v);
         assert_eq!(tt.load(k), Some(v));
     }
 
@@ -214,7 +260,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn tt_stores_value_if_slot_is_empty(s: HashSize, k: Zobrist, mut v: Transposition) {
         let mut tt = TranspositionTable::new(s);
-        tt[k] = zeroed();
+        tt.bucket_mut(k)[0] = zeroed();
         tt.store(k, v);
         v.age = *tt.age.get_mut();
         assert_eq!(tt.load(k), Some(v));
@@ -229,7 +275,7 @@ mod tests {
         mut v: Transposition,
     ) {
         let mut tt = TranspositionTable::new(s);
-        *tt.entries[k].get_mut() = Vault::close(!k, u);
+        *tt.bucket_mut(k)[0].get_mut() = Vault::close(!k, u);
         tt.store(k, v);
         v.age = *tt.age.get_mut();
         assert_eq!(tt.load(k), Some(v));
@@ -266,6 +312,46 @@ mod tests {
         v.age = *tt.age.get_mut();
         v.best = v.best.or(u.best);
         assert_eq!(tt.load(k), Some(v));
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn tt_store_prefers_empty_slot_over_evicting(
+        s: HashSize,
+        k: Zobrist,
+        u: Transposition,
+        mut v: Transposition,
+    ) {
+        let mut tt = TranspositionTable::new(s);
+        *tt.bucket_mut(k)[1].get_mut() = Vault::close(!k, u);
+
+        tt.store(k, v);
+        v.age = *tt.age.get_mut();
+        assert_eq!(tt.load(k), Some(v));
+        assert_eq!(tt.bucket(k)[0].load(Relaxed).open(k), Some(v));
+        assert_eq!(tt.bucket(k)[1].load(Relaxed).open(!k), Some(u));
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn tt_store_evicts_least_relevant_entry(
+        s: HashSize,
+        k: Zobrist,
+        b: [Transposition; TranspositionTable::BUCKETS],
+        mut u: Transposition,
+    ) {
+        let mut tt = TranspositionTable::new(s);
+        for (i, t) in b.iter().enumerate() {
+            *tt.bucket_mut(k)[i].get_mut() = Vault::close(!k, *t);
+        }
+
+        let age = *tt.age.get_mut();
+        let worst = b.iter().enumerate().min_by_key(|(_, u)| u.relevance(age));
+        let idx = worst.map(|(i, _)| i).unwrap();
+
+        tt.store(k, u);
+        u.age = *tt.age.get_mut();
+        assert_eq!(tt.bucket(k)[idx].load(Relaxed).open(k), Some(u));
     }
 
     #[proptest]

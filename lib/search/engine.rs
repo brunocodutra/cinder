@@ -778,7 +778,7 @@ impl<'a> Searcher<'a> {
                 }
             }
 
-            if !beta.is_losing() && depth < *Params::rfp_depth_limit(0) {
+            if !beta.is_losing() && depth < *Params::rfp_depth_limit(0) && !was_pv {
                 let margin = convolve([
                     (1.0, Params::rfp_margin_scalar(..)),
                     (depth, Params::rfp_margin_depth(..)),
@@ -786,7 +786,8 @@ impl<'a> Searcher<'a> {
                 ]);
 
                 if value - margin.cast::<i16>() >= beta {
-                    return Ok(Pv::empty(value).clip(lower, upper));
+                    let blended = Params::rfp_lerp(0).lerp(beta.cast::<f32>(), value.cast::<f32>());
+                    return Ok(Pv::empty(blended.saturate()).clip(lower, upper));
                 }
             }
 

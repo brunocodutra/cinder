@@ -599,7 +599,12 @@ impl<'a> Searcher<'a> {
 
         let alpha = alpha.max(stand_pat);
         if alpha >= beta {
-            return Ok(Pv::empty(stand_pat));
+            return if !stand_pat.is_decisive() && !beta.is_decisive() {
+                let blended = Params::quiescence_sp_lerp(0).lerp(beta.cast(), stand_pat.cast());
+                Ok(Pv::empty(blended.saturate()))
+            } else {
+                Ok(Pv::empty(stand_pat))
+            };
         }
 
         let tt_move = transposition.and_then(|t| t.best.filter(|m| is_check || m.is_noisy()));

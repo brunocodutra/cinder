@@ -656,6 +656,11 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        if tail >= beta && !tail.is_decisive() && !beta.is_decisive() {
+            let blended = Params::quiescence_fh_lerp(0).lerp(beta.cast(), tail.cast());
+            tail = tail.clip(beta, blended.saturate());
+        }
+
         let score = if tail >= beta {
             ScoreBound::lower_bound(tail.score(), ply)
         } else {

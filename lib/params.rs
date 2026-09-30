@@ -234,6 +234,7 @@ params! {
     fhp_margin_scalar: [170.64804, 18.890638],
     fhp_margin_depth: [19.776033],
     quiescence_sp_lerp: [0.9],
+    quiescence_fh_lerp: [0.9],
     razoring_depth_limit: [4.0],
     razoring_scalar: [30.0234, 21.85148],
     razoring_depth: [8.186248],

@@ -242,6 +242,7 @@ params! {
     rfp_margin_scalar: [10.407456, 10.813848, -6.300178],
     rfp_margin_depth: [1.3744049, -0.13397427],
     rfp_margin_is_improving: [-6.637267],
+    rfp_lerp: [0.8],
     probcut_depth: [0.008366786, -3.3176877],
     probcut_depth_bounds: [5.534753, 2.9517484],
     probcut_margin_depth: [29.81105, 161.51877],

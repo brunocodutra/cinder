@@ -419,7 +419,7 @@ impl<'a> Searcher<'a> {
     /// The mate distance pruning.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn mdp(&self, bounds: &Range<Score>) -> (Score, Score) {
+    fn mdp(&self, bounds: Range<Score>) -> (Score, Score) {
         let ply = self.stack.pos.ply();
         let lower = Score::mated(ply);
         let upper = Score::mating(ply + 1); // One can't mate in 0 plies!
@@ -559,7 +559,7 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(Score::drawn()));
         }
 
-        let (mut alpha, beta) = self.mdp(&bounds);
+        let (mut alpha, beta) = self.mdp(bounds);
         let has_upcoming_repetition = self.stack.pos.has_upcoming_repetition();
         if has_upcoming_repetition {
             alpha = alpha.max(Score::drawn());
@@ -689,7 +689,7 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(Score::drawn()));
         }
 
-        let (mut alpha, beta) = self.mdp(&bounds);
+        let (mut alpha, beta) = self.mdp(bounds);
         let has_upcoming_repetition = self.stack.pos.has_upcoming_repetition();
         if has_upcoming_repetition {
             alpha = alpha.max(Score::drawn());
@@ -857,7 +857,7 @@ impl<'a> Searcher<'a> {
                     drop(next);
                     if pv >= pc_beta {
                         let pv = pv.clip(lower, upper);
-                        let score = ScoreBound::new(bounds, pv.score(), ply);
+                        let score = ScoreBound::new(alpha..beta, pv.score(), ply);
                         let depth = Params::probcut_depth_bonus(0).add(pc_depth).saturate();
                         let tpos = Transposition::new(score, depth, Some(m), IS_PV || was_pv);
                         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
@@ -1024,7 +1024,7 @@ impl<'a> Searcher<'a> {
         }
 
         let tail = tail.lower(upper);
-        let score = ScoreBound::new(bounds, tail.score(), ply);
+        let score = ScoreBound::new(alpha..beta, tail.score(), ply);
         let tpos = Transposition::new(score, depth.saturate(), Some(head), IS_PV || was_pv);
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
 
@@ -1116,7 +1116,7 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let score = ScoreBound::new(bounds, tail.score(), zeroed());
+        let score = ScoreBound::new(alpha..beta, tail.score(), zeroed());
         let tpos = Transposition::new(score, depth.saturate(), Some(head), true);
         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
 

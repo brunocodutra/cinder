@@ -582,16 +582,12 @@ impl<'a> Searcher<'a> {
 
         let is_check = self.stack.pos.is_check();
         let value = self.stack.value(0).assume();
-        let mut stand_pat = match transposition {
+        let stand_pat = match transposition {
             _ if is_check => Score::lower(),
             Some(t) if t.score.bound(ply).is_decisive() => value,
             Some(t) if !t.score.range(ply).contains(&value) => t.score.bound(ply),
             _ => value,
         };
-
-        if has_upcoming_repetition && !is_check {
-            stand_pat = stand_pat.max(Score::drawn());
-        }
 
         if ply >= Ply::MAX {
             return if is_check {
@@ -710,15 +706,11 @@ impl<'a> Searcher<'a> {
 
         let is_check = self.stack.pos.is_check();
         let value = self.stack.value(0).assume();
-        let mut stand_pat = match transposition {
+        let stand_pat = match transposition {
             _ if is_check => Score::lower(),
             Some(t) => t.score.bound(ply),
             _ => value,
         };
-
-        if has_upcoming_repetition && !is_check {
-            stand_pat = stand_pat.max(Score::drawn());
-        }
 
         if ply >= Ply::MAX {
             return if is_check {

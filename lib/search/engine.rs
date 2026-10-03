@@ -858,7 +858,7 @@ impl<'a> Searcher<'a> {
                     if pv >= pc_beta {
                         let pv = pv.clip(lower, upper);
                         let score = ScoreBound::new(bounds, pv.score(), ply);
-                        let depth = Params::probcut_depth_bonus(0).add(depth).saturate();
+                        let depth = Params::probcut_depth_bonus(0).add(pc_depth).saturate();
                         let tpos = Transposition::new(score, depth, Some(m), IS_PV || was_pv);
                         self.shared.tt.store(self.stack.pos.zobrists().hash, tpos);
                         return Ok(pv.truncate().transpose(m));

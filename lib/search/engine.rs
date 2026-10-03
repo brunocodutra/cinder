@@ -629,7 +629,7 @@ impl<'a> Searcher<'a> {
                 let delta = alpha - value;
                 let margin = delta.cast::<f32>() - Params::futility_margin_quiescence(0);
                 if margin >= 0.0 && !pos.gaining(m, margin) {
-                    break;
+                    continue;
                 }
             }
 

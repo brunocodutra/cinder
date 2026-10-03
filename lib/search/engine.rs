@@ -599,7 +599,12 @@ impl<'a> Searcher<'a> {
 
         let alpha = alpha.max(stand_pat);
         if alpha >= beta {
-            return Ok(Pv::empty(stand_pat));
+            return if !stand_pat.is_decisive() && !beta.is_decisive() {
+                let blended = Params::quiescence_sp_lerp(0).lerp(beta.cast(), stand_pat.cast());
+                Ok(Pv::empty(blended.saturate()))
+            } else {
+                Ok(Pv::empty(stand_pat))
+            };
         }
 
         let tt_move = transposition.and_then(|t| t.best.filter(|m| is_check || m.is_noisy()));
@@ -649,6 +654,11 @@ impl<'a> Searcher<'a> {
             if pv > tail {
                 (head, tail) = (m, pv);
             }
+        }
+
+        if tail >= beta && !tail.is_decisive() && !beta.is_decisive() {
+            let blended = Params::quiescence_fh_lerp(0).lerp(beta.cast(), tail.cast());
+            tail = tail.clip(beta, blended.saturate());
         }
 
         let score = if tail >= beta {
@@ -768,7 +778,7 @@ impl<'a> Searcher<'a> {
                 }
             }
 
-            if !beta.is_losing() && depth < *Params::rfp_depth_limit(0) {
+            if !beta.is_losing() && depth < *Params::rfp_depth_limit(0) && !was_pv {
                 let margin = convolve([
                     (1.0, Params::rfp_margin_scalar(..)),
                     (depth, Params::rfp_margin_depth(..)),
@@ -776,7 +786,8 @@ impl<'a> Searcher<'a> {
                 ]);
 
                 if value - margin.cast::<i16>() >= beta {
-                    return Ok(Pv::empty(value).clip(lower, upper));
+                    let blended = Params::rfp_lerp(0).lerp(beta.cast::<f32>(), value.cast::<f32>());
+                    return Ok(Pv::empty(blended.saturate()).clip(lower, upper));
                 }
             }
 

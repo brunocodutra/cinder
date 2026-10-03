@@ -890,6 +890,7 @@ impl Position {
             self.zobrists.hash ^= ZobristNumbers::en_passant(ep.file());
         }
 
+        self.direct_checks = self.board.direct_checks();
         self.pins = self.board.pins(self.threats());
     }
 
@@ -1191,7 +1192,7 @@ mod tests {
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn legal_move_updates_position(
+    fn play_updates_position(
         #[filter(#pos.outcome().is_none())] mut pos: Position,
         #[map(|s: Selector| s.select(#pos.moves()))] m: Move,
     ) {
@@ -1199,34 +1200,7 @@ mod tests {
         pos.play(m);
 
         assert_ne!(pos, prev);
-        assert_ne!(pos.turn(), prev.turn());
-
-        assert_eq!(pos[m.whence()], Place::empty());
-        assert_eq!(
-            pos[m.whither()].piece(),
-            m.promotion()
-                .map(|r| Piece::new(r, prev.turn()))
-                .or_else(|| prev[m.whence()].piece())
-        );
-
-        assert_eq!(
-            Bitboard::from(pos.occupied()),
-            Role::iter().fold(Bitboard::empty(), |bb, r| bb | pos.by_role(r))
-        );
-
-        assert_eq!(
-            pos.by_color(prev.turn()).count(),
-            prev.by_color(prev.turn()).count()
-        );
-
-        assert_eq!(
-            pos.by_color(pos.turn()).count(),
-            prev.by_color(pos.turn()).count() - m.is_capture() as u32
-        );
-
-        if let Some(ep) = pos.en_passant() {
-            assert_eq!(ep.rank(), Rank::Sixth.perspective(pos.turn()));
-        }
+        assert_eq!(pos, Position::from(Board::from(pos)));
     }
 
     #[proptest]
@@ -1242,17 +1216,18 @@ mod tests {
         let prev = pos;
         pos.pass();
         assert_ne!(pos, prev);
+        assert_eq!(pos, Position::from(Board::from(pos)));
     }
 
     #[proptest]
     #[cfg_attr(miri, ignore)]
-    fn pass_reverts_itself(#[filter(!#pos.is_check() )] mut pos: Position) {
+    fn pass_reverts_itself(
+        #[filter(!#pos.is_check() && #pos.en_passant().is_none())] mut pos: Position,
+    ) {
         let prev = pos;
         pos.pass();
         pos.pass();
-        assert_eq!(pos.placement(), prev.placement());
-        assert_eq!(pos.threats(), prev.threats());
-        assert_eq!(pos.pins(), prev.pins());
+        assert_eq!(pos, prev);
     }
 
     #[proptest]

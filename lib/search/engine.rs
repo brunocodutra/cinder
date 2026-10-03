@@ -887,8 +887,8 @@ impl<'a> Searcher<'a> {
                         let se_beta = t.score.bound(ply) - margin.cast::<i16>();
 
                         let mut se_score = Score::lower();
-                        for m in moves.sorted(self, Some(m)).skip(1) {
-                            let mut next = self.next(Some(m));
+                        for n in moves.sorted(self, Some(m)).skip(1) {
+                            let mut next = self.next(Some(n));
                             let pv = -next.nw(se_depth - 1.0, -se_beta + 1, !is_cut)?;
                             se_score = pv.score().max(se_score);
                             if se_score.min(se_beta) >= beta {

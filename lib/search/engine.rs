@@ -708,7 +708,7 @@ impl<'a> Searcher<'a> {
         let value = self.stack.value(0).assume();
         let stand_pat = match transposition {
             _ if is_check => Score::lower(),
-            Some(t) => t.score.bound(ply),
+            Some(t) if !t.score.range(ply).contains(&value) => t.score.bound(ply),
             _ => value,
         };
 

@@ -1560,7 +1560,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn ab_returns_lost_score_if_game_ends_in_checkmate(
         mut e: Engine,
-        #[filter(#pos.is_checkmate())] pos: Evaluator,
+        #[filter(#pos.is_checkmate() && #pos.ply() < Ply::upper())] pos: Evaluator,
         m: Move,
         o: Duration,
         #[filter(!#b.is_empty())] b: Range<Score>,

@@ -7,7 +7,6 @@ mod mask;
 mod mul4x8;
 mod muladd4x8;
 mod mulhi;
-mod nzs;
 mod pack;
 mod permute;
 mod shlv;
@@ -22,13 +21,23 @@ pub use mask::*;
 pub use mul4x8::*;
 pub use muladd4x8::*;
 pub use mulhi::*;
-pub use nzs::*;
 pub use pack::*;
 pub use permute::*;
 pub use shlv::*;
 pub use shuffle::*;
 
 pub use std::simd::{prelude::*, *};
+
+#[cfg(target_feature = "avx512f")]
+pub const REGISTERS: usize = 32;
+
+#[cfg(not(target_feature = "avx512f"))]
+#[cfg(target_feature = "neon")]
+pub const REGISTERS: usize = 32;
+
+#[cfg(not(target_feature = "avx512f"))]
+#[cfg(not(target_feature = "neon"))]
+pub const REGISTERS: usize = 16;
 
 #[cfg(target_feature = "avx512f")]
 const WIDTH: usize = 64;
@@ -40,18 +49,6 @@ const WIDTH: usize = 32;
 #[cfg(not(target_feature = "avx512f"))]
 #[cfg(not(target_feature = "avx2"))]
 const WIDTH: usize = 16;
-
-/// The number of vector registers.
-#[cfg(target_feature = "avx512f")]
-pub const REGISTERS: usize = 32;
-
-#[cfg(not(target_feature = "avx512f"))]
-#[cfg(target_feature = "neon")]
-pub const REGISTERS: usize = 32;
-
-#[cfg(not(target_feature = "avx512f"))]
-#[cfg(not(target_feature = "neon"))]
-pub const REGISTERS: usize = 16;
 
 pub const W1: usize = WIDTH / 8;
 pub const W2: usize = WIDTH / 4;

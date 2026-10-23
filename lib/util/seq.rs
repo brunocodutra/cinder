@@ -130,6 +130,20 @@ const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
         self.len() == 0
     }
 
+    /// Returns a raw pointer to the sequence's full capacity.
+    #[inline(always)]
+    pub fn as_ptr(&self) -> *const T {
+        // IMPORTANT: do not go through trait Deref to preserve provenance to the whole memory range.
+        self.bytes.mem.as_ref().as_ptr().cast()
+    }
+
+    /// Returns a mutable raw pointer to the sequence's full capacity.
+    #[inline(always)]
+    pub fn as_mut_ptr(&mut self) -> *mut T {
+        // IMPORTANT: do not go through trait DerefMut to preserve provenance to the whole memory range.
+        self.bytes.mem.as_mut().as_mut_ptr().cast()
+    }
+
     /// Pushes a new item into this sequence.
     #[inline(always)]
     pub fn push(&mut self, item: T) {
@@ -176,10 +190,10 @@ const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
 }
 
 impl<T, M: Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
-    /// Extends this sequence with the elements in a `Simd` vector.
+    /// Extends this sequence with the elements in a `Simd` vector enabled by `mask`.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn extend_from_simd<E, const N: usize>(
+    pub fn extend_from_simd_masked<E, const N: usize>(
         &mut self,
         vec: Simd<E, N>,
         mask: <Simd<E, N> as Compress>::Bitmask,

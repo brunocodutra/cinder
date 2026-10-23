@@ -565,7 +565,7 @@ impl Evaluator {
 #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
 fn kafts(kafts: u16x64, diff: M8x64) -> StaticSeq<KAFeature, { Square::LEN }> {
     let mut seq = StaticSeq::new();
-    seq.extend_from_simd(kafts, diff.to_bitmask());
+    seq.extend_from_simd_masked(kafts, diff.to_bitmask());
     seq
 }
 
@@ -582,7 +582,7 @@ fn ppfts(
         remaining &= !s.bitboard();
         let shift = 8 * s.file().cast::<u32>().saturating_sub(1);
         let visible = PPFeature::WINDOW[s.file()].bitand(remaining).transpose() >> shift;
-        ppfts.extend_from_simd(PPFeature::lut(pfts, s), visible.cast());
+        ppfts.extend_from_simd_masked(PPFeature::lut(pfts, s), visible.cast());
     }
 
     ppfts

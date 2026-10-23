@@ -50,10 +50,8 @@ impl Compress for u8x64 {
     #[cfg(target_feature = "avx512vbmi2")]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn compress(self, indices: Self::Bitmask) -> Self {
-        unsafe {
-            use std::arch::x86_64::*;
-            _mm512_maskz_compress_epi8(indices, self.into()).into()
-        }
+        use std::arch::x86_64::*;
+        unsafe { _mm512_maskz_compress_epi8(indices, self.into()).into() }
     }
 
     #[inline(always)]
@@ -80,6 +78,153 @@ impl Compress for u8x64 {
     }
 }
 
+impl Compress for u8x32 {
+    type Bitmask = u32;
+
+    #[inline(always)]
+    #[cfg(target_feature = "avx512vbmi2")]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress(self, indices: Self::Bitmask) -> Self {
+        use std::arch::x86_64::*;
+        unsafe { _mm256_maskz_compress_epi8(indices, self.into()).into() }
+    }
+
+    #[inline(always)]
+    #[cfg(not(target_feature = "avx512vbmi2"))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress(self, indices: Self::Bitmask) -> Self {
+        fallback_compress(self, indices)
+    }
+
+    #[inline(always)]
+    #[cfg(target_feature = "avx512vbmi2")]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
+        use crate::util::Assume;
+        (slice.len() >= Self::LEN).assume();
+        self.compress(indices).copy_to_slice(slice);
+    }
+
+    #[inline(always)]
+    #[cfg(not(target_feature = "avx512vbmi2"))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
+        fallback_compress_store(self, indices, slice);
+    }
+}
+
+impl Compress for u8x16 {
+    type Bitmask = u16;
+
+    #[inline(always)]
+    #[cfg(target_feature = "avx512vbmi2")]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress(self, indices: Self::Bitmask) -> Self {
+        use std::arch::x86_64::*;
+        unsafe { _mm_maskz_compress_epi8(indices, self.into()).into() }
+    }
+
+    #[inline(always)]
+    #[cfg(not(target_feature = "avx512vbmi2"))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress(self, indices: Self::Bitmask) -> Self {
+        fallback_compress(self, indices)
+    }
+
+    #[inline(always)]
+    #[cfg(target_feature = "avx512vbmi2")]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
+        use crate::util::Assume;
+        (slice.len() >= Self::LEN).assume();
+        self.compress(indices).copy_to_slice(slice);
+    }
+
+    #[inline(always)]
+    #[cfg(not(target_feature = "avx512vbmi2"))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
+        use crate::{simd::Halve, util::Assume};
+        (slice.len() >= Self::LEN).assume();
+        let [x0, x1] = self.halve();
+        let i0 = indices as u8;
+        let i1 = (indices >> 8) as u8;
+        x0.compress_store(i0, slice);
+        x1.compress_store(i1, &mut slice[i0.count_ones() as usize..]);
+    }
+}
+
+impl Compress for u8x8 {
+    type Bitmask = u8;
+
+    #[inline(always)]
+    #[cfg(target_feature = "avx512vbmi2")]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress(self, indices: Self::Bitmask) -> Self {
+        use crate::simd::Halve;
+        let wide = u8x16::merge([self, zeroed()]);
+        let [compressed, _] = wide.compress(indices as u16).halve();
+        compressed
+    }
+
+    #[inline(always)]
+    #[cfg(not(target_feature = "avx512vbmi2"))]
+    #[cfg(any(target_feature = "ssse3", target_feature = "neon"))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress(self, indices: Self::Bitmask) -> Self {
+        use crate::simd::{Aligned, Halve, Shuffle};
+        use crate::util::Assume;
+
+        const SHUFFLES: Aligned<[u8x16; 256]> = const {
+            let mut table = Aligned([u8x16::splat(0x80); 256]);
+            let raw: &mut [[u8; 16]; 256] = table.cast_mut();
+
+            let mut i = 0usize;
+            while i < 256 {
+                let mut j = i;
+                let mut k = 0;
+                while j != 0 {
+                    raw[i][k] = j.trailing_zeros() as u8;
+                    j &= j - 1;
+                    k += 1;
+                }
+                i += 1;
+            }
+
+            table
+        };
+
+        let wide = u8x16::merge([self, zeroed()]);
+        let control = *SHUFFLES.get(indices as usize).assume();
+        let [compressed, _] = wide.shuffle(control).halve();
+        compressed
+    }
+
+    #[inline(always)]
+    #[cfg(not(target_feature = "avx512vbmi2"))]
+    #[cfg(not(any(target_feature = "ssse3", target_feature = "neon")))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress(self, indices: Self::Bitmask) -> Self {
+        fallback_compress(self, indices)
+    }
+
+    #[inline(always)]
+    #[cfg(any(target_feature = "ssse3", target_feature = "neon"))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
+        use crate::util::Assume;
+        (slice.len() >= Self::LEN).assume();
+        self.compress(indices).copy_to_slice(slice);
+    }
+
+    #[inline(always)]
+    #[cfg(not(any(target_feature = "ssse3", target_feature = "neon")))]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
+        fallback_compress_store(self, indices, slice);
+    }
+}
+
 impl Compress for u16x32 {
     type Bitmask = u32;
 
@@ -87,10 +232,8 @@ impl Compress for u16x32 {
     #[cfg(target_feature = "avx512vbmi2")]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn compress(self, indices: Self::Bitmask) -> Self {
-        unsafe {
-            use std::arch::x86_64::*;
-            _mm512_maskz_compress_epi16(indices, self.into()).into()
-        }
+        use std::arch::x86_64::*;
+        unsafe { _mm512_maskz_compress_epi16(indices, self.into()).into() }
     }
 
     #[inline(always)]
@@ -124,10 +267,8 @@ impl Compress for u16x16 {
     #[cfg(target_feature = "avx512vbmi2")]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn compress(self, indices: Self::Bitmask) -> Self {
-        unsafe {
-            use std::arch::x86_64::*;
-            _mm256_maskz_compress_epi16(indices, self.into()).into()
-        }
+        use std::arch::x86_64::*;
+        unsafe { _mm256_maskz_compress_epi16(indices, self.into()).into() }
     }
 
     #[inline(always)]
@@ -222,6 +363,57 @@ mod tests {
         w.compress_store(m, &mut a);
 
         let mut b = [0; 64];
+        fallback_compress_store(w, m, &mut b);
+
+        assert_eq!(a, b);
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn for_u8x32(
+        #[strategy(UniformArrayStrategy::new(0u8..).prop_map(u8x32::from_array))] w: u8x32,
+        m: u32,
+    ) {
+        assert_eq!(w.compress(m), fallback_compress(w, m));
+
+        let mut a = [0; 32];
+        w.compress_store(m, &mut a);
+
+        let mut b = [0; 32];
+        fallback_compress_store(w, m, &mut b);
+
+        assert_eq!(a, b);
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn for_u8x16(
+        #[strategy(UniformArrayStrategy::new(0u8..).prop_map(u8x16::from_array))] w: u8x16,
+        m: u16,
+    ) {
+        assert_eq!(w.compress(m), fallback_compress(w, m));
+
+        let mut a = [0; 16];
+        w.compress_store(m, &mut a);
+
+        let mut b = [0; 16];
+        fallback_compress_store(w, m, &mut b);
+
+        assert_eq!(a, b);
+    }
+
+    #[proptest]
+    #[cfg_attr(miri, ignore)]
+    fn for_u8x8(
+        #[strategy(UniformArrayStrategy::new(0u8..).prop_map(u8x8::from_array))] w: u8x8,
+        m: u8,
+    ) {
+        assert_eq!(w.compress(m), fallback_compress(w, m));
+
+        let mut a = [0; 8];
+        w.compress_store(m, &mut a);
+
+        let mut b = [0; 8];
         fallback_compress_store(w, m, &mut b);
 
         assert_eq!(a, b);

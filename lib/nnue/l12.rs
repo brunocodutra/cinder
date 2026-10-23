@@ -1,6 +1,7 @@
 use crate::nnue::{FTQ, I2F, L1, L2, Layer, Synapse};
-use crate::{simd::*, util::Assume};
-use bytemuck::Zeroable;
+use crate::simd::*;
+use crate::util::{Assume, Num, StaticSeq};
+use bytemuck::{Zeroable, zeroed};
 use std::array;
 
 #[cfg(feature = "permuter")]
@@ -8,6 +9,35 @@ use crate::nnue::sparsity::ActivationHistory;
 
 const I: usize = L1::LEN;
 const O: usize = L2::LEN;
+
+#[inline(always)]
+#[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+fn nzs(ns: &[V2<u32>; I / W2 / 4]) -> StaticSeq<u8, { I / 4 }> {
+    #[cfg(target_feature = "avx512vbmi2")]
+    type Iota = u8x64;
+
+    #[cfg(not(target_feature = "avx512vbmi2"))]
+    type Iota = u8x8;
+
+    const K: usize = Iota::LEN / W2;
+    const { assert!(K * W2 <= u64::BITS as usize) }
+
+    let mut nzs = StaticSeq::new();
+    let mut iota = Iota::from_array(array::from_fn(Num::cast));
+    let (chunks, _) = ns.as_chunks::<K>();
+
+    for chunk in chunks {
+        let mut mask = 0u64;
+        for (i, n) in chunk.iter().enumerate() {
+            mask |= n.simd_gt(zeroed()).to_bitmask() << (i * W2);
+        }
+
+        nzs.extend_from_simd_masked(iota, mask.cast());
+        iota += Iota::splat(Iota::LEN as u8);
+    }
+
+    nzs
+}
 
 /// The input connection.
 #[derive(Debug, Zeroable)]
@@ -50,9 +80,6 @@ impl<S: for<'a> Synapse<Input<'a> = L2<'a>, Output = f32>> Synapse for L12<S> {
             [Pack::pack(x00, x10), Pack::pack(x01, x11)]
         }));
 
-        let mut nzs = Aligned([0u16; I / 4]);
-        let nzs_len = nzs.nzs(active.cast_ref::<[[V2<u32>; 2]; I / W2 / 8]>());
-
         #[cfg(feature = "permuter")]
         ActivationHistory::record(active.cast_ref());
 
@@ -62,9 +89,10 @@ impl<S: for<'a> Synapse<Input<'a> = L2<'a>, Output = f32>> Synapse for L12<S> {
 
         const K: usize = unroll(O / W2);
         let mut acc = Aligned([[Simd::splat(0); K]; O / W2]);
+        let nzs = nzs(active.cast_ref::<[V2<u32>; I / W2 / 4]>());
 
         #[allow(clippy::modulo_one)]
-        for i in (0..nzs_len - nzs_len % K).step_by(K) {
+        for i in (0..nzs.len() - nzs.len() % K).step_by(K) {
             let idx: [usize; K] = array::from_fn(|k| *nzs.get(i + k).assume() as usize);
             let x: [V8<u8>; K] = idx.map(|nz| Aligned([*xs.get(nz).assume(); W2]).cast());
             let w: [[V8<i8>; O / W2]; K] = idx.map(|nz| *ws.get(nz).assume());
@@ -75,7 +103,7 @@ impl<S: for<'a> Synapse<Input<'a> = L2<'a>, Output = f32>> Synapse for L12<S> {
         }
 
         #[allow(clippy::modulo_one)]
-        for i in nzs_len - nzs_len % K..nzs_len {
+        for i in nzs.len() - nzs.len() % K..nzs.len() {
             let nz = *nzs.get(i).assume() as usize;
             let x = Aligned([*xs.get(nz).assume(); W2]);
             let w = ws.get(nz).assume();

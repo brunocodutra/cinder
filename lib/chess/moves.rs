@@ -370,12 +370,12 @@ impl MoveCollector for Moves {
 
         for wt in targets & theirs {
             let moves = squares | u16x16::splat(((wt as u16) << 6) | 0b1000000000000000);
-            self.0.extend_from_simd(moves, attacks[wt].cast());
+            self.0.extend_from_simd_masked(moves, attacks[wt].cast());
         }
 
         for wt in targets & !theirs {
             let moves = squares | u16x16::splat((wt as u16) << 6);
-            self.0.extend_from_simd(moves, attacks[wt].cast());
+            self.0.extend_from_simd_masked(moves, attacks[wt].cast());
         }
 
         Ok(())
@@ -438,7 +438,7 @@ impl MoveCollector for Moves {
 
             let expanded_mask = u32::from_le_bytes(packed.to_array());
             let moves = PUSHES[turn].cast_ref::<u16x32>();
-            self.0.extend_from_simd(*moves, expanded_mask);
+            self.0.extend_from_simd_masked(*moves, expanded_mask);
         }
 
         let theirs = pos.by_color(!turn);
@@ -515,7 +515,7 @@ impl MoveCollector for Moves {
 
         if mask != 0 {
             let moves = SINGLE[turn].cast_ref::<u16x32>();
-            self.0.extend_from_simd(*moves, mask);
+            self.0.extend_from_simd_masked(*moves, mask);
         }
 
         let double = match turn {
@@ -528,7 +528,7 @@ impl MoveCollector for Moves {
 
         if mask != 0 {
             let moves = DOUBLE[turn].cast_ref::<u16x16>();
-            self.0.extend_from_simd(*moves, mask);
+            self.0.extend_from_simd_masked(*moves, mask);
         }
 
         Ok(())

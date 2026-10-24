@@ -467,9 +467,12 @@ impl Evaluator {
 
             loop {
                 match self.pending[side][idx] {
-                    Pending::Refresh => self.refresh(side, Num::new(idx.cast())),
-                    Pending::Update => idx = idx.checked_sub(1).assume(),
                     Pending::None => break start[side] = idx,
+                    Pending::Update => idx = idx.checked_sub(1).assume(),
+                    Pending::Refresh => {
+                        self.refresh(side, Num::new(idx.cast()));
+                        break start[side] = idx;
+                    }
                 }
             }
         }
@@ -501,19 +504,34 @@ impl Evaluator {
         debug_assert_eq!(self.pending[side][ply], Pending::Refresh);
         self.pending[side][ply] = Pending::None;
 
+        let idx = ply.cast::<usize>();
         let new = &self.positions[ply];
-        let ksq = new.king(side);
-        let bucket = KingBucket::new(side, ksq);
+        let new_ksq = new.king(side);
+        let old_ksq = idx.checked_sub(1).map(|i| self.positions[i].king(side));
+
+        let bucket = KingBucket::new(side, new_ksq);
         let cache = &mut self.cache[side][bucket];
-        let acc = &mut cache.accumulator;
         let old = replace(&mut cache.attacks, Attacks::new(new));
         let new = &cache.attacks;
 
-        accumulate(side, ksq, &old, new, |kas, kaa, tis, tia, pps, ppa| {
-            Nnue::transformer().accumulate_in_place(acc, kas, kaa, tis, tia, pps, ppa);
-        });
+        let incremental = idx > 0
+            && self.pending[side][idx - 1] == Pending::None
+            && (old_ksq.assume().file() < File::E) == (new_ksq.file() < File::E)
+            && old.pieces().simd_ne(new.pieces()).to_bitmask().count_ones() > 4;
 
-        self.accumulator[side][ply] = cache.accumulator;
+        if !incremental {
+            let src = &cache.accumulator;
+            let dst = &mut self.accumulator[side][idx];
+            accumulate(side, new_ksq, new_ksq, &old, new, src, dst);
+            cache.accumulator = *dst;
+        } else {
+            let old_ksq = old_ksq.assume();
+            let old = Attacks::new(&self.positions[idx - 1]);
+            let (left, right) = self.accumulator[side].split_at_mut(idx);
+            let (src, dst) = (&left[left.len() - 1], &mut right[0]);
+            accumulate(side, old_ksq, new_ksq, &old, new, src, dst);
+            cache.accumulator = *dst;
+        }
     }
 
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -530,13 +548,7 @@ impl Evaluator {
         let old = Attacks::new(old);
         let (left, right) = self.accumulator[side].split_at_mut(ply.cast());
         let (src, dst) = (&left[left.len() - 1], &mut right[0]);
-        let diff = accumulate(side, ksq, &old, &new, |kas, kaa, tis, tia, pps, ppa| {
-            Nnue::transformer().accumulate(src, dst, kas, kaa, tis, tia, pps, ppa);
-        });
-
-        if !diff.any() {
-            *dst = *src;
-        }
+        accumulate(side, ksq, ksq, &old, &new, src, dst);
     }
 
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -550,19 +562,12 @@ impl Evaluator {
         let new = Attacks::new(&self.positions[ply]);
         let old = Attacks::new(&self.positions[ply - 1]);
         let ksq = [Color::White, Color::Black].map(|c| self.positions[ply].king(c));
-        let diff = accumulate_both(ksq, &old, &new, |side, kas, kaa, tis, tia, pps, ppa| {
-            let (left, right) = self.accumulator[side].split_at_mut(ply.cast());
-            let (src, dst) = (&left[left.len() - 1], &mut right[0]);
-            Nnue::transformer().accumulate(src, dst, kas, kaa, tis, tia, pps, ppa);
-        });
-
-        if !diff.any() {
-            for side in Color::iter() {
-                let (left, right) = self.accumulator[side].split_at_mut(ply.cast());
-                let (src, dst) = (&left[left.len() - 1], &mut right[0]);
-                *dst = *src;
-            }
-        }
+        let (wacc, bacc) = self.accumulator.split_at_mut(1);
+        let (wsrc, wdst) = wacc[0].split_at_mut(ply.cast());
+        let (bsrc, bdst) = bacc[0].split_at_mut(ply.cast());
+        let src = [&wsrc[wsrc.len() - 1], &bsrc[bsrc.len() - 1]];
+        let dst = [&mut wdst[0], &mut bdst[0]];
+        accumulate_both(ksq, &old, &new, src, dst);
     }
 }
 
@@ -590,174 +595,180 @@ fn ppfts(
 }
 
 #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-fn accumulate<F>(side: Color, ksq: Square, old: &Attacks, new: &Attacks, mut acc: F) -> M8x64
-where
-    F: FnMut(&[KAFeature], &[KAFeature], &[TIFeature], &[TIFeature], &[PPFeature], &[PPFeature]),
-{
+fn accumulate(
+    side: Color,
+    old_ksq: Square,
+    new_ksq: Square,
+    old: &Attacks,
+    new: &Attacks,
+    src: &Accumulator,
+    dst: &mut Accumulator,
+) {
     let diff: M8x64 = old.pieces().simd_ne(new.pieces()).into();
 
-    if diff.any() {
-        let old_diff = old.occupied() & diff;
-        let new_diff = new.occupied() & diff;
+    if !diff.any() {
+        return *dst = *src;
+    }
 
-        let old_pieces = Piece::DECODER.shuffle(old.pieces());
-        let new_pieces = Piece::DECODER.shuffle(new.pieces());
+    let old_diff = old.occupied() & diff;
+    let new_diff = new.occupied() & diff;
+    let captured = old_diff.bitand(new_diff).to_simd().cast::<u16>();
 
-        let mut tis = StaticSeq::<TIFeature, { 2 * TIFeature::MAX_ACTIVE }>::new();
-        let mut tia = StaticSeq::<TIFeature, { 2 * TIFeature::MAX_ACTIVE }>::new();
+    let old_pieces = Piece::DECODER.shuffle(old.pieces());
+    let new_pieces = Piece::DECODER.shuffle(new.pieces());
 
-        for c in Color::iter() {
-            let moved = new.squares[c].to_simd().simd_ne(old.squares[c].to_simd());
-            let moved = Simd::splat(moved.to_bitmask().cast());
+    let mut tis = StaticSeq::<TIFeature, { 2 * TIFeature::MAX_ACTIVE }>::new();
+    let mut tia = StaticSeq::<TIFeature, { 2 * TIFeature::MAX_ACTIVE }>::new();
 
-            let promoted = new.roles[c].to_simd().simd_ne(old.roles[c].to_simd());
-            let promoted = Simd::splat(promoted.to_bitmask().cast());
+    for c in Color::iter() {
+        let moved = new.squares[c].to_simd().simd_ne(old.squares[c].to_simd());
+        let promoted = new.roles[c].to_simd().simd_ne(old.roles[c].to_simd());
+        let dirty = moved.to_bitmask() | promoted.to_bitmask();
+        let dirty = !Idx::KING.to_set() & dirty.cast::<u16>();
+        let diff = new.attacks[c] ^ old.attacks[c] | Simd::splat(dirty.get()) | captured;
 
-            let captured = old_diff.bitand(new_diff).to_simd().cast::<u16>();
-            let diff = new.attacks[c] ^ old.attacks[c] | moved | promoted | captured;
-
-            let old_attacks = old.attacks[c] & diff;
-            for idx in old_attacks.reduce_or() & !Idx::KING.to_set() {
-                let wc = old.squares[c][idx].assume();
-                let src = Piece::new(old.roles[c][idx].assume(), c);
-                for wt in Bitboard::from(old_attacks.matching(idx.to_set())) {
-                    let dst = Num::new(old_pieces.as_array()[wt]);
-                    tis.push_maybe(TIFeature::new(side, ksq, src, wc, dst, wt));
-                }
-            }
-
-            let new_attacks = new.attacks[c] & diff;
-            for idx in new_attacks.reduce_or() & !Idx::KING.to_set() {
-                let wc = new.squares[c][idx].assume();
-                let src = Piece::new(new.roles[c][idx].assume(), c);
-                for wt in Bitboard::from(new_attacks.matching(idx.to_set())) {
-                    let dst = Num::new(new_pieces.as_array()[wt]);
-                    tia.push_maybe(TIFeature::new(side, ksq, src, wc, dst, wt));
-                }
+        let old_attacks = old.attacks[c] & diff;
+        for idx in old_attacks.reduce_or() & !Idx::KING.to_set() {
+            let wc = old.squares[c][idx].assume();
+            let src = Piece::new(old.roles[c][idx].assume(), c);
+            for wt in Bitboard::from(old_attacks.matching(idx.to_set())) {
+                let dst = Num::new(old_pieces.as_array()[wt]);
+                tis.push_maybe(TIFeature::new(side, new_ksq, src, wc, dst, wt));
             }
         }
 
-        let mut kas = StaticSeq::new();
-        kafts(&mut kas, KAFeature::lut(side, ksq, old), old_diff);
-
-        let mut kaa = StaticSeq::new();
-        kafts(&mut kaa, KAFeature::lut(side, ksq, new), new_diff);
-
-        let new_pawns = new.by_role(Role::Pawn);
-        let old_pawns = old.by_role(Role::Pawn);
-        let old_blacks = old.by_color(Color::Black);
-        let new_blacks = new.by_color(Color::Black);
-        let old_pp_diff = !new_pawns | old_blacks ^ new_blacks;
-        let new_pp_diff = !old_pawns | old_blacks ^ new_blacks;
-
-        let mut pps = StaticSeq::new();
-        let pfts = PFeature::lut(side, ksq, old);
-        ppfts(&mut pps, pfts, old_pawns, old_pp_diff);
-
-        let mut ppa = StaticSeq::new();
-        let pfts = PFeature::lut(side, ksq, new);
-        ppfts(&mut ppa, pfts, new_pawns, new_pp_diff);
-
-        acc(&kas, &kaa, &tis, &tia, &pps, &ppa);
+        let new_attacks = new.attacks[c] & diff;
+        for idx in new_attacks.reduce_or() & !Idx::KING.to_set() {
+            let wc = new.squares[c][idx].assume();
+            let src = Piece::new(new.roles[c][idx].assume(), c);
+            for wt in Bitboard::from(new_attacks.matching(idx.to_set())) {
+                let dst = Num::new(new_pieces.as_array()[wt]);
+                tia.push_maybe(TIFeature::new(side, new_ksq, src, wc, dst, wt));
+            }
+        }
     }
 
-    diff
+    let (old_ka, new_ka) = if old_ksq != new_ksq {
+        (old.occupied(), new.occupied())
+    } else {
+        (old_diff, new_diff)
+    };
+
+    let mut kas = StaticSeq::new();
+    kafts(&mut kas, KAFeature::lut(side, old_ksq, old), old_ka);
+
+    let mut kaa = StaticSeq::new();
+    kafts(&mut kaa, KAFeature::lut(side, new_ksq, new), new_ka);
+
+    let new_pawns = new.by_role(Role::Pawn);
+    let old_pawns = old.by_role(Role::Pawn);
+    let old_blacks = old.by_color(Color::Black);
+    let new_blacks = new.by_color(Color::Black);
+    let old_pp_diff = !new_pawns | old_blacks ^ new_blacks;
+    let new_pp_diff = !old_pawns | old_blacks ^ new_blacks;
+
+    let mut pps = StaticSeq::new();
+    let pfts = PFeature::lut(side, new_ksq, old);
+    ppfts(&mut pps, pfts, old_pawns, old_pp_diff);
+
+    let mut ppa = StaticSeq::new();
+    let pfts = PFeature::lut(side, new_ksq, new);
+    ppfts(&mut ppa, pfts, new_pawns, new_pp_diff);
+
+    Nnue::transformer().accumulate(src, dst, &kas, &kaa, &tis, &tia, &pps, &ppa);
 }
 
 #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-fn accumulate_both<F>(ksq: [Square; Color::LEN], old: &Attacks, new: &Attacks, mut acc: F) -> M8x64
-where
-    F: FnMut(
-        Color,
-        &[KAFeature],
-        &[KAFeature],
-        &[TIFeature],
-        &[TIFeature],
-        &[PPFeature],
-        &[PPFeature],
-    ),
-{
+fn accumulate_both(
+    ksq: [Square; Color::LEN],
+    old: &Attacks,
+    new: &Attacks,
+    src: [&Accumulator; Color::LEN],
+    mut dst: [&mut Accumulator; Color::LEN],
+) {
     let diff: M8x64 = old.pieces().simd_ne(new.pieces()).into();
 
-    if diff.any() {
-        let old_diff = old.occupied() & diff;
-        let new_diff = new.occupied() & diff;
+    if !diff.any() {
+        return for (src, dst) in src.into_iter().zip(dst) {
+            *dst = *src;
+        };
+    }
 
-        let old_pieces = Piece::DECODER.shuffle(old.pieces());
-        let new_pieces = Piece::DECODER.shuffle(new.pieces());
+    let old_diff = old.occupied() & diff;
+    let new_diff = new.occupied() & diff;
+    let captured = old_diff.bitand(new_diff).to_simd().cast::<u16>();
 
-        let mut tis = [
-            StaticSeq::<TIFeature, { 2 * TIFeature::MAX_ACTIVE }>::new(),
-            StaticSeq::<TIFeature, { 2 * TIFeature::MAX_ACTIVE }>::new(),
-        ];
+    let old_pieces = Piece::DECODER.shuffle(old.pieces());
+    let new_pieces = Piece::DECODER.shuffle(new.pieces());
 
-        let mut tia = [
-            StaticSeq::<TIFeature, { 2 * TIFeature::MAX_ACTIVE }>::new(),
-            StaticSeq::<TIFeature, { 2 * TIFeature::MAX_ACTIVE }>::new(),
-        ];
+    let mut tis = [
+        StaticSeq::<TIFeature, { 2 * TIFeature::MAX_ACTIVE }>::new(),
+        StaticSeq::<TIFeature, { 2 * TIFeature::MAX_ACTIVE }>::new(),
+    ];
 
-        for c in Color::iter() {
-            let moved = new.squares[c].to_simd().simd_ne(old.squares[c].to_simd());
-            let moved = Simd::splat(moved.to_bitmask().cast());
+    let mut tia = [
+        StaticSeq::<TIFeature, { 2 * TIFeature::MAX_ACTIVE }>::new(),
+        StaticSeq::<TIFeature, { 2 * TIFeature::MAX_ACTIVE }>::new(),
+    ];
 
-            let promoted = new.roles[c].to_simd().simd_ne(old.roles[c].to_simd());
-            let promoted = Simd::splat(promoted.to_bitmask().cast());
+    for c in Color::iter() {
+        let moved = new.squares[c].to_simd().simd_ne(old.squares[c].to_simd());
+        let promoted = new.roles[c].to_simd().simd_ne(old.roles[c].to_simd());
+        let dirty = moved.to_bitmask() | promoted.to_bitmask();
+        let dirty = !Idx::KING.to_set() & dirty.cast::<u16>();
+        let diff = new.attacks[c] ^ old.attacks[c] | Simd::splat(dirty.get()) | captured;
 
-            let captured = old_diff.bitand(new_diff).to_simd().cast::<u16>();
-            let diff = new.attacks[c] ^ old.attacks[c] | moved | promoted | captured;
-
-            let old_attacks = old.attacks[c] & diff;
-            for idx in old_attacks.reduce_or() & !Idx::KING.to_set() {
-                let wc = old.squares[c][idx].assume();
-                let src = Piece::new(old.roles[c][idx].assume(), c);
-                for wt in Bitboard::from(old_attacks.matching(idx.to_set())) {
-                    let dst = Num::new(old_pieces.as_array()[wt]);
-                    for side in Color::iter() {
-                        tis[side].push_maybe(TIFeature::new(side, ksq[side], src, wc, dst, wt));
-                    }
-                }
-            }
-
-            let new_attacks = new.attacks[c] & diff;
-            for idx in new_attacks.reduce_or() & !Idx::KING.to_set() {
-                let wc = new.squares[c][idx].assume();
-                let src = Piece::new(new.roles[c][idx].assume(), c);
-                for wt in Bitboard::from(new_attacks.matching(idx.to_set())) {
-                    let dst = Num::new(new_pieces.as_array()[wt]);
-                    for side in Color::iter() {
-                        tia[side].push_maybe(TIFeature::new(side, ksq[side], src, wc, dst, wt));
-                    }
+        let old_attacks = old.attacks[c] & diff;
+        for idx in old_attacks.reduce_or() & !Idx::KING.to_set() {
+            let wc = old.squares[c][idx].assume();
+            let src = Piece::new(old.roles[c][idx].assume(), c);
+            for wt in Bitboard::from(old_attacks.matching(idx.to_set())) {
+                let dst = Num::new(old_pieces.as_array()[wt]);
+                for side in Color::iter() {
+                    tis[side].push_maybe(TIFeature::new(side, ksq[side], src, wc, dst, wt));
                 }
             }
         }
 
-        let old_pawns = old.by_role(Role::Pawn);
-        let new_pawns = new.by_role(Role::Pawn);
-        let old_blacks = old.by_color(Color::Black);
-        let new_blacks = new.by_color(Color::Black);
-        let old_pp_diff = !new_pawns | old_blacks ^ new_blacks;
-        let new_pp_diff = !old_pawns | old_blacks ^ new_blacks;
-
-        for side in Color::iter() {
-            let mut kas = StaticSeq::new();
-            kafts(&mut kas, KAFeature::lut(side, ksq[side], old), old_diff);
-
-            let mut kaa = StaticSeq::new();
-            kafts(&mut kaa, KAFeature::lut(side, ksq[side], new), new_diff);
-
-            let mut pps = StaticSeq::new();
-            let pfts = PFeature::lut(side, ksq[side], old);
-            ppfts(&mut pps, pfts, old_pawns, old_pp_diff);
-
-            let mut ppa = StaticSeq::new();
-            let pfts = PFeature::lut(side, ksq[side], new);
-            ppfts(&mut ppa, pfts, new_pawns, new_pp_diff);
-
-            acc(side, &kas, &kaa, &tis[side], &tia[side], &pps, &ppa);
+        let new_attacks = new.attacks[c] & diff;
+        for idx in new_attacks.reduce_or() & !Idx::KING.to_set() {
+            let wc = new.squares[c][idx].assume();
+            let src = Piece::new(new.roles[c][idx].assume(), c);
+            for wt in Bitboard::from(new_attacks.matching(idx.to_set())) {
+                let dst = Num::new(new_pieces.as_array()[wt]);
+                for side in Color::iter() {
+                    tia[side].push_maybe(TIFeature::new(side, ksq[side], src, wc, dst, wt));
+                }
+            }
         }
     }
 
-    diff
+    let old_pawns = old.by_role(Role::Pawn);
+    let new_pawns = new.by_role(Role::Pawn);
+    let old_blacks = old.by_color(Color::Black);
+    let new_blacks = new.by_color(Color::Black);
+    let old_pp_diff = !new_pawns | old_blacks ^ new_blacks;
+    let new_pp_diff = !old_pawns | old_blacks ^ new_blacks;
+
+    for side in Color::iter() {
+        let mut kas = StaticSeq::new();
+        kafts(&mut kas, KAFeature::lut(side, ksq[side], old), old_diff);
+
+        let mut kaa = StaticSeq::new();
+        kafts(&mut kaa, KAFeature::lut(side, ksq[side], new), new_diff);
+
+        let mut pps = StaticSeq::new();
+        let pfts = PFeature::lut(side, ksq[side], old);
+        ppfts(&mut pps, pfts, old_pawns, old_pp_diff);
+
+        let mut ppa = StaticSeq::new();
+        let pfts = PFeature::lut(side, ksq[side], new);
+        ppfts(&mut ppa, pfts, new_pawns, new_pp_diff);
+
+        Nnue::transformer().accumulate(
+            src[side], dst[side], &kas, &kaa, &tis[side], &tia[side], &pps, &ppa,
+        );
+    }
 }
 
 impl FromStr for Evaluator {

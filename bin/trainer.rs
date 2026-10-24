@@ -303,8 +303,8 @@ impl Features {
         let occupied = pos.occupied();
         let attacks = pos.threats().map(|t| t.mask(occupied));
 
-        let mut stm_ti_features = StaticSeq::<TIFeature, { TIFeature::MAX_ACTIVE }>::new();
-        let mut ntm_ti_features = StaticSeq::<TIFeature, { TIFeature::MAX_ACTIVE }>::new();
+        let mut stm_tifts = StaticSeq::<TIFeature, { TIFeature::MAX_ACTIVE + 1 }>::new();
+        let mut ntm_tifts = StaticSeq::<TIFeature, { TIFeature::MAX_ACTIVE + 1 }>::new();
 
         for c in Color::iter() {
             for sq in Square::iter() {
@@ -314,28 +314,22 @@ impl Features {
                 for idx in indices {
                     let wc = pos.squares()[c][idx].assume();
                     let src = Piece::new(pos.roles()[c][idx].assume(), c);
-
-                    if let Some(f) = TIFeature::new(White, ksqs[White], src, wc, dst, sq) {
-                        stm_ti_features.push(f);
-                    }
-
-                    if let Some(f) = TIFeature::new(Black, ksqs[Black], src, wc, dst, sq) {
-                        ntm_ti_features.push(f);
-                    }
+                    stm_tifts.push_maybe(TIFeature::new(White, ksqs[White], src, wc, dst, sq));
+                    ntm_tifts.push_maybe(TIFeature::new(Black, ksqs[Black], src, wc, dst, sq));
                 }
             }
         }
 
-        assert_eq!(stm_ti_features.len(), ntm_ti_features.len());
-        for (stm, ntm) in stm_ti_features.into_iter().zip(ntm_ti_features) {
-            ti(stm.cast::<usize>(), ntm.cast::<usize>());
+        assert_eq!(stm_tifts.len(), ntm_tifts.len());
+        for (stm, ntm) in stm_tifts.into_iter().zip(ntm_tifts) {
+            ti(stm.cast(), ntm.cast());
         }
 
         let kafts = [White, Black].map(|side| KAFeature::lut(side, ksqs[side], &pos).to_array());
 
         for sq in Bitboard::from(pos.occupied()).iter() {
             let kaft = kafts.map(|ft| <KAFeature as Num>::new(ft[sq]));
-            ka(kaft[White].cast::<usize>(), kaft[Black].cast::<usize>());
+            ka(kaft[White].cast(), kaft[Black].cast());
         }
     }
 }

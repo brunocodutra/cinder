@@ -1,4 +1,4 @@
-use crate::util::{Assume, Binary, Bits, Bounded, Int, Num};
+use crate::util::{Binary, Bits, Bounded, Int, Num};
 use bytemuck::{NoUninit, Zeroable};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, NoUninit)]
@@ -30,12 +30,12 @@ impl Binary for Depth {
 
     #[inline(always)]
     fn encode(&self) -> Self::Bits {
-        self.convert().assume()
+        Num::new(self.cast::<u8>())
     }
 
     #[inline(always)]
     fn decode(bits: Self::Bits) -> Self {
-        bits.convert().assume()
+        Num::new(bits.cast::<i8>())
     }
 }
 

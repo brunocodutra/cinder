@@ -36,12 +36,12 @@ const impl Binary for Idx {
 
     #[inline(always)]
     fn encode(&self) -> Self::Bits {
-        self.convert().assume()
+        Num::new(self.get())
     }
 
     #[inline(always)]
     fn decode(bits: Self::Bits) -> Self {
-        bits.convert().assume()
+        Num::new(bits.get())
     }
 }
 
@@ -369,7 +369,7 @@ const impl Iterator for Indices {
         if self.0.is_empty() {
             None
         } else {
-            let idx: Idx = self.0.trailing_zeros().convert().assume();
+            let idx = Idx::new(self.0.trailing_zeros().cast());
             self.0 ^= idx.to_set();
             Some(idx)
         }

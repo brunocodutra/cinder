@@ -58,7 +58,7 @@ const impl Transpose for Rank {
     /// This rank's corresponding file.
     #[inline(always)]
     fn transpose(self) -> Self::Transposition {
-        self.convert().assume()
+        Num::new(self.get())
     }
 }
 

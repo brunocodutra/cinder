@@ -478,8 +478,7 @@ impl From<ChessBoard> for Board {
                 Idx::new(idx[p.color()])
             };
 
-            let sq = sq.convert().assume();
-            board.emplace(sq, Place::new(p, idx));
+            board.emplace(Num::new(sq.cast()), Place::new(p, idx));
         }
 
         board

@@ -462,7 +462,7 @@ impl Evaluator {
 
             loop {
                 match self.pending[side][idx] {
-                    Pending::Refresh => self.refresh(side, idx.convert().assume()),
+                    Pending::Refresh => self.refresh(side, Num::new(idx.cast())),
                     Pending::Update => idx = idx.checked_sub(1).assume(),
                     Pending::None => break start[side] = idx,
                 }
@@ -475,12 +475,12 @@ impl Evaluator {
         if lo < hi {
             let side = Color::from(start[Color::White] >= start[Color::Black]);
             for i in lo + 1..=hi.min(ply) {
-                self.update(side, i.convert().assume());
+                self.update(side, Num::new(i.cast()));
             }
         }
 
         for i in hi + 1..=ply {
-            self.update_both(i.convert().assume());
+            self.update_both(Num::new(i.cast()));
         }
 
         let us = self.turn();

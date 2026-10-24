@@ -177,14 +177,12 @@ const impl Binary for Piece {
 
     #[inline(always)]
     fn encode(&self) -> Self::Bits {
-        let encoded = Self::ENCODER.as_array()[self.cast::<usize>()];
-        encoded.convert().assume()
+        Num::new(Self::ENCODER.as_array()[self.cast::<usize>()])
     }
 
     #[inline(always)]
     fn decode(bits: Self::Bits) -> Self {
-        let decoded = Self::DECODER.as_array()[bits.cast::<usize>()];
-        decoded.convert().assume()
+        Num::new(Self::DECODER.as_array()[bits.cast::<usize>()])
     }
 }
 

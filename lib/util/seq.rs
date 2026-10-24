@@ -27,7 +27,7 @@ const impl<T: NoUninit, const N: usize, const S: usize> From<[T; N]> for Bytes<C
         const { assert!(!needs_drop::<T>()) }
 
         Bytes {
-            len: N.convert().assume(),
+            len: Num::new(N.cast()),
             mem: data.into(),
         }
     }

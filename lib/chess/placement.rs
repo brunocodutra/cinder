@@ -62,7 +62,7 @@ const impl Place {
         if self.is_empty() {
             None
         } else {
-            Some(Idx::decode(self.0.slice(..4).convert().assume()))
+            Some(Idx::decode(Num::new(self.0.slice(..4).cast())))
         }
     }
 
@@ -71,7 +71,7 @@ const impl Place {
         if self.is_empty() {
             None
         } else {
-            Some(Piece::decode(self.0.slice(4..).convert().assume()))
+            Some(Piece::decode(Num::new(self.0.slice(4..).cast())))
         }
     }
 
@@ -80,7 +80,7 @@ const impl Place {
         if self.is_empty() {
             None
         } else {
-            Some(Color::decode(self.0.slice(7..).convert().assume()))
+            Some(Color::decode(Num::new(self.0.slice(7..).get())))
         }
     }
 
@@ -89,7 +89,7 @@ const impl Place {
         if self.is_empty() {
             None
         } else {
-            Some(Role::decode(self.0.slice(4..=6).convert().assume()))
+            Some(Role::decode(Num::new(self.0.slice(4..=6).get())))
         }
     }
 }

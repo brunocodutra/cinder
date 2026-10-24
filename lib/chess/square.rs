@@ -100,12 +100,12 @@ const impl Binary for Square {
 
     #[inline(always)]
     fn encode(&self) -> Self::Bits {
-        self.convert().assume()
+        Num::new(self.cast::<u8>())
     }
 
     #[inline(always)]
     fn decode(bits: Self::Bits) -> Self {
-        bits.convert().assume()
+        Num::new(bits.cast::<i8>())
     }
 }
 

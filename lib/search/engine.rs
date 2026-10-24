@@ -221,7 +221,6 @@ impl MovePicker {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn sorted(&mut self, searcher: &Searcher<'_>, head: Option<Move>) -> SortedRatedMovesIter<'_> {
         #[inline(never)]
-        #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
         fn bootstrap<'a>(
             picker: &'a mut MovePicker,
             searcher: &Searcher<'_>,

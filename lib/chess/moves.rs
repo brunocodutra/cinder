@@ -39,7 +39,7 @@ const impl Move {
         bits.push(PROMOTIONS[promotion.unwrap_or(Role::King)]);
         bits.push(whither.encode());
         bits.push(whence.encode());
-        Move(bits.convert().assume())
+        Move(Num::new(bits.get()))
     }
 
     /// Constructs a capture move.
@@ -127,12 +127,12 @@ const impl Binary for Move {
 
     #[inline(always)]
     fn encode(&self) -> Self::Bits {
-        self.0.convert().assume()
+        Num::new(self.0.get())
     }
 
     #[inline(always)]
     fn decode(bits: Self::Bits) -> Self {
-        Move(bits.convert().assume())
+        Move(Num::new(bits.get()))
     }
 }
 

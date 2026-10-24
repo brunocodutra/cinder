@@ -44,12 +44,12 @@ const impl Binary for Color {
 
     #[inline(always)]
     fn encode(&self) -> Self::Bits {
-        self.convert().assume()
+        Num::new(self.get())
     }
 
     #[inline(always)]
     fn decode(bits: Self::Bits) -> Self {
-        bits.convert().assume()
+        Num::new(bits.get())
     }
 }
 

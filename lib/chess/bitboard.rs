@@ -1,6 +1,6 @@
 use crate::chess::{Butterfly, File, Flip, Rank, Square, Transpose};
 use crate::simd::*;
-use crate::util::{Assume, Int, Num};
+use crate::util::{Int, Num};
 use bytemuck::{Pod, Zeroable, zeroed};
 use derive_more::with_trait::{Debug, From};
 use std::fmt::{self, Formatter, Write};
@@ -571,7 +571,7 @@ const impl Iterator for Squares {
         if self.0.is_empty() {
             None
         } else {
-            let sq: Square = self.0.trailing_zeros().convert().assume();
+            let sq = <Square as Num>::new(self.0.trailing_zeros().cast());
             self.0 ^= sq.bitboard();
             Some(sq)
         }

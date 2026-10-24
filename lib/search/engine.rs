@@ -182,11 +182,7 @@ impl MovePicker {
         let pos = &searcher.stack.pos;
         let killer = searcher.stack.killers[pos.ply()];
 
-        self.assume().rate(|m| {
-            if Some(m) == head {
-                return Bounded::upper();
-            }
-
+        self.assume().rate_with_head(head, |m| {
             let mut rating = 0.0;
             let history = searcher.local.histories.attacker.get(pos, m);
             rating = Params::move_rating_history(0).mul_add(history, rating);

@@ -367,31 +367,36 @@ impl Evaluator {
             return beta;
         }
 
-        let mut exchanges = self.exchanges(m);
+        #[inline(never)]
+        fn tail(pos: &Evaluator, m: Move, mut score: f32, mut alpha: f32, mut beta: f32) -> f32 {
+            let mut exchanges = pos.exchanges(m);
 
-        loop {
-            let Some((_, captor)) = exchanges.next() else {
-                break beta;
-            };
+            loop {
+                let Some((_, captor)) = exchanges.next() else {
+                    break beta;
+                };
 
-            score = -(score + Params::piece_values(captor.cast::<usize>()));
-            beta = beta.min(-score);
+                score = -(score + Params::piece_values(captor.cast::<usize>()));
+                beta = beta.min(-score);
 
-            if alpha >= beta {
-                break alpha;
-            }
+                if alpha >= beta {
+                    break alpha;
+                }
 
-            let Some((_, captor)) = exchanges.next() else {
-                break alpha;
-            };
+                let Some((_, captor)) = exchanges.next() else {
+                    break alpha;
+                };
 
-            score = -(score + Params::piece_values(captor.cast::<usize>()));
-            alpha = alpha.max(score);
+                score = -(score + Params::piece_values(captor.cast::<usize>()));
+                alpha = alpha.max(score);
 
-            if alpha >= beta {
-                break beta;
+                if alpha >= beta {
+                    break beta;
+                }
             }
         }
+
+        tail(self, m, score, alpha, beta)
     }
 
     /// Pushes a [`Position`] into the evaluator stack.

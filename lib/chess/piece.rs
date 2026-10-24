@@ -110,15 +110,16 @@ const impl Piece {
     /// A [`Bitboard`] for this piece's attack pattern from a [`Square`].
     #[inline(always)]
     pub fn attacks(self, sq: Square) -> Bitboard {
-        const ATTACKS: [[Bitboard; Square::LEN]; 7] = const {
-            let mut table = [[Bitboard::empty(); Square::LEN]; 7];
+        const ATTACKS: [[Bitboard; Square::LEN]; Piece::LEN] = const {
+            let mut table = [[Bitboard::empty(); Square::LEN]; Piece::LEN];
 
             for color in Color::iter() {
                 for wc in Square::iter() {
                     if (Rank::Second..=Rank::Seventh).contains(&wc.rank()) {
                         let steps = [(-1, 1), (1, 1)];
                         let moves = Bitboard::fill(wc.perspective(color), &steps, Bitboard::full());
-                        table[color as usize][wc] |= moves.perspective(color).without(wc);
+                        table[Piece::new(Role::Pawn, color)][wc] |=
+                            moves.perspective(color).without(wc);
                     }
                 }
             }
@@ -127,40 +128,42 @@ const impl Piece {
                 #[rustfmt::skip]
                 let steps = [(1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)];
                 let moves = Bitboard::fill(wc, &steps, Bitboard::full()).without(wc);
-                table[Role::Knight as usize + 1][wc] |= moves;
+                table[Piece::WhiteKnight][wc] |= moves;
+                table[Piece::BlackKnight][wc] |= moves;
             }
 
             for wc in Square::iter() {
                 #[rustfmt::skip]
                 let steps = [(1, 1), (1, -1), (-1, -1), (-1, 1)];
                 let moves = Bitboard::fill(wc, &steps, Bitboard::empty()).without(wc);
-                table[Role::Bishop as usize + 1][wc] |= moves;
-                table[Role::Queen as usize + 1][wc] |= moves;
+                table[Piece::WhiteBishop][wc] |= moves;
+                table[Piece::BlackBishop][wc] |= moves;
+                table[Piece::WhiteQueen][wc] |= moves;
+                table[Piece::BlackQueen][wc] |= moves;
             }
 
             for wc in Square::iter() {
                 #[rustfmt::skip]
                 let steps = [(0, 1), (1, 0), (0, -1), (-1, 0)];
                 let moves = Bitboard::fill(wc, &steps, Bitboard::empty()).without(wc);
-                table[Role::Rook as usize + 1][wc] |= moves;
-                table[Role::Queen as usize + 1][wc] |= moves;
+                table[Piece::WhiteRook][wc] |= moves;
+                table[Piece::BlackRook][wc] |= moves;
+                table[Piece::WhiteQueen][wc] |= moves;
+                table[Piece::BlackQueen][wc] |= moves;
             }
 
             for wc in Square::iter() {
                 #[rustfmt::skip]
                 let steps = [(0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)];
                 let moves = Bitboard::fill(wc, &steps, Bitboard::full()).without(wc);
-                table[Role::King as usize + 1][wc] |= moves;
+                table[Piece::WhiteKing][wc] |= moves;
+                table[Piece::BlackKing][wc] |= moves;
             }
 
             table
         };
 
-        match self {
-            Piece::WhitePawn => ATTACKS[0][sq],
-            Piece::BlackPawn => ATTACKS[1][sq],
-            _ => ATTACKS[self.role() as usize + 1][sq],
-        }
+        ATTACKS[self][sq]
     }
 }
 

@@ -148,8 +148,25 @@ const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
     #[inline(always)]
     pub fn push(&mut self, item: T) {
         let idx = self.len();
-        self.bytes.len = self.bytes.len.checked_add(ones(1)).assume();
+        self.bytes.len = self.bytes.len.checked_add(1).assume();
         self.bytes.mem.as_mut().get_mut(idx).assume().write(item);
+    }
+
+    /// Pushes `item` if it is [`Some`].
+    ///
+    /// The sequence must have spare capacity even when `item` is [`None`].
+    #[inline(always)]
+    pub fn push_maybe(&mut self, item: Option<T>)
+    where
+        T: Zeroable + Copy,
+    {
+        let idx = self.len();
+        (idx < self.capacity()).assume();
+
+        let is_present = item.is_some().cast();
+        let value = item.unwrap_or_else(zeroed);
+        self.bytes.len = self.bytes.len.checked_add(is_present).assume();
+        self.bytes.mem.as_mut().get_mut(idx).assume().write(value);
     }
 
     /// Pops an item from the back of this sequence.
@@ -505,6 +522,21 @@ mod tests {
 
         assert_eq!(seq.len(), len + 1);
         assert_eq!(seq.last().copied(), Some(e));
+    }
+
+    #[proptest]
+    fn push_maybe_appends_element_if_some(
+        #[filter(#seq.capacity() > #seq.len())] mut seq: StaticSeq<u32, 16>,
+        e: Option<u32>,
+    ) {
+        let len = seq.len();
+        seq.push_maybe(e);
+
+        assert_eq!(seq.len(), len + e.is_some().cast::<usize>());
+
+        if e.is_some() {
+            assert_eq!(seq.last().copied(), e);
+        }
     }
 
     #[proptest]

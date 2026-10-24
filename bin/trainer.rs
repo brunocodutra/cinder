@@ -18,8 +18,8 @@ use bullet_trainer::reader::{DataReader, ReadMapLoader};
 use bullet_trainer::run::{DefaultDevice, HostPool, Step, TrainingSchedule, TrainingSteps, train};
 use bytemuck::zeroed;
 use cinder::chess::{Bitboard, Board, Color, Piece, Position, Role, Square};
-use cinder::nnue::*;
 use cinder::util::{Assume, FloatRepr, Int, Num, StaticSeq};
+use cinder::{nnue::*, simd::*};
 use clap::{Args, Parser, Subcommand};
 use derive_more::with_trait::Deref;
 use rand::{prelude::*, rng};
@@ -325,10 +325,13 @@ impl Features {
             ti(stm.cast(), ntm.cast());
         }
 
-        let kafts = [White, Black].map(|side| KAFeature::lut(side, ksqs[side], &pos).to_array());
+        let mask = pos.occupied();
+        let pieces = Piece::DECODER.shuffle(pos.placement().pieces());
+        let (squares, pieces) = KAFeature::compress(pieces, mask);
+        let kafts = [White, Black].map(|side| KAFeature::lut(side, ksqs[side], pieces, squares));
 
-        for sq in Bitboard::from(pos.occupied()).iter() {
-            let kaft = kafts.map(|ft| <KAFeature as Num>::new(ft[sq]));
+        for i in 0..mask.count().cast::<usize>() {
+            let kaft = kafts.map(|ft| <KAFeature as Num>::new(ft.as_array()[i]));
             ka(kaft[White].cast(), kaft[Black].cast());
         }
     }

@@ -227,6 +227,24 @@ impl<T, M: Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
         vec.compress_store(mask, unsafe { slice::from_raw_parts_mut(ptr, N) });
         unsafe { self.resize(end + mask.count_ones().cast::<usize>()) };
     }
+
+    /// Extends this sequence with the first `len` elements of a `Simd` vector.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn extend_from_simd<E, const N: usize>(&mut self, vec: Simd<E, N>, len: usize)
+    where
+        E: SimdElement,
+    {
+        const { assert!(align_of::<T>() >= align_of::<E>()) }
+        const { assert!(size_of::<T>() == size_of::<E>()) }
+        (self.capacity() >= self.len() + N).assume();
+        (len <= N).assume();
+
+        let end = self.len();
+        let ptr = self.as_mut_ptr().wrapping_add(end).cast();
+        vec.copy_to_slice(unsafe { slice::from_raw_parts_mut(ptr, N) });
+        unsafe { self.resize(end + len) };
+    }
 }
 
 const impl<T, M> Drop for Seq<T, M>

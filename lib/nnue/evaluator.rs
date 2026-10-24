@@ -573,8 +573,16 @@ impl Evaluator {
 
 #[inline(always)]
 #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-fn kafts(seq: &mut StaticSeq<KAFeature, { Square::LEN }>, kafts: u16x64, diff: M8x64) {
-    seq.extend_from_simd_masked(kafts, diff.to_bitmask());
+fn kafts(
+    seq: &mut StaticSeq<KAFeature, { KAFeature::MAX_ACTIVE }>,
+    side: Color,
+    ksq: Square,
+    squares: u8x32,
+    pieces: u8x32,
+    diff: M8x64,
+) {
+    let lut = KAFeature::lut(side, ksq, pieces, squares);
+    seq.extend_from_simd(lut, diff.count().cast());
 }
 
 #[inline(always)]
@@ -614,8 +622,8 @@ fn accumulate(
     let new_diff = new.occupied() & diff;
     let captured = old_diff.bitand(new_diff).to_simd().cast::<u16>();
 
-    let old_pieces = Piece::DECODER.shuffle(old.pieces());
-    let new_pieces = Piece::DECODER.shuffle(new.pieces());
+    let old_pcs = Piece::DECODER.shuffle(old.pieces());
+    let new_pcs = Piece::DECODER.shuffle(new.pieces());
 
     let mut tis = StaticSeq::<TIFeature, { 2 * TIFeature::MAX_ACTIVE }>::new();
     let mut tia = StaticSeq::<TIFeature, { 2 * TIFeature::MAX_ACTIVE }>::new();
@@ -632,7 +640,7 @@ fn accumulate(
             let wc = old.squares[c][idx].assume();
             let src = Piece::new(old.roles[c][idx].assume(), c);
             for wt in Bitboard::from(old_attacks.matching(idx.to_set())) {
-                let dst = Num::new(old_pieces.as_array()[wt]);
+                let dst = Num::new(old_pcs.as_array()[wt]);
                 tis.push_maybe(TIFeature::new(side, new_ksq, src, wc, dst, wt));
             }
         }
@@ -642,7 +650,7 @@ fn accumulate(
             let wc = new.squares[c][idx].assume();
             let src = Piece::new(new.roles[c][idx].assume(), c);
             for wt in Bitboard::from(new_attacks.matching(idx.to_set())) {
-                let dst = Num::new(new_pieces.as_array()[wt]);
+                let dst = Num::new(new_pcs.as_array()[wt]);
                 tia.push_maybe(TIFeature::new(side, new_ksq, src, wc, dst, wt));
             }
         }
@@ -654,11 +662,14 @@ fn accumulate(
         (old_diff, new_diff)
     };
 
+    let (old_sqs, old_pcs) = KAFeature::compress(old_pcs, old_ka);
+    let (new_sqs, new_pcs) = KAFeature::compress(new_pcs, new_ka);
+
     let mut kas = StaticSeq::new();
-    kafts(&mut kas, KAFeature::lut(side, old_ksq, old), old_ka);
+    kafts(&mut kas, side, old_ksq, old_sqs, old_pcs, old_ka);
 
     let mut kaa = StaticSeq::new();
-    kafts(&mut kaa, KAFeature::lut(side, new_ksq, new), new_ka);
+    kafts(&mut kaa, side, new_ksq, new_sqs, new_pcs, new_ka);
 
     let new_pawns = new.by_role(Role::Pawn);
     let old_pawns = old.by_role(Role::Pawn);
@@ -698,8 +709,8 @@ fn accumulate_both(
     let new_diff = new.occupied() & diff;
     let captured = old_diff.bitand(new_diff).to_simd().cast::<u16>();
 
-    let old_pieces = Piece::DECODER.shuffle(old.pieces());
-    let new_pieces = Piece::DECODER.shuffle(new.pieces());
+    let old_pcs = Piece::DECODER.shuffle(old.pieces());
+    let new_pcs = Piece::DECODER.shuffle(new.pieces());
 
     let mut tis = [
         StaticSeq::<TIFeature, { 2 * TIFeature::MAX_ACTIVE }>::new(),
@@ -723,7 +734,7 @@ fn accumulate_both(
             let wc = old.squares[c][idx].assume();
             let src = Piece::new(old.roles[c][idx].assume(), c);
             for wt in Bitboard::from(old_attacks.matching(idx.to_set())) {
-                let dst = Num::new(old_pieces.as_array()[wt]);
+                let dst = Num::new(old_pcs.as_array()[wt]);
                 for side in Color::iter() {
                     tis[side].push_maybe(TIFeature::new(side, ksq[side], src, wc, dst, wt));
                 }
@@ -735,7 +746,7 @@ fn accumulate_both(
             let wc = new.squares[c][idx].assume();
             let src = Piece::new(new.roles[c][idx].assume(), c);
             for wt in Bitboard::from(new_attacks.matching(idx.to_set())) {
-                let dst = Num::new(new_pieces.as_array()[wt]);
+                let dst = Num::new(new_pcs.as_array()[wt]);
                 for side in Color::iter() {
                     tia[side].push_maybe(TIFeature::new(side, ksq[side], src, wc, dst, wt));
                 }
@@ -750,12 +761,15 @@ fn accumulate_both(
     let old_pp_diff = !new_pawns | old_blacks ^ new_blacks;
     let new_pp_diff = !old_pawns | old_blacks ^ new_blacks;
 
+    let (old_sqs, old_pcs) = KAFeature::compress(old_pcs, old_diff);
+    let (new_sqs, new_pcs) = KAFeature::compress(new_pcs, new_diff);
+
     for side in Color::iter() {
         let mut kas = StaticSeq::new();
-        kafts(&mut kas, KAFeature::lut(side, ksq[side], old), old_diff);
+        kafts(&mut kas, side, ksq[side], old_sqs, old_pcs, old_diff);
 
         let mut kaa = StaticSeq::new();
-        kafts(&mut kaa, KAFeature::lut(side, ksq[side], new), new_diff);
+        kafts(&mut kaa, side, ksq[side], new_sqs, new_pcs, new_diff);
 
         let mut pps = StaticSeq::new();
         let pfts = PFeature::lut(side, ksq[side], old);

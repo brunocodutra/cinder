@@ -21,28 +21,6 @@ const unsafe impl Int for PSQFeature {}
 impl PSQFeature {
     /// The total number of different piece-square features.
     pub const LEN: usize = Square::LEN * (Piece::LEN - 1);
-
-    /// Constructs a lookup table for [`PSQFeature`].
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn lut(
-        side: Color,
-        ksq: Square,
-        placement: &Placement,
-    ) -> Simd<<Self as Num>::Repr, { Square::LEN }> {
-        let perspective = Square::A1.perspective(side);
-        let chirality = Square::A1.perspective(Side::from(ksq.file() < File::E));
-        let orientation = Simd::splat(perspective.cast::<u8>() | chirality.cast::<u8>());
-        let squares = u8x64::from_array(array::from_fn(Num::cast)) ^ orientation;
-
-        let pieces = Piece::DECODER.shuffle(placement.pieces()) ^ Simd::splat(side.get());
-        let kings = pieces.simd_eq(Simd::splat(Piece::WhiteKing.cast()))
-            | pieces.simd_eq(Simd::splat(Piece::BlackKing.cast()));
-
-        // Merge kings
-        let pieces = kings.select(Simd::splat(Piece::WhiteKing.cast()), pieces);
-        u16x64::splat(Square::LEN.cast()) * pieces.cast::<u16>() + squares.cast::<u16>()
-    }
 }
 
 impl<T> Index<PSQFeature> for [T; PSQFeature::LEN] {
@@ -136,17 +114,57 @@ impl KAFeature {
     /// The maximum number of active king-piece-square features per perspective.
     pub const MAX_ACTIVE: usize = 32;
 
-    /// Constructs a lookup table for [`KAFeature`].
+    /// Compresses the squares and pieces enabled by `mask`.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn compress(pieces: u8x64, mask: M8x64) -> (u8x32, u8x32) {
+        let mask = mask.to_bitmask();
+        let squares = u8x64::from_array(array::from_fn(Num::cast));
+        let [squares, _] = squares.compress(mask).halve();
+        let [pieces, _] = pieces.compress(mask).halve();
+        (squares, pieces)
+    }
+
+    /// Constructs a lookup table for compressed [`KAFeature`]s.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn lut(
         side: Color,
         ksq: Square,
-        placement: &Placement,
-    ) -> Simd<<Self as Num>::Repr, { Square::LEN }> {
+        pieces: u8x32,
+        mut squares: u8x32,
+    ) -> Simd<<Self as Num>::Repr, { Self::MAX_ACTIVE }> {
+        /// Decodes a placement piece, flips perspective, and merges both kings.
+        const DECODER: [u8x32; Color::LEN] = const {
+            let mut decoders: [u8x32; Color::LEN] = zeroed();
+
+            for side in Color::iter() {
+                for piece in Piece::iter() {
+                    let decoded = if piece.role() != Role::King {
+                        piece.perspective(side)
+                    } else {
+                        Piece::WhiteKing
+                    };
+
+                    decoders[side].as_mut_array()[piece.cast::<usize>()] = decoded.cast();
+                    decoders[side].as_mut_array()[piece.cast::<usize>() + 16] = decoded.cast();
+                }
+            }
+
+            decoders
+        };
+
         let chirality = Side::from(ksq.file() < File::E);
-        let bucket = u16x64::splat(KingBucket::new(side, ksq.perspective(chirality)).cast());
-        u16x64::splat(PSQFeature::LEN.cast()) * bucket + PSQFeature::lut(side, ksq, placement)
+        let bucket = u16x32::splat(KingBucket::new(side, ksq.perspective(chirality)).cast());
+        let pieces = DECODER[side].shuffle(pieces).cast::<u16>();
+
+        let side = Square::A1.perspective(side);
+        let chirality = Square::A1.perspective(chirality);
+        squares ^= u8x32::splat(side.cast::<u8>() | chirality.cast::<u8>());
+
+        u16x32::splat(PSQFeature::LEN.cast()) * bucket
+            + u16x32::splat(Square::LEN.cast()) * pieces
+            + squares.cast::<u16>()
     }
 }
 

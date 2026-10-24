@@ -229,9 +229,24 @@ impl RatedMoves {
     /// Re-rates all [`Move`]s in this collection.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn rate<F: FnMut(Move) -> Rating>(&mut self, mut f: F) {
+    pub fn rate<F: FnMut(Move) -> Rating>(&mut self, f: F) {
+        self.rate_with_head(None, f);
+    }
+
+    /// Re-rates all [`Move`]s in this collection, promoting `head` to the front.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn rate_with_head<F: FnMut(Move) -> Rating>(&mut self, head: Option<Move>, mut f: F) {
         self.unsorted = 0;
-        for (m, rating) in self.moves.iter().zip(&mut self.ratings) {
+
+        if let Some(i) = head.and_then(|h| self.moves.iter().position(|&m| m == h)) {
+            self.ratings[0] = Rating::upper();
+            self.moves.swap(0, i);
+            self.unsorted = 1;
+        }
+
+        let start = self.unsorted.cast::<usize>();
+        for (m, rating) in self.moves[start..].iter().zip(&mut self.ratings[start..]) {
             *rating = f(*m);
         }
     }

@@ -2,7 +2,7 @@ use crate::{chess::*, simd::*, util::*};
 use bytemuck::{ZeroableInOption, zeroed};
 use derive_more::with_trait::{Deref, DerefMut, IntoIterator};
 use std::fmt::{self, Debug, Display, Formatter, Write};
-use std::{convert::Infallible, iter::FusedIterator, num::NonZeroU16};
+use std::{array, convert::Infallible, iter::FusedIterator, num::NonZeroU16};
 
 #[cfg(test)]
 use proptest::{collection::vec, prelude::*};
@@ -297,9 +297,33 @@ impl Iterator for SortedRatedMovesIter<'_> {
             const SHIFT: u32 = 32 - <Rating as Num>::Repr::BITS;
             const { assert!(SHIFT >= Moves::CAPACITY.next_power_of_two().trailing_zeros()) }
 
-            let mut best = i32::MIN;
-            for (i, rating) in ratings.iter().enumerate() {
-                best = best.max((rating.cast::<i32>() << SHIFT) | i.cast::<i32>());
+            let (chunks, remainder) = ratings.as_chunks::<W2>();
+            let iota = V2::<i32>::from_array(array::from_fn(Num::cast));
+            let shift = V2::<i32>::splat(1 << SHIFT);
+            let step = V2::<i32>::splat(W2.cast());
+            let mut best = V2::splat(i32::MIN);
+            let mut ids = iota;
+
+            for chunk in chunks {
+                let chunk = V2::from_array(chunk.map(Num::get)).cast::<i32>();
+                best = best.simd_max((chunk * shift) | ids);
+                ids += step;
+            }
+
+            if !remainder.is_empty() && ratings.len() >= W2 {
+                let start = ratings.len() - W2;
+                let (tail, _) = ratings[start..].as_chunks::<W2>();
+                let chunk = V2::from_array(tail[0].map(Num::get)).cast::<i32>();
+                let ids = V2::<i32>::splat(start.cast()) + iota;
+                best = best.simd_max((chunk * shift) | ids);
+            }
+
+            let mut best = best.reduce_max();
+
+            if ratings.len() < W2 {
+                for (i, rating) in ratings.iter().enumerate() {
+                    best = best.max((rating.cast::<i32>() << SHIFT) | i.cast::<i32>());
+                }
             }
 
             let idx = cursor + (best.cast::<usize>() & ones::<usize>(SHIFT));

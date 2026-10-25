@@ -42,6 +42,7 @@ struct SharedData {
     vt: ValueTable,
     syzygy: Syzygy,
     overhead: Duration,
+    starting_material: f32,
 }
 
 #[derive(Debug, Zeroable)]
@@ -297,18 +298,14 @@ impl<'a> Searcher<'a> {
             value
         });
 
-        let piece_values = f32x8::load_or_default(Params::piece_values(..));
-        let starting_material: f32 = f32x8::from_array([16.0, 4.0, 4.0, 4.0, 2.0, 2.0, 0.0, 0.0])
-            .mul(piece_values)
-            .reduce_sum();
-
         let pos = &self.stack.pos;
         let piece_counts = f32x8::from_array(array::from_fn(|i| match i.convert() {
-            Some(r) => pos.by_role(r).count() as f32,
+            Some(r) => pos.by_role(r).count().cast(),
             None => 0.0,
         }));
 
-        let material = piece_counts.mul(piece_values).reduce_sum() / starting_material;
+        let piece_values = f32x8::load_or_default(Params::piece_values(..));
+        let material = piece_counts.mul(piece_values).reduce_sum() / self.shared.starting_material;
 
         let halfmoves = pos.halfmove().cast::<f32>() / Halfmove::MAX.cast::<f32>();
         let mut scale = halfmoves.lerp(*Params::halfmove_scaling(0), *Params::halfmove_scaling(1));
@@ -1454,6 +1451,9 @@ impl Engine {
                 vt: ValueTable::new(options.hash),
                 syzygy: Syzygy::new(&options.syzygy),
                 overhead: options.overhead.into(),
+                starting_material: f32x8::load_or_default(Params::piece_values(..))
+                    .mul(f32x8::from_array([16.0, 4.0, 4.0, 4.0, 2.0, 2.0, 0.0, 0.0]))
+                    .reduce_sum(),
             },
         }
     }

@@ -59,8 +59,9 @@ impl<S: for<'a> Synapse<Input<'a> = L2<'a>, Output = f32>> Synapse for L12<S> {
 
         let us: &[[V4<i16>; I / W8]; 2] = us.cast_ref();
         let them: &[[V4<i16>; I / W8]; 2] = them.cast_ref();
+        let mut active: Aligned<[[V8<u8>; 2]; I / W8 / 2]> = zeroed();
 
-        let active: Aligned<[[V8<u8>; 2]; I / W8 / 2]> = Aligned(array::from_fn(|i| {
+        for i in 0..I / W8 / 2 {
             let xl00 = us[0][2 * i].simd_min(Simd::splat(FTQ));
             let xl01 = us[0][2 * i + 1].simd_min(Simd::splat(FTQ));
             let xh00 = us[1][2 * i].simd_clamp(Simd::splat(0), Simd::splat(FTQ));
@@ -77,8 +78,8 @@ impl<S: for<'a> Synapse<Input<'a> = L2<'a>, Output = f32>> Synapse for L12<S> {
             let x10 = xl10.mul_high::<7>(xh10);
             let x11 = xl11.mul_high::<7>(xh11);
 
-            [Pack::pack(x00, x10), Pack::pack(x01, x11)]
-        }));
+            active[i] = [Pack::pack(x00, x10), Pack::pack(x01, x11)];
+        }
 
         #[cfg(feature = "permuter")]
         ActivationHistory::record(active.cast_ref());

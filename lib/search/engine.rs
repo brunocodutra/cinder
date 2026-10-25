@@ -183,8 +183,9 @@ impl MovePicker {
         let ply = pos.ply().cast();
         let killer = searcher.stack.killers[ply];
         let continuations = Params::move_rating_continuation(..).len().min(ply);
+        let (moves, ratings) = self.assume().unrated_with_head(head);
 
-        self.assume().rate_with_head(head, |m| {
+        for (&m, r) in moves.iter().zip(ratings) {
             let mut rating = 0.0;
 
             let ctx = MoveContext::new(pos, m);
@@ -216,8 +217,8 @@ impl MovePicker {
                 }
             }
 
-            rating.saturate()
-        });
+            *r = rating.saturate();
+        }
     }
 
     #[inline(always)]

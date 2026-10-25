@@ -5,7 +5,7 @@ use derive_more::with_trait::Debug;
 use std::hint::unreachable_unchecked;
 use std::mem::transmute;
 
-const K: usize = 8;
+const K: usize = REGISTERS / 2;
 const N: usize = Accumulator::LEN;
 
 #[inline(always)]
@@ -66,42 +66,27 @@ impl Transformer {
                         let s = &transmute::<&[i8; N], &[[[i8; W4]; K]; N / W4 / K]>(s)[i];
                         let a = &transmute::<&[i8; N], &[[[i8; W4]; K]; N / W4 / K]>(a)[i];
 
-                        regs[0] += load(&a[0]) - load(&s[0]);
-                        regs[1] += load(&a[1]) - load(&s[1]);
-                        regs[2] += load(&a[2]) - load(&s[2]);
-                        regs[3] += load(&a[3]) - load(&s[3]);
-                        regs[4] += load(&a[4]) - load(&s[4]);
-                        regs[5] += load(&a[5]) - load(&s[5]);
-                        regs[6] += load(&a[6]) - load(&s[6]);
-                        regs[7] += load(&a[7]) - load(&s[7]);
+                        for k in 0..K {
+                            regs[k] += load(&a[k]) - load(&s[k]);
+                        }
                     },
 
                     (Some(s), None) => unsafe {
                         let s = self.ka.get_unchecked(s.cast::<usize>());
                         let s = &transmute::<&[i8; N], &[[[i8; W4]; K]; N / W4 / K]>(s)[i];
 
-                        regs[0] -= load(&s[0]);
-                        regs[1] -= load(&s[1]);
-                        regs[2] -= load(&s[2]);
-                        regs[3] -= load(&s[3]);
-                        regs[4] -= load(&s[4]);
-                        regs[5] -= load(&s[5]);
-                        regs[6] -= load(&s[6]);
-                        regs[7] -= load(&s[7]);
+                        for k in 0..K {
+                            regs[k] -= load(&s[k]);
+                        }
                     },
 
                     (None, Some(a)) => unsafe {
                         let a = self.ka.get_unchecked(a.cast::<usize>());
                         let a = &transmute::<&[i8; N], &[[[i8; W4]; K]; N / W4 / K]>(a)[i];
 
-                        regs[0] += load(&a[0]);
-                        regs[1] += load(&a[1]);
-                        regs[2] += load(&a[2]);
-                        regs[3] += load(&a[3]);
-                        regs[4] += load(&a[4]);
-                        regs[5] += load(&a[5]);
-                        regs[6] += load(&a[6]);
-                        regs[7] += load(&a[7]);
+                        for k in 0..K {
+                            regs[k] += load(&a[k]);
+                        }
                     },
 
                     (None, None) => unsafe { unreachable_unchecked() },
@@ -117,42 +102,27 @@ impl Transformer {
                         let s = &transmute::<&[i8; N], &[[[i8; W4]; K]; N / W4 / K]>(s)[i];
                         let a = &transmute::<&[i8; N], &[[[i8; W4]; K]; N / W4 / K]>(a)[i];
 
-                        regs[0] += load(&a[0]) - load(&s[0]);
-                        regs[1] += load(&a[1]) - load(&s[1]);
-                        regs[2] += load(&a[2]) - load(&s[2]);
-                        regs[3] += load(&a[3]) - load(&s[3]);
-                        regs[4] += load(&a[4]) - load(&s[4]);
-                        regs[5] += load(&a[5]) - load(&s[5]);
-                        regs[6] += load(&a[6]) - load(&s[6]);
-                        regs[7] += load(&a[7]) - load(&s[7]);
+                        for k in 0..K {
+                            regs[k] += load(&a[k]) - load(&s[k]);
+                        }
                     },
 
                     (Some(s), None) => unsafe {
                         let s = self.ti.get_unchecked(s.cast::<usize>());
                         let s = &transmute::<&[i8; N], &[[[i8; W4]; K]; N / W4 / K]>(s)[i];
 
-                        regs[0] -= load(&s[0]);
-                        regs[1] -= load(&s[1]);
-                        regs[2] -= load(&s[2]);
-                        regs[3] -= load(&s[3]);
-                        regs[4] -= load(&s[4]);
-                        regs[5] -= load(&s[5]);
-                        regs[6] -= load(&s[6]);
-                        regs[7] -= load(&s[7]);
+                        for k in 0..K {
+                            regs[k] -= load(&s[k]);
+                        }
                     },
 
                     (None, Some(a)) => unsafe {
                         let a = self.ti.get_unchecked(a.cast::<usize>());
                         let a = &transmute::<&[i8; N], &[[[i8; W4]; K]; N / W4 / K]>(a)[i];
 
-                        regs[0] += load(&a[0]);
-                        regs[1] += load(&a[1]);
-                        regs[2] += load(&a[2]);
-                        regs[3] += load(&a[3]);
-                        regs[4] += load(&a[4]);
-                        regs[5] += load(&a[5]);
-                        regs[6] += load(&a[6]);
-                        regs[7] += load(&a[7]);
+                        for k in 0..K {
+                            regs[k] += load(&a[k]);
+                        }
                     },
 
                     (None, None) => unsafe { unreachable_unchecked() },
@@ -168,42 +138,27 @@ impl Transformer {
                         let s = &transmute::<&[i8; N], &[[[i8; W4]; K]; N / W4 / K]>(s)[i];
                         let a = &transmute::<&[i8; N], &[[[i8; W4]; K]; N / W4 / K]>(a)[i];
 
-                        regs[0] += load(&a[0]) - load(&s[0]);
-                        regs[1] += load(&a[1]) - load(&s[1]);
-                        regs[2] += load(&a[2]) - load(&s[2]);
-                        regs[3] += load(&a[3]) - load(&s[3]);
-                        regs[4] += load(&a[4]) - load(&s[4]);
-                        regs[5] += load(&a[5]) - load(&s[5]);
-                        regs[6] += load(&a[6]) - load(&s[6]);
-                        regs[7] += load(&a[7]) - load(&s[7]);
+                        for k in 0..K {
+                            regs[k] += load(&a[k]) - load(&s[k]);
+                        }
                     },
 
                     (Some(s), None) => unsafe {
                         let s = self.pp.get_unchecked(s.cast::<usize>());
                         let s = &transmute::<&[i8; N], &[[[i8; W4]; K]; N / W4 / K]>(s)[i];
 
-                        regs[0] -= load(&s[0]);
-                        regs[1] -= load(&s[1]);
-                        regs[2] -= load(&s[2]);
-                        regs[3] -= load(&s[3]);
-                        regs[4] -= load(&s[4]);
-                        regs[5] -= load(&s[5]);
-                        regs[6] -= load(&s[6]);
-                        regs[7] -= load(&s[7]);
+                        for k in 0..K {
+                            regs[k] -= load(&s[k]);
+                        }
                     },
 
                     (None, Some(a)) => unsafe {
                         let a = self.pp.get_unchecked(a.cast::<usize>());
                         let a = &transmute::<&[i8; N], &[[[i8; W4]; K]; N / W4 / K]>(a)[i];
 
-                        regs[0] += load(&a[0]);
-                        regs[1] += load(&a[1]);
-                        regs[2] += load(&a[2]);
-                        regs[3] += load(&a[3]);
-                        regs[4] += load(&a[4]);
-                        regs[5] += load(&a[5]);
-                        regs[6] += load(&a[6]);
-                        regs[7] += load(&a[7]);
+                        for k in 0..K {
+                            regs[k] += load(&a[k]);
+                        }
                     },
 
                     (None, None) => unsafe { unreachable_unchecked() },

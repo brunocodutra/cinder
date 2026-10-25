@@ -1,4 +1,4 @@
-use crate::chess::{Butterfly, Move, Position};
+use crate::chess::{Butterfly, Color, Move, Position};
 use crate::search::{Graviton, Stat, Statistics};
 use crate::util::{Binary, Bits, Num, Unsigned};
 use bytemuck::{Zeroable, zeroed};
@@ -16,7 +16,25 @@ impl<const N: usize> Default for Correction<N> {
     }
 }
 
-impl<T, U, const B: u32, const N: usize> Statistics<T> for Correction<N>
+/// Context about a [`Position`] for the purpose of correcting evaluations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CorrectionContext<T> {
+    pub turn: Color,
+    pub key: T,
+}
+
+impl<T> CorrectionContext<T> {
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn new(pos: &Position, key: T) -> Self {
+        CorrectionContext {
+            turn: pos.turn(),
+            key,
+        }
+    }
+}
+
+impl<T, U, const B: u32, const N: usize> Statistics<CorrectionContext<T>> for Correction<N>
 where
     T: Binary<Bits = Bits<U, B>>,
     U: Unsigned,
@@ -25,22 +43,22 @@ where
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn get(&self, pos: &Position, key: T) -> <Self::Stat as Stat>::Value {
+    fn get(&self, ctx: CorrectionContext<T>) -> <Self::Stat as Stat>::Value {
         const { assert!(N > 0) }
         const { assert!(N.is_power_of_two()) }
         const { assert!(N.trailing_zeros() <= B) }
-        let idx = key.encode().slice(..N.trailing_zeros()).cast::<usize>();
-        self.0[pos.turn()][idx].get()
+        let idx = ctx.key.encode().slice(..N.trailing_zeros()).cast::<usize>();
+        self.0[ctx.turn][idx].get()
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn update(&mut self, pos: &Position, key: T, delta: <Self::Stat as Stat>::Value) {
+    fn update(&mut self, ctx: CorrectionContext<T>, delta: <Self::Stat as Stat>::Value) {
         const { assert!(N > 0) }
         const { assert!(N.is_power_of_two()) }
         const { assert!(N.trailing_zeros() <= B) }
-        let idx = key.encode().slice(..N.trailing_zeros()).cast::<usize>();
-        self.0[pos.turn()][idx].update(delta);
+        let idx = ctx.key.encode().slice(..N.trailing_zeros()).cast::<usize>();
+        self.0[ctx.turn][idx].update(delta);
     }
 }
 

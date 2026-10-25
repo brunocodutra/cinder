@@ -1,32 +1,31 @@
-use crate::chess::Position;
 use crate::util::{Assume, Float, Num};
 use bytemuck::{NoUninit, Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 use std::ptr::NonNull;
 
-/// A trait for types that record statistics for [`Position`]s.
+/// A trait for types that record statistics about some context.
 pub trait Statistics<C> {
     /// The stat type.
     type Stat: Stat;
 
-    /// Returns the accumulated [`Self::Stat`]s.
-    fn get(&self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value;
+    /// Returns the accumulated [`Self::Stat`]s for `ctx`.
+    fn get(&self, ctx: C) -> <Self::Stat as Stat>::Value;
 
-    /// Updates [`Self::Stat`]s.
-    fn update(&mut self, pos: &Position, ctx: C, delta: <Self::Stat as Stat>::Value);
+    /// Updates [`Self::Stat`]s for `ctx`.
+    fn update(&mut self, ctx: C, delta: <Self::Stat as Stat>::Value);
 }
 
 impl<C, T: Statistics<C>> Statistics<C> for &mut T {
     type Stat = T::Stat;
 
     #[inline(always)]
-    fn get(&self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value {
-        (**self).get(pos, ctx)
+    fn get(&self, ctx: C) -> <Self::Stat as Stat>::Value {
+        (**self).get(ctx)
     }
 
     #[inline(always)]
-    fn update(&mut self, pos: &Position, ctx: C, delta: <Self::Stat as Stat>::Value) {
-        (**self).update(pos, ctx, delta);
+    fn update(&mut self, ctx: C, delta: <Self::Stat as Stat>::Value) {
+        (**self).update(ctx, delta);
     }
 }
 
@@ -34,17 +33,17 @@ impl<C, T: Statistics<C, Stat: Stat<Value: Zeroable>>> Statistics<C> for Option<
     type Stat = T::Stat;
 
     #[inline(always)]
-    fn get(&self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value {
+    fn get(&self, ctx: C) -> <Self::Stat as Stat>::Value {
         match self {
-            Some(g) => g.get(pos, ctx),
+            Some(g) => g.get(ctx),
             None => zeroed(),
         }
     }
 
     #[inline(always)]
-    fn update(&mut self, pos: &Position, ctx: C, delta: <Self::Stat as Stat>::Value) {
+    fn update(&mut self, ctx: C, delta: <Self::Stat as Stat>::Value) {
         if let Some(g) = self {
-            g.update(pos, ctx, delta);
+            g.update(ctx, delta);
         }
     }
 }
@@ -53,13 +52,13 @@ impl<C, T: Statistics<C>> Statistics<C> for NonNull<T> {
     type Stat = T::Stat;
 
     #[inline(always)]
-    fn get(&self, pos: &Position, ctx: C) -> <Self::Stat as Stat>::Value {
-        self.assume().get(pos, ctx)
+    fn get(&self, ctx: C) -> <Self::Stat as Stat>::Value {
+        self.assume().get(ctx)
     }
 
     #[inline(always)]
-    fn update(&mut self, pos: &Position, ctx: C, delta: <Self::Stat as Stat>::Value) {
-        self.assume().update(pos, ctx, delta);
+    fn update(&mut self, ctx: C, delta: <Self::Stat as Stat>::Value) {
+        self.assume().update(ctx, delta);
     }
 }
 

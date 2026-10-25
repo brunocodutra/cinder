@@ -105,9 +105,9 @@ impl Stack {
         if self.pos.is_check() {
             zeroed()
         } else if ply >= 2 && !self.pos[ply - 2].is_check() {
-            self.value(0).assume() - self.value(2).assume()
+            self.value(0) - self.value(2)
         } else if ply >= 4 && !self.pos[ply - 4].is_check() {
-            self.value(0).assume() - self.value(4).assume()
+            self.value(0) - self.value(4)
         } else {
             zeroed()
         }
@@ -115,30 +115,30 @@ impl Stack {
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn value(&self, i: usize) -> Option<Score> {
-        let idx = self.pos.ply().cast::<usize>().checked_sub(i)?;
+    fn value(&self, i: usize) -> Score {
+        let idx = self.pos.ply().cast::<usize>().wrapping_sub(i);
         // IMPORTANT: widen to Score to avoid mate blindness!
-        Some(self.values.get(idx).assume().saturate())
+        self.values.get(idx).assume().saturate()
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn zobrists(&self, i: usize) -> Option<&Zobrists> {
-        let idx = self.pos.ply().cast::<usize>().checked_sub(i)?;
-        Some(self.pos[idx].zobrists())
+    fn zobrists(&self, i: usize) -> &Zobrists {
+        let idx = self.pos.ply().cast::<usize>().wrapping_sub(i);
+        self.pos[idx].zobrists()
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn continuation(&self, i: usize) -> Option<NonNull<PieceToHistory>> {
-        let idx = self.pos.ply().cast::<usize>().checked_sub(i)?;
+        let idx = self.pos.ply().cast::<usize>().wrapping_sub(i);
         *self.continuation.get(idx).assume()
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn correction(&self, i: usize) -> Option<NonNull<Correction<1>>> {
-        let idx = self.pos.ply().cast::<usize>().checked_sub(i)?;
+        let idx = self.pos.ply().cast::<usize>().wrapping_sub(i);
         *self.correction.get(idx).assume()
     }
 }
@@ -359,7 +359,7 @@ impl<'a> Searcher<'a> {
     fn update_correction(&mut self, depth: f32, score: ScoreBound) {
         let pos = &self.stack.pos;
         let (ply, zbs) = (pos.ply(), pos.zobrists());
-        let diff = score.bound(ply) - self.stack.value(0).assume();
+        let diff = score.bound(ply) - self.stack.value(0);
         let error = depth * diff.cast::<f32>();
 
         let gradient = error
@@ -380,7 +380,7 @@ impl<'a> Searcher<'a> {
         corrections.black.update(ctx, gradient);
 
         for i in 0..ply.cast::<usize>().min(2) {
-            let key = self.stack.zobrists(i + 1).assume().hash ^ zbs.hash;
+            let key = self.stack.zobrists(i + 1).hash ^ zbs.hash;
             let ctx = CorrectionContext::new(pos, key);
             corrections.history.update(ctx, gradient);
         }
@@ -415,7 +415,7 @@ impl<'a> Searcher<'a> {
         correction = Params::pieces_correction(0).mul_add(history, correction);
 
         for i in 0..Params::history_correction(..).len().min(ply.cast()) {
-            let key = self.stack.zobrists(i + 1).assume().hash ^ zbs.hash;
+            let key = self.stack.zobrists(i + 1).hash ^ zbs.hash;
             let ctx = CorrectionContext::new(pos, key);
             let history = self.local.corrections.history.get(ctx);
             correction = Params::history_correction(i).mul_add(history, correction);
@@ -582,8 +582,8 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        let value = self.stack.value(0);
         let is_check = self.stack.pos.is_check();
-        let value = self.stack.value(0).assume();
         let stand_pat = match transposition {
             _ if is_check => Score::lower(),
             Some(t) if t.score.bound(ply).is_decisive() => value,
@@ -716,8 +716,8 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        let value = self.stack.value(0);
         let is_check = self.stack.pos.is_check();
-        let value = self.stack.value(0).assume();
         let stand_pat = match transposition {
             _ if is_check => Score::lower(),
             Some(t) if !t.score.range(ply).contains(&value) => t.score.bound(ply),
@@ -1007,7 +1007,10 @@ impl<'a> Searcher<'a> {
 
             let ctx = MoveContext::new(&PositionContext::new(pos), pos, m);
             let butterfly = self.local.histories.butterfly.get(ctx);
-            let counter = self.stack.continuation(1).filter(|_| is_quiet).get(ctx);
+            let counter = match pos.ply().get() {
+                1.. => self.stack.continuation(1).filter(|_| is_quiet).get(ctx),
+                ..1 => 0.0,
+            };
 
             let mut next = self.next(Some(m));
             let gives_check = next.stack.pos.is_check();
@@ -1162,7 +1165,7 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let value = self.stack.value(0).assume();
+        let value = self.stack.value(0);
         if !is_check && head.is_quiet() && !score.range(zeroed()).contains(&value) {
             self.update_correction(depth, score);
         }

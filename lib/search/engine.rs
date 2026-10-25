@@ -181,6 +181,7 @@ impl MovePicker {
     fn rate(&mut self, searcher: &Searcher<'_>, head: Option<Move>) {
         let pos = &searcher.stack.pos;
         let ply = pos.ply().cast();
+        let ctx = PositionContext::new(pos);
         let killer = searcher.stack.killers[ply];
         let continuations = Params::move_rating_continuation(..).len().min(ply);
         let (moves, ratings) = self.assume().unrated_with_head(head);
@@ -188,7 +189,7 @@ impl MovePicker {
         for (&m, r) in moves.iter().zip(ratings) {
             let mut rating = 0.0;
 
-            let ctx = MoveContext::new(pos, m);
+            let ctx = MoveContext::new(&ctx, pos, m);
             let history = searcher.local.histories.attacker.get(ctx);
             rating = Params::move_rating_history(0).mul_add(history, rating);
             let history = searcher.local.histories.defender.get(ctx);
@@ -325,9 +326,10 @@ impl<'a> Searcher<'a> {
             .max(*Params::history_malus(2));
 
         let pos = &self.stack.pos;
+        let ctx = PositionContext::new(pos);
         let continuations = pos.ply().cast::<usize>().min(2);
 
-        let best_ctx = MoveContext::new(pos, best);
+        let best_ctx = MoveContext::new(&ctx, pos, best);
         self.local.histories.attacker.update(best_ctx, bonus);
         self.local.histories.defender.update(best_ctx, bonus);
         self.local.histories.butterfly.update(best_ctx, bonus);
@@ -339,7 +341,7 @@ impl<'a> Searcher<'a> {
         }
 
         for m in moves.iter().take_while(|m| **m != best) {
-            let ctx = MoveContext::new(pos, *m);
+            let ctx = MoveContext::new(&ctx, pos, *m);
             self.local.histories.attacker.update(ctx, malus);
             self.local.histories.defender.update(ctx, malus);
             self.local.histories.butterfly.update(ctx, malus);
@@ -1003,7 +1005,7 @@ impl<'a> Searcher<'a> {
                 }
             }
 
-            let ctx = MoveContext::new(pos, m);
+            let ctx = MoveContext::new(&PositionContext::new(pos), pos, m);
             let butterfly = self.local.histories.butterfly.get(ctx);
             let counter = self.stack.continuation(1).filter(|_| is_quiet).get(ctx);
 
@@ -1111,7 +1113,7 @@ impl<'a> Searcher<'a> {
             };
 
             let pos = &self.stack.pos;
-            let ctx = MoveContext::new(pos, m);
+            let ctx = MoveContext::new(&PositionContext::new(pos), pos, m);
             let butterfly = self.local.histories.butterfly.get(ctx);
             self.stack.attention = self.ctrl.attention(m);
 

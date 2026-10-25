@@ -180,25 +180,28 @@ impl MovePicker {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn rate(&mut self, searcher: &Searcher<'_>, head: Option<Move>) {
         let pos = &searcher.stack.pos;
-        let killer = searcher.stack.killers[pos.ply()];
+        let ply = pos.ply().cast();
+        let killer = searcher.stack.killers[ply];
+        let continuations = Params::move_rating_continuation(..).len().min(ply);
 
         self.assume().rate_with_head(head, |m| {
             let mut rating = 0.0;
-            let history = searcher.local.histories.attacker.get(pos, m);
+
+            let ctx = MoveContext::new(pos, m);
+            let history = searcher.local.histories.attacker.get(ctx);
             rating = Params::move_rating_history(0).mul_add(history, rating);
-            let history = searcher.local.histories.defender.get(pos, m);
+            let history = searcher.local.histories.defender.get(ctx);
             rating = Params::move_rating_history(1).mul_add(history, rating);
-            let history = searcher.local.histories.butterfly.get(pos, m);
+            let history = searcher.local.histories.butterfly.get(ctx);
             rating = Params::move_rating_history(2).mul_add(history, rating);
 
             let gives_check = pos.gives_direct_check(m);
             rating = Params::move_rating_gives_check(0).mul_add(gives_check.cast(), rating);
             rating = Params::move_rating_is_killer(0).mul_add(killer.contains(m).cast(), rating);
 
-            if m.is_quiet() {
-                let ply = pos.ply().cast();
-                for i in 0..Params::move_rating_continuation(..).len().min(ply) {
-                    let history = searcher.stack.continuation(i + 1).get(pos, m);
+            if ctx.is_quiet {
+                for i in 0..continuations {
+                    let history = searcher.stack.continuation(i + 1).get(ctx);
                     rating = Params::move_rating_continuation(i).mul_add(history, rating);
                 }
             } else {
@@ -321,24 +324,28 @@ impl<'a> Searcher<'a> {
             .max(*Params::history_malus(2));
 
         let pos = &self.stack.pos;
-        self.local.histories.attacker.update(pos, best, bonus);
-        self.local.histories.defender.update(pos, best, bonus);
-        self.local.histories.butterfly.update(pos, best, bonus);
+        let continuations = pos.ply().cast::<usize>().min(2);
 
-        if best.is_quiet() {
-            for i in 0..pos.ply().cast::<usize>().min(2) {
-                self.stack.continuation(i + 1).update(pos, best, bonus);
+        let best_ctx = MoveContext::new(pos, best);
+        self.local.histories.attacker.update(best_ctx, bonus);
+        self.local.histories.defender.update(best_ctx, bonus);
+        self.local.histories.butterfly.update(best_ctx, bonus);
+
+        if best_ctx.is_quiet {
+            for i in 0..continuations {
+                self.stack.continuation(i + 1).update(best_ctx, bonus);
             }
         }
 
         for m in moves.iter().take_while(|m| **m != best) {
-            self.local.histories.attacker.update(pos, *m, malus);
-            self.local.histories.defender.update(pos, *m, malus);
-            self.local.histories.butterfly.update(pos, *m, malus);
+            let ctx = MoveContext::new(pos, *m);
+            self.local.histories.attacker.update(ctx, malus);
+            self.local.histories.defender.update(ctx, malus);
+            self.local.histories.butterfly.update(ctx, malus);
 
-            if best.is_quiet() && m.is_quiet() {
-                for i in 0..pos.ply().cast::<usize>().min(2) {
-                    self.stack.continuation(i + 1).update(pos, *m, malus);
+            if best_ctx.is_quiet && ctx.is_quiet {
+                for i in 0..continuations {
+                    self.stack.continuation(i + 1).update(ctx, malus);
                 }
             }
         }
@@ -358,19 +365,26 @@ impl<'a> Searcher<'a> {
             .min(*Params::correction_gradient(2));
 
         let corrections = &mut self.local.corrections;
-        corrections.pawns.update(pos, zbs.pawns, gradient);
-        corrections.minor.update(pos, zbs.minor, gradient);
-        corrections.major.update(pos, zbs.major, gradient);
-        corrections.white.update(pos, zbs.white, gradient);
-        corrections.black.update(pos, zbs.black, gradient);
+        let ctx = CorrectionContext::new(pos, zbs.pawns);
+        corrections.pawns.update(ctx, gradient);
+        let ctx = CorrectionContext::new(pos, zbs.minor);
+        corrections.minor.update(ctx, gradient);
+        let ctx = CorrectionContext::new(pos, zbs.major);
+        corrections.major.update(ctx, gradient);
+        let ctx = CorrectionContext::new(pos, zbs.white);
+        corrections.white.update(ctx, gradient);
+        let ctx = CorrectionContext::new(pos, zbs.black);
+        corrections.black.update(ctx, gradient);
 
         for i in 0..ply.cast::<usize>().min(2) {
             let key = self.stack.zobrists(i + 1).assume().hash ^ zbs.hash;
-            corrections.history.update(pos, key, gradient);
+            let ctx = CorrectionContext::new(pos, key);
+            corrections.history.update(ctx, gradient);
         }
 
         for i in 0..ply.cast::<usize>().min(2) {
-            self.stack.correction(i + 1).update(pos, (), gradient);
+            let ctx = CorrectionContext::new(pos, ());
+            self.stack.correction(i + 1).update(ctx, gradient);
         }
     }
 
@@ -381,25 +395,32 @@ impl<'a> Searcher<'a> {
         let (ply, zbs) = (pos.ply(), pos.zobrists());
 
         let mut correction = 0.0;
-        let pawns = self.local.corrections.pawns.get(pos, zbs.pawns);
-        correction = Params::pawns_correction(0).mul_add(pawns, correction);
-        let minor = self.local.corrections.minor.get(pos, zbs.minor);
-        correction = Params::minor_correction(0).mul_add(minor, correction);
-        let major = self.local.corrections.major.get(pos, zbs.major);
-        correction = Params::major_correction(0).mul_add(major, correction);
-        let white = self.local.corrections.white.get(pos, zbs.white);
-        correction = Params::pieces_correction(0).mul_add(white, correction);
-        let black = self.local.corrections.black.get(pos, zbs.black);
-        correction = Params::pieces_correction(0).mul_add(black, correction);
+        let ctx = CorrectionContext::new(pos, zbs.pawns);
+        let history = self.local.corrections.pawns.get(ctx);
+        correction = Params::pawns_correction(0).mul_add(history, correction);
+        let ctx = CorrectionContext::new(pos, zbs.minor);
+        let history = self.local.corrections.minor.get(ctx);
+        correction = Params::minor_correction(0).mul_add(history, correction);
+        let ctx = CorrectionContext::new(pos, zbs.major);
+        let history = self.local.corrections.major.get(ctx);
+        correction = Params::major_correction(0).mul_add(history, correction);
+        let ctx = CorrectionContext::new(pos, zbs.white);
+        let history = self.local.corrections.white.get(ctx);
+        correction = Params::pieces_correction(0).mul_add(history, correction);
+        let ctx = CorrectionContext::new(pos, zbs.black);
+        let history = self.local.corrections.black.get(ctx);
+        correction = Params::pieces_correction(0).mul_add(history, correction);
 
         for i in 0..Params::history_correction(..).len().min(ply.cast()) {
             let key = self.stack.zobrists(i + 1).assume().hash ^ zbs.hash;
-            let history = self.local.corrections.history.get(pos, key);
+            let ctx = CorrectionContext::new(pos, key);
+            let history = self.local.corrections.history.get(ctx);
             correction = Params::history_correction(i).mul_add(history, correction);
         }
 
         for i in 0..Params::continuation_correction(..).len().min(ply.cast()) {
-            let history = self.stack.correction(i + 1).get(pos, ());
+            let ctx = CorrectionContext::new(pos, ());
+            let history = self.stack.correction(i + 1).get(ctx);
             correction = Params::continuation_correction(i).mul_add(history, correction);
         }
 
@@ -981,8 +1002,9 @@ impl<'a> Searcher<'a> {
                 }
             }
 
-            let butterfly = self.local.histories.butterfly.get(pos, m);
-            let counter = self.stack.continuation(1).filter(|_| is_quiet).get(pos, m);
+            let ctx = MoveContext::new(pos, m);
+            let butterfly = self.local.histories.butterfly.get(ctx);
+            let counter = self.stack.continuation(1).filter(|_| is_quiet).get(ctx);
 
             let mut next = self.next(Some(m));
             let gives_check = next.stack.pos.is_check();
@@ -1088,7 +1110,8 @@ impl<'a> Searcher<'a> {
             };
 
             let pos = &self.stack.pos;
-            let butterfly = self.local.histories.butterfly.get(pos, m);
+            let ctx = MoveContext::new(pos, m);
+            let butterfly = self.local.histories.butterfly.get(ctx);
             self.stack.attention = self.ctrl.attention(m);
 
             let mut next = self.next(Some(m));
@@ -1311,10 +1334,10 @@ impl Stream for Search<'_, '_> {
     type Item = Info;
 
     #[inline(always)]
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = unsafe { self.get_unchecked_mut() };
         if let Some(rx) = &mut this.channel {
-            let info = match rx.poll_next_unpin(cx) {
+            let info = match rx.poll_next_unpin(ctx) {
                 Poll::Ready(Some(info)) => info,
                 poll => return poll,
             };
@@ -1325,7 +1348,7 @@ impl Stream for Search<'_, '_> {
 
         #[inline(never)]
         #[expect(clippy::deref_addrof)]
-        fn bootstrap(search: &mut Search<'_, '_>, cx: &mut Context<'_>) -> Poll<Option<Info>> {
+        fn bootstrap(search: &mut Search<'_, '_>, ctx: &mut Context<'_>) -> Poll<Option<Info>> {
             let (tx, rx) = unbounded();
             search.channel = Some(rx);
 
@@ -1372,10 +1395,10 @@ impl Stream for Search<'_, '_> {
                 }
             }));
 
-            unsafe { Pin::new_unchecked(search).poll_next(cx) }
+            unsafe { Pin::new_unchecked(search).poll_next(ctx) }
         }
 
-        bootstrap(this, cx)
+        bootstrap(this, ctx)
     }
 }
 

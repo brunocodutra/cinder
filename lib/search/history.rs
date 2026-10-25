@@ -1,8 +1,46 @@
-use crate::chess::{Butterfly, Move, PieceTo, Position};
+use crate::chess::{Butterfly, Color, Move, Piece, PieceTo, Position, Square};
 use crate::search::{Graviton, Stat, Statistics};
 use crate::util::Assume;
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
+
+/// Context about a [`Move`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[expect(clippy::struct_excessive_bools)]
+pub struct MoveContext {
+    pub turn: Color,
+    pub piece: Piece,
+    pub whence: Square,
+    pub whither: Square,
+    pub is_quiet: bool,
+    pub is_check: bool,
+    pub our_king: Square,
+    pub their_king: Square,
+    pub whence_attacked: bool,
+    pub whither_attacked: bool,
+}
+
+impl MoveContext {
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn new(pos: &Position, m: Move) -> Self {
+        let turn = pos.turn();
+        let (wc, wt) = (m.whence(), m.whither());
+
+        MoveContext {
+            turn,
+            piece: pos[wc].piece().assume(),
+            whence: wc,
+            whither: wt,
+            is_quiet: m.is_quiet(),
+            is_check: pos.is_check(),
+            our_king: pos.king(turn),
+            their_king: pos.king(!turn),
+            whence_attacked: !pos.attackers(wc).is_empty(),
+            whither_attacked: !pos.attackers(wt).is_empty(),
+        }
+    }
+}
 
 /// Historical statistics about a [`Move`] in butterfly form.
 #[derive(Debug, Zeroable)]
@@ -20,37 +58,32 @@ impl Default for ButterflyHistory {
 impl ButterflyHistory {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn graviton_ref(&self, pos: &Position, m: Move) -> &Graviton {
-        let is_check = pos.is_check() as usize;
-        let is_quiet = m.is_quiet() as usize;
-        let (wc, wt) = (m.whence(), m.whither());
-        let attacked = [!pos.attackers(wc).is_empty(), !pos.attackers(wt).is_empty()];
-        &self.0[pos.turn()][is_check][is_quiet][wc][wt][attacked[0] as usize][attacked[1] as usize]
+    fn graviton_ref(&self, ctx: &MoveContext) -> &Graviton {
+        &self.0[ctx.turn][ctx.is_check as usize][ctx.is_quiet as usize][ctx.whence][ctx.whither]
+            [ctx.whence_attacked as usize][ctx.whither_attacked as usize]
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn graviton_mut(&mut self, pos: &Position, m: Move) -> &mut Graviton {
-        let is_check = pos.is_check() as usize;
-        let is_quiet = m.is_quiet() as usize;
-        let (wc, wt) = (m.whence(), m.whither());
-        let attacked = [!pos.attackers(wc).is_empty(), !pos.attackers(wt).is_empty()];
-        &mut self.0[pos.turn()][is_check][is_quiet][wc][wt][attacked[0] as usize]
-            [attacked[1] as usize]
+    fn graviton_mut(&mut self, ctx: &MoveContext) -> &mut Graviton {
+        &mut self.0[ctx.turn][ctx.is_check as usize][ctx.is_quiet as usize][ctx.whence][ctx.whither]
+            [ctx.whence_attacked as usize][ctx.whither_attacked as usize]
     }
 }
 
-impl Statistics<Move> for ButterflyHistory {
+impl Statistics<MoveContext> for ButterflyHistory {
     type Stat = Graviton;
 
     #[inline(always)]
-    fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
-        self.graviton_ref(pos, m).get()
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn get(&self, ctx: MoveContext) -> <Self::Stat as Stat>::Value {
+        self.graviton_ref(&ctx).get()
     }
 
     #[inline(always)]
-    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
-        self.graviton_mut(pos, m).update(delta);
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn update(&mut self, ctx: MoveContext, delta: <Self::Stat as Stat>::Value) {
+        self.graviton_mut(&ctx).update(delta);
     }
 }
 
@@ -69,36 +102,32 @@ impl Default for AttackerHistory {
 impl AttackerHistory {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn graviton_ref(&self, pos: &Position, m: Move) -> &Graviton {
-        let (wc, wt) = (m.whence(), m.whither());
-        let ksq = pos.king(!pos.turn());
-        let piece = pos[wc].piece().assume();
-        let attacked = !pos.attackers(wt).is_empty();
-        &self.0[m.is_quiet() as usize][ksq][piece][wt][attacked as usize]
+    fn graviton_ref(&self, ctx: &MoveContext) -> &Graviton {
+        &self.0[ctx.is_quiet as usize][ctx.their_king][ctx.piece][ctx.whither]
+            [ctx.whither_attacked as usize]
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn graviton_mut(&mut self, pos: &Position, m: Move) -> &mut Graviton {
-        let (wc, wt) = (m.whence(), m.whither());
-        let ksq = pos.king(!pos.turn());
-        let piece = pos[wc].piece().assume();
-        let attacked = !pos.attackers(wt).is_empty();
-        &mut self.0[m.is_quiet() as usize][ksq][piece][wt][attacked as usize]
+    fn graviton_mut(&mut self, ctx: &MoveContext) -> &mut Graviton {
+        &mut self.0[ctx.is_quiet as usize][ctx.their_king][ctx.piece][ctx.whither]
+            [ctx.whither_attacked as usize]
     }
 }
 
-impl Statistics<Move> for AttackerHistory {
+impl Statistics<MoveContext> for AttackerHistory {
     type Stat = Graviton;
 
     #[inline(always)]
-    fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
-        self.graviton_ref(pos, m).get()
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn get(&self, ctx: MoveContext) -> <Self::Stat as Stat>::Value {
+        self.graviton_ref(&ctx).get()
     }
 
     #[inline(always)]
-    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
-        self.graviton_mut(pos, m).update(delta);
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn update(&mut self, ctx: MoveContext, delta: <Self::Stat as Stat>::Value) {
+        self.graviton_mut(&ctx).update(delta);
     }
 }
 
@@ -117,36 +146,32 @@ impl Default for DefenderHistory {
 impl DefenderHistory {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn graviton_ref(&self, pos: &Position, m: Move) -> &Graviton {
-        let (wc, wt) = (m.whence(), m.whither());
-        let ksq = pos.king(pos.turn());
-        let piece = pos[wc].piece().assume();
-        let attacked = !pos.attackers(wt).is_empty();
-        &self.0[m.is_quiet() as usize][ksq][piece][wt][attacked as usize]
+    fn graviton_ref(&self, ctx: &MoveContext) -> &Graviton {
+        &self.0[ctx.is_quiet as usize][ctx.our_king][ctx.piece][ctx.whither]
+            [ctx.whither_attacked as usize]
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn graviton_mut(&mut self, pos: &Position, m: Move) -> &mut Graviton {
-        let (wc, wt) = (m.whence(), m.whither());
-        let ksq = pos.king(pos.turn());
-        let piece = pos[wc].piece().assume();
-        let attacked = !pos.attackers(wt).is_empty();
-        &mut self.0[m.is_quiet() as usize][ksq][piece][wt][attacked as usize]
+    fn graviton_mut(&mut self, ctx: &MoveContext) -> &mut Graviton {
+        &mut self.0[ctx.is_quiet as usize][ctx.our_king][ctx.piece][ctx.whither]
+            [ctx.whither_attacked as usize]
     }
 }
 
-impl Statistics<Move> for DefenderHistory {
+impl Statistics<MoveContext> for DefenderHistory {
     type Stat = Graviton;
 
     #[inline(always)]
-    fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
-        self.graviton_ref(pos, m).get()
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn get(&self, ctx: MoveContext) -> <Self::Stat as Stat>::Value {
+        self.graviton_ref(&ctx).get()
     }
 
     #[inline(always)]
-    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
-        self.graviton_mut(pos, m).update(delta);
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn update(&mut self, ctx: MoveContext, delta: <Self::Stat as Stat>::Value) {
+        self.graviton_mut(&ctx).update(delta);
     }
 }
 
@@ -162,23 +187,19 @@ impl Default for PieceToHistory {
     }
 }
 
-impl Statistics<Move> for PieceToHistory {
+impl Statistics<MoveContext> for PieceToHistory {
     type Stat = Graviton;
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn get(&self, pos: &Position, m: Move) -> <Self::Stat as Stat>::Value {
-        let (wc, wt) = (m.whence(), m.whither());
-        let piece = pos[wc].piece().assume();
-        self.0[piece][wt].get()
+    fn get(&self, ctx: MoveContext) -> <Self::Stat as Stat>::Value {
+        self.0[ctx.piece][ctx.whither].get()
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn update(&mut self, pos: &Position, m: Move, delta: <Self::Stat as Stat>::Value) {
-        let (wc, wt) = (m.whence(), m.whither());
-        let piece = pos[wc].piece().assume();
-        self.0[piece][wt].update(delta);
+    fn update(&mut self, ctx: MoveContext, delta: <Self::Stat as Stat>::Value) {
+        self.0[ctx.piece][ctx.whither].update(delta);
     }
 }
 

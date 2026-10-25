@@ -204,6 +204,24 @@ const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
 
         self.bytes.len = len.cast();
     }
+
+    /// Retains only the elements specified by the predicate.
+    #[inline(always)]
+    pub fn retain<F>(&mut self, mut f: F)
+    where
+        T: [const] Destruct,
+        F: [const] Destruct + [const] FnMut(&T) -> bool,
+    {
+        let mut len = 0;
+        for i in 0..self.len() {
+            if f(&self[i]) {
+                self.swap(len, i);
+                len += 1;
+            }
+        }
+
+        self.truncate(len);
+    }
 }
 
 impl<T, M: Memory<T, Capacity = ConstCapacity>> Seq<T, M> {

@@ -1,6 +1,5 @@
-use crate::chess::{Halfmove, Move, Moves, RatedMoves, Role, SortedRatedMovesIter, Zobrists};
 use crate::search::{ControlFlow::*, *};
-use crate::{nnue::Evaluator, params::Params, simd::*, syzygy::Syzygy, util::*};
+use crate::{chess::*, nnue::Evaluator, params::Params, simd::*, syzygy::Syzygy, util::*};
 use bytemuck::{Zeroable, fill_zeroes, zeroed};
 use derive_more::with_trait::{Debug, Deref, DerefMut, Display, Error};
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
@@ -232,14 +231,17 @@ impl MovePicker {
             head: Option<Move>,
             all: bool,
         ) -> SortedRatedMovesIter<'a> {
-            let pos = &searcher.stack.pos;
-            let moves = if all || pos.is_check() {
-                pos.moves().into()
-            } else {
-                pos.noisy().into()
-            };
+            *picker = MovePicker::Rated(RatedMoves::default());
 
-            *picker = MovePicker::Rated(moves);
+            let pos = &searcher.stack.pos;
+            if let MovePicker::Rated(rated) = picker {
+                if all || pos.is_check() {
+                    pos.moves_into(Bitboard::full(), rated.moves_mut());
+                } else {
+                    pos.noisy_into(Bitboard::full(), rated.moves_mut());
+                }
+            }
+
             picker.rate(searcher, head);
             picker.assume().sorted()
         }
@@ -1282,22 +1284,24 @@ impl<'e, 'p> Search<'e, 'p> {
     /// Moves to search.
     #[inline(always)]
     fn moves_to_search(&self) -> Moves {
-        let Some(dtz) = self.engine.shared.syzygy.dtz(self.pos) else {
-            return self.pos.moves();
-        };
+        let mut moves = Moves::default();
+        self.pos.moves_into(Bitboard::full(), &mut moves);
+        if let Some(dtz) = self.engine.shared.syzygy.dtz(self.pos) {
+            moves.retain(|m| {
+                let mut next = **self.pos;
+                next.play(*m);
 
-        Moves::from_iter(self.pos.moves().into_iter().filter(|m| {
-            let mut next = **self.pos;
-            next.play(*m);
+                if dtz > 0 && next.is_checkmate() {
+                    true // handles special case of mate near the 50th move horizon
+                } else if let Some(wdl) = self.engine.shared.syzygy.wdl(&next) {
+                    -wdl >= dtz.into()
+                } else {
+                    true // safety net for runtime errors
+                }
+            });
+        }
 
-            if dtz > 0 && next.is_checkmate() {
-                true // handles special case of mate near the 50th move horizon
-            } else if let Some(wdl) = self.engine.shared.syzygy.wdl(&next) {
-                -wdl >= dtz.into()
-            } else {
-                true // safety net for runtime errors
-            }
-        }))
+        moves
     }
 
     /// Aborts the search.
@@ -1594,7 +1598,6 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess::{Outcome, Position};
     use std::{fmt::Debug, thread};
     use test_strategy::proptest;
 

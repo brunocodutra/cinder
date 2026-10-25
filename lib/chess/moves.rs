@@ -154,21 +154,24 @@ impl Moves {
 
     /// Pushes a move into the collection.
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn push(&mut self, m: Move) {
         self.0.push(m);
     }
 
+    /// Retains only the elements specified by the predicate.
+    #[inline(always)]
+    pub fn retain<F: FnMut(&Move) -> bool>(&mut self, f: F) {
+        self.0.retain(f);
+    }
+
     /// An iterator over the [`Move`]s in this collection.
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter {
         self.into_iter()
     }
 
     /// A mutable iterator over the [`Move`]s in this collection.
     #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn iter_mut(&mut self) -> <&mut Self as IntoIterator>::IntoIter {
         self.into_iter()
     }
@@ -224,6 +227,14 @@ impl RatedMoves {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn sorted(&mut self) -> SortedRatedMovesIter<'_> {
         SortedRatedMovesIter::new(self)
+    }
+
+    /// The [`Move`]s in this collection.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn moves_mut(&mut self) -> &mut Moves {
+        self.unsorted = 0;
+        &mut self.moves
     }
 
     /// Promotes `head` to the front and returns the [`Move`]s and [`Rating`] slots to fill.

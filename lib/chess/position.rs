@@ -567,17 +567,23 @@ impl Position {
         }
     }
 
+    /// Appends the legal moves to a set of destinations that can be played in this position.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn moves_into(&self, wt: Bitboard, moves: &mut Moves) {
+        match self.checkers().len() {
+            0 => MovesGenerator::<0>::moves(self, wt, moves).assume(),
+            1 => MovesGenerator::<1>::moves(self, wt, moves).assume(),
+            _ => MovesGenerator::<2>::moves(self, wt, moves).assume(),
+        }
+    }
+
     /// The legal moves to a set of destinations that can be played in this position.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn moves_to(&self, wt: Bitboard) -> Moves {
         let mut moves = Moves::default();
-        match self.checkers().len() {
-            0 => MovesGenerator::<0>::moves(self, wt, &mut moves).assume(),
-            1 => MovesGenerator::<1>::moves(self, wt, &mut moves).assume(),
-            _ => MovesGenerator::<2>::moves(self, wt, &mut moves).assume(),
-        }
-
+        self.moves_into(wt, &mut moves);
         moves
     }
 
@@ -588,17 +594,23 @@ impl Position {
         self.moves_to(Bitboard::full())
     }
 
+    /// Appends the legal noisy moves to a set of destinations that can be played in this position.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn noisy_into(&self, wt: Bitboard, moves: &mut Moves) {
+        match self.checkers().len() {
+            0 => MovesGenerator::<0>::noisy(self, wt, moves).assume(),
+            1 => MovesGenerator::<1>::noisy(self, wt, moves).assume(),
+            _ => MovesGenerator::<2>::noisy(self, wt, moves).assume(),
+        }
+    }
+
     /// The legal noisy moves to a set of destinations that can be played in this position.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn noisy_to(&self, wt: Bitboard) -> Moves {
         let mut moves = Moves::default();
-        match self.checkers().len() {
-            0 => MovesGenerator::<0>::noisy(self, wt, &mut moves).assume(),
-            1 => MovesGenerator::<1>::noisy(self, wt, &mut moves).assume(),
-            _ => MovesGenerator::<2>::noisy(self, wt, &mut moves).assume(),
-        }
-
+        self.noisy_into(wt, &mut moves);
         moves
     }
 

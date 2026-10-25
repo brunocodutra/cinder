@@ -4,6 +4,31 @@ use crate::util::Assume;
 use bytemuck::{Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 
+/// Context about a [`Position`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PositionContext {
+    pub turn: Color,
+    pub is_check: bool,
+    pub our_king: Square,
+    pub their_king: Square,
+}
+
+impl PositionContext {
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn new(pos: &Position) -> Self {
+        let turn = pos.turn();
+        let our_king = pos.king(turn);
+
+        PositionContext {
+            turn,
+            is_check: !pos.attackers(our_king).is_empty(),
+            our_king,
+            their_king: pos.king(!turn),
+        }
+    }
+}
+
 /// Context about a [`Move`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[expect(clippy::struct_excessive_bools)]
@@ -23,19 +48,18 @@ pub struct MoveContext {
 impl MoveContext {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn new(pos: &Position, m: Move) -> Self {
-        let turn = pos.turn();
+    pub fn new(ctx: &PositionContext, pos: &Position, m: Move) -> Self {
         let (wc, wt) = (m.whence(), m.whither());
 
         MoveContext {
-            turn,
+            turn: ctx.turn,
             piece: pos[wc].piece().assume(),
             whence: wc,
             whither: wt,
             is_quiet: m.is_quiet(),
-            is_check: pos.is_check(),
-            our_king: pos.king(turn),
-            their_king: pos.king(!turn),
+            is_check: ctx.is_check,
+            our_king: ctx.our_king,
+            their_king: ctx.their_king,
             whence_attacked: !pos.attackers(wc).is_empty(),
             whither_attacked: !pos.attackers(wt).is_empty(),
         }

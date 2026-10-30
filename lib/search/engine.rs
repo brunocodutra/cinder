@@ -304,7 +304,7 @@ impl<'a> Searcher<'a> {
             None => 0.0,
         }));
 
-        let piece_values = f32x8::load_or_default(Params::piece_values(..));
+        let piece_values = f32x8::load_or_default(Params::piece_values_scaling(..));
         let material = piece_counts.mul(piece_values).reduce_sum() / self.shared.starting_material;
 
         let halfmoves = pos.halfmove().cast::<f32>() / Halfmove::MAX.cast::<f32>();
@@ -452,8 +452,8 @@ impl<'a> Searcher<'a> {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn futility(depth: f32) -> f32 {
         convolve([
-            (depth, Params::futility_margin_depth(..)),
             (1.0, Params::futility_margin_scalar(..)),
+            (depth, Params::futility_margin_depth(..)),
         ])
     }
 
@@ -479,9 +479,9 @@ impl<'a> Searcher<'a> {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn lmr(depth: f32, index: usize) -> f32 {
         convolve([
+            (1.0, Params::lmr_scalar(..)),
             (index.max(1).cast::<f32>().ln(), Params::lmr_index(..)),
             (depth.ln(), Params::lmr_depth(..)),
-            (1.0, Params::lmr_scalar(..)),
         ])
     }
 
@@ -973,9 +973,9 @@ impl<'a> Searcher<'a> {
             let gives_direct_check = pos.gives_direct_check(m);
             if !IS_PV && !is_check && !gives_direct_check && !tail.is_losing() {
                 let lmp = convolve([
+                    (1.0, Params::lmp_scalar(..)),
                     (depth.powi(2), Params::lmp_depth(..)),
                     (is_improving.cast(), Params::lmp_is_improving(..)),
-                    (1.0, Params::lmp_scalar(..)),
                 ]);
 
                 if index.cast::<f32>() > lmp {
@@ -1451,7 +1451,7 @@ impl Engine {
                 vt: ValueTable::new(options.hash),
                 syzygy: Syzygy::new(&options.syzygy),
                 overhead: options.overhead.into(),
-                starting_material: f32x8::load_or_default(Params::piece_values(..))
+                starting_material: f32x8::load_or_default(Params::piece_values_scaling(..))
                     .mul(f32x8::from_array([16.0, 4.0, 4.0, 4.0, 2.0, 2.0, 0.0, 0.0]))
                     .reduce_sum(),
             },

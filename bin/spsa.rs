@@ -261,16 +261,16 @@ impl SpsaTuner {
                 stx.send(self.setup())?;
             }
 
+            let mut timer = Instant::now();
             let mut stdout = stdout().lock();
             while self.step < self.iters {
-                let timer = Instant::now();
-
                 stx.send(self.setup())?;
                 self.params.update(rrx.recv()??.correction());
                 self.step += 1;
 
                 let elapsed = timer.elapsed();
                 self.period = (self.period.saturating_mul(self.step - 1) + elapsed) / self.step;
+                timer = Instant::now();
 
                 let content = serialize(self, PrettyConfig::default().compact_arrays(true))?;
                 let mut file = File::create(&filename)?;

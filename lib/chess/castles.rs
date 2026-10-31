@@ -121,15 +121,20 @@ const impl BitXorAssign for Castles {
 const impl From<Square> for Castles {
     #[inline(always)]
     fn from(sq: Square) -> Self {
-        match sq {
-            Square::A1 => Castles(Bits::new(0b0010)),
-            Square::H1 => Castles(Bits::new(0b0001)),
-            Square::E1 => Castles(Bits::new(0b0011)),
-            Square::A8 => Castles(Bits::new(0b1000)),
-            Square::H8 => Castles(Bits::new(0b0100)),
-            Square::E8 => Castles(Bits::new(0b1100)),
-            _ => Castles::none(),
-        }
+        const CASTLES: [Castles; Square::LEN] = const {
+            let mut table = [Castles::none(); Square::LEN];
+
+            table[Square::A1] = Castles(Bits::new(0b0010));
+            table[Square::H1] = Castles(Bits::new(0b0001));
+            table[Square::E1] = Castles(Bits::new(0b0011));
+            table[Square::A8] = Castles(Bits::new(0b1000));
+            table[Square::H8] = Castles(Bits::new(0b0100));
+            table[Square::E8] = Castles(Bits::new(0b1100));
+
+            table
+        };
+
+        CASTLES[sq]
     }
 }
 

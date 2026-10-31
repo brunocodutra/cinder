@@ -396,6 +396,53 @@ impl FurledPlacement {
         Self(self.0.blend(mask, place))
     }
 
+    /// Role bits of the pieces that can give check from each visible square.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn checker_roles(&self, color: Color) -> u8x64 {
+        const ROLES: [u8x64; Color::LEN] = const {
+            let mut roles = [u8x64::splat(0); Color::LEN];
+
+            for color in Color::iter() {
+                let pawn = match color {
+                    Color::White => WPAWN,
+                    Color::Black => BPAWN,
+                };
+
+                let mut lanes = [0; Square::LEN];
+
+                for sq in Square::iter() {
+                    let attackers = ATTACKERS.as_array()[sq];
+                    let mut bits = 0;
+
+                    if attackers & pawn != 0 {
+                        bits |= 0b0001;
+                    }
+
+                    if attackers & KNIGHT != 0 {
+                        bits |= 0b0010;
+                    }
+
+                    if attackers & BISHOP != 0 {
+                        bits |= 0b0100;
+                    }
+
+                    if attackers & ROOK != 0 {
+                        bits |= 0b1000;
+                    }
+
+                    lanes[sq] = bits;
+                }
+
+                roles[color] = u8x64::from_array(lanes);
+            }
+
+            roles
+        };
+
+        ROLES[color] & self.visible().to_simd().cast::<u8>()
+    }
+
     /// Visible [`Place`]s along [`Rays`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]

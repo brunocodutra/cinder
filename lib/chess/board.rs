@@ -202,25 +202,13 @@ impl Board {
         let them = !self.turn;
         let rays = self.king(them).assume().rays();
         let furled = self.furl(rays);
-        let mask = furled.visible();
 
-        use Role::*;
-        let pawn_attacks = mask & furled.attacks(Piece::new(Pawn, them));
-        let knight_attacks = mask & furled.attacks(Piece::new(Knight, them));
-        let bishop_attacks = mask & furled.attacks(Piece::new(Bishop, them));
-        let rook_attacks = mask & furled.attacks(Piece::new(Rook, them));
+        let unfurled = furled.checker_roles(them).unfurl(rays);
 
         let pawn = u8x64::splat(0b0001);
         let knight = u8x64::splat(0b0010);
         let bishop = u8x64::splat(0b0100);
         let rook = u8x64::splat(0b1000);
-
-        let packed = pawn_attacks.select(pawn, zeroed())
-            | knight_attacks.select(knight, zeroed())
-            | bishop_attacks.select(bishop, zeroed())
-            | rook_attacks.select(rook, zeroed());
-
-        let unfurled = packed.unfurl(rays);
 
         [
             unfurled.bitand(pawn).simd_ne(zeroed()).into(),

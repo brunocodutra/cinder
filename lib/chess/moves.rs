@@ -371,6 +371,7 @@ pub trait MoveCollector {
     fn collect_attacks(
         &mut self,
         pos: &Position,
+        attacks: &Wordboard,
         indices: IdxSet,
         targets: Bitboard,
     ) -> Result<(), Self::Error>;
@@ -378,6 +379,7 @@ pub trait MoveCollector {
     fn collect_pawn_promotions(
         &mut self,
         pos: &Position,
+        attacks: &Wordboard,
         targets: Bitboard,
     ) -> Result<(), Self::Error>;
 
@@ -400,13 +402,14 @@ impl MoveCollector for Moves {
     fn collect_attacks(
         &mut self,
         pos: &Position,
+        attacks: &Wordboard,
         indices: IdxSet,
         targets: Bitboard,
     ) -> Result<(), Self::Error> {
         let turn = pos.turn();
         let theirs = pos.by_color(!turn);
         let squares = pos.squares()[turn].to_simd().cast::<u16>();
-        let attacks = *pos.pins().attacks() & u16x64::splat(*indices);
+        let attacks = *attacks & u16x64::splat(*indices);
         let targets = targets & attacks.any();
 
         for wt in targets & theirs {
@@ -427,6 +430,7 @@ impl MoveCollector for Moves {
     fn collect_pawn_promotions(
         &mut self,
         pos: &Position,
+        attacks: &Wordboard,
         targets: Bitboard,
     ) -> Result<(), Self::Error> {
         const PUSH_SHIFT: [u32; Color::LEN] = [48, 8];
@@ -456,7 +460,7 @@ impl MoveCollector for Moves {
 
         let turn = pos.turn();
         let wt = targets & pos.vacant();
-        let pawns = pos.pawns(turn) & pos.pins().unpinned();
+        let pawns = pos.pins().unpinned() & pos.pawns(turn);
 
         let pushes = match turn {
             Color::White => (wt >> 8) & pawns,
@@ -484,7 +488,7 @@ impl MoveCollector for Moves {
 
         let theirs = pos.by_color(!turn);
         let indices = IdxSet::from(pos.roles()[turn].containing(Some(Role::Pawn)));
-        let attacks = *pos.pins().attacks() & u16x64::splat(*indices);
+        let attacks = *attacks & u16x64::splat(*indices);
         for wt in targets & theirs & attacks.any() {
             for idx in indices & attacks[wt] {
                 let wc = pos.squares()[turn][idx].assume();

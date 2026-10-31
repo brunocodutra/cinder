@@ -29,11 +29,12 @@ impl MoveCollector for NoCapacity {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn collect_attacks(
         &mut self,
-        pos: &Position,
+        _: &Position,
+        attacks: &Wordboard,
         indices: IdxSet,
         targets: Bitboard,
     ) -> Result<(), Self::Error> {
-        if targets & pos.pins().attacks().matching(indices) != zeroed() {
+        if targets & attacks.matching(indices) != zeroed() {
             Err(CapacityError)
         } else {
             Ok(())
@@ -45,13 +46,14 @@ impl MoveCollector for NoCapacity {
     fn collect_pawn_promotions(
         &mut self,
         pos: &Position,
+        attacks: &Wordboard,
         targets: Bitboard,
     ) -> Result<(), Self::Error> {
         self.collect_pawn_pushes(pos, targets)?;
 
         let turn = pos.turn();
         let pawns = pos.roles()[turn].containing(Some(Role::Pawn));
-        self.collect_attacks(pos, pawns.into(), targets & pos.by_color(!turn))
+        self.collect_attacks(pos, attacks, pawns.into(), targets & pos.by_color(!turn))
     }
 
     #[inline(always)]
@@ -78,8 +80,19 @@ impl MoveCollector for NoCapacity {
 }
 
 trait MoveGen<C: MoveCollector> {
-    fn moves(pos: &Position, wt: Bitboard, collector: &mut C) -> Result<(), C::Error>;
-    fn noisy(pos: &Position, wt: Bitboard, collector: &mut C) -> Result<(), C::Error>;
+    fn moves(
+        pos: &Position,
+        attacks: &Wordboard,
+        wt: Bitboard,
+        collector: &mut C,
+    ) -> Result<(), C::Error>;
+
+    fn noisy(
+        pos: &Position,
+        attacks: &Wordboard,
+        wt: Bitboard,
+        collector: &mut C,
+    ) -> Result<(), C::Error>;
 }
 
 enum MovesGenerator<const CHECKS: usize> {}
@@ -89,6 +102,7 @@ impl<const CHECKS: usize> MovesGenerator<CHECKS> {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn en_passant<C: MoveCollector>(
         pos: &Position,
+        attacks: &Wordboard,
         wt: Bitboard,
         collector: &mut C,
     ) -> Result<(), C::Error> {
@@ -96,9 +110,8 @@ impl<const CHECKS: usize> MovesGenerator<CHECKS> {
 
         let turn = pos.turn();
         let ksq = pos.king(turn);
-        let pawns = pos.roles()[turn].containing(Some(Role::Pawn));
         if let Some(wt) = pos.en_passant().filter(|ep| wt.contains(*ep)) {
-            for idx in pos.pins().attacks()[wt] & pawns {
+            for idx in attacks[wt] & pos.roles()[turn].containing(Some(Role::Pawn)) {
                 let wc = pos.squares()[turn][idx].assume();
                 let mut placement = *pos.placement();
                 placement.set(wt, pos[wc]);
@@ -146,6 +159,7 @@ impl<const CHECKS: usize> MovesGenerator<CHECKS> {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn evasions<C: MoveCollector>(
         pos: &Position,
+        attacks: &Wordboard,
         mut wt: Bitboard,
         collector: &mut C,
     ) -> Result<(), C::Error> {
@@ -160,56 +174,71 @@ impl<const CHECKS: usize> MovesGenerator<CHECKS> {
             }
         }
 
-        let threats = pos.threats()[!turn].any();
-        collector.collect_attacks(pos, Idx::KING.to_set(), wt & !threats & !pos.by_color(turn))
+        let targets = wt & !pos.threats()[!turn].any() & !pos.by_color(turn);
+        collector.collect_attacks(pos, attacks, Idx::KING.to_set(), targets)
     }
 }
 
 impl<C: MoveCollector> MoveGen<C> for MovesGenerator<0> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn moves(pos: &Position, wt: Bitboard, collector: &mut C) -> Result<(), C::Error> {
+    fn moves(
+        pos: &Position,
+        attacks: &Wordboard,
+        wt: Bitboard,
+        collector: &mut C,
+    ) -> Result<(), C::Error> {
         let turn = pos.turn();
         let ours = pos.by_color(turn);
         let theirs = pos.by_color(!turn);
         let eighth = Rank::Eighth.perspective(turn).bitboard();
         let pawns = pos.roles()[turn].containing(Some(Role::Pawn));
         collector.collect_pawn_pushes(pos, wt & !eighth)?;
-        collector.collect_pawn_promotions(pos, wt & eighth)?;
-        collector.collect_attacks(pos, pawns.into(), wt & theirs & !eighth)?;
+        collector.collect_pawn_promotions(pos, attacks, wt & eighth)?;
+        collector.collect_attacks(pos, attacks, pawns.into(), wt & theirs & !eighth)?;
 
         let none = pos.roles()[turn].containing(None);
         let not_king_nor_pawns = !Idx::KING.to_set() & !(pawns | none);
-        collector.collect_attacks(pos, not_king_nor_pawns, wt & !ours)?;
+        collector.collect_attacks(pos, attacks, not_king_nor_pawns, wt & !ours)?;
 
-        Self::en_passant(pos, wt, collector)?;
-        Self::evasions(pos, wt, collector)?;
+        Self::en_passant(pos, attacks, wt, collector)?;
+        Self::evasions(pos, attacks, wt, collector)?;
         Self::castling(pos, wt, collector)
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn noisy(pos: &Position, wt: Bitboard, collector: &mut C) -> Result<(), C::Error> {
+    fn noisy(
+        pos: &Position,
+        attacks: &Wordboard,
+        wt: Bitboard,
+        collector: &mut C,
+    ) -> Result<(), C::Error> {
         let turn = pos.turn();
         let theirs = pos.by_color(!turn);
         let eighth = Rank::Eighth.perspective(turn).bitboard();
         let pawns = pos.roles()[turn].containing(Some(Role::Pawn));
-        collector.collect_pawn_promotions(pos, wt & eighth)?;
-        collector.collect_attacks(pos, pawns.into(), wt & theirs & !eighth)?;
+        collector.collect_pawn_promotions(pos, attacks, wt & eighth)?;
+        collector.collect_attacks(pos, attacks, pawns.into(), wt & theirs & !eighth)?;
 
         let none = pos.roles()[turn].containing(None);
         let not_king_nor_pawns = !Idx::KING.to_set() & !(pawns | none);
-        collector.collect_attacks(pos, not_king_nor_pawns, wt & theirs)?;
+        collector.collect_attacks(pos, attacks, not_king_nor_pawns, wt & theirs)?;
 
-        Self::en_passant(pos, wt, collector)?;
-        Self::evasions(pos, wt & theirs, collector)
+        Self::en_passant(pos, attacks, wt, collector)?;
+        Self::evasions(pos, attacks, wt & theirs, collector)
     }
 }
 
 impl<C: MoveCollector> MoveGen<C> for MovesGenerator<1> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn moves(pos: &Position, wt: Bitboard, collector: &mut C) -> Result<(), C::Error> {
+    fn moves(
+        pos: &Position,
+        attacks: &Wordboard,
+        wt: Bitboard,
+        collector: &mut C,
+    ) -> Result<(), C::Error> {
         let turn = pos.turn();
         let ksq = pos.king(turn);
         let checks = pos.checkers().iter().fold(Bitboard::empty(), |bb, idx| {
@@ -222,25 +251,30 @@ impl<C: MoveCollector> MoveGen<C> for MovesGenerator<1> {
         let pawns = pos.roles()[turn].containing(Some(Role::Pawn));
         let eighth = Rank::Eighth.perspective(turn).bitboard();
         collector.collect_pawn_pushes(pos, wt & checks & !eighth)?;
-        collector.collect_pawn_promotions(pos, wt & checks & eighth)?;
-        collector.collect_attacks(pos, pawns.into(), wt & checks & theirs & !eighth)?;
+        collector.collect_pawn_promotions(pos, attacks, wt & checks & eighth)?;
+        collector.collect_attacks(pos, attacks, pawns.into(), wt & checks & theirs & !eighth)?;
 
         let none = pos.roles()[turn].containing(None);
         let not_king_nor_pawns = !Idx::KING.to_set() & !(pawns | none);
-        collector.collect_attacks(pos, not_king_nor_pawns, wt & checks & !ours)?;
+        collector.collect_attacks(pos, attacks, not_king_nor_pawns, wt & checks & !ours)?;
 
         if let Some(wt) = pos.en_passant().filter(|ep| wt.contains(*ep)) {
             if checks.contains(wt.perspective(turn).sub(8).perspective(turn)) {
-                Self::en_passant(pos, wt.bitboard(), collector)?;
+                Self::en_passant(pos, attacks, wt.bitboard(), collector)?;
             }
         }
 
-        Self::evasions(pos, wt, collector)
+        Self::evasions(pos, attacks, wt, collector)
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn noisy(pos: &Position, wt: Bitboard, collector: &mut C) -> Result<(), C::Error> {
+    fn noisy(
+        pos: &Position,
+        attacks: &Wordboard,
+        wt: Bitboard,
+        collector: &mut C,
+    ) -> Result<(), C::Error> {
         let turn = pos.turn();
         let ksq = pos.king(turn);
         let theirs = pos.by_color(!turn);
@@ -250,23 +284,33 @@ impl<C: MoveCollector> MoveGen<C> for MovesGenerator<1> {
         });
 
         let eighth = Rank::Eighth.perspective(turn).bitboard();
-        collector.collect_pawn_promotions(pos, wt & !theirs & eighth & checks)?;
+        collector.collect_pawn_promotions(pos, attacks, wt & !theirs & eighth & checks)?;
         let ep = pos.en_passant().map_or_else(zeroed, Square::bitboard);
-        Self::moves(pos, wt & (ep | theirs), collector)
+        Self::moves(pos, attacks, wt & (ep | theirs), collector)
     }
 }
 
 impl<C: MoveCollector> MoveGen<C> for MovesGenerator<2> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn moves(pos: &Position, wt: Bitboard, collector: &mut C) -> Result<(), C::Error> {
-        Self::evasions(pos, wt, collector)
+    fn moves(
+        pos: &Position,
+        attacks: &Wordboard,
+        wt: Bitboard,
+        collector: &mut C,
+    ) -> Result<(), C::Error> {
+        Self::evasions(pos, attacks, wt, collector)
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn noisy(pos: &Position, wt: Bitboard, collector: &mut C) -> Result<(), C::Error> {
-        Self::evasions(pos, wt & pos.by_color(!pos.turn()), collector)
+    fn noisy(
+        pos: &Position,
+        attacks: &Wordboard,
+        wt: Bitboard,
+        collector: &mut C,
+    ) -> Result<(), C::Error> {
+        Self::evasions(pos, attacks, wt & pos.by_color(!pos.turn()), collector)
     }
 }
 
@@ -313,11 +357,10 @@ impl Default for Position {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn default() -> Self {
         let board = Board::default();
-        let threats = board.threats();
 
         Self {
-            pins: board.pins(&threats),
-            threats,
+            pins: board.pins(),
+            threats: board.threats(),
             zobrists: board.zobrists(),
             direct_checks: zeroed(),
             board,
@@ -416,6 +459,13 @@ impl Position {
         &self.pins
     }
 
+    /// The possible unpinned attacks in this position.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn attacks(&self) -> Wordboard {
+        self.threats[self.turn()] & self.pins().mask()
+    }
+
     /// The [`Threats`] in this position.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -427,16 +477,14 @@ impl Position {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn defenders(&self, sq: Square) -> IdxSet {
-        let turn = self.turn();
-        self.threats[turn as usize][sq]
+        self.threats[self.turn()][sq]
     }
 
     /// [`IdxSet`] of pieces attacking a square.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn attackers(&self, sq: Square) -> IdxSet {
-        let turn = self.turn();
-        self.threats[!turn as usize][sq]
+        self.threats[!self.turn()][sq]
     }
 
     /// [`IdxSet`] of pieces giving check.
@@ -513,10 +561,12 @@ impl Position {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn is_checkmate(&self) -> bool {
+        let wt = Bitboard::full();
+        let attacks = self.attacks();
         match self.checkers().len() {
             0 => false,
-            1 => MovesGenerator::<1>::moves(self, Bitboard::full(), &mut NoCapacity).is_ok(),
-            _ => MovesGenerator::<2>::moves(self, Bitboard::full(), &mut NoCapacity).is_ok(),
+            1 => MovesGenerator::<1>::moves(self, &attacks, wt, &mut NoCapacity).is_ok(),
+            _ => MovesGenerator::<2>::moves(self, &attacks, wt, &mut NoCapacity).is_ok(),
         }
     }
 
@@ -524,8 +574,10 @@ impl Position {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn is_stalemate(&self) -> bool {
-        !self.is_check()
-            && MovesGenerator::<0>::moves(self, Bitboard::full(), &mut NoCapacity).is_ok()
+        !self.is_check() && {
+            let attacks = self.attacks();
+            MovesGenerator::<0>::moves(self, &attacks, Bitboard::full(), &mut NoCapacity).is_ok()
+        }
     }
 
     /// The [`Outcome`] of the game in case this position is final.
@@ -571,10 +623,11 @@ impl Position {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn moves_into(&self, wt: Bitboard, moves: &mut Moves) {
+        let attacks = self.attacks();
         match self.checkers().len() {
-            0 => MovesGenerator::<0>::moves(self, wt, moves).assume(),
-            1 => MovesGenerator::<1>::moves(self, wt, moves).assume(),
-            _ => MovesGenerator::<2>::moves(self, wt, moves).assume(),
+            0 => MovesGenerator::<0>::moves(self, &attacks, wt, moves).assume(),
+            1 => MovesGenerator::<1>::moves(self, &attacks, wt, moves).assume(),
+            _ => MovesGenerator::<2>::moves(self, &attacks, wt, moves).assume(),
         }
     }
 
@@ -598,10 +651,11 @@ impl Position {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn noisy_into(&self, wt: Bitboard, moves: &mut Moves) {
+        let attacks = self.attacks();
         match self.checkers().len() {
-            0 => MovesGenerator::<0>::noisy(self, wt, moves).assume(),
-            1 => MovesGenerator::<1>::noisy(self, wt, moves).assume(),
-            _ => MovesGenerator::<2>::noisy(self, wt, moves).assume(),
+            0 => MovesGenerator::<0>::noisy(self, &attacks, wt, moves).assume(),
+            1 => MovesGenerator::<1>::noisy(self, &attacks, wt, moves).assume(),
+            _ => MovesGenerator::<2>::noisy(self, &attacks, wt, moves).assume(),
         }
     }
 
@@ -827,6 +881,7 @@ impl Position {
         }
 
         let victim = self[wt];
+        let ksqs = [Color::White, Color::Black].map(|c| self.king(c));
         let dst = m.promotion().map_or(src, |promotion| {
             Place::new(Piece::new(promotion, !self.turn()), src.idx().assume())
         });
@@ -872,8 +927,12 @@ impl Position {
         self.board.displace(wc, wt, dst);
         self.zobrists.xor(wc, src.piece().assume());
         self.zobrists.xor(wt, dst.piece().assume());
-        self.direct_checks = self.board.direct_checks();
-        self.pins = self.board.pins(self.threats());
+        self.pins = self.board.pins_to(ksqs[self.turn()]);
+        self.direct_checks = if src.role() != Some(King) {
+            self.board.direct_checks_to(ksqs[!self.turn()])
+        } else {
+            self.board.direct_checks_to(wt)
+        };
 
         let disrupted = Castles::from(wc) | Castles::from(wt);
         if self.castles() & disrupted != Castles::none() {
@@ -895,7 +954,7 @@ impl Position {
         }
 
         self.direct_checks = self.board.direct_checks();
-        self.pins = self.board.pins(self.threats());
+        self.pins = self.board.pins();
     }
 
     /// Counts the total number of reachable positions to the given depth.
@@ -926,11 +985,9 @@ impl From<Position> for Board {
 impl From<Board> for Position {
     #[inline(always)]
     fn from(board: Board) -> Self {
-        let threats = board.threats();
-
         Position {
-            pins: board.pins(&threats),
-            threats,
+            pins: board.pins(),
+            threats: board.threats(),
             zobrists: board.zobrists(),
             direct_checks: board.direct_checks(),
             board,

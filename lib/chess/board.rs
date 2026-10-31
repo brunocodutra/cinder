@@ -195,15 +195,20 @@ impl Board {
         self.squares[side][Idx::KING]
     }
 
-    /// Squares giving direct check to the king of a [`Color`].
+    /// Squares giving direct check to the opposing king.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn direct_checks(&self) -> [Bitboard; 4] {
-        let them = !self.turn;
-        let rays = self.king(them).assume().rays();
-        let furled = self.furl(rays);
+        let ksq = self.king(!self.turn).assume();
+        self.direct_checks_to(ksq)
+    }
 
-        let unfurled = furled.checker_roles(them).unfurl(rays);
+    /// Squares giving direct check to the king on a square.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn direct_checks_to(&self, ksq: Square) -> [Bitboard; 4] {
+        let them = !self.turn;
+        let unfurled = self.furl(ksq.rays()).checker_roles(them).unfurl(ksq.rays());
 
         let pawn = u8x64::splat(0b0001);
         let knight = u8x64::splat(0b0010);
@@ -221,8 +226,15 @@ impl Board {
     /// Computes [`Pins`].
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn pins(&self, threats: &Threats) -> Pins {
-        Pins::new(self, threats)
+    pub fn pins(&self) -> Pins {
+        Pins::new(self, self.king(self.turn).assume())
+    }
+
+    /// Computes [`Pins`] to a king on a square.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn pins_to(&self, ksq: Square) -> Pins {
+        Pins::new(self, ksq)
     }
 
     /// Computes [`Threats`] .

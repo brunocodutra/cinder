@@ -82,7 +82,13 @@ const impl IdxSet {
     /// An empty set of [`Place`]s.
     #[inline(always)]
     pub fn empty() -> Self {
-        zeroed()
+        Self::lower()
+    }
+
+    /// A full set of [`Place`]s.
+    #[inline(always)]
+    pub fn full() -> Self {
+        Self::upper()
     }
 
     /// The number of [`Place`]s in the set.

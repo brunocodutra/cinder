@@ -184,9 +184,8 @@ impl MovePicker {
         let ctx = PositionContext::new(pos);
         let killer = searcher.stack.killers[ply];
         let continuations = Params::move_rating_continuation(..).len().min(ply);
-        let (moves, ratings) = self.assume().unrated_with_head(head);
 
-        for (&m, r) in moves.iter().zip(ratings) {
+        for (&m, r) in self.assume().unrated_with_head(head) {
             let mut rating = 0.0;
 
             let ctx = MoveContext::new(&ctx, pos, m);
@@ -202,9 +201,19 @@ impl MovePicker {
             rating = Params::move_rating_is_killer(0).mul_add(killer.contains(m).cast(), rating);
 
             if ctx.is_quiet {
-                for i in 0..continuations {
-                    let history = searcher.stack.continuation(i + 1).get(ctx);
-                    rating = Params::move_rating_continuation(i).mul_add(history, rating);
+                if continuations > 0 {
+                    let history = searcher.stack.continuation(1).get(ctx);
+                    rating = Params::move_rating_continuation(0).mul_add(history, rating);
+                }
+
+                if continuations > 1 {
+                    let history = searcher.stack.continuation(2).get(ctx);
+                    rating = Params::move_rating_continuation(1).mul_add(history, rating);
+                }
+
+                if continuations > 3 {
+                    let history = searcher.stack.continuation(4).get(ctx);
+                    rating = Params::move_rating_continuation(3).mul_add(history, rating);
                 }
             } else {
                 let gamma = *Params::move_rating_see(0);

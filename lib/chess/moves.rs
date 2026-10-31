@@ -240,7 +240,10 @@ impl RatedMoves {
     /// Promotes `head` to the front and returns the [`Move`]s and [`Rating`] slots to fill.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn unrated_with_head(&mut self, head: Option<Move>) -> (&mut [Move], &mut [Rating]) {
+    pub fn unrated_with_head(
+        &mut self,
+        head: Option<Move>,
+    ) -> impl Iterator<Item = (&Move, &mut Rating)> {
         self.unsorted = 0;
 
         if let Some(i) = head.and_then(|h| self.moves.iter().position(|&m| m == h)) {
@@ -250,7 +253,7 @@ impl RatedMoves {
         }
 
         let start = self.unsorted.cast::<usize>();
-        (&mut self.moves[start..], &mut self.ratings[start..])
+        self.moves[start..].iter().zip(&mut self.ratings[start..])
     }
 }
 

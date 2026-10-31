@@ -78,7 +78,11 @@ where
 
     #[inline(always)]
     fn neg(self) -> Self::Output {
-        S(self.get()).neg().0.saturate()
+        if size_of::<T::Repr>() <= size_of::<i16>() {
+            i32::neg(self.cast::<i32>()).saturate()
+        } else {
+            S(self.get()).neg().0.saturate()
+        }
     }
 }
 
@@ -93,7 +97,9 @@ where
 
     #[inline(always)]
     fn add(self, rhs: U) -> Self::Output {
-        if size_of::<T>() > size_of::<U>() {
+        if size_of::<T::Repr>() <= size_of::<i16>() && size_of::<U::Repr>() <= size_of::<i16>() {
+            i32::add(self.cast::<i32>(), rhs.cast::<i32>()).saturate()
+        } else if size_of::<T>() > size_of::<U>() {
             S::add(S(self.get()), S(rhs.cast())).0.saturate()
         } else {
             S::add(S(self.cast()), S(rhs.get())).0.saturate()
@@ -123,7 +129,9 @@ where
 
     #[inline(always)]
     fn sub(self, rhs: U) -> Self::Output {
-        if size_of::<T>() > size_of::<U>() {
+        if size_of::<T::Repr>() <= size_of::<i16>() && size_of::<U::Repr>() <= size_of::<i16>() {
+            i32::sub(self.cast::<i32>(), rhs.cast::<i32>()).saturate()
+        } else if size_of::<T>() > size_of::<U>() {
             S::sub(S(self.get()), S(rhs.cast())).0.saturate()
         } else {
             S::sub(S(self.cast()), S(rhs.get())).0.saturate()
@@ -153,7 +161,9 @@ where
 
     #[inline(always)]
     fn mul(self, rhs: U) -> Self::Output {
-        if size_of::<T>() > size_of::<U>() {
+        if size_of::<T::Repr>() <= size_of::<i16>() && size_of::<U::Repr>() <= size_of::<i16>() {
+            i32::mul(self.cast::<i32>(), rhs.cast::<i32>()).saturate()
+        } else if size_of::<T>() > size_of::<U>() {
             S::mul(S(self.get()), S(rhs.cast())).0.saturate()
         } else {
             S::mul(S(self.cast()), S(rhs.get())).0.saturate()
@@ -183,7 +193,9 @@ where
 
     #[inline(always)]
     fn div(self, rhs: U) -> Self::Output {
-        if size_of::<T>() > size_of::<U>() {
+        if size_of::<T::Repr>() <= size_of::<i16>() && size_of::<U::Repr>() <= size_of::<i16>() {
+            i32::div(self.cast::<i32>(), rhs.cast::<i32>()).saturate()
+        } else if size_of::<T>() > size_of::<U>() {
             S::div(S(self.get()), S(rhs.cast())).0.saturate()
         } else {
             S::div(S(self.cast()), S(rhs.get())).0.saturate()

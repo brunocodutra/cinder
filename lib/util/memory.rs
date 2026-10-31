@@ -1,4 +1,4 @@
-use crate::util::{Assume, Unsigned};
+use crate::util::Unsigned;
 use bytemuck::{NoUninit, Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 use memmap2::{MmapMut, MmapOptions};

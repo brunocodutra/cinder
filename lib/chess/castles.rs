@@ -1,5 +1,5 @@
 use crate::chess::{Color, Move, Perspective, Piece, Role, Square};
-use crate::util::{Assume, Bits, Int, Num};
+use crate::util::{Bits, Int, Num};
 use bytemuck::Zeroable;
 use derive_more::with_trait::{Debug, Display, Error};
 use std::fmt::{self, Formatter};
@@ -38,19 +38,35 @@ const impl Castles {
     /// The rook's [`Move`] given the king's castling [`Square`].
     #[inline(always)]
     pub fn rook(castling: Square) -> Option<Move> {
-        match castling {
-            Square::C1 => Some(Move::regular(Square::A1, Square::D1, None)),
-            Square::G1 => Some(Move::regular(Square::H1, Square::F1, None)),
-            Square::C8 => Some(Move::regular(Square::A8, Square::D8, None)),
-            Square::G8 => Some(Move::regular(Square::H8, Square::F8, None)),
-            _ => None,
-        }
+        const ROOKS: [Option<Move>; Square::LEN] = const {
+            let mut table = [None; Square::LEN];
+
+            table[Square::C1] = Some(Move::regular(Square::A1, Square::D1, None));
+            table[Square::G1] = Some(Move::regular(Square::H1, Square::F1, None));
+            table[Square::C8] = Some(Move::regular(Square::A8, Square::D8, None));
+            table[Square::G8] = Some(Move::regular(Square::H8, Square::F8, None));
+
+            table
+        };
+
+        ROOKS[castling]
     }
 
     /// Whether the rights for the given castling square.
     #[inline(always)]
     pub fn has(self, sq: Square) -> bool {
-        self & Castles::from(Castles::rook(sq).assume().whence()) != Castles::none()
+        const RIGHTS: [Castles; Square::LEN] = const {
+            let mut table = [Castles::none(); Square::LEN];
+
+            table[Square::C1] = Castles(Bits::new(0b0010));
+            table[Square::G1] = Castles(Bits::new(0b0001));
+            table[Square::C8] = Castles(Bits::new(0b1000));
+            table[Square::G8] = Castles(Bits::new(0b0100));
+
+            table
+        };
+
+        self & RIGHTS[sq] != Castles::none()
     }
 }
 

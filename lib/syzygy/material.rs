@@ -71,6 +71,16 @@ impl Flip for Material {
     }
 }
 
+impl Perspective<Color> for Material {
+    #[inline(always)]
+    fn perspective(self, side: Color) -> Self {
+        match side {
+            Color::White => self,
+            Color::Black => self.flip(),
+        }
+    }
+}
+
 impl FromIterator<Piece> for Material {
     #[inline(always)]
     fn from_iter<T: IntoIterator<Item = Piece>>(iter: T) -> Self {

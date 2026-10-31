@@ -175,6 +175,13 @@ const impl Flip for Piece {
     }
 }
 
+const impl Perspective<Color> for Piece {
+    #[inline(always)]
+    fn perspective(self, side: Color) -> Self {
+        Num::new(self.get() ^ side.get())
+    }
+}
+
 const impl Binary for Piece {
     type Bits = Bits<u8, 4>;
 

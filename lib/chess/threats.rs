@@ -48,18 +48,21 @@ impl Threats {
         let pinners = pinners.unfurl_flip(rays);
         let occ = pinners.by_color(Color::Black);
         let updates = pinners.to_idx_set();
+        let blended = updates.blend(occ, zeroed());
+        let masked = updates.mask(occ);
+        let masked_victim = !u16x64::splat(victim.idx().assume().to_set().cast());
 
         match victim.color().assume() {
             Color::White => {
-                self[Color::White] &= !u16x64::splat(victim.idx().assume().to_set().cast());
-                self[Color::White] ^= updates.blend(occ, zeroed());
-                self[Color::Black] ^= updates.mask(occ);
+                self[Color::White] &= masked_victim;
+                self[Color::White] ^= blended;
+                self[Color::Black] ^= masked;
             }
 
             Color::Black => {
-                self[Color::Black] &= !u16x64::splat(victim.idx().assume().to_set().cast());
-                self[Color::Black] ^= updates.mask(occ);
-                self[Color::White] ^= updates.blend(occ, zeroed());
+                self[Color::Black] &= masked_victim;
+                self[Color::Black] ^= masked;
+                self[Color::White] ^= blended;
             }
         }
     }
@@ -95,7 +98,6 @@ impl Threats {
         let updates = pinners.to_idx_set();
 
         let attacks = furled_wt.attacks(dst.piece().assume()) & visible_wt;
-        let attacks = attacks.select(Simd::splat(1), Simd::splat(0));
         let attacks = attacks.unfurl(rays_wt);
 
         let idx = src.idx().assume();
@@ -104,21 +106,27 @@ impl Threats {
         debug_assert_eq!(dst.color(), Some(color));
         debug_assert_eq!(victim.color(), Some(!color));
 
+        let idx_set = u16x64::splat(idx.to_set().cast());
+        let attacks = attacks.select(idx_set, zeroed());
+        let blended = updates.blend(occ, zeroed());
+        let masked = updates.mask(occ);
+        let victim_set = u16x64::splat(victim.idx().assume().to_set().cast());
+
         match color {
             Color::White => {
-                self[Color::White] &= !u16x64::splat(idx.to_set().cast());
-                self[Color::White] |= attacks.cast::<u16>() << u16x64::splat(idx.cast());
-                self[Color::White] ^= updates.blend(occ, zeroed());
-                self[Color::Black] ^= updates.mask(occ);
-                self[Color::Black] &= !u16x64::splat(victim.idx().assume().to_set().cast());
+                self[Color::White] &= !idx_set;
+                self[Color::White] |= attacks;
+                self[Color::White] ^= blended;
+                self[Color::Black] ^= masked;
+                self[Color::Black] &= !victim_set;
             }
 
             Color::Black => {
-                self[Color::Black] &= !u16x64::splat(idx.to_set().cast());
-                self[Color::Black] |= attacks.cast::<u16>() << u16x64::splat(idx.cast());
-                self[Color::Black] ^= updates.mask(occ);
-                self[Color::White] ^= updates.blend(occ, zeroed());
-                self[Color::White] &= !u16x64::splat(victim.idx().assume().to_set().cast());
+                self[Color::Black] &= !idx_set;
+                self[Color::Black] |= attacks;
+                self[Color::Black] ^= masked;
+                self[Color::White] ^= blended;
+                self[Color::White] &= !victim_set;
             }
         }
     }
@@ -163,7 +171,6 @@ impl Threats {
         let updates_wt = pinners_wt.to_idx_set();
 
         let attacks = furled_wt.attacks(dst.piece().assume()) & visible_wt;
-        let attacks = attacks.select(Simd::splat(1), Simd::splat(0));
         let attacks = attacks.unfurl(rays_wt);
 
         let idx = src.idx().assume();
@@ -171,23 +178,30 @@ impl Threats {
         debug_assert_eq!(dst.idx(), Some(idx));
         debug_assert_eq!(dst.color(), Some(color));
 
+        let idx_set = u16x64::splat(idx.to_set().cast());
+        let attacks = attacks.select(idx_set, zeroed());
+        let blended_wc = updates_wc.blend(occ_wc, zeroed());
+        let blended_wt = updates_wt.blend(occ_wt, zeroed());
+        let masked_wc = updates_wc.mask(occ_wc);
+        let masked_wt = updates_wt.mask(occ_wt);
+
         match color {
             Color::White => {
-                self[Color::White] &= !u16x64::splat(idx.to_set().cast());
-                self[Color::White] |= attacks.cast::<u16>() << u16x64::splat(idx.cast());
-                self[Color::White] ^= updates_wc.blend(occ_wc, zeroed());
-                self[Color::White] ^= updates_wt.blend(occ_wt, zeroed());
-                self[Color::Black] ^= updates_wc.mask(occ_wc);
-                self[Color::Black] ^= updates_wt.mask(occ_wt);
+                self[Color::White] &= !idx_set;
+                self[Color::White] |= attacks;
+                self[Color::White] ^= blended_wc;
+                self[Color::White] ^= blended_wt;
+                self[Color::Black] ^= masked_wc;
+                self[Color::Black] ^= masked_wt;
             }
 
             Color::Black => {
-                self[Color::Black] &= !u16x64::splat(idx.to_set().cast());
-                self[Color::Black] |= attacks.cast::<u16>() << u16x64::splat(idx.cast());
-                self[Color::Black] ^= updates_wc.mask(occ_wc);
-                self[Color::Black] ^= updates_wt.mask(occ_wt);
-                self[Color::White] ^= updates_wc.blend(occ_wc, zeroed());
-                self[Color::White] ^= updates_wt.blend(occ_wt, zeroed());
+                self[Color::Black] &= !idx_set;
+                self[Color::Black] |= attacks;
+                self[Color::Black] ^= masked_wc;
+                self[Color::Black] ^= masked_wt;
+                self[Color::White] ^= blended_wc;
+                self[Color::White] ^= blended_wt;
             }
         }
     }

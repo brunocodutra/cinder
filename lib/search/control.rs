@@ -24,8 +24,10 @@ pub struct GlobalControl {
     abort: AtomicBool,
     nodes: AtomicU64,
     timestamp: Instant,
-    time_limit: Range<f32>,
-    limits: Limits,
+    max_depth: Depth,
+    max_nodes: u64,
+    max_time: f32,
+    target_time: f32,
 }
 
 impl GlobalControl {
@@ -53,15 +55,17 @@ impl GlobalControl {
             abort: AtomicBool::new(false),
             nodes: AtomicU64::new(0),
             timestamp: Instant::now(),
-            time_limit,
-            limits,
+            max_depth: limits.max_depth(),
+            max_nodes: limits.max_nodes(),
+            max_time: limits.max_time().as_secs_f32().min(time_limit.end),
+            target_time: time_limit.start,
         }
     }
 
-    /// The search limits.
+    /// Whether the search time is constrained by a game clock.
     #[inline(always)]
-    pub fn limits(&self) -> &Limits {
-        &self.limits
+    pub fn has_clock(&self) -> bool {
+        self.target_time.is_finite()
     }
 
     /// The time elapsed so far.
@@ -148,13 +152,11 @@ impl<'a> Active<'a> {
         #[expect(clippy::if_same_then_else)]
         if self.abort.load(Ordering::Relaxed) {
             return ControlFlow::Abort;
-        } else if self.global_nodes + self.nodes % LAP >= self.limits.max_nodes() {
+        } else if self.global_nodes + self.nodes % LAP >= self.max_nodes {
             return ControlFlow::Abort;
-        } else if self.elapsed >= self.time_limit.end {
+        } else if self.elapsed >= self.max_time {
             return ControlFlow::Abort;
-        } else if self.elapsed >= self.limits.max_time().as_secs_f32() {
-            return ControlFlow::Abort;
-        } else if depth > self.limits.max_depth() {
+        } else if depth > self.max_depth {
             return ControlFlow::Stop;
         } else if ply == 0 {
             let gamma = *Params::score_trend_scale(0);
@@ -168,7 +170,7 @@ impl<'a> Active<'a> {
                 *Params::pv_focus_scale(1),
             );
 
-            if self.elapsed >= self.time_limit.start * trend_scale * focus_scale {
+            if self.elapsed >= self.target_time * trend_scale * focus_scale {
                 return ControlFlow::Stop;
             }
         }
@@ -382,7 +384,7 @@ mod tests {
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
         let mut global = GlobalControl::new(&pos, Limits::clock(o, Duration::ZERO), o);
-        global.time_limit.end = f32::MAX;
+        global.max_time = f32::MAX;
 
         let mut local = LocalControl::active(&global);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Stop);
@@ -399,7 +401,7 @@ mod tests {
         #[filter(#pv.head().is_some())] pv: Pv,
     ) {
         let mut global = GlobalControl::new(&pos, Limits::clock(o, Duration::ZERO), o);
-        global.time_limit.end = f32::MAX;
+        global.max_time = f32::MAX;
 
         let mut local = LocalControl::passive(&global);
         assert_eq!(local.check(d, pos.ply(), &pv), ControlFlow::Continue);

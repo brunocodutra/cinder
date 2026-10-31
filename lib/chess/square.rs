@@ -77,11 +77,25 @@ const impl Mirror for Square {
     }
 }
 
+const impl Perspective<Side> for Square {
+    #[inline(always)]
+    fn perspective(self, side: Side) -> Self {
+        Num::new(self.get() ^ (side.cast::<i8>() * Square::H1.get()))
+    }
+}
+
 const impl Flip for Square {
     /// Flips this square's [`Rank`].
     #[inline(always)]
     fn flip(self) -> Self {
         Num::new(self.get() ^ Square::A8.get())
+    }
+}
+
+const impl Perspective<Color> for Square {
+    #[inline(always)]
+    fn perspective(self, side: Color) -> Self {
+        Num::new(self.get() ^ (side.cast::<i8>() * Square::A8.get()))
     }
 }
 

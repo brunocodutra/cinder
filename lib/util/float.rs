@@ -103,7 +103,16 @@ macro_rules! impl_float_repr_for {
 
             #[inline(always)]
             fn saturate<N: [const] Num<Repr: [const] NumRepr>>(self) -> N {
-                N::new(self.cast::<N::Repr>().clip(N::MIN, N::MAX))
+                let min = N::MIN.cast::<Self>();
+                let max = N::MAX.cast::<Self>();
+
+                if (<N::Repr as Num>::MIN, <N::Repr as Num>::MAX) != (N::MIN, N::MAX)
+                    && (min.cast::<N::Repr>(), max.cast::<N::Repr>()) == (N::MIN, N::MAX)
+                {
+                    N::new(self.clip(min, max).cast())
+                } else {
+                    N::new(self.cast::<N::Repr>().clip(N::MIN, N::MAX))
+                }
             }
         }
 

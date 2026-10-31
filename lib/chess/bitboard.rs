@@ -1,4 +1,4 @@
-use crate::chess::{Butterfly, File, Flip, Rank, Square, Transpose};
+use crate::chess::{Butterfly, Color, File, Flip, Perspective, Rank, Square, Transpose};
 use crate::simd::*;
 use crate::util::{Int, Num};
 use bytemuck::{Pod, Zeroable, zeroed};
@@ -475,6 +475,16 @@ const impl Flip for Bitboard {
     }
 }
 
+const impl Perspective<Color> for Bitboard {
+    #[inline(always)]
+    fn perspective(self, side: Color) -> Self {
+        match side {
+            Color::White => self,
+            Color::Black => self.flip(),
+        }
+    }
+}
+
 const impl Transpose for Bitboard {
     type Transposition = Self;
 
@@ -572,7 +582,7 @@ const impl Iterator for Squares {
             None
         } else {
             let sq = <Square as Num>::new(self.0.trailing_zeros().cast());
-            self.0 ^= sq.bitboard();
+            self.0 &= self.0.get() - 1;
             Some(sq)
         }
     }

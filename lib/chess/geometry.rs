@@ -1,4 +1,3 @@
-use crate::chess::Color;
 use crate::util::{Int, Num};
 use std::ops::{Index, IndexMut};
 
@@ -12,16 +11,6 @@ pub const trait Perspective<T>: Sized {
 pub const trait Flip: Sized {
     /// This value from the opponent's perspective.
     fn flip(self) -> Self;
-}
-
-const impl<T: [const] Flip> Perspective<Color> for T {
-    #[inline(always)]
-    fn perspective(self, side: Color) -> Self {
-        match side {
-            Color::White => self,
-            Color::Black => self.flip(),
-        }
-    }
 }
 
 /// One of two horizontal perspectives.
@@ -80,16 +69,6 @@ const impl<T> IndexMut<Side> for [T; Side::LEN] {
 pub const trait Mirror: Sized {
     /// This value's horizontal mirror.
     fn mirror(self) -> Self;
-}
-
-const impl<T: [const] Mirror> Perspective<Side> for T {
-    #[inline(always)]
-    fn perspective(self, side: Side) -> Self {
-        match side {
-            Side::Left => self,
-            Side::Right => self.mirror(),
-        }
-    }
 }
 
 /// Trait for types that can be diagonally transposed.

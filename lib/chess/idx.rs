@@ -376,7 +376,7 @@ const impl Iterator for Indices {
             None
         } else {
             let idx = Idx::new(self.0.trailing_zeros().cast());
-            self.0 ^= idx.to_set();
+            self.0 &= self.0.get() - 1;
             Some(idx)
         }
     }

@@ -278,8 +278,8 @@ impl Placement {
 
         #[cfg(target_feature = "avx512f")]
         {
-            let ones = self.occupied().select(Simd::splat(1), Simd::splat(0));
-            Wordboard::from_simd(ones.shlv(indices.cast::<u16>()))
+            let ones = u16x64::splat(1);
+            Wordboard::from_simd(ones.shlv(indices.cast::<u16>())).mask(self.occupied())
         }
 
         #[cfg(not(target_feature = "avx512f"))]

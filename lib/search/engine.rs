@@ -235,17 +235,16 @@ impl MovePicker {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn sorted(&mut self, searcher: &Searcher<'_>, head: Option<Move>) -> SortedRatedMovesIter<'_> {
         #[inline(never)]
-        fn bootstrap<'a>(
+        fn bootstrap<'a, const ALL: bool>(
             picker: &'a mut MovePicker,
             searcher: &Searcher<'_>,
             head: Option<Move>,
-            all: bool,
         ) -> SortedRatedMovesIter<'a> {
             *picker = MovePicker::Rated(RatedMoves::default());
 
             let pos = &searcher.stack.pos;
             if let MovePicker::Rated(rated) = picker {
-                if all || pos.is_check() {
+                if ALL || pos.is_check() {
                     pos.moves_into(Bitboard::full(), rated.moves_mut());
                 } else {
                     pos.noisy_into(Bitboard::full(), rated.moves_mut());
@@ -258,8 +257,8 @@ impl MovePicker {
 
         match self {
             MovePicker::Rated(moves) => moves.sorted(),
-            MovePicker::PendingAll => bootstrap(self, searcher, head, true),
-            MovePicker::PendingQuiescent => bootstrap(self, searcher, head, false),
+            MovePicker::PendingAll => bootstrap::<true>(self, searcher, head),
+            MovePicker::PendingQuiescent => bootstrap::<false>(self, searcher, head),
         }
     }
 }
@@ -500,15 +499,19 @@ impl<'a> Searcher<'a> {
     fn next(&mut self, m: Option<Move>) -> RecursionGuard<'_, 'a> {
         let idx = self.stack.pos.ply().cast::<usize>();
 
-        self.stack.continuation[idx] = m.map(|m| {
-            let entry = self.local.histories.continuation.get(&self.stack.pos, m);
-            NonNull::from_mut(entry)
-        });
+        self.stack.continuation[idx] = match m {
+            None => None,
+            Some(m) => Some(NonNull::from_mut(
+                self.local.histories.continuation.get(&self.stack.pos, m),
+            )),
+        };
 
-        self.stack.correction[idx] = m.map(|m| {
-            let entry = self.local.corrections.continuation.get(&self.stack.pos, m);
-            NonNull::from_mut(entry)
-        });
+        self.stack.correction[idx] = match m {
+            None => None,
+            Some(m) => Some(NonNull::from_mut(
+                self.local.corrections.continuation.get(&self.stack.pos, m),
+            )),
+        };
 
         self.stack.pos.push(m);
         self.shared.vt.prefetch(self.stack.pos.zobrists().hash);
@@ -1377,7 +1380,7 @@ impl Stream for Search<'_, '_> {
                 unsafe { &*(&raw mut *search.engine.local as *const _) };
 
             let moves = search.moves_to_search();
-            if matches!((moves.len(), &ctrl.limits().clock), (0, _) | (1, Some(_))) {
+            if matches!((moves.len(), ctrl.has_clock()), (0, _) | (1, true)) {
                 let pv = if let Some(m) = moves.iter().next() {
                     Pv::new(Score::drawn(), Line::singular(*m))
                 } else if pos.is_check() {

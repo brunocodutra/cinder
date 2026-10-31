@@ -1,4 +1,4 @@
-use crate::chess::{Bitboard, File, Flip, Transpose};
+use crate::chess::{Bitboard, Color, File, Flip, Perspective, Transpose};
 use crate::util::{Int, Niched, Num};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
@@ -49,6 +49,16 @@ const impl Flip for Rank {
     #[inline(always)]
     fn flip(self) -> Self {
         Self::new(self.get() ^ Self::MAX)
+    }
+}
+
+const impl Perspective<Color> for Rank {
+    #[inline(always)]
+    fn perspective(self, side: Color) -> Self {
+        match side {
+            Color::White => self,
+            Color::Black => self.flip(),
+        }
     }
 }
 

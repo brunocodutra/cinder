@@ -1,4 +1,4 @@
-use crate::util::{Assume, Bounded, Int, Num};
+use crate::util::{Bounded, Int, Num};
 use bytemuck::{NoUninit, Zeroable};
 use std::ops::{Index, IndexMut};
 
@@ -31,13 +31,13 @@ const impl<T> Index<Ply> for [T; Ply::LEN] {
 
     #[inline(always)]
     fn index(&self, p: Ply) -> &Self::Output {
-        self.get(p.cast::<usize>()).assume()
+        unsafe { self.get_unchecked(p.cast::<usize>()) }
     }
 }
 
 const impl<T> IndexMut<Ply> for [T; Ply::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, p: Ply) -> &mut Self::Output {
-        self.get_mut(p.cast::<usize>()).assume()
+        unsafe { self.get_unchecked_mut(p.cast::<usize>()) }
     }
 }

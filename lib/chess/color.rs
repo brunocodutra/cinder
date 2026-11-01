@@ -84,14 +84,14 @@ const impl<T> Index<Color> for [T; Color::LEN] {
 
     #[inline(always)]
     fn index(&self, c: Color) -> &Self::Output {
-        self.get(c.cast::<usize>()).assume()
+        unsafe { self.get_unchecked(c.cast::<usize>()) }
     }
 }
 
 const impl<T> IndexMut<Color> for [T; Color::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, c: Color) -> &mut Self::Output {
-        self.get_mut(c.cast::<usize>()).assume()
+        unsafe { self.get_unchecked_mut(c.cast::<usize>()) }
     }
 }
 

@@ -13,7 +13,8 @@ const impl<T> Index<Key> for [T] {
     #[inline(always)]
     fn index(&self, key: Key) -> &Self::Output {
         let idx = ((key.cast::<u128>() * self.len().cast::<u128>()) >> 64) as usize;
-        self.get(idx).assume()
+        debug_assert!(idx < self.len());
+        unsafe { self.get_unchecked(idx) }
     }
 }
 
@@ -21,7 +22,8 @@ const impl<T> IndexMut<Key> for [T] {
     #[inline(always)]
     fn index_mut(&mut self, key: Key) -> &mut Self::Output {
         let idx = ((key.cast::<u128>() * self.len().cast::<u128>()) >> 64) as usize;
-        self.get_mut(idx).assume()
+        debug_assert!(idx < self.len());
+        unsafe { self.get_unchecked_mut(idx) }
     }
 }
 
@@ -94,7 +96,7 @@ where
         if self.is_empty() {
             None
         } else {
-            Some(Binary::decode(self.bits.convert::<Key>().assume().pop()))
+            Some(Binary::decode(Key::new(self.bits.cast()).pop()))
         }
     }
 

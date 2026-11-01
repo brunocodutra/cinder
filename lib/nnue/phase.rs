@@ -1,5 +1,5 @@
 use crate::nnue::arch;
-use crate::util::{Assume, Int, Num};
+use crate::util::{Int, Num};
 use std::ops::{Index, IndexMut};
 
 /// The game phase.
@@ -26,13 +26,13 @@ const impl<T> Index<Phase> for [T; Phase::LEN] {
 
     #[inline(always)]
     fn index(&self, p: Phase) -> &Self::Output {
-        self.get(p.cast::<usize>()).assume()
+        unsafe { self.get_unchecked(p.cast::<usize>()) }
     }
 }
 
 const impl<T> IndexMut<Phase> for [T; Phase::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, p: Phase) -> &mut Self::Output {
-        self.get_mut(p.cast::<usize>()).assume()
+        unsafe { self.get_unchecked_mut(p.cast::<usize>()) }
     }
 }

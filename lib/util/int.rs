@@ -1,4 +1,4 @@
-use crate::util::{Assume, Num, NumRepr};
+use crate::util::{Num, NumRepr};
 use bytemuck::zeroed;
 use std::{cmp::Ordering, hint::unreachable_unchecked, iter::FusedIterator, mem::transmute_copy};
 use std::{num::*, ops::*};
@@ -226,7 +226,7 @@ macro_rules! impl_num_for {
 
             #[inline(always)]
             fn clip(self, min: Self, max: Self) -> Self {
-                (min <= max).assume();
+                debug_assert!(min <= max);
                 Ord::clamp(self, min, max)
             }
 

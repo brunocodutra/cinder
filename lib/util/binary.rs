@@ -1,4 +1,4 @@
-use crate::util::{Assume, Bits, Int, Num, Unsigned};
+use crate::util::{Bits, Int, Num, Unsigned};
 
 /// Trait for types that can be encoded to binary.
 pub const trait Binary: 'static + Sized {
@@ -35,7 +35,7 @@ const impl<T: [const] Binary<Bits: [const] Default + [const] Eq + Int>> Binary f
             None => T::Bits::default(),
             Some(t) => {
                 let bits = t.encode();
-                (bits != T::Bits::default()).assume();
+                debug_assert!(bits != T::Bits::default());
                 bits
             }
         }

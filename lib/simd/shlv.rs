@@ -1,4 +1,4 @@
-use crate::util::{Assume, Num};
+use crate::util::Num;
 use std::{array, simd::prelude::*};
 
 /// Trait for [`Simd<_, _>` ] types that can shift left dynamically.
@@ -12,7 +12,8 @@ impl<const N: usize> Shlv for Simd<u16, N> {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn shlv(self, shift: Self) -> Self {
         Simd::from_array(array::from_fn(|i| {
-            self[i].checked_shl(shift[i].cast()).assume()
+            debug_assert!(shift[i].cast::<u32>() < 16);
+            self[i].wrapping_shl(shift[i].cast())
         }))
     }
 }

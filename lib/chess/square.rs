@@ -1,5 +1,5 @@
 use crate::chess::*;
-use crate::util::{Assume, Binary, Bits, Int, Niched, Num};
+use crate::util::{Binary, Bits, Int, Niched, Num};
 use derive_more::with_trait::{Display, Error, From};
 use std::fmt::{self, Formatter};
 use std::ops::{Add, AddAssign, Index, IndexMut, Sub, SubAssign};
@@ -155,14 +155,14 @@ const impl<T> Index<Square> for [T; Square::LEN] {
 
     #[inline(always)]
     fn index(&self, sq: Square) -> &Self::Output {
-        self.get(sq.cast::<usize>()).assume()
+        unsafe { self.get_unchecked(sq.cast::<usize>()) }
     }
 }
 
 const impl<T> IndexMut<Square> for [T; Square::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, sq: Square) -> &mut Self::Output {
-        self.get_mut(sq.cast::<usize>()).assume()
+        unsafe { self.get_unchecked_mut(sq.cast::<usize>()) }
     }
 }
 

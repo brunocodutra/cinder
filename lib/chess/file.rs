@@ -1,5 +1,5 @@
 use crate::chess::{Bitboard, Mirror, Rank, Transpose};
-use crate::util::{Assume, Int, Niched, Num};
+use crate::util::{Int, Niched, Num};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::ops::{Index, IndexMut};
@@ -76,14 +76,14 @@ const impl<T> Index<File> for [T; File::LEN] {
 
     #[inline(always)]
     fn index(&self, f: File) -> &Self::Output {
-        self.get(f.cast::<usize>()).assume()
+        unsafe { self.get_unchecked(f.cast::<usize>()) }
     }
 }
 
 const impl<T> IndexMut<File> for [T; File::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, f: File) -> &mut Self::Output {
-        self.get_mut(f.cast::<usize>()).assume()
+        unsafe { self.get_unchecked_mut(f.cast::<usize>()) }
     }
 }
 

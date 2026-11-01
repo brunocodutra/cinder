@@ -132,14 +132,14 @@ impl Stack {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn continuation(&self, i: usize) -> Option<NonNull<PieceToHistory>> {
         let idx = self.pos.ply().cast::<usize>().wrapping_sub(i);
-        *self.continuation.get(idx).assume()
+        unsafe { *self.continuation.get_unchecked(idx) }
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn correction(&self, i: usize) -> Option<NonNull<Correction<1>>> {
         let idx = self.pos.ply().cast::<usize>().wrapping_sub(i);
-        *self.correction.get(idx).assume()
+        unsafe { *self.correction.get_unchecked(idx) }
     }
 }
 

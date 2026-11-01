@@ -1,4 +1,3 @@
-use crate::util::Assume;
 use bytemuck::Zeroable;
 use std::simd::{prelude::*, *};
 use std::{hash::Hash, marker::PhantomData, ops::*};
@@ -46,7 +45,7 @@ impl<T: MaskElement, const N: usize> M<T, N> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn test(self, i: usize) -> bool {
-        (i < N).assume();
+        debug_assert!(i < N);
 
         #[cfg(target_feature = "avx512f")]
         {

@@ -74,7 +74,7 @@ const impl<T: Zeroable, M: [const] Memory<T, Capacity = ConstCapacity>> Seq<T, M
     #[inline(always)]
     pub fn zeroed(len: usize) -> Self {
         let mem = M::zeroed(ConstCapacity);
-        (len <= mem.as_ref().len()).assume();
+        debug_assert!(len <= mem.as_ref().len());
 
         Seq {
             phantom: PhantomData,
@@ -148,7 +148,7 @@ const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
     #[inline(always)]
     pub fn push(&mut self, item: T) {
         let idx = self.len();
-        self.bytes.len = self.bytes.len.checked_add(1).assume();
+        self.bytes.len = self.bytes.len.wrapping_add(1);
         self.bytes.mem.as_mut().get_mut(idx).assume().write(item);
     }
 
@@ -161,20 +161,22 @@ const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
         T: Zeroable + Copy,
     {
         let idx = self.len();
-        (idx < self.capacity()).assume();
+        debug_assert!(idx < self.capacity());
 
         let is_present = item.is_some().cast();
         let value = item.unwrap_or_else(zeroed);
-        self.bytes.len = self.bytes.len.checked_add(is_present).assume();
+        self.bytes.len = self.bytes.len.wrapping_add(is_present);
         self.bytes.mem.as_mut().get_mut(idx).assume().write(value);
     }
 
     /// Pops an item from the back of this sequence.
     #[inline(always)]
     pub fn pop(&mut self) -> Option<T> {
-        self.bytes.len = self.bytes.len.checked_sub(ones(1))?;
+        self.bytes.len = self.bytes.len.checked_sub(1)?;
+
         let idx = self.len();
-        unsafe { Some(self.bytes.mem.as_mut().get(idx).assume().assume_init_read()) }
+        let items = self.bytes.mem.as_mut();
+        unsafe { Some(items.get_unchecked(idx).assume_init_read()) }
     }
 
     /// Truncates this sequence to the prefix of length `len`.
@@ -199,7 +201,7 @@ const impl<T, M: [const] Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
         T: [const] Destruct,
     {
         if len < self.len() {
-            unsafe { ptr::drop_in_place(self.get_mut(len..).assume()) };
+            unsafe { ptr::drop_in_place(self.get_unchecked_mut(len..)) };
         }
 
         self.bytes.len = len.cast();
@@ -238,7 +240,7 @@ impl<T, M: Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
     {
         const { assert!(align_of::<T>() >= align_of::<E>()) }
         const { assert!(size_of::<T>() == size_of::<E>()) }
-        (self.capacity() >= self.len() + N).assume();
+        debug_assert!(self.capacity() >= self.len() + N);
 
         let end = self.len();
         let ptr = self.as_mut_ptr().wrapping_add(end).cast();
@@ -255,8 +257,8 @@ impl<T, M: Memory<T, Capacity = ConstCapacity>> Seq<T, M> {
     {
         const { assert!(align_of::<T>() >= align_of::<E>()) }
         const { assert!(size_of::<T>() == size_of::<E>()) }
-        (self.capacity() >= self.len() + N).assume();
-        (len <= N).assume();
+        debug_assert!(self.capacity() >= self.len() + N);
+        debug_assert!(len <= N);
 
         let end = self.len();
         let ptr = self.as_mut_ptr().wrapping_add(end).cast();
@@ -296,8 +298,8 @@ where
         let mut seq = Self::new();
         seq.bytes.len = self.bytes.len;
         let prefix = seq.len();
-        let src = self.bytes.mem.as_ref().get(..prefix).assume();
-        let dst = seq.bytes.mem.as_mut().get_mut(..prefix).assume();
+        let src = unsafe { self.bytes.mem.as_ref().get_unchecked(..prefix) };
+        let dst = unsafe { seq.bytes.mem.as_mut().get_unchecked_mut(..prefix) };
         dst.copy_from_slice(src);
         seq
     }
@@ -464,10 +466,10 @@ where
         if Self::is_empty(self) {
             None
         } else {
-            let items = self.seq.bytes.mem.as_mut();
             let idx = self.cursor.cast::<usize>();
-            let item = unsafe { items.get(idx).assume().assume_init_read() };
-            self.cursor += ones::<<ConstCapacity as Capacity>::Usize>(1);
+            let items = self.seq.bytes.mem.as_mut();
+            let item = unsafe { items.get_unchecked(idx).assume_init_read() };
+            self.cursor += 1;
             Some(item)
         }
     }

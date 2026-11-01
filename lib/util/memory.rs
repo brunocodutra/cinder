@@ -200,7 +200,7 @@ const impl<T: NoUninit, const N: usize, const S: usize> From<[T; N]> for ConstMe
 
         let mut mem = ConstMemory([0; S]);
         let size = size_of_val(&data);
-        let dst = mem.get_mut(..size).assume();
+        let dst = unsafe { mem.get_unchecked_mut(..size) };
         let src = unsafe { slice::from_raw_parts(data.as_ptr().cast(), size) };
         dst.copy_from_slice(src);
         mem

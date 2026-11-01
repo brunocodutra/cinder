@@ -126,7 +126,7 @@ impl Index<usize> for Evaluator {
 
     #[inline(always)]
     fn index(&self, idx: usize) -> &Self::Output {
-        self.positions.get(idx).assume()
+        unsafe { self.positions.get_unchecked(idx) }
     }
 }
 

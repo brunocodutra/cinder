@@ -1,4 +1,4 @@
-use crate::util::{Assume, Int, Num, ones};
+use crate::util::{Int, Num, ones};
 use crate::{chess::*, nnue::arch, simd::*};
 use bytemuck::{Zeroable, zeroed};
 use std::array;
@@ -28,14 +28,14 @@ impl<T> Index<PSQFeature> for [T; PSQFeature::LEN] {
 
     #[inline(always)]
     fn index(&self, f: PSQFeature) -> &Self::Output {
-        self.get(f.cast::<usize>()).assume()
+        unsafe { self.get_unchecked(f.cast::<usize>()) }
     }
 }
 
 impl<T> IndexMut<PSQFeature> for [T; PSQFeature::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, f: PSQFeature) -> &mut Self::Output {
-        self.get_mut(f.cast::<usize>()).assume()
+        unsafe { self.get_unchecked_mut(f.cast::<usize>()) }
     }
 }
 
@@ -79,14 +79,14 @@ impl<T> Index<KingBucket> for [T; KingBucket::LEN] {
 
     #[inline(always)]
     fn index(&self, b: KingBucket) -> &Self::Output {
-        self.get(b.cast::<usize>()).assume()
+        unsafe { self.get_unchecked(b.cast::<usize>()) }
     }
 }
 
 impl<T> IndexMut<KingBucket> for [T; KingBucket::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, b: KingBucket) -> &mut Self::Output {
-        self.get_mut(b.cast::<usize>()).assume()
+        unsafe { self.get_unchecked_mut(b.cast::<usize>()) }
     }
 }
 
@@ -173,14 +173,14 @@ impl<T> Index<KAFeature> for [T; KAFeature::LEN] {
 
     #[inline(always)]
     fn index(&self, f: KAFeature) -> &Self::Output {
-        self.get(f.cast::<usize>()).assume()
+        unsafe { self.get_unchecked(f.cast::<usize>()) }
     }
 }
 
 impl<T> IndexMut<KAFeature> for [T; KAFeature::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, f: KAFeature) -> &mut Self::Output {
-        self.get_mut(f.cast::<usize>()).assume()
+        unsafe { self.get_unchecked_mut(f.cast::<usize>()) }
     }
 }
 
@@ -372,14 +372,14 @@ impl<T> Index<PFeature> for [T; PFeature::LEN] {
 
     #[inline(always)]
     fn index(&self, f: PFeature) -> &Self::Output {
-        self.get(f.cast::<usize>()).assume()
+        unsafe { self.get_unchecked(f.cast::<usize>()) }
     }
 }
 
 impl<T> IndexMut<PFeature> for [T; PFeature::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, f: PFeature) -> &mut Self::Output {
-        self.get_mut(f.cast::<usize>()).assume()
+        unsafe { self.get_unchecked_mut(f.cast::<usize>()) }
     }
 }
 
@@ -461,13 +461,13 @@ impl<T> Index<PPFeature> for [T; PPFeature::LEN] {
 
     #[inline(always)]
     fn index(&self, f: PPFeature) -> &Self::Output {
-        self.get(f.cast::<usize>()).assume()
+        unsafe { self.get_unchecked(f.cast::<usize>()) }
     }
 }
 
 impl<T> IndexMut<PPFeature> for [T; PPFeature::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, f: PPFeature) -> &mut Self::Output {
-        self.get_mut(f.cast::<usize>()).assume()
+        unsafe { self.get_unchecked_mut(f.cast::<usize>()) }
     }
 }

@@ -1,6 +1,6 @@
 use crate::chess::Move;
 use crate::search::{Depth, Line, Ply, Pv, Score};
-use crate::util::{Assume, Binary, Bits, Int, Num};
+use crate::util::{Binary, Bits, Int, Num};
 use bytemuck::{NoUninit, Zeroable, zeroed};
 use derive_more::with_trait::Debug;
 use std::ops::{Range, RangeInclusive};
@@ -100,7 +100,7 @@ impl ScoreBound {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     pub fn new(bounds: Range<Score>, score: Score, ply: Ply) -> Self {
-        (bounds.start < bounds.end).assume();
+        debug_assert!(bounds.start < bounds.end);
 
         if score >= bounds.end {
             ScoreBound::Lower(score.relative_to_root(ply))

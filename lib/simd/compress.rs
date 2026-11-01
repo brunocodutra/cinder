@@ -26,8 +26,8 @@ impl Compress for u16x64 {
     #[cfg(target_feature = "avx512vbmi2")]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
-        use crate::{simd::Halve, util::Assume};
-        (slice.len() >= Self::LEN).assume();
+        use crate::simd::Halve;
+        debug_assert!(slice.len() >= Self::LEN);
         let [x0, x1] = self.halve();
         let i0 = indices as u32;
         let i1 = (indices >> 32) as u32;
@@ -65,8 +65,7 @@ impl Compress for u8x64 {
     #[cfg(target_feature = "avx512vbmi2")]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
-        use crate::util::Assume;
-        (slice.len() >= Self::LEN).assume();
+        debug_assert!(slice.len() >= Self::LEN);
         self.compress(indices).copy_to_slice(slice);
     }
 
@@ -100,8 +99,7 @@ impl Compress for u8x32 {
     #[cfg(target_feature = "avx512vbmi2")]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
-        use crate::util::Assume;
-        (slice.len() >= Self::LEN).assume();
+        debug_assert!(slice.len() >= Self::LEN);
         self.compress(indices).copy_to_slice(slice);
     }
 
@@ -135,8 +133,7 @@ impl Compress for u8x16 {
     #[cfg(target_feature = "avx512vbmi2")]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
-        use crate::util::Assume;
-        (slice.len() >= Self::LEN).assume();
+        debug_assert!(slice.len() >= Self::LEN);
         self.compress(indices).copy_to_slice(slice);
     }
 
@@ -144,8 +141,8 @@ impl Compress for u8x16 {
     #[cfg(not(target_feature = "avx512vbmi2"))]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
-        use crate::{simd::Halve, util::Assume};
-        (slice.len() >= Self::LEN).assume();
+        use crate::simd::Halve;
+        debug_assert!(slice.len() >= Self::LEN);
         let [x0, x1] = self.halve();
         let i0 = indices as u8;
         let i1 = (indices >> 8) as u8;
@@ -212,8 +209,7 @@ impl Compress for u8x8 {
     #[cfg(any(target_feature = "ssse3", target_feature = "neon"))]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
-        use crate::util::Assume;
-        (slice.len() >= Self::LEN).assume();
+        debug_assert!(slice.len() >= Self::LEN);
         self.compress(indices).copy_to_slice(slice);
     }
 
@@ -247,8 +243,7 @@ impl Compress for u16x32 {
     #[cfg(target_feature = "avx512vbmi2")]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
-        use crate::util::Assume;
-        (slice.len() >= Self::LEN).assume();
+        debug_assert!(slice.len() >= Self::LEN);
         self.compress(indices).copy_to_slice(slice);
     }
 
@@ -282,8 +277,7 @@ impl Compress for u16x16 {
     #[cfg(target_feature = "avx512vbmi2")]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn compress_store(self, indices: Self::Bitmask, slice: &mut [Self::Scalar]) {
-        use crate::util::Assume;
-        (slice.len() >= Self::LEN).assume();
+        debug_assert!(slice.len() >= Self::LEN);
         self.compress(indices).copy_to_slice(slice);
     }
 

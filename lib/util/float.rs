@@ -1,4 +1,4 @@
-use crate::util::{Assume, Num, NumRepr};
+use crate::util::{Num, NumRepr};
 use std::{hint::unreachable_unchecked, mem::transmute_copy, ops::*};
 
 /// Trait for types that can be represented by a int range of primitive floats.
@@ -54,7 +54,7 @@ macro_rules! impl_float_repr_for {
 
             #[inline(always)]
             fn clip(self, min: Self, max: Self) -> Self {
-                (min <= max).assume();
+                debug_assert!(min <= max);
                 <$f>::clamp(self, min, max)
             }
 

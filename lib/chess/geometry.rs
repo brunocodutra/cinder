@@ -1,5 +1,5 @@
 use crate::chess::Color;
-use crate::util::{Assume, Int, Num};
+use crate::util::{Int, Num};
 use std::ops::{Index, IndexMut};
 
 /// Trait for types that can be seen from a different perspective.
@@ -65,14 +65,14 @@ const impl<T> Index<Side> for [T; Side::LEN] {
 
     #[inline(always)]
     fn index(&self, s: Side) -> &Self::Output {
-        self.get(s.cast::<usize>()).assume()
+        unsafe { self.get_unchecked(s.cast::<usize>()) }
     }
 }
 
 const impl<T> IndexMut<Side> for [T; Side::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, s: Side) -> &mut Self::Output {
-        self.get_mut(s.cast::<usize>()).assume()
+        unsafe { self.get_unchecked_mut(s.cast::<usize>()) }
     }
 }
 

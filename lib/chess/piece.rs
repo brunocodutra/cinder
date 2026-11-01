@@ -194,14 +194,14 @@ const impl<T> Index<Piece> for [T; Piece::LEN] {
 
     #[inline(always)]
     fn index(&self, p: Piece) -> &Self::Output {
-        self.get(p.cast::<usize>()).assume()
+        unsafe { self.get_unchecked(p.cast::<usize>()) }
     }
 }
 
 const impl<T> IndexMut<Piece> for [T; Piece::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, p: Piece) -> &mut Self::Output {
-        self.get_mut(p.cast::<usize>()).assume()
+        unsafe { self.get_unchecked_mut(p.cast::<usize>()) }
     }
 }
 

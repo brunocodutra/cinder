@@ -1,5 +1,5 @@
 use crate::simd::*;
-use crate::util::{Assume, Binary, Bits, Int, Niched, Num};
+use crate::util::{Binary, Bits, Int, Niched, Num};
 use derive_more::with_trait::{Display, Error};
 use std::fmt::{self, Formatter, Write};
 use std::ops::{Index, IndexMut};
@@ -83,14 +83,14 @@ const impl<T> Index<Role> for [T; Role::LEN] {
 
     #[inline(always)]
     fn index(&self, p: Role) -> &Self::Output {
-        self.get(p.cast::<usize>()).assume()
+        unsafe { self.get_unchecked(p.cast::<usize>()) }
     }
 }
 
 const impl<T> IndexMut<Role> for [T; Role::LEN] {
     #[inline(always)]
     fn index_mut(&mut self, p: Role) -> &mut Self::Output {
-        self.get_mut(p.cast::<usize>()).assume()
+        unsafe { self.get_unchecked_mut(p.cast::<usize>()) }
     }
 }
 

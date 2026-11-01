@@ -1,4 +1,3 @@
-use crate::util::Assume;
 use std::thread::{Builder, JoinHandle};
 
 /// The stack size for spawned threads.
@@ -10,7 +9,7 @@ pub struct Handle<T>(JoinHandle<T>);
 impl<T> Handle<T> {
     #[inline(always)]
     pub fn join(self) -> T {
-        self.0.join().assume()
+        self.0.join().unwrap()
     }
 }
 

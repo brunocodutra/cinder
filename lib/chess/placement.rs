@@ -59,38 +59,70 @@ const impl Place {
 
     #[inline(always)]
     pub fn idx(self) -> Option<Idx> {
-        if self.is_empty() {
-            None
-        } else {
-            Some(Idx::decode(Num::new(self.0.slice(..4).cast())))
-        }
+        const INDICES: [Option<Idx>; 256] = const {
+            let mut table = [None; 256];
+
+            for piece in Piece::iter() {
+                for idx in Idx::iter() {
+                    table[Place::new(piece, idx).cast::<usize>()] = Some(idx);
+                }
+            }
+
+            table
+        };
+
+        INDICES[self.cast::<usize>()]
     }
 
     #[inline(always)]
     pub fn piece(self) -> Option<Piece> {
-        if self.is_empty() {
-            None
-        } else {
-            Some(Piece::decode(Num::new(self.0.slice(4..).cast())))
-        }
+        const PIECES: [Option<Piece>; 256] = const {
+            let mut table = [None; 256];
+
+            for piece in Piece::iter() {
+                for idx in Idx::iter() {
+                    table[Place::new(piece, idx).cast::<usize>()] = Some(piece);
+                }
+            }
+
+            table
+        };
+
+        PIECES[self.cast::<usize>()]
     }
 
     #[inline(always)]
     pub fn color(self) -> Option<Color> {
-        if self.is_empty() {
-            None
-        } else {
-            Some(Color::decode(Num::new(self.0.slice(7..).get())))
-        }
+        const COLORS: [Option<Color>; 256] = const {
+            let mut table = [None; 256];
+
+            for p in Piece::iter() {
+                for idx in Idx::iter() {
+                    table[Place::new(p, idx).cast::<usize>()] = Some(p.color());
+                }
+            }
+
+            table
+        };
+
+        COLORS[self.cast::<usize>()]
     }
 
     #[inline(always)]
     pub fn role(self) -> Option<Role> {
-        if self.is_empty() {
-            None
-        } else {
-            Some(Role::decode(Num::new(self.0.slice(4..=6).get())))
-        }
+        const ROLES: [Option<Role>; 256] = const {
+            let mut table = [None; 256];
+
+            for p in Piece::iter() {
+                for idx in Idx::iter() {
+                    table[Place::new(p, idx).cast::<usize>()] = Some(p.role());
+                }
+            }
+
+            table
+        };
+
+        ROLES[self.cast::<usize>()]
     }
 }
 

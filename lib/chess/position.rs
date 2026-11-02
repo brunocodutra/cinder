@@ -314,6 +314,129 @@ impl<C: MoveCollector> MoveGen<C> for MovesGenerator<2> {
     }
 }
 
+/// A lazy sequence of exchanges on a square.
+#[derive(Debug)]
+pub enum Exchanges {
+    Done,
+    Pending {
+        wt: Square,
+        turn: Color,
+        placement: Placement,
+        ksqs: [Square; Color::LEN],
+    },
+}
+
+impl Exchanges {
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn new(pos: &Position, m: Move) -> Self {
+        let (wc, wt) = (m.whence(), m.whither());
+        if (pos.attackers(wt).is_empty() && pos.attackers(wc).is_empty())
+            || pos[wc].role() == Some(Role::King)
+        {
+            return Self::Done;
+        }
+
+        let mut placement = *pos.placement();
+        placement.set(wc, zeroed());
+        if pos[wt].is_empty() && m.is_capture() {
+            placement.set(Square::new(wt.file(), wc.rank()), zeroed());
+        }
+
+        Exchanges::Pending {
+            wt,
+            turn: !pos.turn(),
+            placement,
+            ksqs: [pos.king(Color::White), pos.king(Color::Black)],
+        }
+    }
+}
+
+impl Iterator for Exchanges {
+    type Item = (Square, Role);
+
+    /// The next least valued captor and its square.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Exchanges::Done => None,
+            Exchanges::Pending {
+                wt,
+                turn,
+                placement,
+                ksqs,
+            } => {
+                let side = *turn;
+                let rays = wt.rays();
+                let furled = placement.furl(rays);
+                let attackers = furled.visible() & furled.attackers();
+                let candidates = furled.by_color(side) & attackers;
+
+                if !candidates.any() {
+                    *self = Self::Done;
+                    return None;
+                }
+
+                let unpinned = {
+                    let ksq = ksqs[side];
+                    let line = Bitboard::line(ksq, *wt).with(*wt);
+                    let furled = placement.furl(ksq.rays());
+                    let theirs = furled.by_color(!side);
+                    let visible = furled.visible();
+                    let attackers = theirs & visible & furled.attackers();
+
+                    if cfg!(target_feature = "avx512f") || attackers.any() {
+                        if !line & attackers.unfurl(ksq.rays()) != zeroed() {
+                            *self = Self::Done;
+                            return None;
+                        }
+                    }
+
+                    let nearest = furled.by_color(side) & visible & Rays::pins();
+                    let beyond = furled.blend(nearest, zeroed()).visible() & Rays::pins();
+                    let pinners = beyond & furled.pinners() & theirs;
+                    let pinned = nearest & pinners.flood_ranks();
+
+                    if cfg!(target_feature = "avx512f") || pinned.any() {
+                        line | !pinned.unfurl(ksq.rays())
+                    } else {
+                        Bitboard::full()
+                    }
+                };
+
+                let candidates = unpinned & candidates.unfurl(rays);
+
+                let mut best = None;
+                for role in Role::iter() {
+                    let captors = candidates & placement.by_role(role);
+                    if let Some(wc) = captors.iter().next() {
+                        best = Some((wc, role));
+                        break;
+                    }
+                }
+
+                let Some((wc, captor)) = best else {
+                    *self = Self::Done;
+                    return None;
+                };
+
+                if captor == Role::King {
+                    let theirs = furled.by_color(!side);
+                    if theirs.bitand(attackers).any() {
+                        *self = Self::Done;
+                        return None;
+                    }
+                }
+
+                *turn = !side;
+                placement.set(wc, zeroed());
+                Some((wc, captor))
+            }
+        }
+    }
+}
+
 /// The current position on the board.
 ///
 /// This type guarantees that it only holds valid positions.
@@ -677,90 +800,9 @@ impl Position {
 
     /// The sequence of captures on a square starting from a move ordered by least valued captor.
     #[inline(always)]
-    pub fn exchanges(&self, m: Move) -> impl Iterator<Item = (Square, Role)> {
-        #[inline(always)]
-        gen move {
-            let (wc, wt) = (m.whence(), m.whither());
-            if (self.attackers(wt).is_empty() && self.attackers(wc).is_empty())
-                || self[wc].role() == Some(Role::King)
-            {
-                return;
-            }
-
-            let mut turn = !self.turn();
-            let mut placement = *self.placement();
-            placement.set(wc, zeroed());
-            if self[wt].is_empty() && m.is_capture() {
-                placement.set(Square::new(wt.file(), wc.rank()), zeroed());
-            }
-
-            let ksqs = [self.king(Color::White), self.king(Color::Black)];
-
-            let roles = [
-                placement.by_role(Role::Pawn).to_bitmask(),
-                placement.by_role(Role::Knight).to_bitmask(),
-                placement.by_role(Role::Bishop).to_bitmask(),
-                placement.by_role(Role::Rook).to_bitmask(),
-                placement.by_role(Role::Queen).to_bitmask(),
-                placement.by_role(Role::King).to_bitmask(),
-            ];
-
-            loop {
-                let rays = wt.rays();
-                let furled = placement.furl(rays);
-                let attackers = furled.visible() & furled.attackers();
-                let candidates = furled.by_color(turn) & attackers;
-                if !candidates.any() {
-                    return;
-                }
-
-                let unpinned = {
-                    let ksq = ksqs[turn];
-                    let line = Bitboard::line(ksq, wt).with(wt);
-                    let furled = placement.furl(ksq.rays());
-                    let theirs = furled.by_color(!turn);
-                    let visible = furled.visible();
-                    let attackers = theirs & visible & furled.attackers();
-                    if cfg!(target_feature = "avx512f") || attackers.any() {
-                        if !line & attackers.unfurl(ksq.rays()) != zeroed() {
-                            return;
-                        }
-                    }
-
-                    let nearest = furled.by_color(turn) & visible & Rays::pins();
-                    let beyond = furled.blend(nearest, zeroed()).visible() & Rays::pins();
-                    let pinners = beyond & furled.pinners() & theirs;
-                    let pinned = nearest & pinners.flood_ranks();
-
-                    if cfg!(target_feature = "avx512f") || pinned.any() {
-                        line | !pinned.unfurl(ksq.rays())
-                    } else {
-                        Bitboard::full()
-                    }
-                };
-
-                let candidates = unpinned & candidates.unfurl(rays);
-                let roles = u64x8::load_or_default(&roles) & Simd::splat(*candidates);
-                let Some(captor) = roles.simd_ne(zeroed()).first_set().and_then(Num::convert)
-                else {
-                    return;
-                };
-
-                if captor == Role::King {
-                    let theirs = furled.by_color(!turn);
-                    if theirs.bitand(attackers).any() {
-                        return;
-                    }
-                }
-
-                let captors = *roles.as_array().get(captor as usize).assume();
-                let wc = Bitboard::new(captors).iter().next().assume();
-                placement.set(wc, zeroed());
-                turn = !turn;
-
-                yield (wc, captor);
-            }
-        }
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn exchanges(&self, m: Move) -> Exchanges {
+        Exchanges::new(self, m)
     }
 
     /// Whether a [`Move`] is legal in this position.

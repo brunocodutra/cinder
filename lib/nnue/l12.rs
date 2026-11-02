@@ -93,9 +93,11 @@ impl<S: for<'a> Synapse<Input<'a> = L2<'a>, Output = f32>> Synapse for L12<S> {
 
         #[allow(clippy::modulo_one)]
         for i in (0..nzs.len() - nzs.len() % K).step_by(K) {
-            let idx: [usize; K] = array::from_fn(|k| *nzs.get(i + k).assume() as usize);
-            let x: [V8<u8>; K] = idx.map(|nz| Aligned([*xs.get(nz).assume(); W2]).cast());
-            let w: [[V8<i8>; O / W2]; K] = idx.map(|nz| *ws.get(nz).assume());
+            let packed = unsafe { nzs.as_ptr().add(i).cast::<[u8; K]>().read_unaligned() };
+            let nzs = array::from_fn(|k| packed[k] as usize);
+
+            let x: [V8<u8>; K] = nzs.map(|nz| Aligned([*xs.get(nz).assume(); W2]).cast());
+            let w: [[V8<i8>; O / W2]; K] = nzs.map(|nz| *ws.get(nz).assume());
 
             for (j, a) in acc.iter_mut().enumerate() {
                 *a = array::from_fn(|k| w[k][j].mul_add_4x8(x[k], a[k]));

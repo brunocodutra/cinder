@@ -994,6 +994,11 @@ impl<'a> Searcher<'a> {
         };
 
         for (index, m) in moves.sorted(self, Some(head)).skip(1).enumerate() {
+            let diff = tail.score().sub(alpha);
+            let gamma = *Params::lmr_raising_alpha_model(0);
+            let delta = *Params::lmr_raising_alpha_model(1);
+            let raising_alpha = gamma.mul_add(diff.cast(), delta).sigmoid();
+
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
@@ -1047,7 +1052,6 @@ impl<'a> Searcher<'a> {
 
             let mut next = self.next(Some(m));
             let gives_check = next.stack.pos.is_check();
-            let raised_alpha = tail >= alpha;
 
             let gamma = *Params::lmr_improving_model(0);
             let delta = *Params::lmr_improving_model(1);
@@ -1067,7 +1071,7 @@ impl<'a> Searcher<'a> {
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),
                 (is_check.cast(), Params::lmr_is_check(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
-                (raised_alpha.cast(), Params::lmr_raised_alpha(..)),
+                (raising_alpha, Params::lmr_raising_alpha(..)),
             ]);
 
             lmr = Params::lmr_history(0).mul_add(butterfly, lmr);
@@ -1147,6 +1151,11 @@ impl<'a> Searcher<'a> {
 
         moves.rate(self, Some(head));
         for (index, m) in moves.sorted(self, Some(head)).skip(1).enumerate() {
+            let diff = tail.score().sub(alpha);
+            let gamma = *Params::lmr_raising_alpha_model(0);
+            let delta = *Params::lmr_raising_alpha_model(1);
+            let raising_alpha = gamma.mul_add(diff.cast(), delta).sigmoid();
+
             let alpha = match tail.score() {
                 s if s >= beta => break,
                 s => s.max(alpha),
@@ -1160,7 +1169,6 @@ impl<'a> Searcher<'a> {
             let mut next = self.next(Some(m));
             let mut lmr = Self::lmr(depth, index);
             let gives_check = next.stack.pos.is_check();
-            let raised_alpha = tail >= alpha;
             let is_quiet = m.is_quiet();
 
             lmr += convolve([
@@ -1169,7 +1177,7 @@ impl<'a> Searcher<'a> {
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),
                 (is_check.cast(), Params::lmr_is_check(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
-                (raised_alpha.cast(), Params::lmr_raised_alpha(..)),
+                (raising_alpha, Params::lmr_raising_alpha(..)),
             ]);
 
             lmr = Params::lmr_history(0).mul_add(butterfly, lmr);

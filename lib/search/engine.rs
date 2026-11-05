@@ -842,10 +842,15 @@ impl<'a> Searcher<'a> {
 
                     let margin = margin.max(0.0);
                     if stand_pat - margin.cast::<i16>() >= beta {
+                        let surplus = stand_pat.sub(beta);
+                        let gamma = *Params::nmr_depth_improving_model(0);
+                        let delta = *Params::nmr_depth_improving_model(1);
+                        let improving = gamma.mul_add(improvement.cast(), delta).sigmoid();
+
                         let reduction = convolve([
                             (1.0, Params::nmr_depth_scalar(..)),
-                            (stand_pat.sub(beta).cast(), Params::nmr_depth_margin(..)),
-                            (is_improving.cast(), Params::nmr_depth_is_improving(..)),
+                            (surplus.cast(), Params::nmr_depth_margin(..)),
+                            (improving, Params::nmr_depth_improving(..)),
                         ]);
 
                         let nmr_depth = Params::nmr_depth(0)

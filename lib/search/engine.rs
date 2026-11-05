@@ -774,7 +774,6 @@ impl<'a> Searcher<'a> {
         let depth = depth.max(1.0);
         let alpha = alpha.max(lower);
         let improvement = self.stack.improvement();
-        let is_improving = improvement > 0;
         if alpha >= beta || upper <= alpha || lower >= beta {
             return Ok(Pv::empty(stand_pat).clip(lower, upper));
         } else if !IS_PV && !is_check {
@@ -1050,6 +1049,10 @@ impl<'a> Searcher<'a> {
             let gives_check = next.stack.pos.is_check();
             let raised_alpha = tail >= alpha;
 
+            let gamma = *Params::lmr_improving_model(0);
+            let delta = *Params::lmr_improving_model(1);
+            let improving = gamma.mul_add(improvement.cast(), delta).sigmoid();
+
             lmr += convolve([
                 (1.0, Params::lmr_not_root(..)),
                 (was_pv.cast(), Params::lmr_was_pv(..)),
@@ -1059,7 +1062,7 @@ impl<'a> Searcher<'a> {
                 (is_cut.cast(), Params::lmr_is_cut(..)),
                 (is_fl.cast(), Params::lmr_is_fl(..)),
                 (is_fh.cast(), Params::lmr_is_fh(..)),
-                (is_improving.cast(), Params::lmr_is_improving(..)),
+                (improving, Params::lmr_improving(..)),
                 (was_quiet.cast(), Params::lmr_was_quiet(..)),
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),
                 (is_check.cast(), Params::lmr_is_check(..)),

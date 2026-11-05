@@ -893,8 +893,13 @@ impl<'a> Searcher<'a> {
 
             let gamma = *Params::probcut_margin_depth(0);
             let delta = *Params::probcut_margin_depth(1);
-            let mut margin = gamma.mul_add(depth, delta);
-            margin = Params::probcut_margin_is_improving(0).mul_add(is_improving.cast(), margin);
+            let margin = gamma.mul_add(depth, delta);
+
+            let gamma = *Params::probcut_improving_model(0);
+            let delta = *Params::probcut_improving_model(1);
+            let improving = gamma.mul_add(improvement.cast(), delta).sigmoid();
+
+            let margin = Params::probcut_margin_improving(0).mul_add(improving, margin);
             let pc_beta = beta + margin.cast::<i16>();
 
             let max_depth = t.depth.cast::<f32>() + Params::probcut_depth_bounds(1);

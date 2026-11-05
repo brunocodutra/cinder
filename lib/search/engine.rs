@@ -998,10 +998,14 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             let gives_direct_check = pos.gives_direct_check(m);
             if !IS_PV && !is_check && !gives_direct_check && !tail.is_losing() {
+                let gamma = *Params::lmp_improving_model(0);
+                let delta = *Params::lmp_improving_model(1);
+                let improving = gamma.mul_add(improvement.cast(), delta).sigmoid();
+
                 let lmp = convolve([
                     (1.0, Params::lmp_scalar(..)),
                     (depth.powi(2), Params::lmp_depth(..)),
-                    (is_improving.cast(), Params::lmp_is_improving(..)),
+                    (improving, Params::lmp_improving(..)),
                 ]);
 
                 if index.cast::<f32>() > lmp {

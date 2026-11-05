@@ -830,10 +830,14 @@ impl<'a> Searcher<'a> {
                 let pawns = self.stack.pos.by_role(Role::Pawn);
                 let kings = self.stack.pos.by_role(Role::King);
                 if !beta.is_losing() && !stand_pat.is_winning() && (ours & !(pawns ^ kings)).any() {
+                    let gamma = *Params::nmr_margin_improving_model(0);
+                    let delta = *Params::nmr_margin_improving_model(1);
+                    let improving = gamma.mul_add(improvement.cast(), delta).sigmoid();
+
                     let margin = convolve([
                         (1.0, Params::nmr_margin_scalar(..)),
                         (depth, Params::nmr_margin_depth(..)),
-                        (is_improving.cast(), Params::nmr_margin_is_improving(..)),
+                        (improving, Params::nmr_margin_improving(..)),
                     ]);
 
                     let margin = margin.max(0.0);

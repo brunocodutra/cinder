@@ -119,7 +119,7 @@ macro_rules! impl_float_repr_for {
         impl FloatRepr for $f {
             #[inline(always)]
             fn sigmoid(self) -> Self {
-                1.0 / (1.0 + <$f>::exp(-self))
+                (1.0 + <$f>::exp(-self)).recip()
             }
         }
 

@@ -773,7 +773,8 @@ impl<'a> Searcher<'a> {
 
         let depth = depth.max(1.0);
         let alpha = alpha.max(lower);
-        let is_improving = self.stack.improvement() > 0;
+        let improvement = self.stack.improvement();
+        let is_improving = improvement > 0;
         if alpha >= beta || upper <= alpha || lower >= beta {
             return Ok(Pv::empty(stand_pat).clip(lower, upper));
         } else if !IS_PV && !is_check {
@@ -792,10 +793,14 @@ impl<'a> Searcher<'a> {
             }
 
             if !beta.is_losing() && depth < *Params::rfp_depth_limit(0) && !was_pv {
+                let gamma = *Params::rfp_improving_model(0);
+                let delta = *Params::rfp_improving_model(1);
+                let improving = gamma.mul_add(improvement.cast(), delta).sigmoid();
+
                 let margin = convolve([
                     (1.0, Params::rfp_margin_scalar(..)),
                     (depth, Params::rfp_margin_depth(..)),
-                    (is_improving.cast(), Params::rfp_margin_is_improving(..)),
+                    (improving, Params::rfp_margin_improving(..)),
                 ]);
 
                 if value - margin.cast::<i16>() >= beta {
@@ -949,7 +954,7 @@ impl<'a> Searcher<'a> {
                         let gamma = *Params::sext_dominance_model(0);
                         let delta = *Params::sext_dominance_model(1);
                         let diff = se_beta.cast::<f32>() - se_score.cast::<f32>();
-                        let dominance = (1.0 + diff.mul_add(gamma, delta).exp()).recip();
+                        let dominance = diff.mul_add(gamma, delta).sigmoid();
 
                         extension = convolve([
                             (1.0, Params::sext_scalar(..)),

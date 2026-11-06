@@ -455,33 +455,6 @@ impl<'a> Searcher<'a> {
         (bounds.start.max(lower), bounds.end.min(upper))
     }
 
-    /// Computes the futility margin.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn futility(depth: f32) -> f32 {
-        convolve([
-            (1.0, Params::futility_margin_scalar(..)),
-            (depth, Params::futility_margin_depth(..)),
-        ])
-    }
-
-    /// Computes the SEE pruning margin.
-    #[inline(always)]
-    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn see_pruning(depth: f32, m: Move) -> f32 {
-        if m.is_quiet() {
-            convolve([
-                (depth, Params::see_margin_quiet_depth(..)),
-                (1.0, Params::see_margin_quiet_scalar(..)),
-            ])
-        } else {
-            convolve([
-                (depth, Params::see_margin_noisy_depth(..)),
-                (1.0, Params::see_margin_noisy_scalar(..)),
-            ])
-        }
-    }
-
     /// Computes the late move reduction.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
@@ -646,14 +619,14 @@ impl<'a> Searcher<'a> {
             if !is_check && !gives_direct_check && !tail.is_losing() {
                 let delta = alpha - value;
                 let margin = delta.cast::<f32>() - Params::futility_margin_quiescence(0);
-                if margin >= 0.0 && !pos.gaining(m, margin) {
+                if margin >= 0.0 && !pos.is_gaining(m, margin) {
                     continue;
                 }
             }
 
             if !is_check && !tail.is_losing() {
                 let margin = *Params::see_margin_quiescence(0);
-                if !pos.gaining(m, margin) {
+                if !pos.is_gaining(m, margin) {
                     continue;
                 }
             }
@@ -906,7 +879,7 @@ impl<'a> Searcher<'a> {
             if is_fh && was_cut && !was_quiet && depth_bounds.contains(&depth) {
                 for m in moves.sorted(self, tt_move) {
                     let margin = pc_beta - value;
-                    if m.is_quiet() || !self.stack.pos.gaining(m, margin.cast()) {
+                    if m.is_quiet() || !self.stack.pos.is_gaining(m, margin.cast()) {
                         continue;
                     }
 
@@ -1024,29 +997,41 @@ impl<'a> Searcher<'a> {
 
             let mut lmr = Self::lmr(depth, index);
             let lmr_depth = (depth - lmr).max(0.0);
-            let is_quiet = m.is_quiet();
+            let is_quiet = m.is_quiet().cast();
 
             if !is_check && !gives_direct_check && !tail.is_losing() {
                 if depth < *Params::futility_depth_limit(0) {
+                    let futility = convolve([
+                        (1.0, Params::futility_margin_scalar(..)),
+                        (lmr_depth, Params::futility_margin_depth(..)),
+                    ]);
+
                     let delta = alpha - value;
-                    let margin = delta.cast::<f32>() - Self::futility(lmr_depth);
-                    if margin >= 0.0 && !pos.gaining(m, margin) {
+                    let margin = delta.cast::<f32>() - futility;
+                    if margin >= 0.0 && !pos.is_gaining(m, margin) {
                         continue;
                     }
                 }
             }
 
             if !tail.is_losing() {
-                let margin = Self::see_pruning(lmr_depth, m);
-                if !pos.gaining(m, margin) {
+                let margin = convolve([
+                    (1.0, Params::see_margin_scalar(..)),
+                    (lmr_depth, Params::see_margin_depth(..)),
+                    (is_quiet, Params::see_margin_is_quiet(..)),
+                    (lmr_depth * is_quiet, Params::see_margin_depth_is_quiet(..)),
+                ]);
+
+                if !pos.is_gaining(m, margin) {
                     continue;
                 }
             }
 
             let ctx = MoveContext::new(&PositionContext::new(pos), pos, m);
             let butterfly = self.local.histories.butterfly.get(ctx);
+
             let counter = match pos.ply().get() {
-                1.. => self.stack.continuation(1).filter(|_| is_quiet).get(ctx),
+                1.. => self.stack.continuation(1).filter(|_| ctx.is_quiet).get(ctx),
                 ..1 => 0.0,
             };
 
@@ -1068,7 +1053,7 @@ impl<'a> Searcher<'a> {
                 (is_fh.cast(), Params::lmr_is_fh(..)),
                 (improving, Params::lmr_improving(..)),
                 (was_quiet.cast(), Params::lmr_was_quiet(..)),
-                (is_quiet.cast(), Params::lmr_is_quiet(..)),
+                (is_quiet, Params::lmr_is_quiet(..)),
                 (is_check.cast(), Params::lmr_is_check(..)),
                 (gives_check.cast(), Params::lmr_gives_check(..)),
                 (raising_alpha, Params::lmr_raising_alpha(..)),

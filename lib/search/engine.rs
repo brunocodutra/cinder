@@ -1043,6 +1043,12 @@ impl<'a> Searcher<'a> {
                 ..1 => 0.0,
             };
 
+            lmr += convolve([
+                (1.0, Params::lmr_history_scalar(..)),
+                (butterfly, Params::lmr_history_butterfly(..)),
+                (counter, Params::lmr_history_counter(..)),
+            ]);
+
             let mut next = self.next(Some(m));
             let gives_check = next.stack.pos.is_check();
 
@@ -1066,9 +1072,6 @@ impl<'a> Searcher<'a> {
                 (gives_check.cast(), Params::lmr_gives_check(..)),
                 (raising_alpha, Params::lmr_raising_alpha(..)),
             ]);
-
-            lmr = Params::lmr_history(0).mul_add(butterfly, lmr);
-            lmr = Params::lmr_continuation(0).mul_add(counter, lmr);
 
             let next_depth = (depth - 1.0).max(0.0);
             let lmr = Params::lmr_extension(0).max(lmr).min(next_depth);
@@ -1157,10 +1160,15 @@ impl<'a> Searcher<'a> {
             let pos = &self.stack.pos;
             let ctx = MoveContext::new(&PositionContext::new(pos), pos, m);
             let butterfly = self.local.histories.butterfly.get(ctx);
-            self.stack.attention = self.ctrl.attention(m);
-
-            let mut next = self.next(Some(m));
             let mut lmr = Self::lmr(depth, index);
+
+            lmr += convolve([
+                (1.0, Params::lmr_history_scalar(..)),
+                (butterfly, Params::lmr_history_butterfly(..)),
+            ]);
+
+            self.stack.attention = self.ctrl.attention(m);
+            let mut next = self.next(Some(m));
             let gives_check = next.stack.pos.is_check();
             let is_quiet = m.is_quiet();
 
@@ -1172,8 +1180,6 @@ impl<'a> Searcher<'a> {
                 (gives_check.cast(), Params::lmr_gives_check(..)),
                 (raising_alpha, Params::lmr_raising_alpha(..)),
             ]);
-
-            lmr = Params::lmr_history(0).mul_add(butterfly, lmr);
 
             let next_depth = (depth - 1.0).max(0.0);
             let lmr = lmr.max(0.0).min(next_depth);

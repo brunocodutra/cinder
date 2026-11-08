@@ -767,7 +767,7 @@ impl<'a> Searcher<'a> {
             if !beta.is_losing() && depth < *Params::rfp_depth_limit(0) && !was_pv {
                 let gamma = *Params::rfp_improving_model(0);
                 let delta = *Params::rfp_improving_model(1);
-                let improving = gamma.mul_add(improvement.cast(), delta).sigmoid();
+                let improving = gamma.mul_add(improvement.cast(), delta).fast_sigmoid();
 
                 let margin = convolve([
                     (1.0, Params::rfp_margin_scalar(..)),
@@ -804,7 +804,7 @@ impl<'a> Searcher<'a> {
                 if !beta.is_losing() && !stand_pat.is_winning() && (ours & !(pawns ^ kings)).any() {
                     let gamma = *Params::nmr_margin_improving_model(0);
                     let delta = *Params::nmr_margin_improving_model(1);
-                    let improving = gamma.mul_add(improvement.cast(), delta).sigmoid();
+                    let improving = gamma.mul_add(improvement.cast(), delta).fast_sigmoid();
 
                     let margin = convolve([
                         (1.0, Params::nmr_margin_scalar(..)),
@@ -817,7 +817,7 @@ impl<'a> Searcher<'a> {
                         let surplus = stand_pat.sub(beta);
                         let gamma = *Params::nmr_depth_improving_model(0);
                         let delta = *Params::nmr_depth_improving_model(1);
-                        let improving = gamma.mul_add(improvement.cast(), delta).sigmoid();
+                        let improving = gamma.mul_add(improvement.cast(), delta).fast_sigmoid();
 
                         let reduction = convolve([
                             (1.0, Params::nmr_depth_scalar(..)),
@@ -869,7 +869,7 @@ impl<'a> Searcher<'a> {
 
             let gamma = *Params::probcut_improving_model(0);
             let delta = *Params::probcut_improving_model(1);
-            let improving = gamma.mul_add(improvement.cast(), delta).sigmoid();
+            let improving = gamma.mul_add(improvement.cast(), delta).fast_sigmoid();
 
             let margin = Params::probcut_margin_improving(0).mul_add(improving, margin);
             let pc_beta = beta + margin.cast::<i16>();
@@ -940,7 +940,7 @@ impl<'a> Searcher<'a> {
                         let gamma = *Params::sext_dominance_model(0);
                         let delta = *Params::sext_dominance_model(1);
                         let diff = se_beta.cast::<f32>() - se_score.cast::<f32>();
-                        let dominance = diff.mul_add(gamma, delta).sigmoid();
+                        let dominance = diff.mul_add(gamma, delta).fast_sigmoid();
 
                         extension = convolve([
                             (1.0, Params::sext_scalar(..)),
@@ -970,7 +970,7 @@ impl<'a> Searcher<'a> {
             let diff = tail.score().sub(alpha);
             let gamma = *Params::lmr_raising_alpha_model(0);
             let delta = *Params::lmr_raising_alpha_model(1);
-            let raising_alpha = gamma.mul_add(diff.cast(), delta).sigmoid();
+            let raising_alpha = gamma.mul_add(diff.cast(), delta).fast_sigmoid();
 
             let alpha = match tail.score() {
                 s if s >= beta => break,
@@ -982,7 +982,7 @@ impl<'a> Searcher<'a> {
             if !IS_PV && !is_check && !gives_direct_check && !tail.is_losing() {
                 let gamma = *Params::lmp_improving_model(0);
                 let delta = *Params::lmp_improving_model(1);
-                let improving = gamma.mul_add(improvement.cast(), delta).sigmoid();
+                let improving = gamma.mul_add(improvement.cast(), delta).fast_sigmoid();
 
                 let lmp = convolve([
                     (1.0, Params::lmp_scalar(..)),
@@ -1040,7 +1040,7 @@ impl<'a> Searcher<'a> {
 
             let gamma = *Params::lmr_improving_model(0);
             let delta = *Params::lmr_improving_model(1);
-            let improving = gamma.mul_add(improvement.cast(), delta).sigmoid();
+            let improving = gamma.mul_add(improvement.cast(), delta).fast_sigmoid();
 
             lmr += convolve([
                 (1.0, Params::lmr_not_root(..)),
@@ -1139,7 +1139,7 @@ impl<'a> Searcher<'a> {
             let diff = tail.score().sub(alpha);
             let gamma = *Params::lmr_raising_alpha_model(0);
             let delta = *Params::lmr_raising_alpha_model(1);
-            let raising_alpha = gamma.mul_add(diff.cast(), delta).sigmoid();
+            let raising_alpha = gamma.mul_add(diff.cast(), delta).fast_sigmoid();
 
             let alpha = match tail.score() {
                 s if s >= beta => break,

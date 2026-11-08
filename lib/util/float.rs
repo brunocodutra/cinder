@@ -36,11 +36,15 @@ pub trait FloatRepr:
     + Div<Output = Self>
     + DivAssign
 {
+    /// The logistic sigmoid function.
     fn sigmoid(self) -> Self;
+
+    /// Approximates `sigmoid` using the Schraudolph bit hack.
+    fn fast_sigmoid(self) -> Self;
 }
 
 macro_rules! impl_float_repr_for {
-    ($f: ty) => {
+    ($f: ty, $a: expr, $b: expr, $limit: expr) => {
         const impl NumRepr for $f {
             const IS_FLOAT: bool = true;
             const IS_SIGNED: bool = true;
@@ -121,6 +125,12 @@ macro_rules! impl_float_repr_for {
             fn sigmoid(self) -> Self {
                 (1.0 + <$f>::exp(-self)).recip()
             }
+
+            #[inline(always)]
+            fn fast_sigmoid(self) -> Self {
+                let x = -self.clip(-$limit, $limit);
+                (1.0 + <$f>::from_bits(x.mul_add($a, $b).cast())).recip()
+            }
         }
 
         unsafe impl Float for $f {
@@ -132,8 +142,8 @@ macro_rules! impl_float_repr_for {
     };
 }
 
-impl_float_repr_for!(f32);
-impl_float_repr_for!(f64);
+impl_float_repr_for!(f32, 12102203f32, 1064996600f32, 88f32);
+impl_float_repr_for!(f64, 6497320848556798f64, 4606990966337831000f64, 709f64);
 
 #[cfg(test)]
 mod tests {

@@ -306,7 +306,7 @@ impl<'a> Searcher<'a> {
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn evaluate(&mut self) -> Value {
+    fn evaluate(&mut self, correction: f32) -> Value {
         let zobrist = self.stack.pos.zobrists().hash;
         let value = self.shared.vt.load(zobrist).unwrap_or_else(|| {
             let value = self.stack.pos.evaluate().saturate();
@@ -326,7 +326,7 @@ impl<'a> Searcher<'a> {
         let halfmoves = pos.halfmove().cast::<f32>() / Halfmove::MAX.cast::<f32>();
         let mut scale = halfmoves.lerp(*Params::halfmove_scaling(0), *Params::halfmove_scaling(1));
         scale *= material.lerp(*Params::material_scaling(0), *Params::material_scaling(1));
-        scale.mul_add(value.cast(), self.correction()).saturate()
+        scale.mul_add(value.cast(), correction).saturate()
     }
 
     #[inline(always)]
@@ -563,8 +563,9 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(alpha));
         }
 
-        self.stack.values[ply] = self.evaluate();
+        let correction = self.correction();
         let transposition = self.transposition();
+        self.stack.values[ply] = self.evaluate(correction);
         if !IS_PV && self.stack.pos.halfmove().cast::<f32>() <= *Params::tt_cutoff_hm_limit(0) {
             if let Some(t) = transposition {
                 let (lower, upper) = t.score.range(ply).into_inner();
@@ -697,8 +698,9 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(alpha));
         }
 
-        self.stack.values[ply] = self.evaluate();
+        let correction = self.correction();
         let transposition = self.transposition();
+        self.stack.values[ply] = self.evaluate(correction);
         if !IS_PV && self.stack.pos.halfmove().cast::<f32>() <= *Params::tt_cutoff_hm_limit(0) {
             if let Some(t) = transposition.filter(|t| t.depth.cast::<f32>() >= depth) {
                 let (lower, upper) = t.score.range(ply).into_inner();
@@ -1066,6 +1068,10 @@ impl<'a> Searcher<'a> {
             let delta = *Params::lmr_improving_model(1);
             let improving = gamma.mul_add(improvement.cast(), delta).sigmoid();
 
+            let gamma = *Params::lmr_correction_model(0);
+            let delta = *Params::lmr_correction_model(1);
+            let correction = gamma.mul_add(correction.abs(), delta).sigmoid();
+
             lmr += convolve([
                 (1.0, Params::lmr_not_root(..)),
                 (was_pv.cast(), Params::lmr_was_pv(..)),
@@ -1076,6 +1082,7 @@ impl<'a> Searcher<'a> {
                 (is_fl.cast(), Params::lmr_is_fl(..)),
                 (is_fh.cast(), Params::lmr_is_fh(..)),
                 (improving, Params::lmr_improving(..)),
+                (correction, Params::lmr_correction(..)),
                 (was_quiet.cast(), Params::lmr_was_quiet(..)),
                 (is_quiet, Params::lmr_is_quiet(..)),
                 (is_check.cast(), Params::lmr_is_check(..)),
@@ -1148,7 +1155,8 @@ impl<'a> Searcher<'a> {
             _ => moves.sorted(self, None).next().assume(),
         };
 
-        self.stack.values[0] = self.evaluate();
+        let correction = self.correction();
+        self.stack.values[0] = self.evaluate(correction);
         self.stack.attention = self.ctrl.attention(head);
 
         let mut next = self.next(Some(head));
@@ -1186,8 +1194,13 @@ impl<'a> Searcher<'a> {
             let gives_check = next.stack.pos.is_check();
             let is_quiet = m.is_quiet();
 
+            let gamma = *Params::lmr_correction_model(0);
+            let delta = *Params::lmr_correction_model(1);
+            let correction = gamma.mul_add(correction.abs(), delta).sigmoid();
+
             lmr += convolve([
                 (1.0, Params::lmr_is_root(..)),
+                (correction, Params::lmr_correction(..)),
                 (was_quiet.cast(), Params::lmr_was_quiet(..)),
                 (is_quiet.cast(), Params::lmr_is_quiet(..)),
                 (is_check.cast(), Params::lmr_is_check(..)),

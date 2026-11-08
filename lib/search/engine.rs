@@ -1036,6 +1036,8 @@ impl<'a> Searcher<'a> {
             }
 
             let ctx = MoveContext::new(&PositionContext::new(pos), pos, m);
+            let attacker = self.local.histories.attacker.get(ctx);
+            let defender = self.local.histories.defender.get(ctx);
             let butterfly = self.local.histories.butterfly.get(ctx);
 
             let counter = match pos.ply().get() {
@@ -1043,10 +1045,18 @@ impl<'a> Searcher<'a> {
                 ..1 => 0.0,
             };
 
+            let followup = match pos.ply().get() {
+                2.. => self.stack.continuation(2).filter(|_| ctx.is_quiet).get(ctx),
+                ..2 => 0.0,
+            };
+
             lmr += convolve([
                 (1.0, Params::lmr_history_scalar(..)),
+                (attacker, Params::lmr_history_attacker(..)),
+                (defender, Params::lmr_history_defender(..)),
                 (butterfly, Params::lmr_history_butterfly(..)),
                 (counter, Params::lmr_history_counter(..)),
+                (followup, Params::lmr_history_followup(..)),
             ]);
 
             let mut next = self.next(Some(m));
@@ -1159,11 +1169,15 @@ impl<'a> Searcher<'a> {
 
             let pos = &self.stack.pos;
             let ctx = MoveContext::new(&PositionContext::new(pos), pos, m);
+            let attacker = self.local.histories.attacker.get(ctx);
+            let defender = self.local.histories.defender.get(ctx);
             let butterfly = self.local.histories.butterfly.get(ctx);
             let mut lmr = Self::lmr(depth, index);
 
             lmr += convolve([
                 (1.0, Params::lmr_history_scalar(..)),
+                (attacker, Params::lmr_history_attacker(..)),
+                (defender, Params::lmr_history_defender(..)),
                 (butterfly, Params::lmr_history_butterfly(..)),
             ]);
 

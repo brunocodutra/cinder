@@ -180,48 +180,60 @@ impl MovePicker {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn rate(&mut self, searcher: &Searcher<'_>, head: Option<Move>) {
         let pos = &searcher.stack.pos;
-        let ply = pos.ply().cast();
         let ctx = PositionContext::new(pos);
-        let killer = searcher.stack.killers[ply];
-        let continuations = Params::move_rating_continuation(..).len().min(ply);
+        let killer = searcher.stack.killers[pos.ply()];
 
         for (&m, r) in self.assume().unrated_with_head(head) {
-            let mut rating = 0.0;
-
             let ctx = MoveContext::new(&ctx, pos, m);
-            let history = searcher.local.histories.attacker.get(ctx);
-            rating = Params::move_rating_history(0).mul_add(history, rating);
-            let history = searcher.local.histories.defender.get(ctx);
-            rating = Params::move_rating_history(1).mul_add(history, rating);
-            let history = searcher.local.histories.butterfly.get(ctx);
-            rating = Params::move_rating_history(2).mul_add(history, rating);
+            let defender = searcher.local.histories.defender.get(ctx);
+            let attacker = searcher.local.histories.attacker.get(ctx);
+            let butterfly = searcher.local.histories.butterfly.get(ctx);
+
+            let mut rating = convolve([
+                (1.0, Params::move_rating_scalar(..)),
+                (defender, Params::move_rating_defender(..)),
+                (attacker, Params::move_rating_attacker(..)),
+                (butterfly, Params::move_rating_butterfly(..)),
+            ]);
+
+            if !ctx.is_quiet {
+                let gamma = *Params::move_rating_see(0);
+                let delta = *Params::move_rating_see(1);
+                if pos.is_gaining(m, *Params::move_rating_see(2)) {
+                    rating += gamma.mul_add(pos.gain(m), delta);
+                }
+            } else if pos.ply() >= 4 {
+                let cont1 = searcher.stack.continuation(1).get(ctx);
+                let cont2 = searcher.stack.continuation(2).get(ctx);
+                let cont4 = searcher.stack.continuation(4).get(ctx);
+
+                rating += convolve([
+                    (1.0, Params::move_rating_continuation_scalar(..)),
+                    (cont1, Params::move_rating_continuation1(..)),
+                    (cont2, Params::move_rating_continuation2(..)),
+                    (cont4, Params::move_rating_continuation4(..)),
+                ]);
+            } else if pos.ply() >= 2 {
+                let cont1 = searcher.stack.continuation(1).get(ctx);
+                let cont2 = searcher.stack.continuation(2).get(ctx);
+
+                rating += convolve([
+                    (1.0, Params::move_rating_continuation_scalar(..)),
+                    (cont1, Params::move_rating_continuation1(..)),
+                    (cont2, Params::move_rating_continuation2(..)),
+                ]);
+            } else if pos.ply() >= 1 {
+                let cont1 = searcher.stack.continuation(1).get(ctx);
+
+                rating += convolve([
+                    (1.0, Params::move_rating_continuation_scalar(..)),
+                    (cont1, Params::move_rating_continuation1(..)),
+                ]);
+            }
 
             let gives_check = pos.gives_direct_check(m);
             rating = Params::move_rating_gives_check(0).mul_add(gives_check.cast(), rating);
             rating = Params::move_rating_is_killer(0).mul_add(killer.contains(m).cast(), rating);
-
-            if ctx.is_quiet {
-                if continuations > 0 {
-                    let history = searcher.stack.continuation(1).get(ctx);
-                    rating = Params::move_rating_continuation(0).mul_add(history, rating);
-                }
-
-                if continuations > 1 {
-                    let history = searcher.stack.continuation(2).get(ctx);
-                    rating = Params::move_rating_continuation(1).mul_add(history, rating);
-                }
-
-                if continuations > 3 {
-                    let history = searcher.stack.continuation(4).get(ctx);
-                    rating = Params::move_rating_continuation(3).mul_add(history, rating);
-                }
-            } else {
-                let gamma = *Params::move_rating_see(0);
-                let delta = *Params::move_rating_see(1);
-                if pos.gaining(m, *Params::move_rating_see(2)) {
-                    rating += gamma.mul_add(pos.gain(m), delta);
-                }
-            }
 
             *r = rating.saturate();
         }

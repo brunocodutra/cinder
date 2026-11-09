@@ -218,12 +218,8 @@ impl MovePicker {
             } else {
                 let gamma = *Params::move_rating_see(0);
                 let delta = *Params::move_rating_see(1);
-                let margin = *Params::move_rating_see(2);
-                let see = pos.see(m, -delta / gamma..margin);
-
-                rating += see.mul_add(gamma, delta);
-                if see > -delta / gamma {
-                    rating += pos.gain(m);
+                if pos.gaining(m, *Params::move_rating_see(2)) {
+                    rating += gamma.mul_add(pos.gain(m), delta);
                 }
             }
 

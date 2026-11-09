@@ -314,7 +314,7 @@ params! {
     move_rating_gives_check: [57.107807],
     move_rating_history: [107.45497, 108.06068, 108.0759],
     move_rating_continuation: [130.66805, 117.88957, 0.0, 40.538338],
-    move_rating_see: [9.46816, 449.19186, -12.358575],
+    move_rating_see: [1.0, 332.1789, -47.442364],
     aw_width: [4.6744747, 1.1388648, 1.3412765],
     aw_fl_lerp: [0.5361622],
     aw_fh_reduction: [1.0469723, 0.09269802, 2.8279958],

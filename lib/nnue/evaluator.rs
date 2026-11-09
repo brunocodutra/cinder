@@ -338,7 +338,7 @@ impl Evaluator {
     /// Whether this move wins the exchange by at least `margin`.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    pub fn gaining(&self, m: Move, margin: f32) -> bool {
+    pub fn is_gaining(&self, m: Move, margin: f32) -> bool {
         self.see(m, margin - 1f32..margin) >= margin
     }
 
@@ -910,8 +910,8 @@ mod tests {
         let m = moves.find(|m| m.to_string() == uci).unwrap();
         assert_eq!(e.see(m, -f32::MAX..f32::MAX), value);
 
-        assert!(e.gaining(m, value));
-        assert!(e.gaining(m, value - 1.0));
-        assert!(!e.gaining(m, value + 1.0));
+        assert!(e.is_gaining(m, value));
+        assert!(e.is_gaining(m, value - 1.0));
+        assert!(!e.is_gaining(m, value + 1.0));
     }
 }

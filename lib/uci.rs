@@ -5,9 +5,9 @@ pub use inbound::*;
 pub use outbound::*;
 
 use crate::search::{Depth, Engine, Limits, Stats};
-use crate::{chess::Color, nnue::Evaluator, util::Num, warn};
+use crate::{chess::Color, nnue::Evaluator, util::Num};
 use futures::{prelude::*, select_biased as select, stream::FusedStream};
-use std::{fmt::Debug, pin::Pin, time::Instant};
+use std::{collections::VecDeque, fmt::Debug, pin::Pin, time::Instant};
 
 #[cfg(test)]
 use proptest::{prelude::*, strategy::LazyJust};
@@ -48,7 +48,17 @@ where
 {
     /// Runs the UCI server.
     pub async fn run(&mut self) -> Result<(), O::Error> {
-        'quit: while let Some(inbound) = self.input.next().await {
+        let mut pending = VecDeque::new();
+
+        'quit: loop {
+            let inbound = match pending.pop_front() {
+                Some(inbound) => inbound,
+                None => match self.input.next().await {
+                    Some(inbound) => inbound,
+                    None => break,
+                },
+            };
+
             match inbound {
                 Inbound::Position(pos) => self.pos = pos,
 
@@ -96,7 +106,8 @@ where
                                 None => continue,
                                 Some(Inbound::Quit) => break 'quit,
                                 Some(Inbound::Stop) => pinned.abort(),
-                                _ => warn!("ignored unexpected command"),
+                                Some(Inbound::IsReady) => self.output.send(Outbound::ReadyOk).await?,
+                                Some(inbound) => pending.push_back(inbound),
                             }
                         }
                     }
@@ -172,7 +183,7 @@ mod tests {
     use crate::search::{HashSize, MoveOverhead, SyzygyPath, ThreadCount};
     use futures::executor::block_on;
     use std::task::{Context, Poll};
-    use std::{assert_matches, collections::VecDeque, time::Duration};
+    use std::{assert_matches, time::Duration};
     use test_strategy::proptest;
 
     #[derive(Debug, Default, Clone, PartialEq, Eq)]

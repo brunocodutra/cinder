@@ -42,7 +42,7 @@ fn main() -> Result<(), Failure> {
             match line.trim() {
                 "" => continue,
                 trimmed => match UciParser.parse(trimmed) {
-                    Err(e) => warn!("ignored uci command, {e}"),
+                    Err(e) => warn!("ignored unsupported uci command, {e}"),
                     Ok(cmd) => match tx.unbounded_send(cmd) {
                         Ok(()) => continue,
                         Err(_) => break,

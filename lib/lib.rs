@@ -2,6 +2,7 @@
     long_running_const_eval,
     unstable_name_collisions,
     clippy::collapsible_if,
+    clippy::large_unopt_stack_frames,
     clippy::needless_range_loop
 )]
 #![warn(

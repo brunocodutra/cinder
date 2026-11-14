@@ -1,4 +1,4 @@
-#![allow(long_running_const_eval)]
+#![allow(long_running_const_eval, clippy::large_unopt_stack_frames)]
 #![feature(portable_simd)]
 
 use anyhow::{Error as Failure, bail};

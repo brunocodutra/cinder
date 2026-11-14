@@ -212,8 +212,6 @@ const impl<T: NoUninit, const N: usize, const S: usize> From<[T; N]> for ConstMe
 pub struct HugePages<T> {
     ptr: *mut MaybeUninit<T>,
     capacity: usize,
-
-    #[expect(dead_code)]
     mmap: MmapMut,
 }
 

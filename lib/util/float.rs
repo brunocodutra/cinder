@@ -36,6 +36,7 @@ pub trait FloatRepr:
     + Div<Output = Self>
     + DivAssign
 {
+    /// The logistic sigmoid function.
     fn sigmoid(self) -> Self;
 }
 
@@ -119,7 +120,12 @@ macro_rules! impl_float_repr_for {
         impl FloatRepr for $f {
             #[inline(always)]
             fn sigmoid(self) -> Self {
-                1.0 / (1.0 + <$f>::exp(-self))
+                if self >= 0.0 {
+                    (1.0 + <$f>::exp(-self)).recip()
+                } else {
+                    let exp = <$f>::exp(self);
+                    exp / (1.0 + exp)
+                }
             }
         }
 

@@ -471,11 +471,14 @@ impl<'a> Searcher<'a> {
     /// Computes the late move reduction.
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn lmr(depth: f32, index: usize) -> f32 {
+    fn lmr(depth: f32, index: f32) -> f32 {
+        let depth = if depth > 0.0 { depth.ln() } else { 0.0 };
+        let index = if index > 0.0 { index.ln() } else { 0.0 };
+
         convolve([
             (1.0, Params::lmr_scalar(..)),
-            (index.max(1).cast::<f32>().ln(), Params::lmr_index(..)),
-            (depth.ln(), Params::lmr_depth(..)),
+            (index, Params::lmr_index(..)),
+            (depth, Params::lmr_depth(..)),
         ])
     }
 
@@ -935,7 +938,7 @@ impl<'a> Searcher<'a> {
                         let gamma = *Params::sext_dominance_model(0);
                         let delta = *Params::sext_dominance_model(1);
                         let diff = se_beta.cast::<f32>() - se_score.cast::<f32>();
-                        let dominance = (1.0 + diff.mul_add(gamma, delta).exp()).recip();
+                        let dominance = diff.mul_add(gamma, delta).sigmoid();
 
                         extension = convolve([
                             (1.0, Params::sext_scalar(..)),
@@ -981,9 +984,8 @@ impl<'a> Searcher<'a> {
                 }
             }
 
-            let mut lmr = Self::lmr(depth, index);
+            let mut lmr = Self::lmr(depth, index.cast());
             let lmr_depth = (depth - lmr).max(0.0);
-            let is_quiet = m.is_quiet();
 
             if !is_check && !gives_direct_check && !tail.is_losing() {
                 if depth < *Params::futility_depth_limit(0) {
@@ -1009,13 +1011,14 @@ impl<'a> Searcher<'a> {
             let ctx = MoveContext::new(&PositionContext::new(pos), pos, m);
             let butterfly = self.local.histories.butterfly.get(ctx);
             let counter = match pos.ply().get() {
-                1.. => self.stack.continuation(1).filter(|_| is_quiet).get(ctx),
+                1.. => self.stack.continuation(1).filter(|_| ctx.is_quiet).get(ctx),
                 ..1 => 0.0,
             };
 
             let mut next = self.next(Some(m));
             let gives_check = next.stack.pos.is_check();
             let raised_alpha = tail >= alpha;
+            let is_quiet = ctx.is_quiet;
 
             lmr += convolve([
                 (1.0, Params::lmr_not_root(..)),
@@ -1122,7 +1125,7 @@ impl<'a> Searcher<'a> {
             self.stack.attention = self.ctrl.attention(m);
 
             let mut next = self.next(Some(m));
-            let mut lmr = Self::lmr(depth, index);
+            let mut lmr = Self::lmr(depth, index.cast());
             let gives_check = next.stack.pos.is_check();
             let raised_alpha = tail >= alpha;
             let is_quiet = m.is_quiet();

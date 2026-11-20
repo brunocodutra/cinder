@@ -80,6 +80,7 @@ struct Stack {
     correction: [Option<NonNull<Correction<1>>>; Ply::LEN],
     killers: [Killers; Ply::LEN],
     values: [Value; Ply::LEN],
+    cuts: [u32; Ply::LEN],
 }
 
 impl Stack {
@@ -94,6 +95,7 @@ impl Stack {
             correction: zeroed(),
             killers: zeroed(),
             values: zeroed(),
+            cuts: zeroed(),
         }
     }
 
@@ -486,16 +488,16 @@ impl<'a> Searcher<'a> {
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn next(&mut self, m: Option<Move>) -> RecursionGuard<'_, 'a> {
-        let idx = self.stack.pos.ply().cast::<usize>();
+        let ply = self.stack.pos.ply();
 
-        self.stack.continuation[idx] = match m {
+        self.stack.continuation[ply] = match m {
             None => None,
             Some(m) => Some(NonNull::from_mut(
                 self.local.histories.continuation.get(&self.stack.pos, m),
             )),
         };
 
-        self.stack.correction[idx] = match m {
+        self.stack.correction[ply] = match m {
             None => None,
             Some(m) => Some(NonNull::from_mut(
                 self.local.corrections.continuation.get(&self.stack.pos, m),
@@ -732,6 +734,8 @@ impl<'a> Searcher<'a> {
             };
         }
 
+        self.stack.cuts[ply + 2] = 0;
+
         let is_all = !IS_PV && !is_cut;
         let was_pv = transposition.is_some_and(|t| t.was_pv);
         let (lower, upper) = match self.shared.syzygy.wdl_after_zeroing(&self.stack.pos) {
@@ -794,30 +798,36 @@ impl<'a> Searcher<'a> {
             }
 
             if let Some(t) = transposition {
-                if !beta.is_losing() && !stand_pat.is_winning() {
+                if !beta.is_losing() && !stand_pat.is_winning() && is_cut {
                     if depth < t.depth.cast::<f32>() + Params::fhp_depth_limit(0) {
                         let margin = convolve([
                             (1.0, Params::fhp_margin_scalar(..)),
                             (depth - t.depth.cast::<f32>(), Params::fhp_margin_depth(..)),
                         ]);
 
-                        if is_cut && t.score.lower(ply) - margin.cast::<i16>() >= beta {
+                        if t.score.lower(ply) - margin.cast::<i16>() >= beta {
                             return Ok(t.transpose(ply).truncate());
                         }
                     }
                 }
             }
 
-            if depth >= *Params::nmr_depth_limit(0) && ply >= self.stack.nmr_min_ply && is_cut {
+            if (!beta.is_losing() && !stand_pat.is_winning() && is_cut)
+                && depth >= *Params::nmr_depth_limit(0)
+                && ply >= self.stack.nmr_min_ply
+            {
                 let turn = self.stack.pos.turn();
                 let ours = self.stack.pos.by_color(turn);
                 let pawns = self.stack.pos.by_role(Role::Pawn);
                 let kings = self.stack.pos.by_role(Role::King);
-                if !beta.is_losing() && !stand_pat.is_winning() && (ours & !(pawns ^ kings)).any() {
+                if (ours & !(pawns ^ kings)).any() {
+                    let cuts = self.stack.cuts[ply + 1] < 2;
+
                     let margin = convolve([
                         (1.0, Params::nmr_margin_scalar(..)),
                         (depth, Params::nmr_margin_depth(..)),
                         (is_improving.cast(), Params::nmr_margin_is_improving(..)),
+                        (cuts.cast(), Params::nmr_margin_cuts(..)),
                     ]);
 
                     let margin = margin.max(0.0);
@@ -1057,6 +1067,10 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        if tail >= beta {
+            self.stack.cuts[ply] += 1;
+        }
+
         if tail >= beta && !tail.is_decisive() && !alpha.is_decisive() {
             let s = tail.cast();
             let b = beta.cast();
@@ -1091,6 +1105,8 @@ impl<'a> Searcher<'a> {
         depth: f32,
         bounds: Range<Score>,
     ) -> Result<Pv, Interrupted> {
+        self.stack.cuts[2] = 0;
+
         let (alpha, beta) = (bounds.start, bounds.end);
         if self.ctrl.check(depth.saturate(), zeroed(), &self.stack.pv) != Continue {
             return Err(Interrupted);

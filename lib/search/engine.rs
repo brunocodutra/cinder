@@ -75,6 +75,7 @@ struct Stack {
     pv: Pv,
     pos: Evaluator,
     nmr_min_ply: Ply,
+    nmr_prior: [u32; Ply::LEN],
     attention: Option<NonNull<Nodes>>,
     continuation: [Option<NonNull<PieceToHistory>>; Ply::LEN],
     correction: [Option<NonNull<Correction<1>>>; Ply::LEN],
@@ -90,6 +91,7 @@ impl Stack {
             pv,
             pos,
             nmr_min_ply: zeroed(),
+            nmr_prior: zeroed(),
             attention: zeroed(),
             continuation: zeroed(),
             correction: zeroed(),
@@ -734,6 +736,7 @@ impl<'a> Searcher<'a> {
             };
         }
 
+        self.stack.nmr_prior[ply + 1] = 0;
         self.stack.cuts[ply + 2] = 0;
 
         let is_all = !IS_PV && !is_cut;
@@ -821,12 +824,17 @@ impl<'a> Searcher<'a> {
                 let pawns = self.stack.pos.by_role(Role::Pawn);
                 let kings = self.stack.pos.by_role(Role::King);
                 if (ours & !(pawns ^ kings)).any() {
+                    let gamma = *Params::nmr_prior_model(0);
+                    let delta = *Params::nmr_prior_model(1);
+                    let prior = self.stack.nmr_prior[ply].cast::<f32>();
+                    let prior = prior.mul_add(gamma, delta).sigmoid();
                     let cuts = self.stack.cuts[ply + 1] < 2;
 
                     let margin = convolve([
                         (1.0, Params::nmr_margin_scalar(..)),
                         (depth, Params::nmr_margin_depth(..)),
                         (is_improving.cast(), Params::nmr_margin_is_improving(..)),
+                        (prior, Params::nmr_margin_prior(..)),
                         (cuts.cast(), Params::nmr_margin_cuts(..)),
                     ]);
 
@@ -844,6 +852,7 @@ impl<'a> Searcher<'a> {
                         let pv = -self.next(None).nw(nmr_depth - 1.0, -beta + 1, false)?;
                         if pv >= beta && !pv.is_winning() {
                             if self.stack.nmr_min_ply > 0 || depth < *Params::nmv_depth_limit(0) {
+                                self.stack.nmr_prior[ply] += 1;
                                 return Ok(pv.clip(lower, upper).truncate());
                             }
 
@@ -855,6 +864,7 @@ impl<'a> Searcher<'a> {
                             self.stack.nmr_min_ply = zeroed();
 
                             if verified? >= beta {
+                                self.stack.nmr_prior[ply] += 1;
                                 return Ok(pv.clip(lower, upper).truncate());
                             }
                         }
@@ -1105,6 +1115,7 @@ impl<'a> Searcher<'a> {
         depth: f32,
         bounds: Range<Score>,
     ) -> Result<Pv, Interrupted> {
+        self.stack.nmr_prior[1] = 0;
         self.stack.cuts[2] = 0;
 
         let (alpha, beta) = (bounds.start, bounds.end);

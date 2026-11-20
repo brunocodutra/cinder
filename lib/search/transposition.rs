@@ -15,7 +15,7 @@ pub struct Age(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Age as Num>::
 const unsafe impl Num for Age {
     type Repr = u8;
     const MIN: Self::Repr = 0;
-    const MAX: Self::Repr = 15;
+    const MAX: Self::Repr = 31;
 }
 
 const unsafe impl Int for Age {}
@@ -24,14 +24,12 @@ impl Age {
     /// How many generations elapse from `self` to `other`.
     #[inline(always)]
     pub fn distance(self, other: Self) -> Self {
-        let cycle = Age::MAX.cast::<i16>() + 1;
-        let (a, b) = (self.cast::<i16>(), other.cast::<i16>());
-        (cycle + b - a).rem_euclid(cycle).saturate()
+        Age::new(other.get().wrapping_sub(self.get()) & Age::MAX)
     }
 }
 
 impl Binary for Age {
-    type Bits = Bits<u8, 4>;
+    type Bits = Bits<u8, 5>;
 
     #[inline(always)]
     fn encode(&self) -> Self::Bits {
@@ -268,7 +266,7 @@ impl Transposition {
     /// How good this entry is.
     #[inline(always)]
     pub fn quality(self) -> Quality {
-        self.depth.saturate()
+        Quality::new(self.depth.cast())
     }
 
     /// How much this entry is worth to the search at a given `age`.

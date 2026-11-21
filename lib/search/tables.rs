@@ -24,7 +24,7 @@ pub struct TranspositionTable {
 }
 
 impl TranspositionTable {
-    const BUCKETS: usize = 3;
+    const BUCKETS: usize = 4;
 
     #[inline(always)]
     pub fn new(size: HashSize) -> Self {

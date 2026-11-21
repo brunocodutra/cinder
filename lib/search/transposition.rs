@@ -1,4 +1,4 @@
-use crate::chess::Move;
+use crate::chess::{Halfmove, Move};
 use crate::search::{Depth, Line, Ply, Pv, Score};
 use crate::util::{Binary, Bits, Int, Num};
 use bytemuck::{NoUninit, Zeroable, zeroed};
@@ -162,6 +162,17 @@ impl ScoreBound {
     pub fn range(self, ply: Ply) -> RangeInclusive<Score> {
         self.lower(ply)..=self.upper(ply)
     }
+
+    /// Lowers scores that cannot be delivered before the 50-move rule.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn downgrade(self, hm: Halfmove) -> Self {
+        match self {
+            ScoreBound::Lower(s) => ScoreBound::Lower(s.downgrade(hm)),
+            ScoreBound::Upper(s) => ScoreBound::Upper(s.downgrade(hm)),
+            ScoreBound::Exact(s) => ScoreBound::Exact(s.downgrade(hm)),
+        }
+    }
 }
 
 impl Binary for ScoreBound {
@@ -225,6 +236,16 @@ impl Transposition {
             best,
             age: zeroed(),
             was_pv,
+        }
+    }
+
+    /// Lowers scores that cannot be delivered before the 50-move rule.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn downgrade(self, halfmove: Halfmove) -> Self {
+        Transposition {
+            score: self.score.downgrade(halfmove),
+            ..self
         }
     }
 

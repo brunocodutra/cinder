@@ -77,12 +77,14 @@ impl Display for Outbound {
 
                 if let Some(pv) = pv {
                     const NORMALIZE_TO_PAWN_VALUE: i32 = 78;
-                    let normalized_score = pv.score().cast::<i32>() * 100 / NORMALIZE_TO_PAWN_VALUE;
+                    let cp = pv.saturate::<Value>().cast::<i32>() * 100 / NORMALIZE_TO_PAWN_VALUE;
 
-                    match pv.score().mate() {
-                        Mate::None => write!(f, " score cp {normalized_score}")?,
-                        Mate::Mating(p) => write!(f, " score mate {}", (p + 1) / 2)?,
-                        Mate::Mated(p) => write!(f, " score mate -{}", (p + 1) / 2)?,
+                    match pv.decision() {
+                        Decision::Mating(p) => write!(f, " score mate {}", (p + 1) / 2)?,
+                        Decision::Mated(p) => write!(f, " score mate -{}", (p + 1) / 2)?,
+                        Decision::None | Decision::Winning(_) | Decision::Losing(_) => {
+                            write!(f, " score cp {cp}")?;
+                        }
                     }
 
                     if pv.head().is_some() {

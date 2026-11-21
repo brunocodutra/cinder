@@ -441,7 +441,9 @@ impl<'a> Searcher<'a> {
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
     fn transposition(&self) -> Option<Transposition> {
         let pos = &self.stack.pos;
-        let tpos = self.shared.tt.load(pos.zobrists().hash)?;
+        let hm = pos.halfmove();
+        let zobrist = pos.zobrists().hash;
+        let tpos = self.shared.tt.load(zobrist)?.downgrade(hm);
         tpos.best.is_none_or(|m| pos.is_legal(m)).then_some(tpos)
     }
 
@@ -577,12 +579,10 @@ impl<'a> Searcher<'a> {
 
         self.stack.values[ply] = self.evaluate();
         let transposition = self.transposition();
-        if !IS_PV && self.stack.pos.halfmove().cast::<f32>() <= *Params::tt_cutoff_hm_limit(0) {
-            if let Some(t) = transposition {
-                let (lower, upper) = t.score.range(ply).into_inner();
-                if upper <= alpha || lower >= beta {
-                    return Ok(t.transpose(ply).truncate());
-                }
+        if !IS_PV && let Some(t) = transposition {
+            let (lower, upper) = t.score.range(ply).into_inner();
+            if upper <= alpha || lower >= beta {
+                return Ok(t.transpose(ply).truncate());
             }
         }
 

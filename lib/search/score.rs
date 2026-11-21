@@ -1,26 +1,18 @@
-use crate::chess::Flip;
+use crate::chess::{Flip, Halfmove};
 use crate::search::{Ply, Value};
 use crate::util::{Binary, Bits, Bounded, Int, Num};
 use bytemuck::{NoUninit, Zeroable, zeroed};
 
-/// Number of [plies][`Ply`] to mate.
+/// The distance in plies to a decisive score.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(test_strategy::Arbitrary))]
-pub enum Mate {
+pub enum Decision {
     #[default]
     None,
+    Winning(Ply),
+    Losing(Ply),
     Mating(Ply),
     Mated(Ply),
-}
-
-impl Mate {
-    #[inline(always)]
-    pub fn plies(self) -> Option<Ply> {
-        match self {
-            Mate::Mating(ply) | Mate::Mated(ply) => Some(ply),
-            Mate::None => None,
-        }
-    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, NoUninit)]
@@ -70,15 +62,36 @@ impl Score {
         Self::upper().relative_to_ply(ply)
     }
 
-    /// Returns number of plies to mate, if one is in the horizon.
+    /// Returns the distance in plies to a decisive score, if one is in the horizon.
     #[inline(always)]
-    pub fn mate(self) -> Mate {
-        if self.is_mated() {
-            Mate::Mated((self - Score::lower()).saturate())
-        } else if self.is_mating() {
-            Mate::Mating((Score::upper() - self).saturate())
+    pub fn decision(self) -> Decision {
+        if self.is_mating() {
+            Decision::Mating(Ply::new(Score::MAX - self.get()))
+        } else if self.is_mated() {
+            Decision::Mated(Ply::new(self.get() - Score::MIN))
+        } else if self.is_winning() {
+            Decision::Winning(Ply::upper() - (self.get() - Value::MAX - 1))
+        } else if self.is_losing() {
+            Decision::Losing(Ply::upper() - (Value::MIN - self.get() - 1))
         } else {
-            Mate::None
+            Decision::None
+        }
+    }
+
+    /// Lowers scores that cannot be reached before the 50-move rule.
+    #[inline(always)]
+    #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
+    pub fn downgrade(self, hm: Halfmove) -> Self {
+        match self.decision() {
+            Decision::Mating(p) | Decision::Winning(p) if p > Halfmove::upper() - hm => {
+                Self::new(Value::MAX)
+            }
+
+            Decision::Mated(p) | Decision::Losing(p) if p > Halfmove::upper() - hm => {
+                Self::new(Value::MIN)
+            }
+
+            _ => self,
         }
     }
 
@@ -180,13 +193,23 @@ mod tests {
     }
 
     #[proptest]
-    fn mate_returns_plies_to_mate(p: Ply) {
-        assert_eq!(Score::mating(p).mate(), Mate::Mating(p));
+    fn decision_returns_plies_to_mate(p: Ply) {
+        assert_eq!(Score::mating(p).decision(), Decision::Mating(p));
     }
 
     #[proptest]
-    fn mate_returns_plies_to_mated(p: Ply) {
-        assert_eq!(Score::mated(p).mate(), Mate::Mated(p));
+    fn decision_returns_plies_to_mated(p: Ply) {
+        assert_eq!(Score::mated(p).decision(), Decision::Mated(p));
+    }
+
+    #[proptest]
+    fn decision_returns_plies_to_tb_win(p: Ply) {
+        assert_eq!(Score::winning(p).decision(), Decision::Winning(p));
+    }
+
+    #[proptest]
+    fn decision_returns_plies_to_tb_loss(p: Ply) {
+        assert_eq!(Score::losing(p).decision(), Decision::Losing(p));
     }
 
     #[proptest]

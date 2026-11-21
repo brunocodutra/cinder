@@ -1,8 +1,8 @@
 use crate::chess::{Halfmove, Move};
+use crate::params::Params;
 use crate::search::{Depth, Line, Ply, Pv, Score};
 use crate::util::{Binary, Bits, Int, Num};
 use bytemuck::{NoUninit, Zeroable, zeroed};
-use derive_more::with_trait::Debug;
 use std::ops::{Range, RangeInclusive};
 use std::{cmp::Ordering, hint::unreachable_unchecked};
 
@@ -43,28 +43,28 @@ impl Binary for Age {
 }
 
 /// How good a [`Transposition`] is.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Zeroable, NoUninit)]
-#[cfg_attr(test, derive(test_strategy::Arbitrary))]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Zeroable, NoUninit)]
 #[repr(transparent)]
-pub struct Quality(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Quality as Num>::Repr);
+pub struct Quality(f32);
 
 const unsafe impl Num for Quality {
-    type Repr = i16;
-    const MIN: Self::Repr = Self::Repr::MIN;
-    const MAX: Self::Repr = Self::Repr::MAX;
+    type Repr = f32;
+    const MIN: Self::Repr = -f32::MAX;
+    const MAX: Self::Repr = f32::MAX;
 }
 
 /// Semi-order that requires overwhelming superiority.
 impl PartialOrd for Quality {
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        const MARGIN: i16 = 4;
+        let margin = *Params::tt_quality_margin(0);
 
+        #[expect(clippy::float_cmp)]
         if self.0 == other.0 {
             Some(Ordering::Equal)
-        } else if self.0 > other.0.saturating_add(MARGIN) {
+        } else if self.0 > other.0 + margin {
             Some(Ordering::Greater)
-        } else if self.0.saturating_add(MARGIN) < other.0 {
+        } else if self.0 + margin < other.0 {
             Some(Ordering::Less)
         } else {
             None
@@ -73,15 +73,37 @@ impl PartialOrd for Quality {
 }
 
 /// How much a transposition is worth to the current search.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, NoUninit)]
-#[cfg_attr(test, derive(test_strategy::Arbitrary))]
+#[derive(Debug, Default, Clone, Copy, Zeroable, NoUninit)]
 #[repr(transparent)]
-pub struct Relevance(#[cfg_attr(test, strategy(Self::MIN..=Self::MAX))] <Relevance as Num>::Repr);
+pub struct Relevance(f32);
 
 const unsafe impl Num for Relevance {
-    type Repr = i16;
-    const MIN: Self::Repr = Self::Repr::MIN;
-    const MAX: Self::Repr = Self::Repr::MAX;
+    type Repr = f32;
+    const MIN: Self::Repr = -f32::MAX;
+    const MAX: Self::Repr = f32::MAX;
+}
+
+impl Eq for Relevance {}
+
+impl PartialEq for Relevance {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Ord for Relevance {
+    #[inline(always)]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
+
+impl PartialOrd for Relevance {
+    #[inline(always)]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 /// Whether the transposed score is exact or a bound.
@@ -266,15 +288,22 @@ impl Transposition {
     /// How good this entry is.
     #[inline(always)]
     pub fn quality(self) -> Quality {
-        Quality::new(self.depth.cast())
+        let is_exact = matches!(self.score, ScoreBound::Exact(_));
+
+        let mut score = 0.0;
+        score = Params::tt_quality(0).mul_add(self.depth.cast(), score);
+        score = Params::tt_quality(1).mul_add(self.was_pv.cast(), score);
+        score = Params::tt_quality(2).mul_add(is_exact.cast(), score);
+        Quality::new(score)
     }
 
     /// How much this entry is worth to the search at a given `age`.
     #[inline(always)]
     pub fn relevance(self, age: Age) -> Relevance {
-        let depth = self.depth.cast::<i16>();
-        let age = self.age.distance(age).cast::<i16>();
-        (depth - age).saturate()
+        let mut score = 0.0;
+        score = Params::tt_relevance(0).mul_add(self.depth.cast(), score);
+        score = Params::tt_relevance(1).mul_add(self.age.distance(age).cast(), score);
+        Relevance::new(score)
     }
 }
 
@@ -309,7 +338,6 @@ impl Binary for Transposition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fmt::Debug;
     use test_strategy::proptest;
 
     #[proptest]

@@ -1,5 +1,5 @@
 use crate::chess::Zobrist;
-use crate::search::{Age, HashSize, Transposition, Value};
+use crate::search::{Age, HashSize, Relevance, Transposition, Value};
 use crate::util::{Assume, Atomic, HugePages, Memory, Num, Prefetch, Vault};
 use bytemuck::zeroed;
 use derive_more::with_trait::{Debug, Deref, DerefMut};
@@ -45,13 +45,16 @@ impl TranspositionTable {
         new.age = self.age.load(Relaxed);
 
         let mut idx = 0;
-        let mut empty = None;
-        let mut worst = None;
+        let mut worst = Relevance::upper();
         let bucket = self.bucket(zobrist);
         for (i, slot) in bucket.iter().enumerate() {
             let vault = slot.load(Relaxed);
 
-            if let Some(old) = vault.open(zobrist) {
+            let Some(old) = vault.peek() else {
+                return slot.store(Vault::close(zobrist, new), Relaxed);
+            };
+
+            if vault.matches(zobrist) {
                 if new.age != old.age || new.quality().partial_cmp(&old.quality()) != Some(Less) {
                     new.best = new.best.or(old.best);
                     slot.store(Vault::close(zobrist, new), Relaxed);
@@ -60,21 +63,14 @@ impl TranspositionTable {
                 return;
             }
 
-            if empty.is_none() {
-                match vault.peek() {
-                    None => empty = Some(i),
-                    Some(transposition) => {
-                        let relevance = transposition.relevance(new.age);
-                        if worst.is_none_or(|r| r > relevance) {
-                            worst = Some(relevance);
-                            idx = i;
-                        }
-                    }
-                }
+            let relevance = old.relevance(new.age);
+            if relevance < worst {
+                worst = relevance;
+                idx = i;
             }
         }
 
-        let slot = bucket.get(empty.unwrap_or(idx)).assume();
+        let slot = bucket.get(idx).assume();
         slot.store(Vault::close(zobrist, new), Relaxed);
     }
 

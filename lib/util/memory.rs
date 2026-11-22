@@ -17,14 +17,14 @@ impl<T> Prefetch for *const T {
     fn prefetch(self) {
         #[cfg(target_arch = "x86_64")]
         unsafe {
-            use std::arch::x86_64::{_MM_HINT_ET0, _mm_prefetch};
-            _mm_prefetch(self.cast(), _MM_HINT_ET0);
+            use std::arch::x86_64::{_MM_HINT_T0, _mm_prefetch};
+            _mm_prefetch(self.cast(), _MM_HINT_T0);
         }
 
         #[cfg(target_arch = "aarch64")]
         unsafe {
-            use std::arch::aarch64::{_PREFETCH_LOCALITY0, _PREFETCH_WRITE, _prefetch};
-            _prefetch(self.cast(), _PREFETCH_WRITE, _PREFETCH_LOCALITY0);
+            use std::arch::aarch64::{_PREFETCH_LOCALITY0, _PREFETCH_READ, _prefetch};
+            _prefetch(self.cast(), _PREFETCH_READ, _PREFETCH_LOCALITY0);
         }
     }
 }

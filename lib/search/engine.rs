@@ -1065,8 +1065,14 @@ impl<'a> Searcher<'a> {
                 (raised_alpha.cast(), Params::lmr_raised_alpha(..)),
             ]);
 
-            lmr = Params::lmr_history(0).mul_add(butterfly, lmr);
-            lmr = Params::lmr_continuation(0).mul_add(counter, lmr);
+            let correction = correction.abs();
+            let gamma = *Params::lmr_corrplexity_model(0);
+            let delta = *Params::lmr_corrplexity_model(1);
+            let corrplexity = correction * correction.mul_add(gamma, delta).sigmoid();
+
+            lmr = Params::lmr_corrplexity(0).mul_add(corrplexity, lmr);
+            lmr = Params::lmr_butterfly(0).mul_add(butterfly, lmr);
+            lmr = Params::lmr_counter(0).mul_add(counter, lmr);
 
             let next_depth = (depth - 1.0).max(0.0);
             let lmr = Params::lmr_extension(0).max(lmr).min(next_depth);
@@ -1175,7 +1181,13 @@ impl<'a> Searcher<'a> {
                 (raised_alpha.cast(), Params::lmr_raised_alpha(..)),
             ]);
 
-            lmr = Params::lmr_history(0).mul_add(butterfly, lmr);
+            let correction = correction.abs();
+            let gamma = *Params::lmr_corrplexity_model(0);
+            let delta = *Params::lmr_corrplexity_model(1);
+            let corrplexity = correction * correction.mul_add(gamma, delta).sigmoid();
+
+            lmr = Params::lmr_corrplexity(0).mul_add(corrplexity, lmr);
+            lmr = Params::lmr_butterfly(0).mul_add(butterfly, lmr);
 
             let next_depth = (depth - 1.0).max(0.0);
             let lmr = lmr.max(0.0).min(next_depth);

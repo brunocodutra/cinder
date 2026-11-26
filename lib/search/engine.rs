@@ -298,7 +298,7 @@ impl<'a> Searcher<'a> {
 
     #[inline(always)]
     #[cfg_attr(feature = "no_panic", no_panic::no_panic)]
-    fn evaluate(&mut self) -> Value {
+    fn evaluate(&mut self, correction: f32) -> Value {
         let zobrist = self.stack.pos.zobrists().hash;
         let value = self.shared.vt.load(zobrist).unwrap_or_else(|| {
             let value = self.stack.pos.evaluate().saturate();
@@ -318,7 +318,7 @@ impl<'a> Searcher<'a> {
         let halfmoves = pos.halfmove().cast::<f32>() / Halfmove::MAX.cast::<f32>();
         let mut scale = halfmoves.lerp(*Params::halfmove_scaling(0), *Params::halfmove_scaling(1));
         scale *= material.lerp(*Params::material_scaling(0), *Params::material_scaling(1));
-        scale.mul_add(value.cast(), self.correction()).saturate()
+        scale.mul_add(value.cast(), correction).saturate()
     }
 
     #[inline(always)]
@@ -577,7 +577,8 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(alpha));
         }
 
-        self.stack.values[ply] = self.evaluate();
+        let correction = self.correction();
+        self.stack.values[ply] = self.evaluate(correction);
         let transposition = self.transposition();
         if !IS_PV && let Some(t) = transposition {
             let (lower, upper) = t.score.range(ply).into_inner();
@@ -709,7 +710,8 @@ impl<'a> Searcher<'a> {
             return Ok(Pv::empty(alpha));
         }
 
-        self.stack.values[ply] = self.evaluate();
+        let correction = self.correction();
+        self.stack.values[ply] = self.evaluate(correction);
         let transposition = self.transposition();
         if !IS_PV && self.stack.pos.halfmove().cast::<f32>() <= *Params::tt_cutoff_hm_limit(0) {
             if let Some(t) = transposition.filter(|t| t.depth.cast::<f32>() >= depth) {
@@ -788,13 +790,19 @@ impl<'a> Searcher<'a> {
             }
 
             if !beta.is_losing() && depth < *Params::rfp_depth_limit(0) && !was_pv {
+                let correction = correction.abs();
+                let gamma = *Params::rfp_margin_corrplexity_model(0);
+                let delta = *Params::rfp_margin_corrplexity_model(1);
+                let corrplexity = correction * correction.mul_add(gamma, delta).sigmoid();
+
                 let margin = convolve([
                     (1.0, Params::rfp_margin_scalar(..)),
                     (depth, Params::rfp_margin_depth(..)),
                     (is_improving.cast(), Params::rfp_margin_is_improving(..)),
+                    (corrplexity, Params::rfp_margin_corrplexity(..)),
                 ]);
 
-                if value - margin.cast::<i16>() >= beta {
+                if value - margin.max(0.0).cast::<i16>() >= beta {
                     let blended = Params::rfp_lerp(0).lerp(beta.cast::<f32>(), value.cast::<f32>());
                     return Ok(Pv::empty(blended.saturate()).clip(lower, upper));
                 }
@@ -1057,8 +1065,14 @@ impl<'a> Searcher<'a> {
                 (raised_alpha.cast(), Params::lmr_raised_alpha(..)),
             ]);
 
-            lmr = Params::lmr_history(0).mul_add(butterfly, lmr);
-            lmr = Params::lmr_continuation(0).mul_add(counter, lmr);
+            let correction = correction.abs();
+            let gamma = *Params::lmr_corrplexity_model(0);
+            let delta = *Params::lmr_corrplexity_model(1);
+            let corrplexity = correction * correction.mul_add(gamma, delta).sigmoid();
+
+            lmr = Params::lmr_corrplexity(0).mul_add(corrplexity, lmr);
+            lmr = Params::lmr_butterfly(0).mul_add(butterfly, lmr);
+            lmr = Params::lmr_counter(0).mul_add(counter, lmr);
 
             let next_depth = (depth - 1.0).max(0.0);
             let lmr = Params::lmr_extension(0).max(lmr).min(next_depth);
@@ -1132,7 +1146,8 @@ impl<'a> Searcher<'a> {
             _ => moves.sorted(self, None).next().assume(),
         };
 
-        self.stack.values[0] = self.evaluate();
+        let correction = self.correction();
+        self.stack.values[0] = self.evaluate(correction);
         self.stack.attention = self.ctrl.attention(head);
 
         let mut next = self.next(Some(head));
@@ -1166,7 +1181,13 @@ impl<'a> Searcher<'a> {
                 (raised_alpha.cast(), Params::lmr_raised_alpha(..)),
             ]);
 
-            lmr = Params::lmr_history(0).mul_add(butterfly, lmr);
+            let correction = correction.abs();
+            let gamma = *Params::lmr_corrplexity_model(0);
+            let delta = *Params::lmr_corrplexity_model(1);
+            let corrplexity = correction * correction.mul_add(gamma, delta).sigmoid();
+
+            lmr = Params::lmr_corrplexity(0).mul_add(corrplexity, lmr);
+            lmr = Params::lmr_butterfly(0).mul_add(butterfly, lmr);
 
             let next_depth = (depth - 1.0).max(0.0);
             let lmr = lmr.max(0.0).min(next_depth);
